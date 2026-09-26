@@ -1194,10 +1194,10 @@ bool approvedUtilityArrayConstruction(const State &S,
                                       const clang::CXXConstructExpr *Construction,
                                       const clang::ASTContext &Context);
 std::optional<UtilityArrayRecord>
-approvedUtilityArrayAssignment(const State &S,
-                               const clang::SourceManager &SM,
+approvedUtilityArrayAssignment(const State &S, const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
-                               const clang::ASTContext &Context);
+                               const clang::ASTContext &Context,
+                               const clang::CXXMethodDecl **Selected = nullptr);
 // Authenticated tuple-like storage shared by tuple_cat and apply. Pair and
 // tuple elements have individual fields; array elements share one fixed array.
 struct UtilityTupleLikeSource {

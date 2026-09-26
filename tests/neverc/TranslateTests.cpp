@@ -32768,6 +32768,120 @@ void rejected(Row& row, const Item& item) { )cpp" +
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayOwnedElementAssignmentRun) {
+  const auto Source = tmpFile("array-owned-assignment.cpp");
+  const auto Output = tmpFile("array-owned-assignment.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+int events[16];
+int event_count;
+void note(int value) { events[event_count++] = value; }
+bool matches(const int* expected, int count) {
+  if (event_count != count) return false;
+  for (int i = 0; i != count; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item&) noexcept = default;
+  Item(Item&&) noexcept = default;
+  Item& operator=(const Item& other) noexcept {
+    note(100 + other.value);
+    value = other.value + 1;
+    return *this;
+  }
+  Item& operator=(Item&& other) noexcept {
+    note(200 + other.value);
+    value = other.value + 2;
+    return *this;
+  }
+};
+struct CopyOnly {
+  int value;
+  explicit CopyOnly(int n) noexcept : value(n) {}
+  CopyOnly(const CopyOnly&) noexcept = default;
+  CopyOnly& operator=(const CopyOnly& other) noexcept {
+    note(300 + other.value);
+    value = other.value + 3;
+    return *this;
+  }
+};
+int main() {
+  std::array<Item, 3> source{{Item(1), Item(2), Item(3)}};
+  std::array<Item, 3> target{{Item(8), Item(9), Item(10)}};
+  event_count = 0;
+  if (&(target = source) != &target)
+    return 1;
+  const int copied[] = {101, 102, 103};
+  if (!matches(copied, 3) || target[0].value != 2 ||
+      target[1].value != 3 || target[2].value != 4)
+    return 2;
+  event_count = 0;
+  target = target;
+  const int self[] = {102, 103, 104};
+  if (!matches(self, 3) || target[0].value != 3 ||
+      target[1].value != 4 || target[2].value != 5)
+    return 3;
+  event_count = 0;
+  if (&(source = std::move(target)) != &source)
+    return 4;
+  const int moved[] = {203, 204, 205};
+  if (!matches(moved, 3) || source[0].value != 5 ||
+      source[1].value != 6 || source[2].value != 7)
+    return 5;
+  std::array<CopyOnly, 2> fallback_source{{CopyOnly(2), CopyOnly(4)}};
+  std::array<CopyOnly, 2> fallback_target{{CopyOnly(8), CopyOnly(9)}};
+  event_count = 0;
+  fallback_target = std::move(fallback_source);
+  const int copied_move[] = {302, 304};
+  if (!matches(copied_move, 2) || fallback_target[0].value != 5 ||
+      fallback_target[1].value != 7)
+    return 6;
+  event_count = 0;
+  target = std::array<Item, 3>{{Item(6), Item(7), Item(8)}};
+  const int temporary[] = {206, 207, 208};
+  if (!matches(temporary, 3) || target[0].value != 8 ||
+      target[1].value != 9 || target[2].value != 10)
+    return 7;
+  event_count = 0;
+  std::array<Item, 0> empty{};
+  empty = empty;
+  return event_count == 0 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-owned-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedElementAssignmentRequiresSource) {
+  const auto Source = tmpFile("array-owned-assignment-unsupported.cpp");
+  const auto Output = tmpFile("array-owned-assignment-unsupported.nc");
+  writeFile(Source, R"cpp(#include <array>
+struct Item {
+  int value;
+  void operator=(const Item& other) noexcept { value = other.value; }
+};
+void rejected(std::array<Item, 2>& out, const std::array<Item, 2>& in) {
+  out = in;
+}
+)cpp");
+  expectCode(
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+      "TR0203");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2ArrayOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("array.cpp");
   const auto Output = tmpFile("array.nc");

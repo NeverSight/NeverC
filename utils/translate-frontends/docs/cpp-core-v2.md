@@ -561,8 +561,12 @@ index-based `get` lower directly to existing array, pointer, assignment and
 control-flow operations when the selected element operation is admitted.
 Aggregate initialization, selected trivial copy/move construction and
 trivial copy/move assignment retain ordinary value semantics, including for
-record elements with nontrivial destruction. Direct `std::array` copy/move
-operations do not yet admit user-provided nontrivial element constructors.
+record elements with nontrivial destruction. For source-owned record elements,
+defaulted nontrivial array copy/move assignment also authenticates Clang's
+generated indexed loop and calls the selected element assignment in order.
+Self-assignment, move assignment that selects an element copy, and the returned
+array reference retain their source behavior. Direct `std::array` copy/move
+construction does not yet admit user-provided nontrivial element constructors.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
 Member and free array swap also admit source-owned nontrivial record elements
 when the pinned `swap_ranges` and `iter_swap` chain selects supported move

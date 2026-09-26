@@ -15878,6 +15878,63 @@ class FunctionLowering {
         assign(Left, std::move(Right), L);
         return Left;
       }
+      const CXXMethodDecl *ArrayElementAssignment = nullptr;
+      if (auto Array = approvedUtilityArrayAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context,
+              &ArrayElementAssignment);
+          Array && ArrayElementAssignment) {
+        if (Destination)
+          reject(L, "utility array assignment",
+                 "std::array assignment cannot initialize a record result.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        const auto SourceElement = ArrayElementAssignment->getParamDecl(0)
+                                           ->getType()
+                                           ->getPointeeType()
+                                           .isConstQualified()
+                                       ? Array->ElementType.withConst()
+                                       : Array->ElementType;
+        const auto SourcePointer =
+            type(A.Context.getPointerType(SourceElement), L);
+        const auto ElementPointer =
+            type(A.Context.getPointerType(Array->ElementType), L);
+        auto RightPointer = snapshot(
+            decay(fieldStorage(dereference(json::Object(RightAddress), L),
+                               Array->Elements, L),
+                  SourcePointer, L),
+            L);
+        auto LeftPointer = snapshot(
+            decay(fieldStorage(dereference(json::Object(LeftAddress), L),
+                               Array->Elements, L),
+                  ElementPointer, L),
+            L);
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        auto Position = temporary(SizeType, L);
+        assign(Position, quantity(0, SizeType, L), L);
+        const auto Check = labelName(), Copy = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<", json::Object(Position),
+                      quantity(Array->Size, SizeType, L), "bool", L),
+               Copy, End, L);
+        label(Copy, L);
+        assignMemorySource(
+            index(json::Object(LeftPointer), json::Object(Position),
+                  type(Array->ElementType, L), L),
+            Array->ElementType, ArrayElementAssignment,
+            index(json::Object(RightPointer), json::Object(Position),
+                  type(Array->ElementType, L), L),
+            L);
+        assign(
+            Position,
+            binary("+", json::Object(Position), one(SizeType, L), SizeType, L),
+            L);
+        jump(Check, L);
+        label(End, L);
+        return dereference(std::move(LeftAddress), L);
+      }
       std::vector<const CXXOperatorCallExpr *> PairAssignments;
       if (auto Pair = approvedUtilityPairAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context,

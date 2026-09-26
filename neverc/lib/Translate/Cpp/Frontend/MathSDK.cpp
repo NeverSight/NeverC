@@ -4539,7 +4539,10 @@ bool approvedUtilityArrayConstruction(const State &S, const SourceManager &SM,
 std::optional<UtilityArrayRecord>
 approvedUtilityArrayAssignment(const State &S, const SourceManager &SM,
                                const CXXOperatorCallExpr *Assignment,
-                               const ASTContext &Context) {
+                               const ASTContext &Context,
+                               const CXXMethodDecl **Selected) {
+  if (Selected)
+    *Selected = nullptr;
   if (!Assignment || Assignment->isTypeDependent() ||
       Assignment->isValueDependent() ||
       Assignment->isInstantiationDependent() ||
@@ -4550,8 +4553,8 @@ approvedUtilityArrayAssignment(const State &S, const SourceManager &SM,
       dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
   const auto Array = approvedUtilityArrayRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
-  if (!Method || !Array || !Method->isImplicit() || !Method->isTrivial() ||
-      !Method->isDefaulted() || Method->isStatic() || Method->isVariadic() ||
+  if (!Method || !Array || !Method->isImplicit() || !Method->isDefaulted() ||
+      Method->isStatic() || Method->isVariadic() ||
       Method->getNumParams() != 1 ||
       Method->getOverloadedOperator() != OO_Equal ||
       !(Method->isCopyAssignmentOperator() ||
@@ -4569,6 +4572,131 @@ approvedUtilityArrayAssignment(const State &S, const SourceManager &SM,
                                       ArrayType) ||
       !Context.hasSameUnqualifiedType(Assignment->getType(), ArrayType))
     return std::nullopt;
+  if (Method->isTrivial())
+    return Array;
+
+  // Clang generates this body for a defaulted std::array assignment whose
+  // element assignment is nontrivial. Check its actual selected operation and
+  // the indexed source/destination before replacing the body with direct calls.
+  if (!Array->Size ||
+      !utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 2)
+    return std::nullopt;
+  auto Statement = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Init =
+      Loop ? dyn_cast_or_null<DeclStmt>(Loop->getInit()) : nullptr;
+  const auto *Index = Init && Init->isSingleDecl()
+                          ? dyn_cast<VarDecl>(Init->getSingleDecl())
+                          : nullptr;
+  const auto *Start =
+      Index && Index->getInit()
+          ? dyn_cast<IntegerLiteral>(Index->getInit()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Limit =
+      Condition
+          ? dyn_cast<IntegerLiteral>(Condition->getRHS()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *ElementCall =
+      Loop ? dyn_cast<CXXMemberCallExpr>(Loop->getBody()) : nullptr;
+  const auto *ElementMethod =
+      ElementCall
+          ? dyn_cast_or_null<CXXMethodDecl>(ElementCall->getDirectCallee())
+          : nullptr;
+  const auto *Callee =
+      ElementCall ? dyn_cast<MemberExpr>(
+                        ElementCall->getCallee()->IgnoreParenImpCasts())
+                  : nullptr;
+  const auto *Destination = Callee
+                                ? dyn_cast<ArraySubscriptExpr>(
+                                      Callee->getBase()->IgnoreParenImpCasts())
+                                : nullptr;
+  const Expr *SourceExpression =
+      ElementCall && ElementCall->getNumArgs() == 1
+          ? ElementCall->getArg(0)->IgnoreParenImpCasts()
+          : nullptr;
+  const bool Moving = Method->isMoveAssignmentOperator();
+  if (Moving) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(SourceExpression);
+    if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+        !Context.hasSameUnqualifiedType(Cast->getType(), Array->ElementType))
+      return std::nullopt;
+    SourceExpression = Cast->getSubExpr()->IgnoreParenImpCasts();
+  }
+  const auto *Source = dyn_cast_or_null<ArraySubscriptExpr>(SourceExpression);
+  auto IndexedField = [&](const ArraySubscriptExpr *Subscript,
+                          bool DestinationSide) -> const MemberExpr * {
+    if (!Subscript)
+      return nullptr;
+    const auto *Field =
+        dyn_cast<MemberExpr>(Subscript->getBase()->IgnoreParenImpCasts());
+    const auto *Reference =
+        dyn_cast<DeclRefExpr>(Subscript->getIdx()->IgnoreParenImpCasts());
+    if (!Field || !Reference || Reference->getDecl() != Index ||
+        Field->getMemberDecl()->getCanonicalDecl() !=
+            Array->Elements->getCanonicalDecl() ||
+        Field->isArrow() != DestinationSide)
+      return nullptr;
+    return Field;
+  };
+  const auto *ToField = IndexedField(Destination, true);
+  const auto *FromField = IndexedField(Source, false);
+  const Expr *SourceBase =
+      FromField ? FromField->getBase()->IgnoreParens() : nullptr;
+  if (Moving) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(SourceBase);
+    if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+        !Context.hasSameUnqualifiedType(Cast->getType(), ArrayType))
+      return std::nullopt;
+    SourceBase = Cast->getSubExpr()->IgnoreParenImpCasts();
+  }
+  const auto *SourceParameter = dyn_cast_or_null<DeclRefExpr>(SourceBase);
+  const auto *Returned = Return && Return->getRetValue()
+                             ? dyn_cast<UnaryOperator>(
+                                   Return->getRetValue()->IgnoreParenImpCasts())
+                             : nullptr;
+  if (!Loop || !Index ||
+      !Context.hasSameType(Index->getType(), Context.getSizeType()) || !Start ||
+      !Start->getValue().isZero() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !isa<DeclRefExpr>(Condition->getLHS()->IgnoreParenImpCasts()) ||
+      cast<DeclRefExpr>(Condition->getLHS()->IgnoreParenImpCasts())
+              ->getDecl() != Index ||
+      !Limit ||
+      Limit->getValue().getLimitedValue(Array->Size + 1) != Array->Size ||
+      !Increment || Increment->getOpcode() != UO_PreInc ||
+      !isa<DeclRefExpr>(Increment->getSubExpr()->IgnoreParenImpCasts()) ||
+      cast<DeclRefExpr>(Increment->getSubExpr()->IgnoreParenImpCasts())
+              ->getDecl() != Index ||
+      !ElementCall || ElementCall->getNumArgs() != 1 || !ElementMethod ||
+      !Callee ||
+      Callee->getMemberDecl()->getCanonicalDecl() !=
+          ElementMethod->getCanonicalDecl() ||
+      !ToField || !FromField ||
+      !isa<CXXThisExpr>(ToField->getBase()->IgnoreParenImpCasts()) ||
+      !SourceParameter ||
+      SourceParameter->getDecl() != Method->getParamDecl(0) || !Returned ||
+      Returned->getOpcode() != UO_Deref ||
+      !isa<CXXThisExpr>(Returned->getSubExpr()->IgnoreParenImpCasts()) ||
+      !supportedAssignment(ElementMethod) ||
+      (!ElementMethod->isTrivial() && !ElementMethod->hasBody()) ||
+      !S.owns(SM, ElementMethod->getLocation()) ||
+      ElementMethod->getParent()->getCanonicalDecl() !=
+          Array->ElementType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+      ElementMethod->getNumParams() != 1 ||
+      !Context.hasSameUnqualifiedType(
+          ElementMethod->getParamDecl(0)->getType()->getPointeeType(),
+          Array->ElementType))
+    return std::nullopt;
+  if (Selected)
+    *Selected = ElementMethod;
   return Array;
 }
 
