@@ -1168,13 +1168,14 @@ struct UtilityTupleLikeSource {
     return ArrayElements ? ArrayElementType : Elements[Index]->getType();
   }
 };
-// apply and tuple_cat may relax array element value admission. Their selected
+// apply and tuple_cat may consume owned array and tuple elements. Selected
 // callback or result construction must separately prove every owned element.
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const clang::SourceManager &SM,
                                clang::QualType Type,
                                const clang::ASTContext &Context,
-                               bool AllowNontrivialArrayElements = false);
+                               bool AllowNontrivialArrayElements = false,
+                               bool AllowNontrivialTupleElements = false);
 bool approvedUtilityTupleLikeGet(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Get,
     clang::QualType Parameter, const UtilityTupleLikeSource &Tuple,
