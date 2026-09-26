@@ -764,6 +764,7 @@ enum class UtilityOperation {
   AlgorithmCopyBackward,
   AlgorithmMoveBackward,
   AlgorithmFill,
+  AlgorithmOwnedFill,
   AlgorithmFillN,
   AlgorithmOwnedFillN,
   AlgorithmSwapRanges,
@@ -1084,6 +1085,11 @@ approvedUtilityOwnedFillN(const State &S, const clang::SourceManager &SM,
                           const clang::FunctionDecl *Function,
                           clang::QualType Type,
                           const clang::ASTContext &Context);
+const clang::CXXMethodDecl *
+approvedUtilityOwnedFill(const State &S, const clang::SourceManager &SM,
+                         const clang::FunctionDecl *Function,
+                         clang::QualType Type,
+                         const clang::ASTContext &Context);
 const clang::CXXMethodDecl *
 approvedUtilityArrayOwnedFill(const State &S, const clang::SourceManager &SM,
                               const clang::CXXMethodDecl *Method,

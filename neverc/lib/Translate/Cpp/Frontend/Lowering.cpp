@@ -4501,6 +4501,7 @@ class FunctionLowering {
       return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmFill:
+    case UtilityOperation::AlgorithmOwnedFill:
     case UtilityOperation::AlgorithmFillN:
     case UtilityOperation::AlgorithmOwnedFillN:
     case UtilityOperation::MemoryUninitializedFill:
@@ -4509,7 +4510,9 @@ class FunctionLowering {
           Operation == UtilityOperation::AlgorithmFillN ||
           Operation == UtilityOperation::AlgorithmOwnedFillN ||
           Operation == UtilityOperation::MemoryUninitializedFillN;
-      const bool OwnedFill = Operation == UtilityOperation::AlgorithmOwnedFillN;
+      const bool OwnedFill =
+          Operation == UtilityOperation::AlgorithmOwnedFill ||
+          Operation == UtilityOperation::AlgorithmOwnedFillN;
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
       const auto PointerQualType = CurrentRange.second;
@@ -4541,12 +4544,17 @@ class FunctionLowering {
                                    A.S, A.Sources, Call, Operation, A.Context)
                              : nullptr;
       const auto *Assignment =
-          OwnedFill ? approvedUtilityOwnedFillN(
-                          A.S, A.Sources, Call->getDirectCallee(),
-                          PointerQualType->getPointeeType(), A.Context)
-                    : nullptr;
+          Operation == UtilityOperation::AlgorithmOwnedFill
+              ? approvedUtilityOwnedFill(
+                    A.S, A.Sources, Call->getDirectCallee(),
+                    PointerQualType->getPointeeType(), A.Context)
+          : Operation == UtilityOperation::AlgorithmOwnedFillN
+              ? approvedUtilityOwnedFillN(
+                    A.S, A.Sources, Call->getDirectCallee(),
+                    PointerQualType->getPointeeType(), A.Context)
+              : nullptr;
       if (OwnedFill && !Assignment)
-        reject(L, "algorithm fill_n",
+        reject(L, "algorithm fill",
                "The selected source-owned copy assignment is unavailable.");
       const auto ElementType = MemoryConstruction ? Call->getArg(0)
                                                         ->getType()

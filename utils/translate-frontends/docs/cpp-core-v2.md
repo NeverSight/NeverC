@@ -1626,12 +1626,13 @@ their raw-pointer forms. Returned output positions retain the original
 iterator type, with the final pointer wrapped back into the pinned iterator
 record when needed. Empty counts and ranges, overlapping forward or backward
 copies, and iterator argument evaluation retain their existing behavior.
-Raw-pointer `std::fill_n` also admits source-owned standard-layout record
-elements with a selected supported copy assignment. The pinned public and
-internal fill bodies, count conversion, loop and selected assignment are
-checked before lowering. The value argument stays bound while each destination
-is assigned, including when it aliases an element of the range. Other record
-algorithm forms and nonwritable destinations remain rejected.
+Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
+record elements with a selected supported copy assignment. Their pinned public
+and internal fill bodies, pointer iterator category, count conversion, loop and
+selected assignment are checked before lowering. The value argument stays
+bound while each destination is assigned, including when it aliases an element
+of the range. Other record algorithm forms and nonwritable destinations remain
+rejected.
 
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,

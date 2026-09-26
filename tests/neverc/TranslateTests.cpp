@@ -32626,7 +32626,7 @@ extern "C" void probe() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ArrayAndAlgorithmFillNCallSelectedAssignment) {
+TEST_F(TranslateTest, CoreV2ArrayAndAlgorithmsFillCallSelectedAssignment) {
   const auto Source = tmpFile("owned-fill-n.cpp");
   const auto Output = tmpFile("owned-fill-n.nc");
   writeFile(Source, R"cpp(#include <algorithm>
@@ -32689,12 +32689,21 @@ int main() {
       values[1].value != 9 || values[2].value != 5)
     return 7;
   event_count = 0;
-  if (std::fill_n(values.data(), -2, select(outside)) != values.data() ||
-      reads != 1 || event_count != 0)
+  std::fill(values.data(), values.data() + 3, values[0]);
+  const int aliased_range[] = {109, 110, 110};
+  if (!matches(aliased_range, 3) || values[0].value != 10 ||
+      values[1].value != 11 || values[2].value != 11)
     return 8;
+  event_count = 0;
+  std::fill(values.data() + 1, values.data() + 1, select(outside));
+  if (reads != 1 || event_count != 0)
+    return 9;
+  if (std::fill_n(values.data(), -2, select(outside)) != values.data() ||
+      reads != 2 || event_count != 0)
+    return 10;
   std::array<Item, 0> empty{};
   empty.fill(select(outside));
-  return reads == 2 && event_count == 0 ? 0 : 9;
+  return reads == 3 && event_count == 0 ? 0 : 11;
 }
 )cpp");
   auto Result =
@@ -32710,24 +32719,35 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OwnedArrayFillRequiresPinnedAlgorithms) {
+TEST_F(TranslateTest, CoreV2OwnedFillRequiresPinnedAlgorithms) {
   struct Rejection {
     const char *Name;
     const char *Specialization;
+    const char *Invocation;
   };
   const Rejection Cases[] = {
-      {"public", "template<> Item* fill_n<Item*, size_t, Item>(Item* first, "
-                 "size_t count, const Item&) { return first + count; }"},
+      {"public",
+       "template<> Item* fill_n<Item*, size_t, Item>(Item* first, "
+       "size_t count, const Item&) { return first + count; }",
+       "row.fill(item);"},
       {"internal",
        "template<> Item* __fill_n<Item*, size_t, Item>(Item* first, size_t "
-       "count, const Item&) { return first + count; }"},
+       "count, const Item&) { return first + count; }",
+       "row.fill(item);"},
+      {"range-adapter",
+       "template<> void __fill<Item*, Item>(Item*, Item*, const Item&, "
+       "random_access_iterator_tag) {}",
+       "std::fill(row.data(), row.data() + 2, item);"},
+      {"iterator-traits",
+       "template<> struct iterator_traits<Item*> { using iterator_category "
+       "= random_access_iterator_tag; };",
+       "std::fill(row.data(), row.data() + 2, item);"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
-        tmpFile(std::string("owned-array-fill-") + Case.Name + ".cpp");
-    const auto Output =
-        tmpFile(std::string("owned-array-fill-") + Case.Name + ".nc");
+        tmpFile(std::string("owned-fill-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("owned-fill-") + Case.Name + ".nc");
     writeFile(Source, std::string(R"cpp(#include <algorithm>
 #include <array>
 struct Item {
@@ -32739,8 +32759,8 @@ namespace std { inline namespace __1 {
                           R"cpp(
 } }
 using Row = std::array<Item, 2>;
-void rejected(Row& row, const Item& item) { row.fill(item); }
-)cpp");
+void rejected(Row& row, const Item& item) { )cpp" +
+                          Case.Invocation + " }\n");
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0201");
