@@ -825,6 +825,24 @@ static bool supportedFunctionalByValue(const State &S,
          S.owns(SM, Definition->getLocation());
 }
 
+// Storing a function or member pointer only records its signature. The
+// selected copy/move expression is checked separately when a call is lowered.
+static bool supportedFunctionalStoredSignatureValue(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    QualType Type) {
+  if (supportedFunctionalByValue(S, SM, Context, Type))
+    return true;
+  if (Type.isNull() || Type->isReferenceType() || Type->isArrayType() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  return Definition && !Definition->isUnion() &&
+         !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
+         S.owns(SM, Definition->getLocation());
+}
+
 static bool supportedFunctionalResult(const State &S, const SourceManager &SM,
                                       const ASTContext &Context,
                                       QualType Type) {
@@ -919,7 +937,8 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
       if (Parameter->isReferenceType()
               ? !supportedFunctionalReferenceValue(S, SM, Context,
                                                    Parameter->getPointeeType())
-              : !supportedFunctionalByValue(S, SM, Context, Parameter))
+              : !supportedFunctionalStoredSignatureValue(S, SM, Context,
+                                                        Parameter))
         return std::nullopt;
   }
   const auto PointerType = Context.getPointerType(Referent);
@@ -8624,7 +8643,8 @@ static bool supportedFunctionalStoredMember(const State &S,
           !supportedFunctionalReferenceValue(S, SM, Context,
                                              ParameterReferent))
         return false;
-    } else if (!supportedFunctionalByValue(S, SM, Context, Type)) {
+    } else if (!supportedFunctionalStoredSignatureValue(S, SM, Context,
+                                                        Type)) {
       return false;
     }
   }

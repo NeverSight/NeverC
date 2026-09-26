@@ -2483,6 +2483,41 @@ int main() {
                      target=target, sdk=True)
         check_pair_array_apply(data)
 
+    array_owned_apply_adapter_copies_source = """\
+#include <array>
+#include <functional>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+  int combine(Item other) const { return value * 10 + other.value; }
+};
+int read(Item first, Item second) {
+  return first.value * 10 + second.value;
+}
+struct Reader {
+  int operator()(Item first, Item second) const {
+    return first.value * 10 + second.value;
+  }
+};
+int main() {
+  std::array<Item, 2> values{{Item(2), Item(3)}};
+  Reader reader;
+  auto function = std::ref(read);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Item::combine);
+  return std::apply(function, values) + std::apply(object, values) +
+         std::apply(&Item::combine, values) + std::apply(member, values);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-apply-adapter-copies-" + target,
+                     array_owned_apply_adapter_copies_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_pair_array_apply(data)
+
     for name, source in (
         ("tuple-cat-copy", """\
 #include <array>
