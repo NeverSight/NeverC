@@ -1000,11 +1000,15 @@ OPTION(prefix_3, "-objc_relative_method_lists", objc_relative_method_lists,
        Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Objective-C optimizations are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-objc_stubs_fast", objc_stubs_fast, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Objective-C optimizations are not supported", nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0,
+       "Emit 32-byte Objective-C message send stubs that load _objc_msgSend "
+       "from the GOT (default)",
+       nullptr, nullptr)
 OPTION(prefix_3, "-objc_stubs_small", objc_stubs_small, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Objective-C optimizations are not supported", nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0,
+       "Emit 12-byte Objective-C message send stubs that branch to "
+       "_objc_msgSend (arm64)",
+       nullptr, nullptr)
 OPTION(prefix_3, "-ObjC", ObjC, Flag, grp_libs, INVALID, nullptr, 0, DefaultVis,
        0,
        "Load the static archive members that define Objective-C classes or "

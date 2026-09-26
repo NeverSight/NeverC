@@ -1527,6 +1527,8 @@ template <class LP> void OutputWriter::run() {
 
   computeSymbolLayout();
   scanRelocations();
+  if (in.objcStubs)
+    in.objcStubs->setUp();
   checkNativeOptionConstraints();
   if (in.initOffsets->isNeeded())
     in.initOffsets->setUp();

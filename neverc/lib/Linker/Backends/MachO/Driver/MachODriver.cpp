@@ -785,6 +785,27 @@ bool compileBitcodeFiles() {
   return !compiled.empty();
 }
 
+// Defines each `_objc_msgSend$<selector>` that nothing else defines as a
+// stub that sends the selector through _objc_msgSend.
+void createObjCStubs() {
+  SmallVector<Symbol *> refs;
+  for (Symbol *sym : symtab->getSymbols())
+    if (isa<Undefined>(sym) &&
+        sym->getName().starts_with(ObjCStubsSection::symbolPrefix) &&
+        sym->getName().size() > ObjCStubsSection::symbolPrefix.size())
+      refs.push_back(sym);
+  if (refs.empty())
+    return;
+  in.objcMethNames = make<ObjCMethNameSection>();
+  in.objcSelRefs = make<ObjCSelRefsSection>();
+  in.objcStubs = make<ObjCStubsSection>();
+  in.objcStubs->msgSend =
+      symtab->addUndefined("_objc_msgSend", /*file=*/nullptr,
+                           /*isWeakRef=*/false);
+  for (Symbol *sym : refs)
+    in.objcStubs->addEntry(sym);
+}
+
 // Replaces common symbols with defined symbols residing in __common sections.
 // This function must be called after all symbol names are resolved (i.e. after
 // all InputFiles have been loaded.) As a result, later operations won't see
@@ -2151,6 +2172,15 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->textExec = args.hasArg(OPT_text_exec);
   config->noNewMain = args.hasArg(OPT_no_new_main);
   config->noCompactUnwind = args.hasArg(OPT_no_compact_unwind);
+  if (const Arg *arg =
+          args.getLastArg(OPT_objc_stubs_fast, OPT_objc_stubs_small)) {
+    config->objcStubsSmall = arg->getOption().matches(OPT_objc_stubs_small);
+    if (config->objcStubsSmall && config->arch() != AK_arm64) {
+      warn(arg->getAsString(args) + " is only available on arm64; using "
+                                    "-objc_stubs_fast");
+      config->objcStubsSmall = false;
+    }
+  }
   if (const Arg *arg = args.getLastArg(OPT_segment_order)) {
     if (config->outputType != MH_PRELOAD)
       error(arg->getAsString(args) + ": only valid with -preload");
@@ -2625,6 +2655,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     if (didCompileBitcodeFiles)
       handleExplicitExports();
     replaceCommonSymbols();
+    createObjCStubs();
     // -reexported_symbols_list re-exports these dependent dylib symbols.
     if (!config->reexportedSymbols.empty())
       for (Symbol *sym : symtab->getSymbols())

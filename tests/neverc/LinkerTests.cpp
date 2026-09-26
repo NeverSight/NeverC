@@ -3330,6 +3330,83 @@ TEST_F(LinkerTest, NativeMachOImageKinds) {
   EXPECT_FALSE(hasUnwindInfo());
 }
 
+TEST_F(LinkerTest, NativeMachOObjCStubs) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_objc_stubs_dir");
+  fs::create_directories(dir);
+  const fs::path runtimeSource = dir / "objc.c";
+  const fs::path runtime = dir / "libobjc.dylib";
+  const fs::path callerSource = dir / "caller.s";
+  const fs::path caller = dir / "caller.o";
+  const fs::path image = dir / "caller";
+  writeFile(runtimeSource,
+            "void *objc_msgSend(void *self, void *sel) { return sel; }\n");
+  writeFile(callerSource, ".text\n"
+                          ".globl _main\n"
+                          ".p2align 2\n"
+                          "_main:\n"
+                          "  stp x29, x30, [sp, #-16]!\n"
+                          "  bl \"_objc_msgSend$length\"\n"
+                          "  bl \"_objc_msgSend$count\"\n"
+                          "  ldp x29, x30, [sp], #16\n"
+                          "  ret\n");
+  ASSERT_EQ(ncc({target, "-nostdlib", "-dynamiclib", runtimeSource.string(),
+                 "-o", runtime.string()})
+                .exitCode,
+            0);
+  CmdResult assemble =
+      ncc({target, "-c", callerSource.string(), "-o", caller.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  std::string bytes;
+  auto sections = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", caller.string(),
+                                     runtime.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    CmdResult link = ncc(args);
+    EXPECT_EQ(link.exitCode, 0) << link.err;
+    EXPECT_FALSE(link.stderrContains("not supported")) << link.err;
+    std::map<std::string, std::string> contents;
+    bytes = readFile(image);
+    auto macho = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, image.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    if (!macho) {
+      ADD_FAILURE() << llvm::toString(macho.takeError()).str().str();
+      return contents;
+    }
+    for (const auto &section : (*macho)->sections())
+      contents[llvm::cantFail(section.getName()).str()] =
+          llvm::cantFail(section.getContents()).str();
+    return contents;
+  };
+
+  // Each selector gets its name, a reference to it and a stub.
+  std::map<std::string, std::string> fast = sections({});
+  ASSERT_TRUE(fast.count("__objc_stubs"));
+  EXPECT_EQ(fast["__objc_stubs"].size(), 2u * 32u);
+  EXPECT_EQ(fast["__objc_selrefs"].size(), 2u * 8u);
+  EXPECT_NE(fast["__objc_methname"].find(std::string("length\0", 7)),
+            std::string::npos);
+  EXPECT_NE(fast["__objc_methname"].find(std::string("count\0", 6)),
+            std::string::npos);
+  EXPECT_TRUE(fast.count("__got"));
+
+  std::map<std::string, std::string> small =
+      sections({"-Wl,-objc_stubs_small"});
+  EXPECT_EQ(small["__objc_stubs"].size(), 2u * 12u);
+
+  // _objc_msgSend itself must come from somewhere.
+  CmdResult missing =
+      ncc({target, "-nostdlib", caller.string(), "-o", image.string()});
+  EXPECT_NE(missing.exitCode, 0);
+  EXPECT_TRUE(missing.stderrContains("undefined symbol: objc_msgSend"))
+      << missing.err;
+  EXPECT_TRUE(missing.stderrContains("Objective-C message send stubs"))
+      << missing.err;
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");

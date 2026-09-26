@@ -277,6 +277,8 @@ struct Configuration {
   bool keepDwarfUnwind = false;
   bool noNewMain = false;
   bool noCompactUnwind = false;
+  // -objc_stubs_small: 12-byte Objective-C stubs instead of 32-byte ones.
+  bool objcStubsSmall = false;
   // -segment_order and -section_order for -preload images.
   std::vector<llvm::StringRef> segmentOrder;
   llvm::DenseMap<llvm::StringRef, std::vector<llvm::StringRef>> sectionOrder;

@@ -745,6 +745,59 @@ private:
 void writeChainedRebase(uint8_t *buf, uint64_t targetVA);
 void writeChainedFixup(uint8_t *buf, const Symbol *sym, int64_t addend);
 
+// Stubs for `_objc_msgSend$<selector>` references: each loads its selector
+// reference and jumps to _objc_msgSend. They come with the selector names
+// and the selector references that point at them.
+class ObjCMethNameSection final : public SyntheticSection {
+public:
+  ObjCMethNameSection();
+  uint64_t getSize() const override { return size; }
+  bool isNeeded() const override { return !names.empty(); }
+  // Returns the offset of the added name.
+  uint64_t addName(StringRef name);
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  std::vector<StringRef> names;
+  uint64_t size = 0;
+};
+
+class ObjCSelRefsSection final : public SyntheticSection {
+public:
+  ObjCSelRefsSection();
+  uint64_t getSize() const override { return 8 * nameOffsets.size(); }
+  bool isNeeded() const override { return !nameOffsets.empty(); }
+  // Returns the offset of a new reference to the name at nameOffset.
+  uint64_t addRef(uint64_t nameOffset);
+  // Registers the rebases of the references once they are all added.
+  void setUp();
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  std::vector<uint64_t> nameOffsets;
+};
+
+class ObjCStubsSection final : public SyntheticSection {
+public:
+  ObjCStubsSection();
+  uint64_t getSize() const override;
+  bool isNeeded() const override { return !selRefOffsets.empty(); }
+  // Defines sym, an `_objc_msgSend$<selector>` reference, as a stub.
+  void addEntry(Symbol *sym);
+  // Makes _objc_msgSend reachable from the stubs.
+  void setUp();
+  // Branches can resolve to the stubs once they have an address.
+  void finalize() override { isec->isFinal = true; }
+  void writeTo(uint8_t *buf) const override;
+
+  static constexpr llvm::StringLiteral symbolPrefix = "_objc_msgSend$";
+  Symbol *msgSend = nullptr;
+
+private:
+  uint64_t stubSize() const;
+  std::vector<uint64_t> selRefOffsets;
+};
+
 struct InStruct {
   const uint8_t *bufferStart = nullptr;
   MachHeaderSection *header = nullptr;
@@ -764,6 +817,9 @@ struct InStruct {
   ConcatInputSection *imageLoaderCache = nullptr;
   InitOffsetsSection *initOffsets = nullptr;
   ChainedFixupsSection *chainedFixups = nullptr;
+  ObjCMethNameSection *objcMethNames = nullptr;
+  ObjCSelRefsSection *objcSelRefs = nullptr;
+  ObjCStubsSection *objcStubs = nullptr;
 };
 
 InStruct &machoIn();

@@ -295,6 +295,8 @@ void markLive() {
     marker->addSym(config->entry);
   if (config->initSymbol)
     marker->addSym(config->initSymbol);
+  if (in.objcStubs)
+    marker->addSym(in.objcStubs->msgSend);
   ArrayRef<Symbol *> symbols = symtab->getSymbols();
   bool hasExportedSymbols = !config->exportedSymbols.empty();
   bool externsAreRoots =

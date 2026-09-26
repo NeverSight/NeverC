@@ -7,6 +7,7 @@
 #include "Linker/MachO/OutputSegment.h"
 #include "Linker/MachO/SymbolTable.h"
 #include "Linker/MachO/Symbols.h"
+#include "Linker/MachO/Targets/ARM64Common.h"
 
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/ContentHashWorkers.h"
@@ -2163,3 +2164,136 @@ void ChainedFixupsSection::finalizeContents() {
 }
 
 template SymtabSection *macho::makeSymtabSection<LP64>(StringTableSection &);
+
+// ===----------------------------------------------------------------------===
+// Objective-C message send stubs
+// ===----------------------------------------------------------------------===
+
+ObjCMethNameSection::ObjCMethNameSection()
+    : SyntheticSection(segment_names::text, "__objc_methname") {
+  flags = S_CSTRING_LITERALS;
+  align = 1;
+}
+
+uint64_t ObjCMethNameSection::addName(StringRef name) {
+  uint64_t offset = size;
+  names.push_back(name);
+  size += name.size() + 1;
+  return offset;
+}
+
+void ObjCMethNameSection::writeTo(uint8_t *buf) const {
+  for (StringRef name : names) {
+    memcpy(buf, name.data(), name.size());
+    buf += name.size() + 1;
+  }
+}
+
+ObjCSelRefsSection::ObjCSelRefsSection()
+    : SyntheticSection(segment_names::data, "__objc_selrefs") {
+  flags = S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP;
+  align = 8;
+}
+
+uint64_t ObjCSelRefsSection::addRef(uint64_t nameOffset) {
+  nameOffsets.push_back(nameOffset);
+  return 8 * (nameOffsets.size() - 1);
+}
+
+void ObjCSelRefsSection::setUp() {
+  for (size_t i = 0; i < nameOffsets.size(); ++i) {
+    if (config->emitChainedFixups)
+      in.chainedFixups->addRebase(isec, 8 * i);
+    else
+      in.rebase->addEntry(isec, 8 * i);
+  }
+}
+
+void ObjCSelRefsSection::writeTo(uint8_t *buf) const {
+  for (size_t i = 0; i < nameOffsets.size(); ++i) {
+    const uint64_t va = in.objcMethNames->addr + nameOffsets[i];
+    if (config->emitChainedFixups)
+      writeChainedRebase(buf + 8 * i, va);
+    else
+      write64le(buf + 8 * i, va);
+  }
+}
+
+ObjCStubsSection::ObjCStubsSection()
+    : SyntheticSection(segment_names::text, "__objc_stubs") {
+  flags = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+  align = 32;
+}
+
+// arm64 fast stubs load _objc_msgSend from its GOT slot and small ones
+// branch to it; x86_64 stubs always jump through the GOT slot.
+uint64_t ObjCStubsSection::stubSize() const {
+  if (config->arch() != AK_arm64)
+    return 16;
+  return config->objcStubsSmall ? 12 : 32;
+}
+
+uint64_t ObjCStubsSection::getSize() const {
+  return stubSize() * selRefOffsets.size();
+}
+
+void ObjCStubsSection::addEntry(Symbol *sym) {
+  StringRef selector = sym->getName().drop_front(symbolPrefix.size());
+  const uint64_t offset = getSize();
+  selRefOffsets.push_back(
+      in.objcSelRefs->addRef(in.objcMethNames->addName(selector)));
+  symtab->addSynthetic(sym->getName(), isec, offset,
+                       /*isPrivateExtern=*/true, /*includeInSymtab=*/true,
+                       /*referencedDynamically=*/false);
+}
+
+void ObjCStubsSection::setUp() {
+  if (const auto *undefined = dyn_cast<Undefined>(msgSend)) {
+    treatUndefinedSymbol(*undefined, "Objective-C message send stubs");
+    if (isa<Undefined>(msgSend))
+      return;
+  }
+  if (config->arch() == AK_arm64 && config->objcStubsSmall) {
+    if (needsBinding(msgSend))
+      in.stubs->addEntry(msgSend);
+  } else {
+    in.got->addEntry(msgSend);
+  }
+  in.objcSelRefs->setUp();
+}
+
+void ObjCStubsSection::writeTo(uint8_t *buf) const {
+  const uint64_t size = stubSize();
+  for (size_t i = 0; i < selRefOffsets.size(); ++i) {
+    uint8_t *stub = buf + size * i;
+    const uint64_t pc = addr + size * i;
+    const uint64_t selRef = in.objcSelRefs->addr + selRefOffsets[i];
+    if (config->arch() != AK_arm64) {
+      // mov rsi, [rip + selref]; jmp [rip + _objc_msgSend@GOT]
+      static const uint8_t code[] = {0x48, 0x8b, 0x35, 0, 0, 0, 0,
+                                     0xff, 0x25, 0,    0, 0, 0};
+      memset(stub, 0xcc, size);
+      memcpy(stub, code, sizeof(code));
+      write32le(stub + 3, selRef - (pc + 7));
+      write32le(stub + 9, msgSend->getGotVA() - (pc + 13));
+      continue;
+    }
+    auto *words = reinterpret_cast<uint32_t *>(stub);
+    SymbolDiagnostic d = {msgSend, "Objective-C stub"};
+    // adrp x1, selref@PAGE; ldr x1, [x1, selref@PAGEOFF]
+    encodePage21(&words[0], d, 0x90000001, pageBits(selRef) - pageBits(pc));
+    encodePageOff12(&words[1], d, 0xf9400021, selRef);
+    if (config->objcStubsSmall) {
+      // b _objc_msgSend
+      const int64_t delta = int64_t(msgSend->getVA()) - int64_t(pc + 8);
+      write32le(&words[2], 0x14000000 | ((delta >> 2) & 0x03ffffff));
+      continue;
+    }
+    // adrp x16, _objc_msgSend@GOTPAGE; ldr x16, [x16, @GOTPAGEOFF]; br x16
+    const uint64_t got = msgSend->getGotVA();
+    encodePage21(&words[2], d, 0x90000010, pageBits(got) - pageBits(pc + 8));
+    encodePageOff12(&words[3], d, 0xf9400210, got);
+    words[4] = 0xd61f0200;
+    words[5] = words[6] = words[7] = 0xd4200020; // brk #1
+  }
+}
