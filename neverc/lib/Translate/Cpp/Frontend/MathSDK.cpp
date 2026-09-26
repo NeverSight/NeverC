@@ -3070,6 +3070,110 @@ approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
   return Copies;
 }
 
+static std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityPairSelectedWholeCopies(const State &S, const SourceManager &SM,
+                                       const CXXConstructExpr *Construction,
+                                       const UtilityPairRecord &Pair,
+                                       const ASTContext &Context) {
+  const auto *Constructor =
+      Construction ? dyn_cast_or_null<CXXConstructorDecl>(
+                         Construction->getConstructor()->getDefinition())
+                   : nullptr;
+  const auto *Body =
+      Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
+                  : nullptr;
+  const auto *SourceParameter = Constructor && Constructor->getNumParams() == 1
+                                    ? Constructor->getParamDecl(0)
+                                    : nullptr;
+  const auto Parameter =
+      SourceParameter ? SourceParameter->getType() : QualType();
+  if (!Constructor || !Body || !Body->body_empty() || !SourceParameter ||
+      Parameter.isNull() || !Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified() ||
+      !Constructor->isCopyOrMoveConstructor() || !Constructor->isDefaulted() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Pair.Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != 1 ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                      Context.getRecordType(Pair.Record)) ||
+      !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                      Context.getRecordType(Pair.Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return std::nullopt;
+  const bool Move = Constructor->isMoveConstructor();
+  if (Parameter->isRValueReferenceType() != Move ||
+      (Move && Parameter->getPointeeType().isConstQualified()))
+    return std::nullopt;
+
+  const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+  const CXXCtorInitializer *Initializers[2] = {nullptr, nullptr};
+  for (const auto *Initializer : Constructor->inits()) {
+    if (!Initializer->isMemberInitializer())
+      return std::nullopt;
+    const auto *Member = Initializer->getMember();
+    const unsigned Index = Member == Pair.First    ? 0
+                           : Member == Pair.Second ? 1
+                                                   : 2;
+    if (Index == 2 || Initializers[Index])
+      return std::nullopt;
+    Initializers[Index] = Initializer;
+  }
+  if (!Initializers[0] || !Initializers[1])
+    return std::nullopt;
+
+  std::vector<const CXXConstructExpr *> Copies(2, nullptr);
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Element = Fields[I]->getType();
+    if (Element->isReferenceType() || utilityPairValue(S, SM, Context, Element))
+      continue;
+    if (!utilityPairSourceOwnedValue(S, SM, Context, Element))
+      return std::nullopt;
+    const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
+        functionalInvokeStrippedExpression(Initializers[I]->getInit()));
+    const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
+    const auto *Source =
+        Copy && Copy->getNumArgs() == 1
+            ? dyn_cast_or_null<MemberExpr>(
+                  functionalInvokeStrippedExpression(Copy->getArg(0)))
+            : nullptr;
+    const auto *SelectedParameter = Selected && Selected->getNumParams() == 1
+                                        ? Selected->getParamDecl(0)
+                                        : nullptr;
+    const auto SelectedType =
+        SelectedParameter ? SelectedParameter->getType() : QualType();
+    const Expr *Base =
+        Source ? functionalInvokeStrippedExpression(Source->getBase())
+               : nullptr;
+    if (Move) {
+      const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Base);
+      if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue())
+        return std::nullopt;
+      Base = functionalInvokeStrippedExpression(Cast->getSubExpr());
+    }
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Base);
+    if (!Copy || !Selected || !Source || !SelectedParameter ||
+        SelectedType.isNull() || !SelectedType->isReferenceType() ||
+        !Selected->isCopyOrMoveConstructor() ||
+        !supportedConstructor(Selected) ||
+        (!Selected->isTrivial() && !Selected->hasBody()) ||
+        Selected->getParent()->getCanonicalDecl() !=
+            Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
+        !S.owns(SM, Selected->getLocation()) ||
+        !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
+        !Context.hasSameUnqualifiedType(Source->getType(), Element) ||
+        !Context.hasSameType(SelectedType->getPointeeType(),
+                             Source->getType()) ||
+        Source->getMemberDecl() != Fields[I] || Source->isArrow() ||
+        Source->isXValue() != Move || !Reference ||
+        Reference->getDecl() != SourceParameter)
+      return std::nullopt;
+    Copies[I] = Copy;
+  }
+  return Copies;
+}
+
 std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context,
@@ -3110,7 +3214,8 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
       (!ReferencePair && !MixedReferencePair && !OwnedElements &&
        (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
         !utilityPairValue(S, SM, Context, Pair->Second->getType()))) ||
-      (OwnedElements && Construction->getNumArgs() != 2))
+      (OwnedElements && Construction->getNumArgs() != 1 &&
+       Construction->getNumArgs() != 2))
     return std::nullopt;
   if (!OwnedElements && !Construction->getNumArgs() &&
       Constructor->isDefaultConstructor() && !ReferencePair &&
@@ -3120,6 +3225,16 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
       Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
       Constructor->isTrivial())
     return UtilityPairConstruction::CopyOrMove;
+  if (OwnedElements && Construction->getNumArgs() == 1 &&
+      Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted()) {
+    auto Copies = approvedUtilityPairSelectedWholeCopies(S, SM, Construction,
+                                                         *Pair, Context);
+    if (!Copies)
+      return std::nullopt;
+    if (SelectedCopies)
+      *SelectedCopies = std::move(*Copies);
+    return UtilityPairConstruction::OwnedCopyOrMove;
+  }
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto SourcePair =
       Construction->getNumArgs() == 1

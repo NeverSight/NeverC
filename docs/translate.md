@@ -134,8 +134,11 @@ Direct element-wise pair construction and `std::make_pair` also admit
 source-owned nontrivial standard-layout record fields when the selected pinned
 pair initializer constructs each such field through its source-owned copy or
 move constructor. The factory's forwarding chain is authenticated. Pair
-fields are destroyed in reverse order; whole-pair copy/move construction,
-pair assignment and swap involving these fields remain outside this boundary.
+fields are destroyed in reverse order. Same-type whole-pair copy/move also
+authenticates the defaulted pair constructor's member initializers and selected
+source-owned element constructors; reference fields keep their bindings. Pair
+converting construction, assignment and swap involving these fields remain
+outside this boundary.
 Reference-valued pairs additionally support exact compatible direct
 construction, same-type copy/move construction and index- or unique-type
 `get`; same-type assignment writes through their stored bindings without

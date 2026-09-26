@@ -1071,6 +1071,7 @@ enum class UtilityPairConstruction {
   Default,
   Elements,
   CopyOrMove,
+  OwnedCopyOrMove,
   Converting,
 };
 std::optional<UtilityPairRecord>

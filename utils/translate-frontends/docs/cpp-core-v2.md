@@ -201,9 +201,11 @@ libc++ member initializer identifies that field's source-owned copy or move
 constructor. The factory must forward each argument into its selected pair
 constructor. Either field may hold the record, including a pair whose other
 field is a `ref`/`cref` referent. Fields are constructed in declaration order
-and destroyed in reverse order. Whole-pair copy/move and converting
-construction, pair assignment and swap involving these fields remain outside
-this boundary.
+and destroyed in reverse order. Same-type whole-pair copy/move construction
+also proves the defaulted pair constructor's field sources and exact selected
+element copy/move constructors. A reference field keeps its binding across
+whole-pair copies and moves. Converting construction, pair assignment and swap
+involving these owned fields remain outside this boundary.
 
 Authenticated `std::reference_wrapper` values are admitted in ordinary
 and mixed pair value fields, including nested pairs. Direct, same-type

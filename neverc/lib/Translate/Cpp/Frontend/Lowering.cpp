@@ -18186,6 +18186,29 @@ class FunctionLowering {
         assign(std::move(Place), std::move(Source), L);
         return;
       }
+      case UtilityPairConstruction::OwnedCopyOrMove: {
+        if (PairCopies.size() != 2)
+          reject(L, "utility pair construction",
+                 "The selected pair member copies are unavailable.");
+        auto SourceAddress = snapshot(
+            address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+        auto Source = dereference(std::move(SourceAddress), L);
+        for (unsigned I = 0; I != 2; ++I) {
+          const auto *Field = I ? Pair->Second : Pair->First;
+          auto Value = fieldStorage(json::Object(Source), Field, L);
+          if (const auto *Copy = PairCopies[I]) {
+            const auto *Selected = Copy->getConstructor();
+            const auto Referent =
+                Selected->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                Member(Field), Field->getType(), Selected,
+                snapshot(address(std::move(Value), Referent, L), L), L);
+          } else {
+            assign(Member(Field), std::move(Value), L);
+          }
+        }
+        return;
+      }
       case UtilityPairConstruction::Converting: {
         auto SourcePair = approvedUtilityPairRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),

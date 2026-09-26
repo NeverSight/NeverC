@@ -30460,6 +30460,99 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OwnedPairWholeCopyMoveAndBindings) {
+  const auto Source = tmpFile("owned-pair-whole-copy-move.cpp");
+  const auto Output = tmpFile("owned-pair-whole-copy-move.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+int order = 0;
+bool recording = false;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept {
+    if (recording && value > 0) order = order * 10 + value;
+    ++deaths;
+    --alive;
+  }
+};
+int main() {
+  Item input(2);
+  const Item fixed(3);
+  int target = 7;
+  {
+    auto base = std::make_pair(input, 5);
+    auto copied = base;
+    auto moved = std::move(base);
+    const auto constant = std::make_pair(fixed, 6);
+    auto copied_const = std::move(constant);
+    auto mixed = std::make_pair(std::ref(target), fixed);
+    auto mixed_copy = mixed;
+    auto mixed_move = std::move(mixed);
+    auto mixed_second = std::make_pair(fixed, std::ref(target));
+    auto mixed_second_copy = mixed_second;
+    auto mixed_second_move = std::move(mixed_second);
+    auto both = std::make_pair(input, fixed);
+    auto both_copy = both;
+    auto both_move = std::move(both);
+    if (copies != 12 || moves != 5 || deaths != 0 || alive != 19 ||
+        base.first.value != -1 || copied.first.value != 2 ||
+        moved.first.value != 2 || copied_const.first.value != 3 ||
+        mixed.second.value != -1 || mixed_copy.second.value != 3 ||
+        mixed_move.second.value != 3 ||
+        mixed_second.first.value != -1 ||
+        mixed_second_copy.first.value != 3 ||
+        mixed_second_move.first.value != 3 ||
+        both.first.value != -1 || both.second.value != -1 ||
+        both_copy.first.value != 2 || both_copy.second.value != 3 ||
+        both_move.first.value != 2 || both_move.second.value != 3)
+      return 1;
+    mixed_move.first = 11;
+    if (target != 11 || mixed_copy.first != 11 ||
+        mixed_second_copy.second != 11 || mixed_second_move.second != 11)
+      return 2;
+    {
+      auto ordered = both_copy;
+      if (copies != 14 || moves != 5 || deaths != 0 || alive != 21)
+        return 3;
+      recording = true;
+    }
+    recording = false;
+    if (order != 32 || deaths != 2 || alive != 19) return 4;
+  }
+  return copies == 14 && moves == 5 && deaths == 19 && alive == 2 &&
+                 target == 11
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("owned-pair-whole-copy-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
