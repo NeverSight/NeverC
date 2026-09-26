@@ -2398,15 +2398,97 @@ int main() {
                      target=target, sdk=True)
         check_pair_array_apply(data)
 
+    array_owned_apply_references_source = """\
+#include <array>
+#include <tuple>
+int constructions;
+int copies;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  Item(const Item& other) noexcept : value(other.value) { ++copies; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+int mutate(Item& first, const Item& second) {
+  first.value += second.value;
+  return first.value;
+}
+int inspect(const Item& first, const Item& second) {
+  return first.value + second.value;
+}
+int move_refs(Item&& first, Item&& second) {
+  first.value += second.value;
+  return first.value;
+}
+struct Reader {
+  int operator()(const Item& first, const Item& second) const {
+    return first.value + second.value;
+  }
+};
+int main() {
+  {
+    std::array<Item, 2> values{{Item(2), Item(3)}};
+    if (std::apply(mutate, values) != 5 || copies != 0)
+      return 1;
+    const auto& view = values;
+    if (std::apply(inspect, view) != 8 ||
+        std::apply(Reader{}, view) != 8 || copies != 0)
+      return 2;
+    if (std::apply(move_refs, static_cast<std::array<Item, 2>&&>(values)) != 8 ||
+        copies != 0)
+      return 3;
+  }
+  return constructions == 2 && copies == 0 && destructions == 2 &&
+                 order == 38
+             ? 0
+             : 4;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-apply-references-" + target,
+                     array_owned_apply_references_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
+
+    for name, source in (
+        ("apply-by-value", """\
+#include <array>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item item) { return item.value; }
+int main() { std::array<Item, 1> values{{Item(7)}}; return std::apply(read, values); }
+"""),
+        ("tuple-cat-copy", """\
+#include <array>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int main() {
+  std::array<Item, 1> values{{Item(7)}};
+  auto copied = std::tuple_cat(values);
+  return std::get<0>(copied).value;
+}
+"""),
+    ):
+        check("v2-array-owned-apply-reject-" + name, source, "TR0203",
+              profile="cpp-core-v2", sdk=True)
+
     for name, source, code in (
 
         ('zero-volatile-element',
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint empty() { return 1; }\nint main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }\n',
          'TR0201'),
-
-        ('nonzero-nontrivial-element',
-         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() noexcept {} };\nint read(const Item& item) { return item.value; }\nint main() { std::array<Item, 1> array{{{7}}}; return std::apply(read, array); }\n',
-         'TR0203'),
 
         ('zero-hidden-element-source',
          '#include <array>\n#include <tuple>\nstruct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };\nint empty() { return 0; }\nint main() { std::array<Item, 0> array{}; return std::apply(empty, array); }\n',

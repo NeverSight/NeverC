@@ -29785,6 +29785,116 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayNontrivialApplyReferencesRun) {
+  const auto Source = tmpFile("array-owned-apply-references.cpp");
+  const auto Output = tmpFile("array-owned-apply-references.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+int constructions;
+int copies;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  Item(const Item& other) noexcept : value(other.value) { ++copies; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+int mutate(Item& first, const Item& second) {
+  first.value += second.value;
+  return first.value;
+}
+int inspect(const Item& first, const Item& second) {
+  return first.value + second.value;
+}
+int move_refs(Item&& first, Item&& second) {
+  first.value += second.value;
+  return first.value;
+}
+struct Reader {
+  int operator()(const Item& first, const Item& second) const {
+    return first.value + second.value;
+  }
+};
+int main() {
+  {
+    std::array<Item, 2> values{{Item(2), Item(3)}};
+    if (std::apply(mutate, values) != 5 || copies != 0)
+      return 1;
+    const auto& view = values;
+    if (std::apply(inspect, view) != 8 ||
+        std::apply(Reader{}, view) != 8 || copies != 0)
+      return 2;
+    if (std::apply(move_refs, static_cast<std::array<Item, 2>&&>(values)) != 8 ||
+        copies != 0)
+      return 3;
+  }
+  return constructions == 2 && copies == 0 && destructions == 2 &&
+                 order == 38
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-apply-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedTupleLikeCopiesRemainUnsupported) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"apply-by-value", R"cpp(#include <array>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item item) { return item.value; }
+int main() { std::array<Item, 1> values{{Item(7)}}; return std::apply(read, values); }
+)cpp"},
+      {"tuple-cat-copy", R"cpp(#include <array>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int main() {
+  std::array<Item, 1> values{{Item(7)}};
+  auto copied = std::tuple_cat(values);
+  return std::get<0>(copied).value;
+}
+)cpp"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("array-owned-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("array-owned-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -29800,13 +29910,6 @@ TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
 int empty() { return 1; }
 int main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }
 )cpp", "TR0201"},
-
-      {"nonzero-nontrivial-element", R"cpp(#include <array>
-#include <tuple>
-struct Item { int value; ~Item() noexcept {} };
-int read(const Item& item) { return item.value; }
-int main() { std::array<Item, 1> array{{{7}}}; return std::apply(read, array); }
-)cpp", "TR0203"},
 
       {"zero-hidden-element-source", R"cpp(#include <array>
 #include <tuple>

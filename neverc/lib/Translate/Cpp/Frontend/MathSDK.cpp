@@ -8289,7 +8289,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
 
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
-                               QualType Type, const ASTContext &Context) {
+                               QualType Type, const ASTContext &Context,
+                               bool AllowNontrivialArrayElements) {
   if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default)
     return std::nullopt;
@@ -8331,9 +8332,9 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
     return UtilityTupleLikeSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
   }
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context)) {
-    // Empty arrays contribute no element to apply or tuple_cat. Their
-    // authenticated layout and original element source are still required.
-    if (Array->Size &&
+    // apply can forward source-owned elements by reference, while tuple_cat
+    // constructs independent values. Both still require the pinned layout.
+    if (Array->Size && !AllowNontrivialArrayElements &&
         !utilityTupleValue(S, SM, Context, Array->ElementType))
       return std::nullopt;
     return UtilityTupleLikeSource{
@@ -10066,7 +10067,7 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
            : nullptr;
   auto Tuple = Call && Call->getNumArgs() == 2
                    ? approvedUtilityTupleLikeSource(
-                         S, SM, Call->getArg(1)->getType(), Context)
+                         S, SM, Call->getArg(1)->getType(), Context, true)
                    : std::nullopt;
   if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
       !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
@@ -21895,7 +21896,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
     const auto Tuple = approvedUtilityTupleLikeSource(
-        S, SM, Call->getArg(1)->getType(), Context);
+        S, SM, Call->getArg(1)->getType(), Context, true);
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()

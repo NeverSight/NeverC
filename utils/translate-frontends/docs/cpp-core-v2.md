@@ -525,6 +525,13 @@ Mutable and const lvalues, rvalues, zero-length arrays and nested arrays retain
 the documented element and callback restrictions; nested SDK array values may
 be passed by admitted reference forms, while by-value SDK callback parameters
 and results remain excluded.
+For nonempty arrays of source-owned nontrivial standard-layout records,
+`std::apply` also forwards elements to compatible lvalue, const-lvalue and
+rvalue reference callback parameters. Named functions and source-owned function
+objects retain element identity and perform no implicit element copy. The
+selected `get`, callback signature and array lifetime remain checked.
+By-value callbacks and nonempty `tuple_cat` copies of these elements remain
+outside this boundary.
 For zero-length arrays, `std::apply` passes no elements and `std::tuple_cat`
 contributes no elements. A source-owned nontrivial standard-layout record
 element is admitted in these empty packs because neither operation copies,

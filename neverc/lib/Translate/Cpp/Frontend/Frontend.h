@@ -1162,10 +1162,13 @@ struct UtilityTupleLikeSource {
     return ArrayElements ? ArrayElementType : Elements[Index]->getType();
   }
 };
+// Only apply may relax array element value admission; its selected callback
+// must separately prove every element argument.
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const clang::SourceManager &SM,
                                clang::QualType Type,
-                               const clang::ASTContext &Context);
+                               const clang::ASTContext &Context,
+                               bool AllowNontrivialArrayElements = false);
 bool approvedUtilityTupleLikeGet(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Get,
     clang::QualType Parameter, const UtilityTupleLikeSource &Tuple,
