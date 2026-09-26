@@ -3327,12 +3327,11 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                    TSK_ImplicitInstantiation) ||
       Specialization->getNumBases() || Specialization->getNumVBases() ||
       Specialization->isDynamicClass() ||
-      !Specialization->hasTrivialCopyConstructor() ||
-      !Specialization->hasTrivialDestructor() ||
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
   unsigned ReferenceElements = 0;
+  bool OwnedElement = false;
   for (QualType Type : *Types) {
     if (Type->isReferenceType()) {
       ++ReferenceElements;
@@ -3340,13 +3339,26 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
           !supportedFunctionalReferenceValue(S, SM, Context,
                                              Type->getPointeeType()))
         return std::nullopt;
-    } else if (RequireReferenceElements ||
-               !utilityTupleValue(S, SM, Context, Type, Depth + 1) ||
-               Type.isVolatileQualified() || Type.isRestrictQualified() ||
-               Type.getAddressSpace() != LangAS::Default) {
-      return std::nullopt;
+    } else {
+      if (RequireReferenceElements || Type.isVolatileQualified() ||
+          Type.isRestrictQualified() ||
+          Type.getAddressSpace() != LangAS::Default)
+        return std::nullopt;
+      if (!utilityTupleValue(S, SM, Context, Type, Depth + 1)) {
+        const auto *Element = Type->getAsCXXRecordDecl();
+        Element = Element ? Element->getDefinition() : nullptr;
+        if (!Element || Type.isConstQualified() ||
+            !S.owns(SM, Element->getLocation()) ||
+            !utilityArrayStorableValue(S, SM, Context, Type))
+          return std::nullopt;
+        OwnedElement = true;
+      }
     }
   }
+  if (!OwnedElement &&
+      (!Specialization->hasTrivialCopyConstructor() ||
+       !Specialization->hasTrivialDestructor()))
+    return std::nullopt;
   if (RequireMixedReferenceElements &&
       (!ReferenceElements || ReferenceElements == Types->size()))
     return std::nullopt;
@@ -8315,19 +8327,13 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
   auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context);
-  bool ReferenceTuple = false;
-  if (!Tuple) {
+  if (!Tuple)
     Tuple = approvedUtilityReferenceTupleRecord(S, SM, Record, Context);
-    ReferenceTuple = Tuple.has_value();
-  }
-  bool MixedReferenceTuple = false;
-  if (!Tuple) {
+  if (!Tuple)
     Tuple = approvedUtilityMixedReferenceTupleRecord(S, SM, Record, Context);
-    MixedReferenceTuple = Tuple.has_value();
-  }
   if (Tuple) {
     for (const auto *Element : Tuple->Elements)
-      if (!ReferenceTuple && !MixedReferenceTuple &&
+      if (!Element->getType()->isReferenceType() &&
           !utilityTupleValue(S, SM, Context, Element->getType()))
         return std::nullopt;
     return UtilityTupleLikeSource{Tuple->Elements, nullptr, {}, 0};
@@ -8361,6 +8367,12 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
   }
   return std::nullopt;
 }
+
+static std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityTupleCatSelectedCopies(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    const CallExpr *Call, const UtilityTupleRecord &Result,
+    llvm::ArrayRef<UtilityTupleLikeSource> Sources, const ASTContext &Context);
 
 std::optional<UtilityTupleCatCall>
 approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
@@ -8419,7 +8431,7 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
                              Call->getArg(I)->getType()))
       return std::nullopt;
     auto Source = approvedUtilityTupleLikeSource(
-        S, SM, Call->getArg(I)->getType(), Context);
+        S, SM, Call->getArg(I)->getType(), Context, true);
     if (!Source)
       return std::nullopt;
     const uint64_t SourceSize = Source->size();
@@ -8441,6 +8453,18 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
   }
   if (ResultIndex != Result->Elements.size())
     return std::nullopt;
+  bool NeedsSelectedCopies = false;
+  for (const auto *Element : Result->Elements)
+    NeedsSelectedCopies |=
+        !Element->getType()->isReferenceType() &&
+        !utilityTupleValue(S, SM, Context, Element->getType());
+  if (NeedsSelectedCopies) {
+    auto Copies = approvedUtilityTupleCatSelectedCopies(
+        S, SM, Function, Call, *Result, Approved.Sources, Context);
+    if (!Copies)
+      return std::nullopt;
+    Approved.SelectedCopies = std::move(*Copies);
+  }
   return Approved;
 }
 
@@ -8558,6 +8582,170 @@ static const Expr *functionalInvokeStrippedExpression(const Expr *Expression) {
     break;
   }
   return Expression;
+}
+
+static std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityTupleCatSelectedCopies(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    const CallExpr *Call, const UtilityTupleRecord &Result,
+    llvm::ArrayRef<UtilityTupleLikeSource> Sources, const ASTContext &Context) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const ReturnStmt *Return = nullptr;
+  if (!Body)
+    return std::nullopt;
+  for (const auto *Statement : Body->body())
+    if (const auto *Candidate = dyn_cast<ReturnStmt>(Statement)) {
+      if (Return)
+        return std::nullopt;
+      Return = Candidate;
+    }
+  const CallExpr *Selection = nullptr;
+  auto FindSelection = [&](auto &&Self, const Stmt *Node) -> bool {
+    if (!Node)
+      return true;
+    if (const auto *Candidate = dyn_cast<CallExpr>(Node)) {
+      const auto *Callee = Candidate->getDirectCallee();
+      if (Callee && Callee->getIdentifier() &&
+          Callee->getName() == "__tuple_cat_select_element_wise") {
+        if (Selection)
+          return false;
+        Selection = Candidate;
+      }
+    }
+    for (const auto *Child : Node->children())
+      if (!Self(Self, Child))
+        return false;
+    return true;
+  };
+  if (!Return || !FindSelection(FindSelection, Return->getRetValue()) ||
+      !Selection)
+    return std::nullopt;
+  const auto *Helper = Selection->getDirectCallee();
+  const auto *Primary = Helper ? Helper->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *HelperBody =
+      Helper ? dyn_cast_or_null<CompoundStmt>(Helper->getBody()) : nullptr;
+  const auto Origin = Primary ? S.sdkFile(SM, Primary->getLocation())
+                              : std::nullopt;
+  if (!Helper || !Primary || !Pattern || !Pattern->hasBody() ||
+      !HelperBody || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "tuple" ||
+      !approvedStandardSDKDeclaration(S, SM, Helper) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !Context.hasSameType(Helper->getReturnType(),
+                           Context.getRecordType(Result.Record)))
+    return std::nullopt;
+  const ReturnStmt *HelperReturn = nullptr;
+  for (const auto *Statement : HelperBody->body())
+    if (const auto *Candidate = dyn_cast<ReturnStmt>(Statement)) {
+      if (HelperReturn)
+        return std::nullopt;
+      HelperReturn = Candidate;
+    }
+  const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(
+      HelperReturn ? functionalInvokeStrippedExpression(
+                         HelperReturn->getRetValue())
+                   : nullptr);
+  const auto *TupleConstruction = dyn_cast_or_null<CXXConstructExpr>(
+      Cast ? functionalInvokeStrippedExpression(Cast->getSubExpr()) : nullptr);
+  const auto *TupleConstructor = TupleConstruction
+                                     ? dyn_cast_or_null<CXXConstructorDecl>(
+                                           TupleConstruction->getConstructor()
+                                               ->getDefinition())
+                                     : nullptr;
+  if (!TupleConstructor ||
+      TupleConstruction->getNumArgs() != Result.Elements.size() ||
+      TupleConstructor->getParent()->getCanonicalDecl() !=
+          Result.Record->getCanonicalDecl())
+    return std::nullopt;
+
+  const auto *BaseField = *Result.Record->field_begin();
+  const CXXConstructExpr *ImplConstruction = nullptr;
+  for (const auto *Initializer : TupleConstructor->inits())
+    if (Initializer->isMemberInitializer() &&
+        Initializer->getMember() == BaseField) {
+      if (ImplConstruction)
+        return std::nullopt;
+      ImplConstruction = dyn_cast_or_null<CXXConstructExpr>(
+          functionalInvokeStrippedExpression(Initializer->getInit()));
+    }
+  const auto *ImplConstructor = ImplConstruction
+                                    ? dyn_cast_or_null<CXXConstructorDecl>(
+                                          ImplConstruction->getConstructor()
+                                              ->getDefinition())
+                                    : nullptr;
+  if (!ImplConstructor ||
+      ImplConstructor->getParent()->getCanonicalDecl() !=
+          BaseField->getType()->getAsCXXRecordDecl()->getCanonicalDecl())
+    return std::nullopt;
+
+  std::vector<const CXXConstructExpr *> Copies(Result.Elements.size(),
+                                                nullptr);
+  unsigned ResultIndex = 0;
+  for (unsigned SourceIndex = 0; SourceIndex < Sources.size(); ++SourceIndex) {
+    const auto &Source = Sources[SourceIndex];
+    for (uint64_t N = 0; N < Source.size(); ++N, ++ResultIndex) {
+      const auto Element = Result.Elements[ResultIndex]->getType();
+      if (Element->isReferenceType() ||
+          utilityTupleValue(S, SM, Context, Element))
+        continue;
+      if (!Source.ArrayElements ||
+          !Context.hasSameType(Source.ArrayElementType, Element))
+        return std::nullopt;
+      const CXXConstructorDecl *LeafConstructor = nullptr;
+      for (const auto *Initializer : ImplConstructor->inits()) {
+        if (!Initializer->isBaseInitializer() ||
+            Initializer->getBaseClass()->getAsCXXRecordDecl()
+                    ->getCanonicalDecl() !=
+                Result.Elements[ResultIndex]->getParent()->getCanonicalDecl())
+          continue;
+        const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
+            functionalInvokeStrippedExpression(Initializer->getInit()));
+        if (!Construction || LeafConstructor)
+          return std::nullopt;
+        LeafConstructor = dyn_cast_or_null<CXXConstructorDecl>(
+            Construction->getConstructor()->getDefinition());
+      }
+      if (!LeafConstructor)
+        return std::nullopt;
+      const CXXConstructExpr *Copy = nullptr;
+      for (const auto *Initializer : LeafConstructor->inits())
+        if (Initializer->isMemberInitializer() &&
+            Initializer->getMember() == Result.Elements[ResultIndex]) {
+          if (Copy)
+            return std::nullopt;
+          Copy = dyn_cast_or_null<CXXConstructExpr>(
+              functionalInvokeStrippedExpression(Initializer->getInit()));
+        }
+      const auto *Constructor = Copy ? Copy->getConstructor() : nullptr;
+      const auto *Argument = Copy && Copy->getNumArgs() == 1
+                                 ? Copy->getArg(0)
+                                 : nullptr;
+      const auto Parameter = Constructor && Constructor->getNumParams() == 1
+                                 ? Constructor->getParamDecl(0)->getType()
+                                 : QualType();
+      if (!Constructor || !Argument || Parameter.isNull() ||
+          !Parameter->isReferenceType() ||
+          !Constructor->isCopyOrMoveConstructor() ||
+          !supportedConstructor(Constructor) ||
+          (!Constructor->isTrivial() && !Constructor->hasBody()) ||
+          Constructor->getParent()->getCanonicalDecl() !=
+              Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
+          !S.owns(SM, Constructor->getLocation()) ||
+          !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
+          !Context.hasSameUnqualifiedType(Argument->getType(), Element) ||
+          Argument->isLValue() != Call->getArg(SourceIndex)->isLValue() ||
+          Argument->getType().isConstQualified() !=
+              Call->getArg(SourceIndex)->getType().isConstQualified())
+        return std::nullopt;
+      Copies[ResultIndex] = Copy;
+    }
+  }
+  return ResultIndex == Result.Elements.size()
+             ? std::optional<std::vector<const CXXConstructExpr *>>(
+                   std::move(Copies))
+             : std::nullopt;
 }
 
 static bool supportedFunctionalMemberValue(const ASTContext &Context,

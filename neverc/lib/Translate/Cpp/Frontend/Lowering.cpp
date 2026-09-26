@@ -7969,7 +7969,9 @@ class FunctionLowering {
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(Call->getType(), L);
       if (Place.getString("type") != type(Call->getType(), L) ||
-          Cat->Sources.size() != Call->getNumArgs())
+          Cat->Sources.size() != Call->getNumArgs() ||
+          (!Cat->SelectedCopies.empty() &&
+           Cat->SelectedCopies.size() != Cat->Result.Elements.size()))
         reject(L, "utility tuple cat",
                "The std::tuple_cat destination differs from its result.");
 
@@ -7995,12 +7997,27 @@ class FunctionLowering {
                                         Source.ArrayElementType.withConst()),
                                     L),
                                L);
-          for (uint64_t N = 0; N < Source.ArraySize; ++N)
-            assign(fieldStorage(json::Object(Place),
-                                Cat->Result.Elements[ResultIndex++], L),
-                   index(json::Object(Pointer), quantity(N, SizeType, L),
-                         type(Source.ArrayElementType, L), L),
-                   L);
+          for (uint64_t N = 0; N < Source.ArraySize; ++N) {
+            auto Element = index(json::Object(Pointer),
+                                 quantity(N, SizeType, L),
+                                 type(Source.ArrayElementType, L), L);
+            auto Destination = fieldStorage(
+                json::Object(Place), Cat->Result.Elements[ResultIndex], L);
+            const auto *Copy = Cat->SelectedCopies.empty()
+                                   ? nullptr
+                                   : Cat->SelectedCopies[ResultIndex];
+            if (Copy) {
+              const auto *Constructor = Copy->getConstructor();
+              const auto Referent =
+                  Constructor->getParamDecl(0)->getType()->getPointeeType();
+              constructMemorySource(
+                  std::move(Destination), Source.ArrayElementType, Constructor,
+                  snapshot(address(std::move(Element), Referent, L), L), L);
+            } else {
+              assign(std::move(Destination), std::move(Element), L);
+            }
+            ++ResultIndex;
+          }
           continue;
         }
         for (const auto *Element : Source.Elements)
@@ -20298,6 +20315,21 @@ public:
                                     {"loc", A.loc(L)}});
         jump(Done, L);
         label(Done, L);
+      } else if (auto Tuple = [&]() {
+                   auto Value = approvedUtilityTupleRecord(
+                       A.S, A.Sources, DestroyedRecord, A.Context);
+                   return Value ? Value
+                                : approvedUtilityMixedReferenceTupleRecord(
+                                      A.S, A.Sources, DestroyedRecord,
+                                      A.Context);
+                 }()) {
+        // __tuple_impl destroys its leaf bases in reverse index order. The
+        // protocol stores those authenticated leaves as direct tuple fields.
+        for (auto I = Tuple->Elements.rbegin(); I != Tuple->Elements.rend();
+             ++I)
+          if (needsDestruction((*I)->getType()))
+            destroy(fieldStorage(dereference(*ThisPointer, L), *I, L),
+                    (*I)->getType(), L);
       } else {
         destructionMembers();
       }
