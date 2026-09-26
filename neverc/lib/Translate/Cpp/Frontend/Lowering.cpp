@@ -4502,11 +4502,14 @@ class FunctionLowering {
     }
     case UtilityOperation::AlgorithmFill:
     case UtilityOperation::AlgorithmFillN:
+    case UtilityOperation::AlgorithmOwnedFillN:
     case UtilityOperation::MemoryUninitializedFill:
     case UtilityOperation::MemoryUninitializedFillN: {
       const bool Counted =
           Operation == UtilityOperation::AlgorithmFillN ||
+          Operation == UtilityOperation::AlgorithmOwnedFillN ||
           Operation == UtilityOperation::MemoryUninitializedFillN;
+      const bool OwnedFill = Operation == UtilityOperation::AlgorithmOwnedFillN;
       auto CurrentRange = AlgorithmRangeValue(0);
       auto Current = std::move(CurrentRange.first);
       const auto PointerQualType = CurrentRange.second;
@@ -4537,6 +4540,14 @@ class FunctionLowering {
           MemoryConstruction ? approvedUtilityMemorySourceConstructor(
                                    A.S, A.Sources, Call, Operation, A.Context)
                              : nullptr;
+      const auto *Assignment =
+          OwnedFill ? approvedUtilityOwnedFillN(
+                          A.S, A.Sources, Call->getDirectCallee(),
+                          PointerQualType->getPointeeType(), A.Context)
+                    : nullptr;
+      if (OwnedFill && !Assignment)
+        reject(L, "algorithm fill_n",
+               "The selected source-owned copy assignment is unavailable.");
       const auto ElementType = MemoryConstruction ? Call->getArg(0)
                                                         ->getType()
                                                         ->getPointeeType()
@@ -4552,6 +4563,10 @@ class FunctionLowering {
       if (MemoryConstruction && Constructor)
         constructMemorySource(dereference(Current, L), ElementType, Constructor,
                               json::Object(ValueAddress), L);
+      else if (OwnedFill)
+        assignMemorySource(dereference(Current, L),
+                           PointerQualType->getPointeeType(), Assignment,
+                           dereference(json::Object(ValueAddress), L), L);
       else
         assign(dereference(Current, L),
                cast(dereference(ValueAddress, L), OutputElementType, L), L);
@@ -15640,6 +15655,29 @@ class FunctionLowering {
         lvalue(Call->getArg(0));
         return {};
       }
+      const auto *Selected = approvedUtilityArrayOwnedFill(
+          A.S, A.Sources,
+          dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()), A.Context);
+      if (Selected) {
+        auto ValueAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        for (uint64_t I = 0; I < Array->Size; ++I) {
+          A.chargeExpansion(1, L);
+          auto Base = dereference(json::Object(ObjectAddress), L);
+          assignMemorySource(ArrayElement(std::move(Base), *Array,
+                                          quantity(I, SizeType, L),
+                                          Array->ElementType),
+                             Array->ElementType, Selected,
+                             dereference(json::Object(ValueAddress), L), L);
+        }
+        return {};
+      }
+      const auto *ElementRecord = Array->ElementType->getAsCXXRecordDecl();
+      if (ElementRecord && (!ElementRecord->hasTrivialCopyAssignment() ||
+                            !ElementRecord->hasTrivialDestructor()))
+        reject(L, "utility array fill",
+               "The selected source-owned copy assignment is unavailable.");
       auto Value = snapshot(expression(Call->getArg(0)), L);
       auto SizeType = type(A.Context.getSizeType(), L);
       for (uint64_t I = 0; I < Array->Size; ++I) {

@@ -32626,6 +32626,128 @@ extern "C" void probe() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayAndAlgorithmFillNCallSelectedAssignment) {
+  const auto Source = tmpFile("owned-fill-n.cpp");
+  const auto Output = tmpFile("owned-fill-n.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <array>
+int events[32];
+int event_count;
+int reads;
+void note(int value) { events[event_count++] = value; }
+bool matches(const int* expected, int count) {
+  if (event_count != count) return false;
+  for (int i = 0; i != count; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item&) noexcept = default;
+  Item& operator=(const Item& other) noexcept {
+    note(100 + other.value);
+    value = other.value + 1;
+    return *this;
+  }
+  ~Item() noexcept { note(200 + value); }
+};
+Item& select(Item& value) { ++reads; return value; }
+enum Count { two = 2 };
+int main() {
+  std::array<Item, 3> values{{Item(1), Item(2), Item(3)}};
+  event_count = 0;
+  values.fill(values[0]);
+  const int aliased_array[] = {101, 102, 102};
+  if (!matches(aliased_array, 3) || values[0].value != 2 ||
+      values[1].value != 3 || values[2].value != 3)
+    return 1;
+  Item outside(8);
+  event_count = 0;
+  if (std::fill_n(values.data(), 3, outside) != values.data() + 3)
+    return 2;
+  const int direct[] = {108, 108, 108};
+  if (!matches(direct, 3) || values[2].value != 9)
+    return 3;
+  event_count = 0;
+  std::fill_n(values.data(), 3, values[0]);
+  const int aliased_direct[] = {109, 110, 110};
+  if (!matches(aliased_direct, 3) || values[0].value != 10 ||
+      values[1].value != 11 || values[2].value != 11)
+    return 4;
+  event_count = 0;
+  values.fill(Item(4));
+  const int temporary[] = {104, 104, 104, 204};
+  if (!matches(temporary, 4) || values[0].value != 5 ||
+      values[2].value != 5)
+    return 5;
+  event_count = 0;
+  if (std::fill_n(values.data(), two, outside) != values.data() + 2)
+    return 6;
+  const int enumerated[] = {108, 108};
+  if (!matches(enumerated, 2) || values[0].value != 9 ||
+      values[1].value != 9 || values[2].value != 5)
+    return 7;
+  event_count = 0;
+  if (std::fill_n(values.data(), -2, select(outside)) != values.data() ||
+      reads != 1 || event_count != 0)
+    return 8;
+  std::array<Item, 0> empty{};
+  empty.fill(select(outside));
+  return reads == 2 && event_count == 0 ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-fill-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedArrayFillRequiresPinnedAlgorithms) {
+  struct Rejection {
+    const char *Name;
+    const char *Specialization;
+  };
+  const Rejection Cases[] = {
+      {"public", "template<> Item* fill_n<Item*, size_t, Item>(Item* first, "
+                 "size_t count, const Item&) { return first + count; }"},
+      {"internal",
+       "template<> Item* __fill_n<Item*, size_t, Item>(Item* first, size_t "
+       "count, const Item&) { return first + count; }"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("owned-array-fill-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("owned-array-fill-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <algorithm>
+#include <array>
+struct Item {
+  int value;
+  Item& operator=(const Item& other) noexcept { value = other.value; return *this; }
+};
+namespace std { inline namespace __1 {
+)cpp") + Case.Specialization +
+                          R"cpp(
+} }
+using Row = std::array<Item, 2>;
+void rejected(Row& row, const Item& item) { row.fill(item); }
+)cpp");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("array.cpp");
   const auto Output = tmpFile("array.nc");

@@ -265,6 +265,9 @@ Member/free array swap also admits these elements when the pinned iterator
 chain selects supported source-owned move operations. Each element's swap
 temporary is destroyed before the next element; empty arrays perform no
 element operation.
+Array `fill` and raw-pointer `std::fill_n` admit source-owned record elements
+when the pinned fill chain selects a supported copy assignment. Each write
+reads its bound source at that point, including an aliased array element.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
 Array layout also supplies authenticated evidence for type queries, including

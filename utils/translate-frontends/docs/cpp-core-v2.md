@@ -569,6 +569,11 @@ when the pinned `swap_ranges` and `iter_swap` chain selects supported move
 construction and assignments. Each element swap destroys its temporary before
 the next element; zero-length arrays instantiate no element swap. User ADL
 swaps and source specializations remain rejected.
+Member `fill` also admits source-owned record elements with a selected supported
+copy assignment. Its pinned `fill_n` and `__fill_n` instances and their selected
+assignment are checked. Each element reads the bound source at its assignment,
+so a source aliased to an earlier element observes preceding writes. A temporary
+source lives through the call, and zero-length arrays perform no assignment.
 
 An array can also supply the element pack to `std::apply` through the
 [checked tuple, pair and array callable boundary](#value-tuples-from-tuple).
@@ -1621,7 +1626,12 @@ their raw-pointer forms. Returned output positions retain the original
 iterator type, with the final pointer wrapped back into the pinned iterator
 record when needed. Empty counts and ranges, overlapping forward or backward
 copies, and iterator argument evaluation retain their existing behavior.
-Record elements and nonwritable destinations remain rejected.
+Raw-pointer `std::fill_n` also admits source-owned standard-layout record
+elements with a selected supported copy assignment. The pinned public and
+internal fill bodies, count conversion, loop and selected assignment are
+checked before lowering. The value argument stays bound while each destination
+is assigned, including when it aliases an element of the range. Other record
+algorithm forms and nonwritable destinations remain rejected.
 
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
