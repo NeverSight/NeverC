@@ -2361,6 +2361,42 @@ int main() {
                                   target=target, sdk=True)
             check_pair_array_apply(target_result)
 
+    array_zero_owned_apply_source = """\
+#include <array>
+#include <tuple>
+int selected;
+int called;
+int constructed;
+int destroyed;
+struct Item {
+  int value;
+  Item() noexcept : value(++constructed) {}
+  ~Item() noexcept { ++destroyed; }
+};
+using Empty = std::array<Item, 0>;
+Empty& choose(Empty& value) { ++selected; return value; }
+int empty() { ++called; return 17; }
+int main() {
+  Empty value{};
+  if (std::apply(empty, choose(value)) != 17 || selected != 1 || called != 1)
+    return 1;
+  const Empty& view = value;
+  if (std::apply(empty, view) != 17 || called != 2)
+    return 2;
+  auto joined = std::tuple_cat(choose(value));
+  static_assert(std::tuple_size<decltype(joined)>::value == 0);
+  if (selected != 2 || constructed != 0 || destroyed != 0)
+    return 3;
+  if (std::apply(empty, Empty{}) != 17 || called != 3)
+    return 4;
+  return constructed == 0 && destroyed == 0 ? 0 : 5;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-zero-owned-apply-" + target,
+                     array_zero_owned_apply_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
 
     for name, source, code in (
 
@@ -2368,9 +2404,13 @@ int main() {
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint empty() { return 1; }\nint main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }\n',
          'TR0201'),
 
-        ('zero-nontrivial-element',
-         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Item { int value; ~Item() {} };\nint empty() { return 1; }\nint main() { std::array<Item, 0> a{}; return std::apply(empty, a); }\n',
+        ('nonzero-nontrivial-element',
+         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() noexcept {} };\nint read(const Item& item) { return item.value; }\nint main() { std::array<Item, 1> array{{{7}}}; return std::apply(read, array); }\n',
          'TR0203'),
+
+        ('zero-hidden-element-source',
+         '#include <array>\n#include <tuple>\nstruct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };\nint empty() { return 0; }\nint main() { std::array<Item, 0> array{}; return std::apply(empty, array); }\n',
+         'TR0201'),
 
         ('array-wrapper-receiver',
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',

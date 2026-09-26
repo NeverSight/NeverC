@@ -29738,6 +29738,53 @@ int main(){const std::array<int,2> values{{2,3}};return std::apply(std::ref(add)
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyArrayNontrivialApplyAndTupleCatRun) {
+  const auto Source = tmpFile("array-zero-owned-apply.cpp");
+  const auto Output = tmpFile("array-zero-owned-apply.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+int selected;
+int called;
+int constructed;
+int destroyed;
+struct Item {
+  int value;
+  Item() noexcept : value(++constructed) {}
+  ~Item() noexcept { ++destroyed; }
+};
+using Empty = std::array<Item, 0>;
+Empty& choose(Empty& value) { ++selected; return value; }
+int empty() { ++called; return 17; }
+int main() {
+  Empty value{};
+  if (std::apply(empty, choose(value)) != 17 || selected != 1 || called != 1)
+    return 1;
+  const Empty& view = value;
+  if (std::apply(empty, view) != 17 || called != 2)
+    return 2;
+  auto joined = std::tuple_cat(choose(value));
+  static_assert(std::tuple_size<decltype(joined)>::value == 0);
+  if (selected != 2 || constructed != 0 || destroyed != 0)
+    return 3;
+  if (std::apply(empty, Empty{}) != 17 || called != 3)
+    return 4;
+  return constructed == 0 && destroyed == 0 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-zero-owned-apply" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -29754,14 +29801,19 @@ int empty() { return 1; }
 int main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }
 )cpp", "TR0201"},
 
-      {"zero-nontrivial-element", R"cpp(#include <array>
-#include <functional>
+      {"nonzero-nontrivial-element", R"cpp(#include <array>
 #include <tuple>
-#include <utility>
-struct Item { int value; ~Item() {} };
-int empty() { return 1; }
-int main() { std::array<Item, 0> a{}; return std::apply(empty, a); }
+struct Item { int value; ~Item() noexcept {} };
+int read(const Item& item) { return item.value; }
+int main() { std::array<Item, 1> array{{{7}}}; return std::apply(read, array); }
 )cpp", "TR0203"},
+
+      {"zero-hidden-element-source", R"cpp(#include <array>
+#include <tuple>
+struct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };
+int empty() { return 0; }
+int main() { std::array<Item, 0> array{}; return std::apply(empty, array); }
+)cpp", "TR0201"},
 
       {"array-wrapper-receiver", R"cpp(#include <array>
 #include <functional>

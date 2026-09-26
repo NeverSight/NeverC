@@ -525,6 +525,12 @@ Mutable and const lvalues, rvalues, zero-length arrays and nested arrays retain
 the documented element and callback restrictions; nested SDK array values may
 be passed by admitted reference forms, while by-value SDK callback parameters
 and results remain excluded.
+For zero-length arrays, `std::apply` passes no elements and `std::tuple_cat`
+contributes no elements. A source-owned nontrivial standard-layout record
+element is admitted in these empty packs because neither operation copies,
+constructs or destroys an element. Array layout and the original element
+source remain checked, and the array expression and zero-argument callback
+retain their ordinary evaluation effects.
 
 For `std::array<T, 0>`, capacity is zero, `empty()` is true, and libc++'s
 `data()` plus every forward or reverse iterator base is null. `fill` and swap

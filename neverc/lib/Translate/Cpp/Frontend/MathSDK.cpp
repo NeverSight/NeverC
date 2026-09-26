@@ -8331,7 +8331,10 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
     return UtilityTupleLikeSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
   }
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context)) {
-    if (!utilityTupleValue(S, SM, Context, Array->ElementType))
+    // Empty arrays contribute no element to apply or tuple_cat. Their
+    // authenticated layout and original element source are still required.
+    if (Array->Size &&
+        !utilityTupleValue(S, SM, Context, Array->ElementType))
       return std::nullopt;
     return UtilityTupleLikeSource{
         {}, Array->Elements, Array->ElementType, Array->Size};
