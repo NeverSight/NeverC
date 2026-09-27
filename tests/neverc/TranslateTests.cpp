@@ -54666,6 +54666,106 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedSourceRecordSubrangeSearchRun) {
+  const auto Source = tmpFile("wrapped-source-record-subrange-search.cpp");
+  const auto Output = tmpFile("wrapped-source-record-subrange-search.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *haystack, *pattern;
+int haystack_size, pattern_size, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const;
+};
+bool within(const Point *value, const Point *base, int count) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator==(const Point &other) const {
+  ++comparisons;
+  if (!within(this, haystack, haystack_size) ||
+      !within(&other, pattern, pattern_size)) ++bad_identity;
+  return value == other.value;
+}
+int main() {
+  std::vector<Point> values, needle;
+  values.push_back(Point{1});
+  values.push_back(Point{2});
+  values.push_back(Point{3});
+  values.push_back(Point{2});
+  values.push_back(Point{3});
+  values.push_back(Point{4});
+  needle.push_back(Point{2});
+  needle.push_back(Point{3});
+  const std::vector<Point> &view = values;
+  const std::vector<Point> &pattern_view = needle;
+  haystack = &values[0]; haystack_size = 6;
+  pattern = &needle[0]; pattern_size = 2;
+  auto first = view.cbegin();
+  ++first;
+  auto last = values.begin();
+  ++last; ++last; ++last;
+  if (std::search(view.cbegin(), view.cend(), needle.begin(), needle.end()) !=
+          first ||
+      std::find_end(values.begin(), values.end(), pattern_view.cbegin(),
+                    pattern_view.cend()) != last ||
+      std::find_first_of(view.cbegin(), view.cend(), needle.begin(),
+                         needle.end()) != first ||
+      !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  if (std::search(view.cbegin(), view.cend(), needle.begin(),
+                  needle.begin()) != view.cbegin() ||
+      std::find_end(values.begin(), values.end(), needle.begin(),
+                    needle.begin()) != values.end() ||
+      std::find_first_of(view.cbegin(), view.cend(), needle.begin(),
+                         needle.begin()) != view.cend() || comparisons)
+    return 2;
+  Point raw_needle[2]{{2}, {3}};
+  pattern = raw_needle; pattern_size = 2;
+  if (std::search(view.cbegin(), view.cend(), raw_needle,
+                  raw_needle + 2) != first || bad_identity) return 3;
+  Point raw_values[4]{{1}, {2}, {3}, {4}};
+  haystack = raw_values; haystack_size = 4;
+  pattern = &needle[0]; pattern_size = 2;
+  if (std::search(raw_values, raw_values + 4, needle.cbegin(),
+                  needle.cend()) != raw_values + 1 || bad_identity)
+    return 4;
+  std::vector<int> numbers{1, 2, 3, 2, 3};
+  int scalar_needle[2]{2, 3};
+  auto scalar_first = numbers.begin();
+  ++scalar_first;
+  if (std::search(numbers.begin(), numbers.end(), scalar_needle,
+                  scalar_needle + 2) != scalar_first ||
+      std::find_end(numbers.begin(), numbers.end(), scalar_needle,
+                    scalar_needle + 2) == numbers.end() ||
+      std::find_first_of(numbers.begin(), numbers.end(), scalar_needle,
+                         scalar_needle + 2) != scalar_first)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-source-record-subrange-search" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");

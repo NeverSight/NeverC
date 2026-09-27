@@ -2159,10 +2159,15 @@ class FunctionLowering {
     };
     auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
                               Expression Right, unsigned RightIndex) {
-      const auto LeftType =
-          Call->getArg(LeftIndex)->getType()->getPointeeType();
-      const auto RightType =
-          Call->getArg(RightIndex)->getType()->getPointeeType();
+      auto ElementType = [&](unsigned Index) {
+        const auto Iterator = Call->getArg(Index)->getType();
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Iterator->getAsCXXRecordDecl(), A.Context);
+        return Wrapped ? Wrapped->IteratorType->getPointeeType()
+                       : Iterator->getPointeeType();
+      };
+      const auto LeftType = ElementType(LeftIndex);
+      const auto RightType = ElementType(RightIndex);
       const auto SourceComparison =
           A.Context.hasSameUnqualifiedType(LeftType, RightType)
               ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
@@ -5321,10 +5326,14 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmSearch:
     case UtilityOperation::AlgorithmFindEnd: {
       const bool LastMatch = Operation == UtilityOperation::AlgorithmFindEnd;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Pattern = snapshot(expression(Call->getArg(2)), L);
-      auto PatternLast = snapshot(expression(Call->getArg(3)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto PatternRange = AlgorithmRangeValue(2);
+      auto PatternLastRange = AlgorithmRangeValue(3);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Pattern = std::move(PatternRange.first);
+      auto PatternLast = std::move(PatternLastRange.first);
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
@@ -5333,8 +5342,8 @@ class FunctionLowering {
       auto PatternCurrent = snapshot(json::Object(Pattern), L);
       auto Result = snapshot(json::Object(Last), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto PatternType = type(Call->getArg(2)->getType(), L);
+      const auto InputType = type(FirstRange.second, L);
+      const auto PatternType = type(PatternRange.second, L);
       const auto EmptyPattern = labelName(), Outer = labelName();
       const auto Start = labelName(), Inner = labelName();
       const auto CheckSource = labelName(), Compare = labelName();
@@ -5393,20 +5402,24 @@ class FunctionLowering {
         jump(End, L);
       }
       label(End, L);
-      return Result;
+      return AlgorithmIteratorResult(std::move(Result), 0);
     }
     case UtilityOperation::AlgorithmFindFirstOf: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Choices = snapshot(expression(Call->getArg(2)), L);
-      auto ChoicesLast = snapshot(expression(Call->getArg(3)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto ChoicesRange = AlgorithmRangeValue(2);
+      auto ChoicesLastRange = AlgorithmRangeValue(3);
+      auto Current = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Choices = std::move(ChoicesRange.first);
+      auto ChoicesLast = std::move(ChoicesLastRange.first);
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
       auto Choice = snapshot(json::Object(Choices), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto ChoiceType = type(Call->getArg(2)->getType(), L);
+      const auto InputType = type(FirstRange.second, L);
+      const auto ChoiceType = type(ChoicesRange.second, L);
       const auto Outer = labelName(), Start = labelName();
       const auto Inner = labelName(), Compare = labelName();
       const auto NextChoice = labelName(), NextInput = labelName();
@@ -5440,7 +5453,7 @@ class FunctionLowering {
              L);
       jump(Outer, L);
       label(End, L);
-      return Current;
+      return AlgorithmIteratorResult(std::move(Current), 0);
     }
     case UtilityOperation::AlgorithmSearchN: {
       auto FirstRange = AlgorithmRangeValue(0);

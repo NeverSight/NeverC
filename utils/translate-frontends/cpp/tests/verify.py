@@ -31226,6 +31226,46 @@ owned::Free *find_end_free(owned::Free *first, owned::Free *last,
           'return std::search(a,b,c,d);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_source_record_subrange_search_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+std::vector<Member>::const_iterator
+search_vectors(const std::vector<Member> &values,
+               const std::vector<Member> &pattern) {
+  return std::search(values.cbegin(), values.cend(),
+                     pattern.cbegin(), pattern.cend());
+}
+std::vector<Member>::iterator
+find_end_vector(std::vector<Member> &values,
+                const Member *pattern, const Member *pattern_last) {
+  return std::find_end(values.begin(), values.end(), pattern, pattern_last);
+}
+Member *find_first_of_mixed(Member *values, Member *last,
+                             const std::vector<Member> &pattern) {
+  return std::find_first_of(values, last,
+                            pattern.cbegin(), pattern.cend());
+}
+std::vector<int>::iterator search_scalar(std::vector<int> &values,
+                                          int *pattern, int *pattern_last) {
+  return std::search(values.begin(), values.end(), pattern, pattern_last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-source-record-subrange-search-" + target,
+              wrapped_source_record_subrange_search_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-source-record-subrange-search-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'auto f(std::vector<Entry>&a,std::vector<Entry>&b){'
+          'return std::search(a.begin(),a.end(),b.begin(),b.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

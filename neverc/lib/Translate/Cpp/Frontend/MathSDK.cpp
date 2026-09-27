@@ -23651,22 +23651,29 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool ScalarRanges =
         AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
         AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3);
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarLast = AlgorithmRangePointerParameter(1);
+    const auto ScalarSecond = AlgorithmRangePointerParameter(2);
+    const auto ScalarSecondLast = AlgorithmRangePointerParameter(3);
+    const bool ScalarDefault =
+        ScalarFirst && ScalarLast && ScalarSecond && ScalarSecondLast &&
+        utilityAlgorithmEqualityPointer(Context, *ScalarFirst) &&
+        utilityAlgorithmEqualityPointer(Context, *ScalarSecond) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, (*ScalarFirst)->getPointeeType(), OO_EqualEqual) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, (*ScalarSecond)->getPointeeType(), OO_EqualEqual) &&
+        utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
+                                    (*ScalarSecond)->getPointeeType(), false);
     const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
     const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
     const bool RecordRanges =
-        Call->getNumArgs() == 4 &&
-        Function->getParamDecl(0)->getType()->isPointerType() &&
-        Function->getParamDecl(2)->getType()->isPointerType() && RecordFirst &&
+        Call->getNumArgs() == 4 && RecordFirst &&
         AlgorithmRecordEqualityRangeParameter(1) && RecordSecond &&
         AlgorithmRecordEqualityRangeParameter(3) &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordSecond)->getPointeeType());
-    const bool DefaultElements =
-        (ScalarRanges && AlgorithmEqualityPointerParameter(0) &&
-         AlgorithmEqualityPointerParameter(1) &&
-         AlgorithmEqualityPointerParameter(3) &&
-         AlgorithmEqualityParameters(0, 2)) ||
-        RecordRanges;
+    const bool DefaultElements = ScalarDefault || RecordRanges;
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
           (Call->getNumArgs() == 5 && ScalarRanges &&
            AlgorithmBinaryPredicateParameter(4, 0, 2))))
