@@ -2207,6 +2207,20 @@ class FunctionLowering {
       return CompareUtilityValues("<", Left, AlgorithmElementType(LeftIndex),
                                   Right, AlgorithmElementType(RightIndex));
     };
+    auto AlgorithmReferenceLess = [&](Expression LeftAddress,
+                                      Expression RightAddress) {
+      const auto SourceComparison = approvedUtilityTrivialSourceComparison(
+          A.S, A.Sources, Call->getArg(0)->getType(), OO_Less, A.Context);
+      if (SourceComparison)
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      return binary("<", dereference(std::move(LeftAddress), L),
+                    dereference(std::move(RightAddress), L), "bool", L);
+    };
     auto AlgorithmRangeValue = [&](unsigned Index)
         -> std::pair<Expression, QualType> {
       const auto IteratorType = Call->getArg(Index)->getType();
@@ -6252,10 +6266,10 @@ class FunctionLowering {
                        Minimum ? dereference(json::Object(LeftAddress), L)
                                : dereference(json::Object(RightAddress), L),
                        L)
-             : Minimum ? binary("<", dereference(RightAddress, L),
-                                dereference(LeftAddress, L), "bool", L)
-                       : binary("<", dereference(LeftAddress, L),
-                                dereference(RightAddress, L), "bool", L),
+             : Minimum ? AlgorithmReferenceLess(json::Object(RightAddress),
+                                                json::Object(LeftAddress))
+                       : AlgorithmReferenceLess(json::Object(LeftAddress),
+                                                json::Object(RightAddress)),
              SelectRight, SelectLeft, L);
       label(SelectLeft, L);
       assign(Result, LeftAddress, L);
@@ -6296,29 +6310,27 @@ class FunctionLowering {
       branch(SDKComparator
                  ? functionalOperationValues(
                        L, dereference(json::Object(ValueAddress), L),
-                       dereference(json::Object(LowAddress), L),
-                       *SDKComparator)
+                       dereference(json::Object(LowAddress), L), *SDKComparator)
              : Comparator
                  ? emitBinaryPredicate(
                        json::Object(*Comparator), Call->getArg(3)->getType(),
                        dereference(json::Object(ValueAddress), L),
                        dereference(json::Object(LowAddress), L), L)
-                 : binary("<", dereference(ValueAddress, L),
-                          dereference(LowAddress, L), "bool", L),
+                 : AlgorithmReferenceLess(json::Object(ValueAddress),
+                                          json::Object(LowAddress)),
              SelectLow, CheckHigh, L);
       label(CheckHigh, L);
-      branch(SDKComparator
-                 ? functionalOperationValues(
-                       L, dereference(json::Object(HighAddress), L),
-                       dereference(json::Object(ValueAddress), L),
-                       *SDKComparator)
+      branch(SDKComparator ? functionalOperationValues(
+                                 L, dereference(json::Object(HighAddress), L),
+                                 dereference(json::Object(ValueAddress), L),
+                                 *SDKComparator)
              : Comparator
                  ? emitBinaryPredicate(
                        json::Object(*Comparator), Call->getArg(3)->getType(),
                        dereference(json::Object(HighAddress), L),
                        dereference(json::Object(ValueAddress), L), L)
-                 : binary("<", dereference(HighAddress, L),
-                          dereference(ValueAddress, L), "bool", L),
+                 : AlgorithmReferenceLess(json::Object(HighAddress),
+                                          json::Object(ValueAddress)),
              SelectHigh, SelectValue, L);
       label(SelectValue, L);
       assign(Result, ValueAddress, L);
@@ -6360,18 +6372,17 @@ class FunctionLowering {
                "The std::minmax destination type differs from its result.");
       const auto Forward = labelName(), Reverse = labelName(),
                  End = labelName();
-      branch(SDKComparator
-                 ? functionalOperationValues(
-                       L, dereference(json::Object(RightAddress), L),
-                       dereference(json::Object(LeftAddress), L),
-                       *SDKComparator)
+      branch(SDKComparator ? functionalOperationValues(
+                                 L, dereference(json::Object(RightAddress), L),
+                                 dereference(json::Object(LeftAddress), L),
+                                 *SDKComparator)
              : Comparator
                  ? emitBinaryPredicate(
                        json::Object(*Comparator), Call->getArg(2)->getType(),
                        dereference(json::Object(RightAddress), L),
                        dereference(json::Object(LeftAddress), L), L)
-                 : binary("<", dereference(RightAddress, L),
-                          dereference(LeftAddress, L), "bool", L),
+                 : AlgorithmReferenceLess(json::Object(RightAddress),
+                                          json::Object(LeftAddress)),
              Reverse, Forward, L);
       label(Forward, L);
       assign(fieldStorage(json::Object(Place), Pair->First, L), LeftAddress, L);

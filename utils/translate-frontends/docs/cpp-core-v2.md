@@ -2143,6 +2143,13 @@ source-record raw or authenticated wrapped ranges with a selected Boolean
 `is_heap_until` returns the first violating child in the original iterator
 form, or the end for a heap.
 
+Default two-value `std::min`, `std::max`, three-value `std::clamp` and
+two-value `std::minmax` also accept exact trivial source records with one
+uniquely selected Boolean `operator<`. The selected const member,
+hidden-friend, or enclosing-namespace free comparison sees the original
+referents. The returned reference, or pair of const references for `minmax`,
+retains the selected source object's identity and standard tie behavior.
+
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the respective element types in both argument

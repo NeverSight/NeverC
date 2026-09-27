@@ -55331,6 +55331,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordDirectExtremaRun) {
+  const auto Source = tmpFile("source-record-direct-extrema.cpp");
+  const auto Output = tmpFile("source-record-direct-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *base;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point values[5]{{0}, {1}, {2}, {3}, {2}};
+  base = values; count = 5;
+  if (&std::min(values[3], values[1]) != values + 1 ||
+      &std::max(values[3], values[1]) != values + 3 ||
+      &std::clamp(values[0], values[1], values[3]) != values + 1 ||
+      &std::clamp(values[2], values[1], values[3]) != values + 2 ||
+      &std::clamp(values[3], values[1], values[2]) != values + 2 ||
+      !comparisons || bad_identity) return 1;
+  auto extremes = std::minmax(values[3], values[1]);
+  if (&extremes.first != values + 1 || &extremes.second != values + 3 ||
+      &std::min(values[2], values[4]) != values + 2 ||
+      &std::max(values[2], values[4]) != values + 2 || bad_identity)
+    return 2;
+  auto ties = std::minmax(values[2], values[4]);
+  if (&ties.first != values + 2 || &ties.second != values + 4)
+    return 3;
+  int first_effect = 0, second_effect = 0, third_effect = 0;
+  if (&std::min((++first_effect, values[3]),
+                 (++second_effect, values[1])) != values + 1 ||
+      first_effect != 1 || second_effect != 1) return 4;
+  first_effect = 0; second_effect = 0;
+  if (&std::clamp((++first_effect, values[2]),
+                   (++second_effect, values[1]),
+                   (++third_effect, values[3])) != values + 2 ||
+      first_effect != 1 || second_effect != 1 || third_effect != 1)
+    return 5;
+  first_effect = 0; second_effect = 0;
+  auto evaluated = std::minmax((++first_effect, values[3]),
+                                (++second_effect, values[1]));
+  if (&evaluated.first != values + 1 || &evaluated.second != values + 3 ||
+      first_effect != 1 || second_effect != 1 || bad_identity) return 6;
+  Friend friends[3]{{1}, {2}, {3}};
+  if (&std::min(friends[2], friends[0]) != friends ||
+      &std::max(friends[0], friends[2]) != friends + 2 ||
+      &std::clamp(friends[0], friends[1], friends[2]) != friends + 1)
+    return 7;
+  auto friend_pair = std::minmax(friends[2], friends[0]);
+  if (&friend_pair.first != friends || &friend_pair.second != friends + 2)
+    return 8;
+  owned::Free frees[3]{{1}, {2}, {3}};
+  if (&std::min(frees[2], frees[0]) != frees ||
+      &std::max(frees[0], frees[2]) != frees + 2 ||
+      &std::clamp(frees[0], frees[1], frees[2]) != frees + 1)
+    return 9;
+  auto free_pair = std::minmax(frees[2], frees[0]);
+  if (&free_pair.first != frees || &free_pair.second != frees + 2)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-direct-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

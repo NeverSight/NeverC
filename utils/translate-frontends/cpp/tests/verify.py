@@ -31539,6 +31539,57 @@ std::vector<Member>::iterator heap_until_wrapped(std::vector<Member> &values) {
           'return std::is_heap(a.begin(),a.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_direct_extrema_source = """\
+#include <algorithm>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+const Member &minimum_member(const Member &a, const Member &b) {
+  return std::min(a, b);
+}
+const Member &maximum_member(const Member &a, const Member &b) {
+  return std::max(a, b);
+}
+const Member &clamp_member(const Member &v, const Member &low,
+                           const Member &high) {
+  return std::clamp(v, low, high);
+}
+std::pair<const Member &, const Member &>
+minmax_member(const Member &a, const Member &b) {
+  return std::minmax(a, b);
+}
+const Friend &minimum_friend(const Friend &a, const Friend &b) {
+  return std::min(a, b);
+}
+const owned::Free &clamp_free(const owned::Free &v,
+                              const owned::Free &low,
+                              const owned::Free &high) {
+  return std::clamp(v, low, high);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-direct-extrema-" + target,
+              source_record_direct_extrema_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-direct-extrema-nonbool",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'int operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'const Entry& f(const Entry&a,const Entry&b){return std::min(a,b);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>
