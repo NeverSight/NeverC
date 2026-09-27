@@ -29609,6 +29609,25 @@ void pair_vectors() {
   positions.shrink_to_fit();
   positions.emplace(positions.cbegin() + 1,
                     positions[2].first, positions[0].second);
+  std::vector<std::pair<float, float>> floats;
+  floats.emplace_back(1.0f, 2.0f);
+}
+bool compare_pair_vectors(const std::vector<std::pair<int, int>>& left,
+                          const std::vector<std::pair<int, int>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_pair_vectors(
+    const std::vector<std::vector<std::pair<int, int>>>& left,
+    const std::vector<std::vector<std::pair<int, int>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_float_pair_vectors(
+    const std::vector<std::pair<float, float>>& left,
+    const std::vector<std::pair<float, float>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
 }
 bool compare_nested_integers(const std::vector<std::vector<int>>& left,
                              const std::vector<std::vector<int>>& right) {
@@ -29823,6 +29842,14 @@ void f() {
   std::vector<std::pair<int, int>> values;
   short first = 1;
   values.emplace(values.cbegin(), first, 2);
+}
+""",
+        "pair-array-comparison": """\
+#include <array>
+#include <utility>
+bool f(const std::vector<std::pair<std::array<int, 2>, int>>& left,
+       const std::vector<std::pair<std::array<int, 2>, int>>& right) {
+  return left == right;
 }
 """,
         "nested-void-pointer-order": """\

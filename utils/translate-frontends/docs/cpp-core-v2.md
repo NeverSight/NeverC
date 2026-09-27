@@ -2643,6 +2643,10 @@ captures both values before vector growth and initializes the corresponding
 fields directly. The returned reference names the inserted pair.
 Positional `emplace(position, first, second)` uses the same capture rule before
 shifting or growth and returns an iterator to the new pair.
+All six vector comparisons also recurse through pair values whose fields are
+admitted scalar values or nested pairs. Equality checks both fields; ordering
+uses the pair's first field before its second and keeps unordered floating
+values separate from equality. Nested vectors of those pairs use the same rule.
 The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
 work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,

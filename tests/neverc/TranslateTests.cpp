@@ -59943,6 +59943,85 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPairRelationsRun) {
+  const auto Source = tmpFile("vector-pair-relations.cpp");
+  const auto Output = tmpFile("vector-pair-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <utility>
+#include <vector>
+using Pair = std::pair<int, int>;
+int main() {
+  {
+    std::vector<Pair> left;
+    std::vector<Pair> right;
+    left.emplace_back(1, 2);
+    right.emplace_back(1, 2);
+    if (!(left == right) || left != right || left < right || left > right ||
+        !(left <= right) || !(left >= right)) return 1;
+    right.emplace_back(0, 0);
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 2;
+    right.pop_back();
+    right[0].second = 3;
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 3;
+    std::vector<Pair> empty;
+    if (!(empty == empty) || empty != empty || !(empty < left) ||
+        empty > left || !(left > empty)) return 4;
+    using Nested = std::pair<Pair, int>;
+    std::vector<Nested> nested_left;
+    std::vector<Nested> nested_right;
+    nested_left.emplace_back(Nested(Pair(3, 4), 5));
+    nested_right.emplace_back(Nested(Pair(3, 4), 6));
+    if (nested_left == nested_right || !(nested_left != nested_right) ||
+        !(nested_left < nested_right) || nested_left > nested_right)
+      return 5;
+    float nan = 0.0f / 0.0f;
+    std::vector<std::pair<float, float>> floats_left;
+    std::vector<std::pair<float, float>> floats_right;
+    floats_left.emplace_back(nan, 2.0f);
+    floats_right.emplace_back(nan, 3.0f);
+    if (floats_left == floats_right || !(floats_left != floats_right) ||
+        !(floats_left < floats_right) || floats_left > floats_right)
+      return 6;
+    floats_right[0].second = 2.0f;
+    if (floats_left == floats_right || !(floats_left != floats_right) ||
+        floats_left < floats_right || floats_left > floats_right ||
+        !(floats_left <= floats_right) || !(floats_left >= floats_right))
+      return 7;
+    std::vector<std::vector<Pair>> rows_left;
+    std::vector<std::vector<Pair>> rows_right;
+    rows_left.push_back(left);
+    rows_right.push_back(right);
+    if (rows_left == rows_right || !(rows_left != rows_right) ||
+        !(rows_left < rows_right) || rows_left > rows_right ||
+        !(rows_left <= rows_right) || rows_left >= rows_right)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-pair-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");
