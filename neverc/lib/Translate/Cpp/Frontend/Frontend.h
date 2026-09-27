@@ -1345,6 +1345,18 @@ const clang::CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, const clang::CallExpr *Call,
     unsigned FirstArgument, const clang::ASTContext &Context);
+enum class UtilityVectorOptionalEmplace {
+  Empty,
+  InPlaceDefault,
+  Value,
+};
+std::optional<UtilityVectorOptionalEmplace>
+approvedUtilityVectorOptionalEmplace(const State &S,
+                                     const clang::SourceManager &SM,
+                                     const UtilityVectorRecord &Vector,
+                                     const clang::CallExpr *Call,
+                                     unsigned FirstArgument,
+                                     const clang::ASTContext &Context);
 enum class UtilityVectorStringEmplace {
   CString,
   PointerLength,

@@ -2652,7 +2652,10 @@ engaged elements copy their scalar value. The existing optional operations
 remain available through vector element access. All six vector comparisons
 order disengaged elements before engaged elements and compare engaged scalar
 values directly, including in nested vectors. Void-pointer optionals permit
-only equality and inequality.
+only equality and inequality. Back and positional emplacement accept an
+admitted scalar value, `std::nullopt`, `std::in_place` for a default value,
+or `std::in_place` plus one convertible scalar value. The scalar is captured
+before vector storage changes, including when it aliases an existing element.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

@@ -11994,6 +11994,11 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 1, A.Context)
               : nullptr;
+      const auto OptionalEmplace =
+          Operation == UtilityOperation::VectorEmplace
+              ? approvedUtilityVectorOptionalEmplace(A.S, A.Sources, *Vector,
+                                                     Call, 1, A.Context)
+              : std::optional<UtilityVectorOptionalEmplace>();
       std::optional<UtilityVectorStringEmplace> StringEmplace;
       if (Operation == UtilityOperation::VectorEmplace)
         StringEmplace = approvedUtilityVectorStringEmplace(
@@ -12095,6 +12100,13 @@ class FunctionLowering {
           constructVectorStringEmplace(json::Object(*Value),
                                        Vector->ElementType, &*String, Call, 1,
                                        *StringEmplace, L);
+        } else if (OptionalEmplace) {
+          auto Optional = approvedUtilityOptionalRecord(
+              A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+              A.Context);
+          Value = temporary(type(Vector->ElementType, L), L);
+          constructVectorOptionalEmplace(json::Object(*Value), *Optional, Call,
+                                         1, *OptionalEmplace, L);
         } else if (UniquePointerEmplace) {
           auto Unique = approvedUtilityUniquePtrRecord(
               A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
@@ -14116,6 +14128,11 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 0, A.Context)
               : nullptr;
+      const auto OptionalEmplace =
+          Operation == UtilityOperation::VectorEmplaceBack
+              ? approvedUtilityVectorOptionalEmplace(A.S, A.Sources, *Vector,
+                                                     Call, 0, A.Context)
+              : std::optional<UtilityVectorOptionalEmplace>();
       std::optional<UtilityVectorStringEmplace> StringEmplace;
       if (Operation == UtilityOperation::VectorEmplaceBack)
         StringEmplace = approvedUtilityVectorStringEmplace(
@@ -14155,6 +14172,13 @@ class FunctionLowering {
         Value = temporary(type(Vector->ElementType, L), L);
         constructVectorStringEmplace(json::Object(*Value), Vector->ElementType,
                                      &*String, Call, 0, *StringEmplace, L);
+      } else if (OptionalEmplace) {
+        auto Optional = approvedUtilityOptionalRecord(
+            A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+            A.Context);
+        Value = temporary(type(Vector->ElementType, L), L);
+        constructVectorOptionalEmplace(json::Object(*Value), *Optional, Call, 0,
+                                       *OptionalEmplace, L);
       } else if (UniquePointerEmplace) {
         auto Unique = approvedUtilityUniquePtrRecord(
             A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
@@ -19065,6 +19089,31 @@ class FunctionLowering {
     label(Finish, L);
     assign(dereference(std::move(TargetCurrent), L),
            quantity(0, type(A.Context.CharTy, L), L), L);
+  }
+
+  void constructVectorOptionalEmplace(Expression Place,
+                                      const UtilityOptionalRecord &Optional,
+                                      const CallExpr *Call,
+                                      unsigned FirstArgument,
+                                      UtilityVectorOptionalEmplace Kind,
+                                      SourceLocation L) {
+    std::optional<Expression> Captured;
+    if (Kind == UtilityVectorOptionalEmplace::Value) {
+      const unsigned ValueIndex = Call->getNumArgs() == FirstArgument + 2
+                                      ? FirstArgument + 1
+                                      : FirstArgument;
+      Captured = snapshot(cast(expression(Call->getArg(ValueIndex)),
+                               type(Optional.Value->getType(), L), L),
+                          L);
+    }
+    initializeZero(json::Object(Place),
+                   A.Context.getRecordType(Optional.Record), L);
+    if (Captured)
+      assign(fieldStorage(json::Object(Place), Optional.Value, L),
+             std::move(*Captured), L);
+    if (Kind != UtilityVectorOptionalEmplace::Empty)
+      assign(fieldStorage(std::move(Place), Optional.Engaged, L),
+             boolean(true, L), L);
   }
 
   void constructVectorStringEmplace(Expression Place, QualType T,

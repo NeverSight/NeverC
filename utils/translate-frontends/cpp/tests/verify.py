@@ -29687,6 +29687,13 @@ void optional_vectors() {
   std::optional<int> seed(3);
   values.push_back(seed);
   values.emplace_back(values[1]);
+  values.emplace_back(*values[1]);
+  values.emplace(values.cbegin(), *values[1]);
+  values.emplace_back(std::nullopt);
+  values.emplace(values.cbegin(), std::nullopt);
+  values.emplace_back(std::in_place);
+  values.emplace(values.cbegin(), std::in_place, 5);
+  values.emplace_back(std::in_place, 4);
   values.assign(2, seed);
   std::vector<std::optional<int>> copied(values);
   copied = values;
@@ -29694,10 +29701,12 @@ void optional_vectors() {
   std::vector<std::optional<float>> floats;
   std::optional<float> float_value(2.0f);
   floats.push_back(float_value);
+  floats.emplace_back(3);
   void *pointer = nullptr;
   std::optional<void*> pointer_value(pointer);
   std::vector<std::optional<void*>> pointers;
   pointers.push_back(pointer_value);
+  pointers.emplace_back(nullptr);
 }
 bool compare_optional_vectors(const std::vector<std::optional<int>>& left,
                               const std::vector<std::optional<int>>& right) {
@@ -29975,6 +29984,14 @@ int f() {
 bool f(const std::vector<std::optional<void*>>& left,
        const std::vector<std::optional<void*>>& right) {
   return left < right;
+}
+""",
+        "optional-user-conversion-emplace": """\
+#include <optional>
+struct IntLike { operator int() const { return 1; } };
+void f() {
+  std::vector<std::optional<int>> values;
+  values.emplace_back(IntLike{});
 }
 """,
         "array-void-pointer-order": """\

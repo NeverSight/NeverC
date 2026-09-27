@@ -6138,6 +6138,39 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
   return Selected;
 }
 
+std::optional<UtilityVectorOptionalEmplace>
+approvedUtilityVectorOptionalEmplace(const State &S, const SourceManager &SM,
+                                     const UtilityVectorRecord &Vector,
+                                     const CallExpr *Call,
+                                     unsigned FirstArgument,
+                                     const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() <= FirstArgument ||
+      Call->getNumArgs() > FirstArgument + 2)
+    return std::nullopt;
+  const auto Optional = approvedUtilityOptionalRecord(
+      S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
+  if (!Optional || Optional->ElementType.isConstQualified() ||
+      !utilityScalar(Context, Optional->ElementType))
+    return std::nullopt;
+  const auto *First = Call->getArg(FirstArgument);
+  if (Call->getNumArgs() == FirstArgument + 1) {
+    if (approvedUtilityNulloptExpression(S, SM, First, Context))
+      return UtilityVectorOptionalEmplace::Empty;
+    if (approvedUtilityInPlaceExpression(S, SM, First, Context))
+      return UtilityVectorOptionalEmplace::InPlaceDefault;
+    if (utilityScalarDirectConversion(Context, First->getType(),
+                                      Optional->ElementType))
+      return UtilityVectorOptionalEmplace::Value;
+    return std::nullopt;
+  }
+  if (approvedUtilityInPlaceExpression(S, SM, First, Context) &&
+      utilityScalarDirectConversion(Context,
+                                    Call->getArg(FirstArgument + 1)->getType(),
+                                    Optional->ElementType))
+    return UtilityVectorOptionalEmplace::Value;
+  return std::nullopt;
+}
+
 std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
@@ -20467,6 +20500,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
                                                     Context))
           return UtilityOperation::VectorEmplace;
+        if (approvedUtilityVectorOptionalEmplace(S, SM, *Vector, Call, 1,
+                                                 Context))
+          return UtilityOperation::VectorEmplace;
         if (approvedUtilityVectorStringEmplace(S, SM, *Vector, Call, 1,
                                                Context))
           return UtilityOperation::VectorEmplace;
@@ -20594,6 +20630,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
                                                   Context))
+        return UtilityOperation::VectorEmplaceBack;
+      if (approvedUtilityVectorOptionalEmplace(S, SM, *Vector, Call, 0,
+                                               Context))
         return UtilityOperation::VectorEmplaceBack;
       if (approvedUtilityVectorStringEmplace(S, SM, *Vector, Call, 0, Context))
         return UtilityOperation::VectorEmplaceBack;

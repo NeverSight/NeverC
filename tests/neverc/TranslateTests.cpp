@@ -60376,6 +60376,69 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOptionalEmplaceRun) {
+  const auto Source = tmpFile("vector-optional-emplace.cpp");
+  const auto Output = tmpFile("vector-optional-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <optional>
+#include <vector>
+using Maybe = std::optional<int>;
+int main() {
+  {
+    std::vector<Maybe> values;
+    values.reserve(Size(1));
+    auto &first = values.emplace_back(4);
+    if (&first != &values.back() || !first.has_value() || *first != 4)
+      return 1;
+    values.shrink_to_fit();
+    auto &aliased = values.emplace_back(*values[0]);
+    if (&aliased != &values.back() || *aliased != 4 || values.size() != 2)
+      return 2;
+    values.shrink_to_fit();
+    auto inserted = values.emplace(values.cbegin() + 1, *values[0]);
+    if (inserted != values.begin() + 1 || values.size() != 3 ||
+        *values[0] != 4 || *values[1] != 4 || *values[2] != 4)
+      return 3;
+    values.emplace_back(std::nullopt);
+    auto empty = values.emplace(values.cbegin(), std::nullopt);
+    if (empty != values.begin() || values[0].has_value() ||
+        values[4].has_value())
+      return 4;
+    values.emplace_back(std::in_place);
+    auto initialized = values.emplace(values.cbegin() + 2, std::in_place, 7);
+    if (initialized != values.begin() + 2 || *initialized != 7 ||
+        !values[6].has_value() || *values[6] != 0)
+      return 5;
+    auto &converted = values.emplace_back(std::in_place, 2.5);
+    if (*converted != 2 || values.size() != 8) return 6;
+    std::vector<std::optional<double>> decimals;
+    decimals.emplace_back(3);
+    if (!decimals[0].has_value() || *decimals[0] != 3.0) return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-optional-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOptionalRelationsRun) {
   const auto Source = tmpFile("vector-optional-relations.cpp");
   const auto Output = tmpFile("vector-optional-relations.nc");
