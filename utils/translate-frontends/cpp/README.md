@@ -429,6 +429,8 @@ Default `is_sorted` and `is_sorted_until` accept the same source-record
 comparison in raw or authenticated wrapped ranges.
 Default `min_element`, `max_element` and `minmax_element` return original raw
 or wrapped positions for those records, retaining the standard tie rules.
+Default `is_heap` and `is_heap_until` accept the same source-record ordering
+for raw or authenticated wrapped ranges.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

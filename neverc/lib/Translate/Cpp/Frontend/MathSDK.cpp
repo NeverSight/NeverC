@@ -24035,13 +24035,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (HeapQueryAlgorithm &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
+      ((Call->getNumArgs() == 2 &&
+        ((AlgorithmRangePointerParameter(0) &&
+          AlgorithmRangePointerParameter(1) &&
+          AlgorithmOrderedRangeParameter(0)) ||
+         (AlgorithmRecordOrderedRangeParameter(0) &&
+          AlgorithmRecordOrderedRangeParameter(1)))) ||
+       (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
+        AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeComparisonParameter(2, 0)))) {
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;

@@ -2137,6 +2137,12 @@ retain original element addresses. The single extrema return the first tied
 minimum or maximum; `minmax_element` returns the first tied minimum and last
 tied maximum as a pair of the original iterator type.
 
+Default `std::is_heap` and `std::is_heap_until` accept the same exact
+source-record raw or authenticated wrapped ranges with a selected Boolean
+`operator<`. Parent and child comparisons use original element addresses;
+`is_heap_until` returns the first violating child in the original iterator
+form, or the end for a heap.
+
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the respective element types in both argument

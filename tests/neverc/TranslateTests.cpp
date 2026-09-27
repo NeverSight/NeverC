@@ -55193,6 +55193,144 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordHeapQueriesRun) {
+  const auto Source = tmpFile("source-record-heap-queries.cpp");
+  const auto Output = tmpFile("source-record-heap-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *base;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point values[6]{{9}, {7}, {8}, {4}, {5}, {6}};
+  base = values; count = 6;
+  if (!std::is_heap(values, values + 6) ||
+      std::is_heap_until(values, values + 6) != values + 6 ||
+      !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  if (!std::is_heap(values, values) ||
+      std::is_heap_until(values, values) != values ||
+      !std::is_heap(values, values + 1) ||
+      std::is_heap_until(values, values + 1) != values + 1 || comparisons)
+    return 2;
+  values[2].value = 10;
+  if (std::is_heap(values, values + 6) ||
+      std::is_heap_until(values, values + 6) != values + 2 ||
+      bad_identity) return 3;
+  Friend friends[4]{{9}, {7}, {8}, {4}};
+  if (!std::is_heap(friends, friends + 4) ||
+      std::is_heap_until(friends, friends + 4) != friends + 4) return 4;
+  owned::Free frees[4]{{9}, {7}, {10}, {4}};
+  if (std::is_heap(frees, frees + 4) ||
+      std::is_heap_until(frees, frees + 4) != frees + 2) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-heap-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedSourceRecordHeapQueriesRun) {
+  const auto Source = tmpFile("wrapped-source-record-heap-queries.cpp");
+  const auto Output = tmpFile("wrapped-source-record-heap-queries.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *base;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+int main() {
+  std::vector<Point> values;
+  values.push_back(Point{9}); values.push_back(Point{7});
+  values.push_back(Point{8}); values.push_back(Point{4});
+  values.push_back(Point{5}); values.push_back(Point{6});
+  const std::vector<Point> &view = values;
+  base = &values[0]; count = 6;
+  if (!std::is_heap(view.cbegin(), view.cend()) ||
+      std::is_heap_until(values.begin(), values.end()) != values.end() ||
+      !comparisons || bad_identity) return 1;
+  auto violation = values.begin(); ++violation; ++violation;
+  values[2].value = 10;
+  if (std::is_heap(values.begin(), values.end()) ||
+      std::is_heap_until(values.begin(), values.end()) != violation ||
+      bad_identity) return 2;
+  std::vector<Point> empty;
+  comparisons = 0;
+  if (!std::is_heap(empty.begin(), empty.end()) ||
+      std::is_heap_until(empty.begin(), empty.end()) != empty.end() ||
+      comparisons) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-source-record-heap-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");
