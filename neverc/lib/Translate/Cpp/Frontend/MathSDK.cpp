@@ -5790,6 +5790,12 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
                                            ValueArray->ElementType);
   const auto ValueOptional =
       approvedUtilityOptionalRecord(S, SM, ElementRecord, Context);
+  const auto OptionalArray =
+      ValueOptional
+          ? approvedUtilityArrayRecord(
+                S, SM, ValueOptional->ElementType->getAsCXXRecordDecl(),
+                Context)
+          : std::optional<UtilityArrayRecord>();
   const bool ValueOptionalElement =
       ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
       ElementRecord->hasTrivialMoveConstructor() &&
@@ -5797,7 +5803,11 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor() && ValueOptional &&
       !ValueOptional->ElementType.isConstQualified() &&
-      utilityScalar(Context, ValueOptional->ElementType);
+      (utilityScalar(Context, ValueOptional->ElementType) ||
+       (OptionalArray &&
+        utilityArrayValue(S, SM, Context, ValueOptional->ElementType) &&
+        utilityVectorArrayAssignableElements(S, SM, Context,
+                                             OptionalArray->ElementType)));
   const bool NestedVector =
       ElementRecord &&
       approvedUtilityVectorRecord(S, SM, ElementRecord, Context).has_value();
@@ -6044,10 +6054,13 @@ static bool utilityVectorOptionalComparable(const State &S,
                                             QualType Element, bool Equality) {
   const auto Optional = approvedUtilityOptionalRecord(
       S, SM, Element->getAsCXXRecordDecl(), Context);
-  return Optional &&
-         utilityScalarComparisonType(Context, Optional->ElementType,
-                                     Optional->ElementType, !Equality)
-             .has_value();
+  if (!Optional)
+    return false;
+  if (utilityScalarComparisonType(Context, Optional->ElementType,
+                                  Optional->ElementType, !Equality))
+    return true;
+  return utilityVectorArrayComparable(S, SM, Context, Optional->ElementType,
+                                      Equality);
 }
 
 static bool utilityNestedVectorComparable(const State &S,

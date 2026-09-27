@@ -19774,33 +19774,50 @@ class FunctionLowering {
     label(LeftPresent, L);
     branch(std::move(RightEngaged), Compare, Greater, L);
     label(Compare, L);
-    const auto Common = utilityScalarComparisonType(
-        A.Context, Optional.ElementType, Optional.ElementType, !Equality);
-    if (!Common)
-      reject(L, "vector optional comparison",
-             "The selected optional value comparison is unavailable.");
-    const auto CommonType = type(*Common, L);
-    auto LeftValue =
-        snapshot(cast(fieldStorage(json::Object(Left), Optional.Value, L),
-                      CommonType, L),
-                 L);
-    auto RightValue =
-        snapshot(cast(fieldStorage(json::Object(Right), Optional.Value, L),
-                      CommonType, L),
-                 L);
-    if (Equality) {
-      branch(
-          binary("==", std::move(LeftValue), std::move(RightValue), "bool", L),
-          Equal, Greater, L);
+    auto LeftValue = fieldStorage(json::Object(Left), Optional.Value, L);
+    auto RightValue = fieldStorage(json::Object(Right), Optional.Value, L);
+    if (const auto Array = approvedUtilityArrayRecord(
+            A.S, A.Sources, Optional.ElementType->getAsCXXRecordDecl(),
+            A.Context)) {
+      auto Order = compareVectorArrayValues(
+          std::move(LeftValue), std::move(RightValue), *Array, Equality, L);
+      if (Equality) {
+        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+               Equal, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Equal, L);
+      }
     } else {
-      const auto CheckGreater = labelName();
-      branch(binary("<", json::Object(LeftValue), json::Object(RightValue),
-                    "bool", L),
-             Less, CheckGreater, L);
-      label(CheckGreater, L);
-      branch(
-          binary("<", std::move(RightValue), std::move(LeftValue), "bool", L),
-          Greater, Equal, L);
+      const auto Common = utilityScalarComparisonType(
+          A.Context, Optional.ElementType, Optional.ElementType, !Equality);
+      if (!Common)
+        reject(L, "vector optional comparison",
+               "The selected optional value comparison is unavailable.");
+      const auto CommonType = type(*Common, L);
+      LeftValue = snapshot(cast(std::move(LeftValue), CommonType, L), L);
+      RightValue = snapshot(cast(std::move(RightValue), CommonType, L), L);
+      if (Equality) {
+        branch(binary("==", std::move(LeftValue), std::move(RightValue), "bool",
+                      L),
+               Equal, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(binary("<", json::Object(LeftValue), json::Object(RightValue),
+                      "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(
+            binary("<", std::move(RightValue), std::move(LeftValue), "bool", L),
+            Greater, Equal, L);
+      }
+    }
+    if (!Equality) {
       label(Less, L);
       assign(
           Result,

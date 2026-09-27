@@ -2664,6 +2664,10 @@ The same scalar optionals are admitted in assignable fixed arrays held by
 vectors, including nested arrays and zero-length arrays. Default construction
 leaves each optional disengaged. Array and nested-vector comparisons follow
 the same engagement and scalar ordering rules.
+An admitted assignable fixed array can also be the value inside an optional
+held by a vector. These vectors copy, assign, and compare the optional values
+recursively, including nested arrays and zero-length arrays. Arrays of void
+pointers retain equality and inequality only.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

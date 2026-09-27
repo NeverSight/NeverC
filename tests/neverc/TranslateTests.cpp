@@ -60402,6 +60402,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOptionalArrayRelationsRun) {
+  const auto Source = tmpFile("vector-optional-array-relations.cpp");
+  const auto Output = tmpFile("vector-optional-array-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <array>
+#include <optional>
+#include <vector>
+using Row = std::array<int, 2>;
+using Maybe = std::optional<Row>;
+int main() {
+  {
+    Row first{{1, 2}};
+    Row second{{1, 3}};
+    std::vector<Maybe> empty;
+    empty.emplace_back();
+    if (empty.size() != 1 || empty[0].has_value()) return 1;
+    std::vector<Maybe> low;
+    std::vector<Maybe> high;
+    low.push_back(Maybe(first));
+    high.push_back(Maybe(second));
+    if (low == high || !(low != high) || !(low < high) ||
+        low > high || !(low <= high) || low >= high) return 2;
+    if (empty == low || !(empty != low) || !(empty < low) ||
+        empty > low || !(empty <= low) || empty >= low) return 3;
+    std::vector<Maybe> copied(low);
+    copied = high;
+    if (!(copied == high) || copied == low || copied.data() == high.data())
+      return 4;
+    std::vector<std::vector<Maybe>> nested_low;
+    std::vector<std::vector<Maybe>> nested_high;
+    nested_low.push_back(low);
+    nested_high.push_back(high);
+    if (nested_low == nested_high || !(nested_low != nested_high) ||
+        !(nested_low < nested_high) || nested_low > nested_high)
+      return 5;
+    using EmptyRow = std::array<int, 0>;
+    std::vector<std::optional<EmptyRow>> zero_low;
+    std::vector<std::optional<EmptyRow>> zero_high;
+    zero_low.emplace_back();
+    zero_high.push_back(std::optional<EmptyRow>(EmptyRow{}));
+    if (!(zero_low < zero_high) || zero_low == zero_high) return 6;
+    using PointerRow = std::array<void*, 1>;
+    PointerRow pointer{{nullptr}};
+    std::vector<std::optional<PointerRow>> pointers_left;
+    std::vector<std::optional<PointerRow>> pointers_right;
+    pointers_left.push_back(std::optional<PointerRow>(pointer));
+    pointers_right.push_back(std::optional<PointerRow>(pointer));
+    if (!(pointers_left == pointers_right) || pointers_left != pointers_right)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-optional-array-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorPairOptionalRelationsRun) {
   const auto Source = tmpFile("vector-pair-optional-relations.cpp");
   const auto Output = tmpFile("vector-pair-optional-relations.nc");

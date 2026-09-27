@@ -29996,6 +29996,46 @@ bool equal_pointer(
         check("v2-vector-array-optional-" + target,
               vector_array_optional_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_optional_array_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <array>
+#include <optional>
+#include <vector>
+using Maybe = std::optional<std::array<int, 2>>;
+void values() {
+  std::array<int, 2> row{{1, 2}};
+  std::vector<Maybe> items;
+  items.emplace_back();
+  items.push_back(Maybe(row));
+  std::vector<Maybe> copied(items);
+  copied = items;
+  std::vector<std::optional<std::array<int, 0>>> empty;
+  empty.emplace_back();
+}
+bool compare(const std::vector<Maybe>& left,
+             const std::vector<Maybe>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested(const std::vector<std::vector<Maybe>>& left,
+                    const std::vector<std::vector<Maybe>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool equal_pointer(
+    const std::vector<std::optional<std::array<void*, 1>>>& left,
+    const std::vector<std::optional<std::array<void*, 1>>>& right) {
+  return left == right && !(left != right);
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-optional-array-" + target,
+              vector_optional_array_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30085,6 +30125,14 @@ bool f(const std::vector<std::array<void*, 2>>& left,
 #include <optional>
 bool f(const std::vector<std::array<std::optional<void*>, 2>>& left,
        const std::vector<std::array<std::optional<void*>, 2>>& right) {
+  return left < right;
+}
+""",
+        "optional-array-void-pointer-order": """\
+#include <array>
+#include <optional>
+bool f(const std::vector<std::optional<std::array<void*, 2>>>& left,
+       const std::vector<std::optional<std::array<void*, 2>>>& right) {
   return left < right;
 }
 """,
