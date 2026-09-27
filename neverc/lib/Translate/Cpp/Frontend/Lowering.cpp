@@ -7263,9 +7263,12 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::AlgorithmIsPermutation: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
       std::optional<unsigned> PredicateIndex;
       if (Call->getNumArgs() == 4 &&
           Call->getArg(3)->getType()->isFunctionPointerType())
@@ -7275,13 +7278,13 @@ class FunctionLowering {
       std::optional<Expression> ExplicitSecondLast;
       if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
           Call->getNumArgs() == 5)
-        ExplicitSecondLast = snapshot(expression(Call->getArg(3)), L);
+        ExplicitSecondLast = std::move(AlgorithmRangeValue(3).first);
       std::optional<Expression> Predicate;
       if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = type(SecondRange.second, L);
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
       auto SecondLast =
           ExplicitSecondLast
@@ -7327,8 +7330,8 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(Previous), L),
                                        dereference(json::Object(Current), L), L)
-                 : binary("==", dereference(Previous, L),
-                          dereference(Current, L), "bool", L),
+                 : AlgorithmEqual(dereference(Previous, L), 0,
+                                  dereference(Current, L), 0),
              AdvanceCurrent, AdvancePrevious, L);
       label(AdvancePrevious, L);
       assign(
@@ -7349,8 +7352,8 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(FirstScan), L),
                                        dereference(json::Object(Current), L), L)
-                 : binary("==", dereference(FirstScan, L),
-                          dereference(Current, L), "bool", L),
+                 : AlgorithmEqual(dereference(FirstScan, L), 0,
+                                  dereference(Current, L), 0),
              IncrementFirst, AdvanceFirstScan, L);
       label(IncrementFirst, L);
       assign(FirstCount,

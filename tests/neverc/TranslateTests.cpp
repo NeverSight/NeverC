@@ -44620,7 +44620,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
                       "return std::prev_permutation(a,a+2)?0:1;}"},
       {"record-is-permutation",
        "#include <algorithm>\nstruct R{int n;};"
-       "bool operator==(const R&a,const R&b){return a.n==b.n;}"
+       "int operator==(const R&a,const R&b){return a.n==b.n;}"
        "int main(){R a[2]{{1},{2}};"
        "return std::is_permutation(a,a+2,a,a+2)?0:1;}"}};
   for (const auto &Case : Cases) {
@@ -44634,6 +44634,165 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordPermutationRun) {
+  const auto Source = tmpFile("source-record-permutation.cpp");
+  const auto Output = tmpFile("source-record-permutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *first_range, *second_range;
+int first_size, second_size, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const;
+};
+bool within(const Point *value, const Point *base, int count) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator==(const Point &other) const {
+  ++comparisons;
+  if ((!within(this, first_range, first_size) &&
+       !within(this, second_range, second_size)) ||
+      (!within(&other, first_range, first_size) &&
+       !within(&other, second_range, second_size))) ++bad_identity;
+  return value == other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point first[4]{{1}, {2}, {2}, {3}};
+  Point second[4]{{2}, {3}, {2}, {1}};
+  Point wrong[4]{{1}, {2}, {3}, {3}};
+  first_range = first; first_size = 4;
+  second_range = second; second_size = 4;
+  if (!std::is_permutation(first, first + 4, second) ||
+      !std::is_permutation(first, first + 4, second, second + 4) ||
+      !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  if (std::is_permutation(first, first + 4, second, second + 3) ||
+      comparisons) return 2;
+  if (!std::is_permutation(first, first, second, second) ||
+      comparisons) return 3;
+  second_range = wrong;
+  if (std::is_permutation(first, first + 4, wrong) || bad_identity)
+    return 4;
+  Friend friends[4]{{1}, {2}, {2}, {3}};
+  Friend friend_order[4]{{3}, {2}, {1}, {2}};
+  if (!std::is_permutation(friends, friends + 4, friend_order) ||
+      !std::is_permutation(friends, friends + 4,
+                           friend_order, friend_order + 4)) return 5;
+  owned::Free frees[4]{{1}, {2}, {2}, {3}};
+  owned::Free free_order[4]{{2}, {1}, {3}, {2}};
+  if (!std::is_permutation(frees, frees + 4, free_order) ||
+      !std::is_permutation(frees, frees + 4,
+                           free_order, free_order + 4)) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-permutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedSourceRecordPermutationRun) {
+  const auto Source = tmpFile("wrapped-source-record-permutation.cpp");
+  const auto Output = tmpFile("wrapped-source-record-permutation.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *first_range, *second_range;
+int first_size, second_size, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const;
+};
+bool within(const Point *value, const Point *base, int count) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator==(const Point &other) const {
+  ++comparisons;
+  if ((!within(this, first_range, first_size) &&
+       !within(this, second_range, second_size)) ||
+      (!within(&other, first_range, first_size) &&
+       !within(&other, second_range, second_size))) ++bad_identity;
+  return value == other.value;
+}
+int main() {
+  std::vector<Point> first, second;
+  first.push_back(Point{1}); first.push_back(Point{2});
+  first.push_back(Point{2}); first.push_back(Point{3});
+  second.push_back(Point{2}); second.push_back(Point{3});
+  second.push_back(Point{2}); second.push_back(Point{1});
+  first_range = &first[0]; first_size = 4;
+  second_range = &second[0]; second_size = 4;
+  const std::vector<Point> &first_view = first;
+  const std::vector<Point> &second_view = second;
+  if (!std::is_permutation(first_view.cbegin(), first_view.cend(),
+                           second.begin()) ||
+      !std::is_permutation(first.begin(), first.end(),
+                           second_view.cbegin(), second_view.cend()) ||
+      !std::is_permutation(first_view.cbegin(), first_view.cend(),
+                           &second[0], &second[0] + 4) ||
+      !std::is_permutation(&first[0], &first[0] + 4,
+                           second_view.cbegin(), second_view.cend()) ||
+      !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  if (std::is_permutation(first_view.cbegin(), first_view.cend(),
+                          second.begin(), second.begin()) || comparisons)
+    return 2;
+  if (!std::is_permutation(first.begin(), first.begin(),
+                           second.begin(), second.begin()) || comparisons)
+    return 3;
+  std::vector<int> scalar{1, 2, 2, 3};
+  int scalar_order[4]{3, 2, 1, 2};
+  if (!std::is_permutation(scalar.begin(), scalar.end(), scalar_order) ||
+      !std::is_permutation(scalar.begin(), scalar.end(),
+                           scalar_order, scalar_order + 4)) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-source-record-permutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
 

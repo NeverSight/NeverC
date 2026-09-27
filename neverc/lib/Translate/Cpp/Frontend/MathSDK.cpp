@@ -24189,24 +24189,46 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
-    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
-                                 AlgorithmEqualityPointerParameter(1) &&
-                                 AlgorithmEqualityParameters(0, 2);
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarLast = AlgorithmRangePointerParameter(1);
+    const auto ScalarSecond = AlgorithmRangePointerParameter(2);
+    const bool ScalarDefault =
+        ScalarFirst && ScalarLast && ScalarSecond &&
+        utilityAlgorithmEqualityPointer(Context, *ScalarFirst) &&
+        utilityAlgorithmEqualityPointer(Context, *ScalarSecond) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, (*ScalarFirst)->getPointeeType(), OO_EqualEqual) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, (*ScalarSecond)->getPointeeType(), OO_EqualEqual) &&
+        utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
+                                    (*ScalarSecond)->getPointeeType(), false);
+    const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
+    const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
+    const bool RecordDefault =
+        RecordFirst && AlgorithmRecordEqualityRangeParameter(1) &&
+        RecordSecond &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordSecond)->getPointeeType());
+    const bool DefaultElements = ScalarDefault || RecordDefault;
     if (Call->getNumArgs() == 3 && DefaultElements)
       return UtilityOperation::AlgorithmIsPermutation;
     if (Call->getNumArgs() == 4) {
-      if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
+      if (DefaultElements &&
+          ((ScalarDefault && AlgorithmRangePointerParameter(3)) ||
+           (RecordDefault && AlgorithmRecordEqualityRangeParameter(3))) &&
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmIsPermutation;
-      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+      if (AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+          AlgorithmPointerParameter(2) &&
+          AlgorithmBinaryPredicateParameter(3, 0, 2))
         return UtilityOperation::AlgorithmIsPermutation;
     }
-    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
+    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
+        AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+        AlgorithmPointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()) &&
         AlgorithmBinaryPredicateParameter(4, 0, 2))

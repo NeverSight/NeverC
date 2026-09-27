@@ -410,9 +410,11 @@ scalar conversions. The copy-producing equality and predicate algorithms below
 accept the same conversions for their writable outputs. Built-in equality elements admit
 `find`, `count`, three- or four-iterator `equal`, `adjacent_find`, `remove`,
 `remove_copy`, `replace`, `replace_copy`, `unique`, `unique_copy`, `search`,
-`find_end`, `find_first_of`, `search_n`, three- or four-iterator `mismatch` and
-three- or four-iterator `is_permutation`;
-built-in arithmetic elements admit default-order
+`find_end`, `find_first_of`, `search_n`, and three- or four-iterator `mismatch`.
+Default three- or four-iterator `is_permutation` accepts those built-in equality
+elements and exact source records with a uniquely selected Boolean equality
+operator over independent authenticated wrapped or raw-pointer ranges.
+Built-in arithmetic elements admit default-order
 `min`, `max`, `clamp`, `minmax`, `min_element`, `max_element`,
 `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`, `binary_search`,
 `is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`, `make_heap`,

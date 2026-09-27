@@ -2088,8 +2088,13 @@ wraparound and one-time object evaluation without a libc++ runtime call.
 
 The exact default-equality three- and four-iterator `std::is_permutation`
 templates use the equality element boundary, so const ranges, enums and
-object-pointer elements are accepted while records remain excluded. The two ranges
-may have different scalar element types with a checked common equality type.
+object-pointer elements are accepted. The two ranges may have different scalar
+element types with a checked common equality type. Authenticated mutable or
+const wrapped iterators also work independently on either side, including mixed
+pointer and wrapped ranges. Exact same-type trivial source records use one
+uniquely selected const member, hidden-friend, or enclosing-namespace free
+Boolean equality operator. Each comparison receives the original range element
+by reference.
 Their checked binary-predicate overloads use the scalar predicate boundary above
 and also admit heterogeneous scalar ranges, including enum ranges. The
 three-iterator form compares a second range of the first range's length. The

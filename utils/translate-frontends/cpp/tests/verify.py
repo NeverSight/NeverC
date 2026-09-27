@@ -31266,6 +31266,62 @@ std::vector<int>::iterator search_scalar(std::vector<int> &values,
           'return std::search(a.begin(),a.end(),b.begin(),b.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_permutation_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+bool permutation_member(Member *first, Member *last, Member *second) {
+  return std::is_permutation(first, last, second);
+}
+bool permutation_friend(Friend *first, Friend *last,
+                        Friend *second, Friend *second_last) {
+  return std::is_permutation(first, last, second, second_last);
+}
+bool permutation_free(owned::Free *first, owned::Free *last,
+                      owned::Free *second) {
+  return std::is_permutation(first, last, second);
+}
+bool permutation_wrapped(const std::vector<Member> &first,
+                         std::vector<Member> &second) {
+  return std::is_permutation(first.cbegin(), first.cend(),
+                             second.begin(), second.end());
+}
+bool permutation_mixed(Member *first, Member *last,
+                       const std::vector<Member> &second) {
+  return std::is_permutation(first, last, second.cbegin());
+}
+bool permutation_scalar(std::vector<int> &first, int *second) {
+  return std::is_permutation(first.begin(), first.end(), second);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-permutation-" + target,
+              source_record_permutation_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-permutation-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'bool f(std::vector<Entry>&a,std::vector<Entry>&b){'
+          'return std::is_permutation(a.begin(),a.end(),'
+          'b.begin(),b.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>
