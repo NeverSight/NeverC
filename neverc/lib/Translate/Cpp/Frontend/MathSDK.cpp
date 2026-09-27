@@ -5744,6 +5744,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   const CXXConstructorDecl *DefaultElementConstructor = nullptr;
   const CXXConstructorDecl *CopyElementConstructor = nullptr;
   const CXXConstructorDecl *MoveElementConstructor = nullptr;
+  const CXXMethodDecl *ShiftElementAssignment = nullptr;
   if (SourceOwnedElement) {
     const auto *Destructor = ElementRecord->getDestructor();
     if (!Destructor || !Destructor->hasBody() ||
@@ -5775,6 +5776,31 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
     }
     if (!MoveElementConstructor)
       return std::nullopt;
+    const auto Reference = Context.getLValueReferenceType(ElementType);
+    const auto ConstReference =
+        Context.getLValueReferenceType(ElementType.withConst());
+    const auto RValueReference = Context.getRValueReferenceType(ElementType);
+    const CXXMethodDecl *CopyAssignment = nullptr;
+    for (const auto *Method : ElementRecord->methods()) {
+      if ((!Method->isMoveAssignmentOperator() &&
+           !Method->isCopyAssignmentOperator()) ||
+          Method->isDeleted() || Method->isVariadic() ||
+          !supportedAssignment(Method) || Method->getNumParams() != 1 ||
+          Method->getRefQualifier() == RQ_RValue ||
+          (!Method->isTrivial() && !Method->hasBody()) ||
+          !S.owns(SM, Method->getLocation()) ||
+          !Context.hasSameType(Method->getReturnType(), Reference))
+        continue;
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      if (Method->isMoveAssignmentOperator() &&
+          Context.hasSameType(Parameter, RValueReference))
+        ShiftElementAssignment = Method;
+      else if (Method->isCopyAssignmentOperator() &&
+               Context.hasSameType(Parameter, ConstReference))
+        CopyAssignment = Method;
+    }
+    if (!ShiftElementAssignment)
+      ShiftElementAssignment = CopyAssignment;
   }
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
@@ -5851,7 +5877,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   return UtilityVectorRecord{Vector, Element, Pointer,
                              OwningElement || SourceOwnedElement,
                              DefaultElementConstructor, CopyElementConstructor,
-                             MoveElementConstructor};
+                             MoveElementConstructor, ShiftElementAssignment};
 }
 
 std::optional<UtilityVectorConstruction>
@@ -19792,7 +19818,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          VectorType))
         return UtilityOperation::VectorMemberSwap;
     }
-    if (!Vector->MoveElementConstructor && !Operator && Name == "erase" &&
+    if ((!Vector->MoveElementConstructor || Vector->ShiftElementAssignment) &&
+        !Operator && Name == "erase" &&
         !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
@@ -19816,7 +19843,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorErase;
       }
     }
-    if (!Vector->MoveElementConstructor && !Operator && Name == "insert" &&
+    if ((!Vector->MoveElementConstructor || Vector->ShiftElementAssignment) &&
+        !Operator && Name == "insert" &&
         !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&

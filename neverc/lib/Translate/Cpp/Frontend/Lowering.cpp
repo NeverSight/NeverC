@@ -12052,6 +12052,7 @@ class FunctionLowering {
           type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
       auto Count = temporary(SizeType, L);
       std::optional<Expression> Value;
+      std::optional<Expression> SourceAddress;
       std::optional<Expression> RangeCurrent;
       QualType RangeElementType;
       std::string RangePointerType = ConstPointerType;
@@ -12060,32 +12061,37 @@ class FunctionLowering {
                Call->getNumArgs() == 3 ? expression(Call->getArg(1))
                                        : quantity(1, SizeType, L),
                L);
-        // Capture a source element before shifting or releasing storage.
+        // Preserve source-owned insertion's argument address for in-place
+        // shifting; other owning elements need a value captured first.
         if (Vector->OwningElement) {
-          Value = temporary(type(Vector->ElementType, L), L);
-          initializeZero(json::Object(*Value), Vector->ElementType, L);
           const unsigned ValueIndex = Call->getNumArgs() - 1;
           const auto *Argument = Call->getArg(ValueIndex);
           const auto Parameter = Call->getDirectCallee()
                                      ->getParamDecl(ValueIndex)
                                      ->getType();
-          auto SourceAddress = snapshot(
+          auto Address = snapshot(
               address(lvalue(Argument), Argument->getType(), L), L);
-          const auto Capture = labelName(), Captured = labelName();
-          branch(binary("!=", json::Object(Count), quantity(0, SizeType, L),
-                        "bool", L), Capture, Captured, L);
-          label(Capture, L);
-          if (Parameter->isRValueReferenceType())
-            transferVectorElement(json::Object(*Value),
-                                  dereference(json::Object(SourceAddress), L),
-                                  *Vector, L);
-          else
-            copyVectorElement(
-                json::Object(*Value),
-                dereference(json::Object(SourceAddress), L), *Vector, L,
-                Argument->getType());
-          jump(Captured, L);
-          label(Captured, L);
+          if (Vector->MoveElementConstructor) {
+            SourceAddress = std::move(Address);
+          } else {
+            Value = temporary(type(Vector->ElementType, L), L);
+            initializeZero(json::Object(*Value), Vector->ElementType, L);
+            const auto Capture = labelName(), CaptureDone = labelName();
+            branch(binary("!=", json::Object(Count), quantity(0, SizeType, L),
+                          "bool", L),
+                   Capture, CaptureDone, L);
+            label(Capture, L);
+            if (Parameter->isRValueReferenceType())
+              transferVectorElement(json::Object(*Value),
+                                    dereference(json::Object(Address), L),
+                                    *Vector, L);
+            else
+              copyVectorElement(json::Object(*Value),
+                                dereference(json::Object(Address), L), *Vector,
+                                L, Argument->getType());
+            jump(CaptureDone, L);
+            label(CaptureDone, L);
+          }
         } else {
           Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
         }
@@ -12259,67 +12265,121 @@ class FunctionLowering {
           binary("<=", json::Object(Needed), json::Object(Capacity), "bool", L),
           InPlace, Grow, L);
       label(InPlace, L);
-      auto ShiftSource = temporary(PointerType, L);
-      auto ShiftTarget = temporary(PointerType, L);
-      assign(ShiftSource, json::Object(End), L);
-      assign(ShiftTarget,
-             binary("+", json::Object(End),
-                    cast(json::Object(Count), DifferenceType, L), PointerType,
-                    L),
-             L);
-      const auto ShiftCheck = labelName(), Shift = labelName();
-      const auto FillInPlace = labelName();
-      jump(ShiftCheck, L);
-      label(ShiftCheck, L);
-      branch(binary("!=", json::Object(ShiftSource), json::Object(Position),
-                    "bool", L),
-             Shift, FillInPlace, L);
-      label(Shift, L);
-      assign(ShiftSource,
-             binary("-", json::Object(ShiftSource),
-                    quantity(1, DifferenceType, L), PointerType, L),
-             L);
-      assign(ShiftTarget,
-             binary("-", json::Object(ShiftTarget),
-                    quantity(1, DifferenceType, L), PointerType, L),
-             L);
-      transferVectorElement(dereference(json::Object(ShiftTarget), L),
-                            dereference(json::Object(ShiftSource), L), *Vector,
-                            L);
-      if (Vector->OwningElement)
-        destroy(dereference(json::Object(ShiftSource), L),
-                Vector->ElementType, L);
-      jump(ShiftCheck, L);
-      label(FillInPlace, L);
-      auto FillTarget = temporary(PointerType, L);
-      auto FillIndex = temporary(SizeType, L);
-      assign(FillTarget, json::Object(Position), L);
-      assign(FillIndex, quantity(0, SizeType, L), L);
-      const auto FillCheck = labelName(), Fill = labelName();
-      const auto Filled = labelName();
-      jump(FillCheck, L);
-      label(FillCheck, L);
-      branch(
-          binary("<", json::Object(FillIndex), json::Object(Count), "bool", L),
-          Fill, Filled, L);
-      label(Fill, L);
-      StoreInsertedValue(dereference(json::Object(FillTarget), L));
-      assign(FillTarget,
-             binary("+", json::Object(FillTarget),
-                    quantity(1, DifferenceType, L), PointerType, L),
-             L);
-      assign(FillIndex,
-             binary("+", json::Object(FillIndex), quantity(1, SizeType, L),
-                    SizeType, L),
-             L);
-      jump(FillCheck, L);
-      label(Filled, L);
-      assign(Member("nct_vector_end"),
-             binary("+", json::Object(End),
-                    cast(json::Object(Count), DifferenceType, L), PointerType,
-                    L),
-             L);
-      jump(Done, L);
+      if (Vector->MoveElementConstructor) {
+        if (!Vector->ShiftElementAssignment || !SourceAddress ||
+            Operation != UtilityOperation::VectorInsert ||
+            Call->getNumArgs() != 2)
+          reject(L, "vector insert",
+                 "The selected element insertion cannot shift live elements.");
+        const auto Append = labelName(), ShiftLive = labelName();
+        const auto ShiftCheck = labelName(), ShiftOne = labelName();
+        const auto Fill = labelName(), Filled = labelName();
+        branch(binary("==", json::Object(Position), json::Object(End), "bool",
+                      L),
+               Append, ShiftLive, L);
+        label(Append, L);
+        transferVectorElement(dereference(json::Object(End), L),
+                              dereference(json::Object(*SourceAddress), L),
+                              *Vector, L);
+        jump(Filled, L);
+        label(ShiftLive, L);
+        auto Last = snapshot(
+            binary("-", json::Object(End), quantity(1, DifferenceType, L),
+                   PointerType, L),
+            L);
+        transferVectorElement(dereference(json::Object(End), L),
+                              dereference(json::Object(Last), L), *Vector, L);
+        auto Current = temporary(PointerType, L);
+        assign(Current, json::Object(Last), L);
+        jump(ShiftCheck, L);
+        label(ShiftCheck, L);
+        branch(binary("!=", json::Object(Current), json::Object(Position),
+                      "bool", L),
+               ShiftOne, Fill, L);
+        label(ShiftOne, L);
+        auto Previous = snapshot(
+            binary("-", json::Object(Current),
+                   quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        assignMemorySource(dereference(json::Object(Current), L),
+                           Vector->ElementType, Vector->ShiftElementAssignment,
+                           dereference(json::Object(Previous), L), L);
+        assign(Current, json::Object(Previous), L);
+        jump(ShiftCheck, L);
+        label(Fill, L);
+        assignMemorySource(dereference(json::Object(Position), L),
+                           Vector->ElementType, Vector->ShiftElementAssignment,
+                           dereference(json::Object(*SourceAddress), L), L);
+        jump(Filled, L);
+        label(Filled, L);
+        assign(Member("nct_vector_end"),
+               binary("+", json::Object(End), quantity(1, DifferenceType, L),
+                      PointerType, L),
+               L);
+        jump(Done, L);
+      } else {
+        auto ShiftSource = temporary(PointerType, L);
+        auto ShiftTarget = temporary(PointerType, L);
+        assign(ShiftSource, json::Object(End), L);
+        assign(ShiftTarget,
+               binary("+", json::Object(End),
+                      cast(json::Object(Count), DifferenceType, L), PointerType,
+                      L),
+               L);
+        const auto ShiftCheck = labelName(), Shift = labelName();
+        const auto FillInPlace = labelName();
+        jump(ShiftCheck, L);
+        label(ShiftCheck, L);
+        branch(binary("!=", json::Object(ShiftSource), json::Object(Position),
+                      "bool", L),
+               Shift, FillInPlace, L);
+        label(Shift, L);
+        assign(ShiftSource,
+               binary("-", json::Object(ShiftSource),
+                      quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        assign(ShiftTarget,
+               binary("-", json::Object(ShiftTarget),
+                      quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        transferVectorElement(dereference(json::Object(ShiftTarget), L),
+                              dereference(json::Object(ShiftSource), L), *Vector,
+                              L);
+        if (Vector->OwningElement)
+          destroy(dereference(json::Object(ShiftSource), L),
+                  Vector->ElementType, L);
+        jump(ShiftCheck, L);
+        label(FillInPlace, L);
+        auto FillTarget = temporary(PointerType, L);
+        auto FillIndex = temporary(SizeType, L);
+        assign(FillTarget, json::Object(Position), L);
+        assign(FillIndex, quantity(0, SizeType, L), L);
+        const auto FillCheck = labelName(), Fill = labelName();
+        const auto Filled = labelName();
+        jump(FillCheck, L);
+        label(FillCheck, L);
+        branch(
+            binary("<", json::Object(FillIndex), json::Object(Count), "bool", L),
+            Fill, Filled, L);
+        label(Fill, L);
+        StoreInsertedValue(dereference(json::Object(FillTarget), L));
+        assign(FillTarget,
+               binary("+", json::Object(FillTarget),
+                      quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        assign(FillIndex,
+               binary("+", json::Object(FillIndex), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(FillCheck, L);
+        label(Filled, L);
+        assign(Member("nct_vector_end"),
+               binary("+", json::Object(End),
+                      cast(json::Object(Count), DifferenceType, L), PointerType,
+                      L),
+               L);
+        jump(Done, L);
+      }
       label(Grow, L);
       auto NewCapacity = temporary(SizeType, L);
       assign(NewCapacity, json::Object(Needed), L);
@@ -12351,6 +12411,15 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      if (SourceAddress) {
+        auto InsertSlot = snapshot(
+            binary("+", json::Object(NewBegin), json::Object(Offset),
+                   PointerType, L),
+            L);
+        transferVectorElement(dereference(json::Object(InsertSlot), L),
+                              dereference(json::Object(*SourceAddress), L),
+                              *Vector, L);
+      }
       auto OldCurrent = temporary(PointerType, L);
       auto NewCurrent = temporary(PointerType, L);
       assign(OldCurrent, json::Object(Begin), L);
@@ -12390,7 +12459,8 @@ class FunctionLowering {
           binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
           GrowFill, GrowFillDone, L);
       label(GrowFill, L);
-      StoreInsertedValue(dereference(json::Object(NewCurrent), L));
+      if (!SourceAddress)
+        StoreInsertedValue(dereference(json::Object(NewCurrent), L));
       assign(NewCurrent,
              binary("+", json::Object(NewCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -12818,8 +12888,9 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), PointerType, L),
                L);
       }
-      destroyVectorElements(json::Object(Position), json::Object(Source),
-                            *Vector, L);
+      if (!Vector->ShiftElementAssignment)
+        destroyVectorElements(json::Object(Position), json::Object(Source),
+                              *Vector, L);
       auto Target = temporary(PointerType, L);
       assign(Target, json::Object(Position), L);
       const auto Check = labelName();
@@ -12828,10 +12899,16 @@ class FunctionLowering {
       branch(binary("!=", json::Object(Source), json::Object(End), "bool", L),
              Copy, Finish, L);
       label(Copy, L);
-      transferVectorElement(dereference(json::Object(Target), L),
-                            dereference(json::Object(Source), L), *Vector, L);
-      if (Vector->OwningElement)
-        destroy(dereference(json::Object(Source), L), Vector->ElementType, L);
+      if (Vector->ShiftElementAssignment)
+        assignMemorySource(dereference(json::Object(Target), L),
+                           Vector->ElementType, Vector->ShiftElementAssignment,
+                           dereference(json::Object(Source), L), L);
+      else {
+        transferVectorElement(dereference(json::Object(Target), L),
+                              dereference(json::Object(Source), L), *Vector, L);
+        if (Vector->OwningElement)
+          destroy(dereference(json::Object(Source), L), Vector->ElementType, L);
+      }
       assign(Target,
              binary("+", json::Object(Target), quantity(1, DifferenceType, L),
                     PointerType, L),
@@ -12842,6 +12919,9 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(Finish, L);
+      if (Vector->ShiftElementAssignment)
+        destroyVectorElements(json::Object(Target), json::Object(End), *Vector,
+                              L);
       assign(Member("nct_vector_end"), json::Object(Target), L);
       jump(Done, L);
       label(Done, L);

@@ -55544,7 +55544,88 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRejected) {
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRun) {
+  const auto Source = tmpFile("vector-source-owned-erase.cpp");
+  const auto Output = tmpFile("vector-source-owned-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int assignments;
+int destructions;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    ++assignments;
+    return *this;
+  }
+  ~Box() { delete value; --live; ++destructions; }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(8);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    values.push_back(Box(3));
+    values.push_back(Box(4));
+    auto storage = values.data();
+    int old_assignments = assignments;
+    int old_destructions = destructions;
+    auto one = values.erase(values.cbegin() + 1);
+    if (one != values.begin() + 1 || values.data() != storage ||
+        values.size() != 3 || *values[0].value != 1 ||
+        *values[1].value != 3 || *values[2].value != 4 ||
+        assignments != old_assignments + 2 ||
+        destructions != old_destructions + 1) return 1;
+    old_assignments = assignments;
+    old_destructions = destructions;
+    auto two = values.erase(values.cbegin(), values.cbegin() + 2);
+    if (two != values.begin() || values.size() != 1 ||
+        *values[0].value != 4 || assignments != old_assignments + 1 ||
+        destructions != old_destructions + 2) return 2;
+    old_assignments = assignments;
+    old_destructions = destructions;
+    auto none = values.erase(values.cbegin(), values.cbegin());
+    if (none != values.begin() || values.size() != 1 ||
+        assignments != old_assignments ||
+        destructions != old_destructions) return 3;
+    auto all = values.erase(values.cbegin(), values.cend());
+    if (all != values.begin() || !values.empty()) return 4;
+  }
+  return live == 0 && allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedVoidAssignmentEraseRejected) {
   const auto Source = tmpFile("vector-source-owned-erase-rejected.cpp");
   writeFile(Source, R"cpp(
 using Size = decltype(sizeof(0));
@@ -55559,10 +55640,9 @@ struct Box {
   Box() : value(nullptr) {}
   Box(const Box &) = delete;
   Box(Box &&other) noexcept : value(other.value) { other.value = nullptr; }
-  Box &operator=(Box &&other) noexcept {
+  void operator=(Box &&other) noexcept {
     value = other.value;
     other.value = nullptr;
-    return *this;
   }
   ~Box() {}
 };
@@ -55570,6 +55650,203 @@ int main() {
   std::vector<Box> values;
   values.emplace_back();
   values.erase(values.cbegin());
+  return 0;
+}
+)cpp");
+  expectCode(translate(Source, {"--profile", "cpp-core-v2", "--check"}),
+             "TR0203");
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedCopyAssignmentEraseRun) {
+  const auto Source = tmpFile("vector-source-owned-copy-erase.cpp");
+  const auto Output = tmpFile("vector-source-owned-copy-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copies;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &other) {
+    int *replacement = new int(*other.value);
+    delete value;
+    value = replacement;
+    ++copies;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(4);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    values.push_back(Box(3));
+    auto storage = values.data();
+    auto next = values.erase(values.cbegin());
+    if (next != values.begin() || values.data() != storage ||
+        values.size() != 2 || *values[0].value != 2 ||
+        *values[1].value != 3 || copies != 2) return 1;
+    auto inserted = values.insert(values.cbegin() + 1, Box(4));
+    if (inserted != values.begin() + 1 || values.data() != storage ||
+        values.size() != 3 || *values[0].value != 2 ||
+        *values[1].value != 4 || *values[2].value != 3 || copies != 3)
+      return 2;
+    values.erase(values.cbegin(), values.cend());
+    if (!values.empty() || copies != 3) return 3;
+  }
+  return live == 0 && allocations == releases ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-copy-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedInsertRun) {
+  const auto Source = tmpFile("vector-source-owned-insert.cpp");
+  const auto Output = tmpFile("vector-source-owned-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int assignments;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    ++assignments;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(8);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    values.push_back(Box(3));
+    auto storage = values.data();
+    Box middle(9);
+    int old_assignments = assignments;
+    auto one = values.insert(values.cbegin() + 1, static_cast<Box &&>(middle));
+    if (one != values.begin() + 1 || values.data() != storage ||
+        values.size() != 4 || middle.value != nullptr ||
+        *values[0].value != 1 || *values[1].value != 9 ||
+        *values[2].value != 2 || *values[3].value != 3 ||
+        assignments <= old_assignments) return 1;
+    Box tail(10);
+    auto end = values.insert(values.cend(), static_cast<Box &&>(tail));
+    if (end != values.end() - 1 || values.data() != storage ||
+        values.size() != 5 || tail.value != nullptr ||
+        *values[4].value != 10) return 2;
+    auto alias = values.insert(values.cbegin() + 2,
+                               static_cast<Box &&>(values.back()));
+    if (alias != values.begin() + 2 || values.data() != storage ||
+        values.size() != 6 || *values[0].value != 1 ||
+        *values[1].value != 9 || *values[2].value != 3 ||
+        *values[3].value != 2 || values[4].value != nullptr ||
+        *values[5].value != 10) return 3;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(4));
+    values.push_back(Box(5));
+    auto storage = values.data();
+    Box middle(7);
+    auto grown = values.insert(values.cbegin() + 1,
+                               static_cast<Box &&>(middle));
+    if (grown != values.begin() + 1 || values.data() == storage ||
+        values.size() != 3 || middle.value != nullptr ||
+        *values[0].value != 4 || *values[1].value != 7 ||
+        *values[2].value != 5) return 4;
+  }
+  {
+    std::vector<Box> values;
+    auto only = values.insert(values.cend(), Box(11));
+    if (only != values.begin() || values.size() != 1 ||
+        *values[0].value != 11) return 5;
+  }
+  return live == 0 && allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedVoidAssignmentInsertRejected) {
+  const auto Source = tmpFile("vector-source-owned-insert-rejected.cpp");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(nullptr) {}
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) { other.value = nullptr; }
+  void operator=(Box &&other) noexcept {
+    value = other.value;
+    other.value = nullptr;
+  }
+  ~Box() {}
+};
+int main() {
+  std::vector<Box> values;
+  values.emplace_back();
+  values.insert(values.cbegin(), Box());
   return 0;
 }
 )cpp");

@@ -2677,7 +2677,18 @@ copy constructor additionally enables lvalue `push_back`, lvalue
 `emplace_back`, vector copy construction and copy assignment. Each destination
 element is constructed through that copy constructor. Host O0/O2 fixtures
 check aliasing, reallocation, deep copies for a source-owned resource, moves,
-and balanced destruction.
+and balanced destruction. Single and range `erase` also accept a supported
+source-owned assignment returning `T&`: they use the selected move assignment
+when available, otherwise copy assignment, then destroy only the vacated tail.
+The erase fixtures check stable storage, assignment and destructor counts,
+empty ranges, and complete release.
+Single-rvalue `insert` also uses that assignment to shift live elements when
+capacity permits; it move-constructs the new tail and keeps the original
+storage. With growth it constructs the inserted element before moving old elements,
+including when the argument refers to an element of the same vector. In-place
+insertion retains libc++'s ordering when the rvalue argument aliases a live
+element. The insertion fixtures cover middle, end, aliased, growing, and empty
+vectors with balanced resource release.
 Unique-pointer elements remain noncopyable. Other positional emplacement
 remains unsupported. Other nontrivial record element operations, other
 allocators, remaining vector methods, and throwing allocation or length-error
