@@ -18120,6 +18120,19 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Context.IntTy) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::CStringMemoryCompare;
+  const auto MutableBytePointer = Context.getPointerType(Context.VoidTy);
+  if ((Name == "memcpy" || Name == "memset") && Function->getNumParams() == 3 &&
+      Context.hasSameUnqualifiedType(Function->getParamDecl(0)->getType(),
+                                     MutableBytePointer) &&
+      (Name == "memcpy"
+           ? Context.hasSameUnqualifiedType(
+                 Function->getParamDecl(1)->getType(), BytePointer)
+           : Same(Function->getParamDecl(1)->getType(), Context.IntTy)) &&
+      Same(Function->getParamDecl(2)->getType(), Context.getSizeType()) &&
+      Same(Function->getReturnType(), MutableBytePointer) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "memcpy" ? UtilityOperation::CStringMemoryCopy
+                            : UtilityOperation::CStringMemorySet;
   return std::nullopt;
 }
 

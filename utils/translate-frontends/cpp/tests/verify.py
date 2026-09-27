@@ -29201,6 +29201,12 @@ int compare_n(const char *left, const char *right, std::size_t count) {
 int compare_bytes(const void *left, const void *right, std::size_t count) {
   return std::memcmp(left, right, count);
 }
+void *copy_bytes(void *destination, const void *source, std::size_t count) {
+  return std::memcpy(destination, source, count);
+}
+void *fill_bytes(void *destination, int value, std::size_t count) {
+  return std::memset(destination, value, count);
+}
 """
     cstring_dependencies = None
     for target in sdk_targets:
@@ -29214,7 +29220,7 @@ int compare_bytes(const void *left, const void *right, std::size_t count) {
             cstring_dependencies = dependencies
         else:
             assert dependencies == cstring_dependencies, target
-        assert len(cstring_ir["functions"]) == 4, target
+        assert len(cstring_ir["functions"]) == 6, target
         length_function = cstring_ir["functions"][0]
         character_type = length_function["params"][0]["type"].split(":", 1)[1]
         length_check = next(node for node in length_function["body"]
@@ -29228,6 +29234,10 @@ int compare_bytes(const void *left, const void *right, std::size_t count) {
     check("v2-cstring-global-call", '#include <cstring>\nint f(){return ::strcmp("a","b");}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-global-memcmp", '#include <cstring>\nint f(){return ::memcmp("a","b",1);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-global-memcpy", '#include <cstring>\nvoid f(char *p){::memcpy(p,"a",2);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-global-memset", '#include <cstring>\nvoid f(char *p){::memset(p,0,2);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-function-address", '#include <cstring>\nauto pointer=&std::strlen;',
           "TR0201", profile="cpp-core-v2", sdk=True)

@@ -613,6 +613,8 @@ enum class UtilityOperation {
   CStringCompare,
   CStringCompareN,
   CStringMemoryCompare,
+  CStringMemoryCopy,
+  CStringMemorySet,
   Move,
   Forward,
   MoveIfNoexcept,

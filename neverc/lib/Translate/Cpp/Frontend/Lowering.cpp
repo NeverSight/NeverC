@@ -2564,6 +2564,43 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::CStringMemoryCopy:
+    case UtilityOperation::CStringMemorySet: {
+      const bool Copy = Operation == UtilityOperation::CStringMemoryCopy;
+      auto Destination = snapshot(expression(Call->getArg(0)), L);
+      auto Source = snapshot(
+          cast(expression(Call->getArg(1)), Copy ? "cptr:u8" : "u8", L), L);
+      auto Remaining = snapshot(expression(Call->getArg(2)), L);
+      auto Cursor = snapshot(cast(json::Object(Destination), "ptr:u8", L), L);
+      const auto SizeType = type(Call->getArg(2)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Write = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", json::Object(Remaining), quantity(0, SizeType, L),
+                    "bool", L),
+             Write, End, L);
+      label(Write, L);
+      assign(dereference(json::Object(Cursor), L),
+             Copy ? dereference(json::Object(Source), L) : json::Object(Source),
+             L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    "ptr:u8", L),
+             L);
+      if (Copy)
+        assign(Source,
+               binary("+", json::Object(Source), quantity(1, DifferenceType, L),
+                      "cptr:u8", L),
+               L);
+      assign(Remaining,
+             binary("-", json::Object(Remaining), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Destination;
+    }
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
     case UtilityOperation::MoveIfNoexcept:

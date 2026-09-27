@@ -14840,12 +14840,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
+  const auto Source = tmpFile("cmemory-writes.cpp");
+  const auto Output = tmpFile("cmemory-writes.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  const unsigned char source[4]{0x81, 0, 0x7f, 0x42};
+  unsigned char destination[5]{};
+  int destination_effects = 0, source_effects = 0, count_effects = 0;
+  void *copied = std::memcpy((++destination_effects, destination + 1),
+                             (++source_effects, source), (++count_effects, 4));
+  if (copied != destination + 1 || destination_effects != 1 ||
+      source_effects != 1 || count_effects != 1 || destination[0] != 0 ||
+      destination[1] != 0x81 || destination[2] != 0 ||
+      destination[3] != 0x7f || destination[4] != 0x42)
+    return 1;
+  int value_effects = 0;
+  void *filled = std::memset(destination + 1, (++value_effects, 0x180), 2);
+  if (filled != destination + 1 || value_effects != 1 ||
+      destination[1] != 0x80 || destination[2] != 0x80 ||
+      destination[3] != 0x7f)
+    return 2;
+  std::memset(destination + 3, -1, 2);
+  if (destination[3] != 0xff || destination[4] != 0xff)
+    return 3;
+  std::memcpy(destination + 5, source + 4, 0);
+  std::memset(destination + 5, 7, (0));
+  if (destination[4] != 0xff)
+    return 4;
+  int original = 123456, clone = 0;
+  std::memcpy(&clone, &original, sizeof original);
+  return clone == original ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cmemory-writes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
   const std::tuple<const char *, const char *, const char *> Cases[] = {
       {"global-name", "#include <cstring>\nint main(){return ::strlen(\"x\");}",
        "TR0203"},
       {"global-memcmp",
        "#include <cstring>\nint main(){return ::memcmp(\"a\",\"b\",1);}",
+       "TR0203"},
+      {"global-memcpy",
+       "#include <cstring>\nint main(){char d[2]{};::memcpy(d,\"a\",2);return "
+       "0;}",
+       "TR0203"},
+      {"global-memset",
+       "#include <cstring>\nint main(){char d[2]{};::memset(d,0,2);return 0;}",
        "TR0203"},
       {"unsupported-copy",
        "#include <cstring>\nint main(){char "
