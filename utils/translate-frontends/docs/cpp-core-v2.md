@@ -2650,6 +2650,10 @@ elements with pinned default deleters also accept matching raw `T*` and
 `nullptr` in back and positional `emplace`. The pointer is captured before
 vector storage moves or grows and transferred into one owner; O0/O2 fixtures
 cover in-place and growing inserts and balanced scalar or array release.
+The same forms accept admitted empty custom deleters, with an optional exact
+deleter argument following the pointer or `nullptr`. That argument is evaluated
+once before vector storage changes, and the selected deleter still runs once
+when a non-null element is destroyed.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,

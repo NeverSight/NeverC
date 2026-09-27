@@ -55846,6 +55846,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorUniquePtrDeleterEmplaceRun) {
+  const auto Source = tmpFile("vector-unique-deleter-emplace.cpp");
+  const auto Output = tmpFile("vector-unique-deleter-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int scalar_deletes;
+int array_deletes;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void *operator new[](Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+void operator delete[](void *p) noexcept { ++releases; free(p); }
+void operator delete[](void *p, Size) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+struct DeleteScalar {
+  void operator()(int *p) noexcept { ++scalar_deletes; delete p; }
+};
+struct DeleteArray {
+  void operator()(int *p) noexcept { ++array_deletes; delete[] p; }
+};
+int main() {
+  {
+    std::vector<std::unique_ptr<int, DeleteScalar>> values;
+    values.reserve(2);
+    auto storage = values.data();
+    DeleteScalar deleter;
+    auto &first = values.emplace_back(new int(7));
+    auto &second = values.emplace_back(new int(9), deleter);
+    if (&first != &values[0] || &second != &values[1] ||
+        values.data() != storage || *values[0] != 7 ||
+        *values[1] != 9) return 1;
+    auto middle = values.emplace(values.cbegin() + 1,
+                                 new int(11), DeleteScalar{});
+    if (middle != values.begin() + 1 || values.data() == storage ||
+        *values[0] != 7 || *values[1] != 11 ||
+        *values[2] != 9) return 2;
+    auto empty = values.emplace(values.cend(), nullptr, DeleteScalar{});
+    if (empty != values.end() - 1 || values.back()) return 3;
+  }
+  if (scalar_deletes != 3) return 4;
+  {
+    std::vector<std::unique_ptr<int[], DeleteArray>> arrays;
+    arrays.reserve(1);
+    auto storage = arrays.data();
+    auto &first = arrays.emplace_back(new int[2]{3, 4});
+    if (&first != &arrays[0] || arrays[0][0] != 3 ||
+        arrays[0][1] != 4) return 5;
+    DeleteArray deleter;
+    auto inserted = arrays.emplace(arrays.cbegin(), new int[1]{5}, deleter);
+    if (inserted != arrays.begin() || arrays.data() == storage ||
+        arrays[0][0] != 5 || arrays[1][1] != 4) return 6;
+  }
+  return scalar_deletes == 3 && array_deletes == 2 &&
+                 allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-unique-deleter-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

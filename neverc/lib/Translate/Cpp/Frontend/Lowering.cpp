@@ -12154,9 +12154,10 @@ class FunctionLowering {
               A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
               A.Context);
           Value = temporary(type(Vector->ElementType, L), L);
-          constructVectorUniquePtrPointer(json::Object(*Value),
-                                          Vector->ElementType, *Unique,
-                                          Call->getArg(1), L);
+          constructVectorUniquePtrPointer(
+              json::Object(*Value), Vector->ElementType, *Unique,
+              Call->getArg(1),
+              Call->getNumArgs() == 3 ? Call->getArg(2) : nullptr, L);
         } else if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);
@@ -14204,9 +14205,9 @@ class FunctionLowering {
             A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
             A.Context);
         Value = temporary(type(Vector->ElementType, L), L);
-        constructVectorUniquePtrPointer(json::Object(*Value),
-                                        Vector->ElementType, *Unique,
-                                        Call->getArg(0), L);
+        constructVectorUniquePtrPointer(
+            json::Object(*Value), Vector->ElementType, *Unique, Call->getArg(0),
+            Call->getNumArgs() == 2 ? Call->getArg(1) : nullptr, L);
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {
           const auto *Argument = Call->getArg(0);
@@ -19336,9 +19337,13 @@ class FunctionLowering {
 
   void constructVectorUniquePtrPointer(Expression Place, QualType T,
                                        const UtilityUniquePtrRecord &Unique,
-                                       const Expr *Argument, SourceLocation L) {
+                                       const Expr *Argument,
+                                       const Expr *DeleterArgument,
+                                       SourceLocation L) {
     auto Pointer =
         snapshot(cast(expression(Argument), type(Unique.PointerType, L), L), L);
+    if (DeleterArgument)
+      discard(DeleterArgument);
     initializeZero(json::Object(Place), T, L);
     Expression Member{{"kind", "member"},
                       {"type", type(Unique.PointerType, L)},

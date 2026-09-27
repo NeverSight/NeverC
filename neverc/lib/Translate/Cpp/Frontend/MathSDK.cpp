@@ -6034,16 +6034,24 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
 bool approvedUtilityVectorUniquePtrPointerEmplace(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
-  if (!Call || Call->getNumArgs() != FirstArgument + 1 ||
-      !Vector.OwningElement || Vector.MoveElementConstructor)
+  if (!Call || !Vector.OwningElement || Vector.MoveElementConstructor ||
+      (Call->getNumArgs() != FirstArgument + 1 &&
+       Call->getNumArgs() != FirstArgument + 2))
     return false;
   const auto Unique = approvedUtilityUniquePtrRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
-  if (!Unique || Unique->CustomDeleter)
+  if (!Unique)
     return false;
   const auto ArgumentType = Call->getArg(FirstArgument)->getType();
-  return Context.hasSameType(ArgumentType, Unique->PointerType) ||
-         ArgumentType->isNullPtrType();
+  if (!Context.hasSameType(ArgumentType, Unique->PointerType) &&
+      !ArgumentType->isNullPtrType())
+    return false;
+  if (Call->getNumArgs() == FirstArgument + 1)
+    return true;
+  const auto DeleterType = Call->getArg(FirstArgument + 1)->getType();
+  return !DeleterType.isVolatileQualified() &&
+         Context.hasSameUnqualifiedType(
+             DeleterType, Context.getRecordType(Unique->Deleter.Record));
 }
 
 const CXXMethodDecl *approvedUtilityVectorElementComparison(
