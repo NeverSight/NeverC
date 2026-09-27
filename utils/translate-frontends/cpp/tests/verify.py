@@ -29524,6 +29524,20 @@ void emplace_owners() {
   arrays.emplace(arrays.cbegin(), new int[1]{7},
                  std::default_delete<const int[]>{});
 }
+void nested_vectors() {
+  std::vector<std::vector<int>> rows(2);
+  std::vector<int> source(2, 7);
+  rows.emplace_back(static_cast<std::vector<int>&&>(source));
+  rows.emplace(rows.cbegin(), static_cast<std::vector<int>&&>(rows[2]));
+  rows.reserve(8);
+  rows.shrink_to_fit();
+  rows.erase(rows.cbegin());
+  std::vector<int> other(1, 9);
+  rows.push_back(static_cast<std::vector<int>&&>(other));
+  rows.insert(rows.cbegin(), std::vector<int>(1, 8));
+  std::vector<std::vector<std::vector<int>>> cube;
+  cube.emplace_back(static_cast<std::vector<std::vector<int>>&&>(rows));
+}
 """
     for target in sdk_targets:
         check("v2-vector-owning-" + target, vector_owning_source,

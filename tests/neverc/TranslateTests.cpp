@@ -55987,6 +55987,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedVectorMoveRun) {
+  const auto Source = tmpFile("nested-vector-move.cpp");
+  const auto Output = tmpFile("nested-vector-move.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<std::vector<int>> rows;
+    rows.reserve(2);
+    auto storage = rows.data();
+    std::vector<int> first(2, 7);
+    auto &one = rows.emplace_back(static_cast<std::vector<int>&&>(first));
+    auto &two = rows.emplace_back();
+    two.push_back(9);
+    if (&one != &rows[0] || &two != &rows[1] ||
+        rows.data() != storage || !first.empty() ||
+        rows[0].size() != 2 || rows[0][1] != 7 ||
+        rows[1][0] != 9) return 1;
+    auto &grown = rows.emplace_back(static_cast<std::vector<int>&&>(rows[0]));
+    if (&grown != &rows[2] || rows.data() == storage ||
+        !rows[0].empty() || rows[1][0] != 9 ||
+        rows[2].size() != 2 || rows[2][1] != 7) return 2;
+    rows[0].push_back(3);
+    auto inserted = rows.emplace(rows.cbegin() + 1,
+                                 static_cast<std::vector<int>&&>(rows[2]));
+    if (inserted != rows.begin() + 1 || rows[0][0] != 3 ||
+        rows[1].size() != 2 || rows[1][0] != 7 ||
+        !rows[3].empty()) return 3;
+    rows.reserve(12);
+    if (rows[0][0] != 3 || rows[1][1] != 7 || rows[2][0] != 9)
+      return 4;
+    rows.shrink_to_fit();
+    if (rows.capacity() != rows.size() || rows[1][0] != 7) return 5;
+    rows.erase(rows.cbegin() + 2);
+    if (rows.size() != 3 || rows[1][0] != 7 || !rows[2].empty()) return 6;
+    rows.clear();
+    if (!rows.empty()) return 7;
+  }
+  {
+    std::vector<std::vector<int>> counted(2);
+    if (counted.size() != 2 || !counted[0].empty() ||
+        !counted[1].empty()) return 8;
+    std::vector<int> row(2, 5);
+    counted[0] = static_cast<std::vector<int>&&>(row);
+    std::vector<std::vector<std::vector<int>>> cube;
+    cube.emplace_back(static_cast<std::vector<std::vector<int>>&&>(counted));
+    if (!counted.empty() || cube.size() != 1 ||
+        cube[0].size() != 2 || cube[0][0][1] != 5) return 9;
+    std::vector<std::vector<int>> inserted_rows;
+    std::vector<int> source_row(1, 13);
+    inserted_rows.push_back(static_cast<std::vector<int>&&>(source_row));
+    inserted_rows.insert(inserted_rows.cbegin(), std::vector<int>(1, 17));
+    if (!source_row.empty() || inserted_rows.size() != 2 ||
+        inserted_rows[0][0] != 17 || inserted_rows[1][0] != 13)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-vector-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

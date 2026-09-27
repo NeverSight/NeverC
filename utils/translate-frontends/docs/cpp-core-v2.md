@@ -2657,6 +2657,13 @@ when a non-null element is destroyed.
 For the same scalar or array base type, emplacement can also add `const` to
 the captured pointee type, such as constructing `unique_ptr<const int>` from
 an `int*`. Removing a pointee qualifier or changing the base type is rejected.
+An admitted `std::vector` can itself be an owning vector element. Nested
+vectors use the same checked three-pointer layout recursively; default and
+bounded count construction, move insertion and emplacement, growth, reserve,
+shrink, erase, clear, and destruction transfer or release each inner buffer
+once. Host O0/O2 fixtures cover aliases during growth, positional insertion,
+and three nested levels. Nested vector element copies remain outside this
+boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,

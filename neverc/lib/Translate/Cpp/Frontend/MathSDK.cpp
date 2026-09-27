@@ -5735,10 +5735,14 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor();
+  const bool NestedVector =
+      ElementRecord &&
+      approvedUtilityVectorRecord(S, SM, ElementRecord, Context).has_value();
   const bool OwningElement =
       ElementRecord &&
       (approvedUtilityStringRecord(S, SM, ElementRecord, Context) ||
-       approvedUtilityUniquePtrRecord(S, SM, ElementRecord, Context));
+       approvedUtilityUniquePtrRecord(S, SM, ElementRecord, Context) ||
+       NestedVector);
   const bool SourceOwnedElement =
       ElementRecord && !ElementRecord->hasTrivialDestructor() &&
       utilityPairSourceOwnedValue(S, SM, Context, Element);

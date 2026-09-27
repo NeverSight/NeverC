@@ -4828,10 +4828,11 @@ bool Adapter::requireUtilityVector(const CXXRecordDecl *Record,
   }
   const auto Vector = approvedUtilityVectorRecord(S, Sources, Record, Context);
   if (!Vector) {
-    reject(Location, "standard library record",
-           "Only pinned scalar, trivial source-record, std::string and "
-           "std::unique_ptr element vector layouts are admitted.",
-           "TR0203");
+    reject(
+        Location, "standard library record",
+        "Only pinned scalar, trivial source-record, std::string, "
+        "std::unique_ptr and nested std::vector element layouts are admitted.",
+        "TR0203");
     return false;
   }
   if (!RequiredUtilityVectors.insert(Vector->Record->getCanonicalDecl()).second)
