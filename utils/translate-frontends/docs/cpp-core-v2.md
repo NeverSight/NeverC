@@ -2638,11 +2638,11 @@ access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
 Pair-value fixtures additionally cover default construction, value insertion,
 capacity reuse, aliasing, erase, fill and range modifiers, copy/assignment,
 resize and recursively nested pairs without element ownership.
-For an admitted pair with exact scalar field types, `emplace_back(first, second)`
-captures both values before vector growth and initializes the corresponding
-fields directly. The returned reference names the inserted pair.
-Positional `emplace(position, first, second)` uses the same capture rule before
-shifting or growth and returns an iterator to the new pair.
+For an admitted pair with scalar fields, `emplace_back(first, second)`
+converts and captures both values before vector growth and initializes the
+corresponding fields directly. The returned reference names the inserted pair.
+Positional `emplace(position, first, second)` uses the same conversion and
+capture rule before shifting or growth and returns an iterator to the new pair.
 All six vector comparisons also recurse through pair values whose fields are
 admitted scalar values or nested pairs. Equality checks both fields; ordering
 uses the pair's first field before its second and keeps unordered floating

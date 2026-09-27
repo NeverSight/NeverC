@@ -12105,8 +12105,13 @@ class FunctionLowering {
               Call->getArg(1),
               Call->getNumArgs() == 3 ? Call->getArg(2) : nullptr, L);
         } else if (PairEmplace) {
-          auto First = snapshot(expression(Call->getArg(1)), L);
-          auto Second = snapshot(expression(Call->getArg(2)), L);
+          auto First = snapshot(cast(expression(Call->getArg(1)),
+                                     type(PairEmplace->First->getType(), L), L),
+                                L);
+          auto Second =
+              snapshot(cast(expression(Call->getArg(2)),
+                            type(PairEmplace->Second->getType(), L), L),
+                       L);
           Value = temporary(type(Vector->ElementType, L), L);
           initializeZero(json::Object(*Value), Vector->ElementType, L);
           assign(fieldStorage(json::Object(*Value), PairEmplace->First, L),
@@ -14119,8 +14124,12 @@ class FunctionLowering {
             json::Object(*Value), Vector->ElementType, *Unique, Call->getArg(0),
             Call->getNumArgs() == 2 ? Call->getArg(1) : nullptr, L);
       } else if (PairEmplace) {
-        auto First = snapshot(expression(Call->getArg(0)), L);
-        auto Second = snapshot(expression(Call->getArg(1)), L);
+        auto First = snapshot(cast(expression(Call->getArg(0)),
+                                   type(PairEmplace->First->getType(), L), L),
+                              L);
+        auto Second = snapshot(cast(expression(Call->getArg(1)),
+                                    type(PairEmplace->Second->getType(), L), L),
+                               L);
         Value = temporary(type(Vector->ElementType, L), L);
         initializeZero(json::Object(*Value), Vector->ElementType, L);
         assign(fieldStorage(json::Object(*Value), PairEmplace->First, L),

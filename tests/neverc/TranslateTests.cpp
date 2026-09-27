@@ -60022,6 +60022,63 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPairConvertingEmplaceRun) {
+  const auto Source = tmpFile("vector-pair-converting-emplace.cpp");
+  const auto Output = tmpFile("vector-pair-converting-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <utility>
+#include <vector>
+int main() {
+  {
+    std::vector<std::pair<int, double>> values;
+    short first = -7;
+    float second = 2.5f;
+    auto &appended = values.emplace_back(first, second);
+    if (&appended != &values[0] || appended.first != -7 ||
+        appended.second != 2.5) return 1;
+    values.shrink_to_fit();
+    auto old_storage = values.data();
+    auto placed = values.emplace(values.cbegin(), values[0].first, 4);
+    if (placed != values.begin() || values.data() == old_storage ||
+        values.size() != 2 || values[0].first != -7 ||
+        values[0].second != 4.0 || values[1].second != 2.5) return 2;
+    std::vector<std::pair<short, bool>> narrowed;
+    narrowed.emplace_back(65539, 2);
+    if (narrowed[0].first != short(65539) || !narrowed[0].second)
+      return 3;
+    int target = 9;
+    std::vector<std::pair<const int *, bool>> pointers;
+    pointers.emplace_back(&target, 7);
+    auto pointer = pointers.emplace(pointers.cbegin(), nullptr, 0);
+    if (pointer->first != nullptr || pointer->second ||
+        pointers[1].first != &target || !pointers[1].second)
+      return 4;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-converting-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

@@ -29609,8 +29609,15 @@ void pair_vectors() {
   positions.shrink_to_fit();
   positions.emplace(positions.cbegin() + 1,
                     positions[2].first, positions[0].second);
+  short short_value = 7;
+  positions.emplace_back(short_value, 9);
+  positions.emplace(positions.cbegin(), short_value, 8);
   std::vector<std::pair<float, float>> floats;
   floats.emplace_back(1.0f, 2.0f);
+  std::vector<std::pair<const int*, bool>> pointers;
+  int target = 1;
+  pointers.emplace_back(&target, 2);
+  pointers.emplace(pointers.cbegin(), nullptr, 0);
 }
 bool compare_pair_vectors(const std::vector<std::pair<int, int>>& left,
                           const std::vector<std::pair<int, int>>& right) {
@@ -29828,28 +29835,20 @@ int f() {
   return values.size();
 }
 """,
-        "pair-converting-emplace": """\
-#include <utility>
-void f() {
-  std::vector<std::pair<int, int>> values;
-  short first = 1;
-  values.emplace_back(first, 2);
-}
-""",
-        "pair-converting-positional-emplace": """\
-#include <utility>
-void f() {
-  std::vector<std::pair<int, int>> values;
-  short first = 1;
-  values.emplace(values.cbegin(), first, 2);
-}
-""",
         "pair-array-comparison": """\
 #include <array>
 #include <utility>
 bool f(const std::vector<std::pair<std::array<int, 2>, int>>& left,
        const std::vector<std::pair<std::array<int, 2>, int>>& right) {
   return left == right;
+}
+""",
+        "pair-user-conversion-emplace": """\
+#include <utility>
+struct IntLike { operator int() const { return 1; } };
+void f() {
+  std::vector<std::pair<int, int>> values;
+  values.emplace_back(IntLike{}, 2);
 }
 """,
         "nested-void-pointer-order": """\

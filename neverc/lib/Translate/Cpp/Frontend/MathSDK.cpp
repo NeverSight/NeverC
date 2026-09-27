@@ -20365,12 +20365,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Method->getNumParams() == 3) {
           const auto Pair = approvedUtilityPairRecord(
               S, SM, Element->getAsCXXRecordDecl(), Context);
-          if (Pair && utilityScalar(Context, Pair->First->getType()) &&
-              utilityScalar(Context, Pair->Second->getType()) &&
-              Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
-                                             Pair->First->getType()) &&
-              Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
-                                             Pair->Second->getType()))
+          if (Pair &&
+              utilityScalarDirectConversion(Context, Call->getArg(1)->getType(),
+                                            Pair->First->getType()) &&
+              utilityScalarDirectConversion(Context, Call->getArg(2)->getType(),
+                                            Pair->Second->getType()))
             return UtilityOperation::VectorEmplace;
         }
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
@@ -20494,12 +20493,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Method->getNumParams() == 2) {
         const auto Pair = approvedUtilityPairRecord(
             S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context);
-        if (Pair && utilityScalar(Context, Pair->First->getType()) &&
-            utilityScalar(Context, Pair->Second->getType()) &&
-            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                           Pair->First->getType()) &&
-            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
-                                           Pair->Second->getType()))
+        if (Pair &&
+            utilityScalarDirectConversion(Context, Call->getArg(0)->getType(),
+                                          Pair->First->getType()) &&
+            utilityScalarDirectConversion(Context, Call->getArg(1)->getType(),
+                                          Pair->Second->getType()))
           return UtilityOperation::VectorEmplaceBack;
       }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
