@@ -2645,6 +2645,11 @@ element access continues to use the pinned `std::array` rules. All six vector
 comparisons walk admitted scalar array elements in index order, including
 recursively nested arrays and arrays inside nested vectors. Zero-sized arrays
 compare equal as elements; void-pointer leaves permit only equality checks.
+Authenticated `std::optional<T>` values with mutable scalar `T` and trivial
+copy, move, assignment and destruction can likewise be vector elements.
+Disengaged elements retain a clear engagement flag through growth and copies;
+engaged elements copy their scalar value. The existing optional operations
+remain available through vector element access.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

@@ -29401,6 +29401,7 @@ void operator delete[](void *p) noexcept { free(p); }
 void operator delete[](void *p, Size) noexcept { free(p); }
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -29680,6 +29681,17 @@ void pair_array_vectors() {
   std::vector<Nested> nested;
   nested.push_back(Nested(value, 4));
 }
+void optional_vectors() {
+  std::vector<std::optional<int>> values;
+  values.emplace_back();
+  std::optional<int> seed(3);
+  values.push_back(seed);
+  values.emplace_back(values[1]);
+  values.assign(2, seed);
+  std::vector<std::optional<int>> copied(values);
+  copied = values;
+  copied.swap(values);
+}
 bool compare_pair_array_vectors(
     const std::vector<std::pair<std::array<int, 2>, int>>& left,
     const std::vector<std::pair<std::array<int, 2>, int>>& right) {
@@ -29919,6 +29931,13 @@ int f() {
 #include <array>
 int f() {
   std::vector<std::array<std::array<const int, 2>, 2>> values;
+  return values.size();
+}
+""",
+        "nonassignable-optional": """\
+#include <optional>
+int f() {
+  std::vector<std::optional<const int>> values;
   return values.size();
 }
 """,

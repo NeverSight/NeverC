@@ -5774,6 +5774,16 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       utilityArrayValue(S, SM, Context, Element) &&
       utilityVectorArrayAssignableElements(S, SM, Context,
                                            ValueArray->ElementType);
+  const auto ValueOptional =
+      approvedUtilityOptionalRecord(S, SM, ElementRecord, Context);
+  const bool ValueOptionalElement =
+      ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord->hasTrivialMoveConstructor() &&
+      ElementRecord->hasTrivialCopyAssignment() &&
+      ElementRecord->hasTrivialMoveAssignment() &&
+      ElementRecord->hasTrivialDestructor() && ValueOptional &&
+      !ValueOptional->ElementType.isConstQualified() &&
+      utilityScalar(Context, ValueOptional->ElementType);
   const bool NestedVector =
       ElementRecord &&
       approvedUtilityVectorRecord(S, SM, ElementRecord, Context).has_value();
@@ -5850,8 +5860,8 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
         Element->isObjectPointerType() || TrivialSourceRecord ||
-        ValuePairElement || ValueArrayElement || OwningElement ||
-        SourceOwnedElement) ||
+        ValuePairElement || ValueArrayElement || ValueOptionalElement ||
+        OwningElement || SourceOwnedElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);

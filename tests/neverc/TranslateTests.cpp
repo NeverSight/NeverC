@@ -60310,6 +60310,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOptionalValuesRun) {
+  const auto Source = tmpFile("vector-optional-values.cpp");
+  const auto Output = tmpFile("vector-optional-values.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <optional>
+#include <vector>
+using Maybe = std::optional<int>;
+int main() {
+  {
+    std::vector<Maybe> values;
+    values.emplace_back();
+    if (values.size() != 1 || values[0].has_value()) return 1;
+    Maybe seed(3);
+    values.push_back(seed);
+    values.push_back(Maybe(5));
+    if (values.size() != 3 || !values[1].has_value() || *values[1] != 3 ||
+        *values[2] != 5) return 2;
+    values.shrink_to_fit();
+    auto old_storage = values.data();
+    auto &aliased = values.emplace_back(values[1]);
+    if (&aliased != &values.back() || values.data() == old_storage ||
+        !aliased.has_value() || *aliased != 3) return 3;
+    values.insert(values.cbegin() + 1, values[2]);
+    if (values.size() != 5 || !values[1].has_value() || *values[1] != 5 ||
+        !values[2].has_value() || *values[2] != 3) return 4;
+    values.erase(values.cbegin() + 2);
+    std::vector<Maybe> copied(values);
+    if (copied.data() == values.data() || copied.size() != 4 ||
+        !copied[1].has_value() || *copied[1] != 5) return 5;
+    values.assign(Size(2), seed);
+    values.resize(Size(4), seed);
+    if (values.size() != 4 || !values[0].has_value() || *values[0] != 3 ||
+        !values[3].has_value() || *values[3] != 3) return 6;
+    copied = values;
+    if (copied.size() != 4 || *copied[3] != 3) return 7;
+    values[1].reset();
+    if (values[1].has_value()) return 8;
+    std::vector<Maybe> spare;
+    spare.swap(values);
+    if (spare.size() != 4 || values.size() != 0 ||
+        spare[1].has_value() || *spare[0] != 3) return 9;
+  }
+  return allocations == releases ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-optional-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");
