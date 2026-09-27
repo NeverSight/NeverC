@@ -9274,22 +9274,56 @@ class FunctionLowering {
           LeftOptional ? LeftOptional->ElementType : Call->getArg(0)->getType();
       const auto RightValueType = RightOptional ? RightOptional->ElementType
                                                 : Call->getArg(1)->getType();
+      const auto SourceOperator = [&] {
+        switch (Operation) {
+        case UtilityOperation::OptionalEqual:
+          return OO_EqualEqual;
+        case UtilityOperation::OptionalNotEqual:
+          return OO_ExclaimEqual;
+        case UtilityOperation::OptionalLess:
+          return OO_Less;
+        case UtilityOperation::OptionalGreater:
+          return OO_Greater;
+        case UtilityOperation::OptionalLessEqual:
+          return OO_LessEqual;
+        case UtilityOperation::OptionalGreaterEqual:
+          return OO_GreaterEqual;
+        default:
+          reject(L, "utility optional comparison",
+                 "Unknown approved source record comparison.");
+        }
+      }();
+      const auto SourceComparison =
+          A.Context.hasSameUnqualifiedType(LeftValueType, RightValueType)
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, LeftValueType, SourceOperator, A.Context)
+              : std::nullopt;
 
       auto CaptureOptional = [&](const Expr *Source) {
         auto Address =
             snapshot(address(lvalue(Source), Source->getType(), L), L);
         return dereference(std::move(Address), L);
       };
+      auto CaptureValue = [&](const Expr *Source) {
+        if (SourceComparison) {
+          // A selected record operator observes the original referenced
+          // object. Keep its address stable across the engagement branch.
+          auto Address = snapshot(
+              address(lvalue(Source), Source->getType().withConst(), L), L);
+          return dereference(std::move(Address), L);
+        }
+        return snapshot(expression(Source), L);
+      };
       std::optional<Expression> LeftStored, RightStored;
       std::optional<Expression> LeftScalar, RightScalar;
       if (LeftOptional)
         LeftStored = CaptureOptional(Call->getArg(0));
       else if (!LeftNullopt)
-        LeftScalar = snapshot(expression(Call->getArg(0)), L);
+        LeftScalar = CaptureValue(Call->getArg(0));
       if (RightOptional)
         RightStored = CaptureOptional(Call->getArg(1));
       else if (!RightNullopt)
-        RightScalar = snapshot(expression(Call->getArg(1)), L);
+        RightScalar = CaptureValue(Call->getArg(1));
       auto Engaged = [&](const UtilityOptionalRecord &Optional,
                          const Expression &Stored) {
         return fieldStorage(json::Object(Stored), Optional.Engaged, L);
@@ -9310,34 +9344,17 @@ class FunctionLowering {
           return binary(Operator, cast(std::move(Left), Converted, L),
                         cast(std::move(Right), Converted, L), "bool", L);
         }
-        std::optional<OverloadedOperatorKind> SourceOperator;
-        if (Operator == "==")
-          SourceOperator = OO_EqualEqual;
-        else if (Operator == "!=")
-          SourceOperator = OO_ExclaimEqual;
-        else if (Operator == "<")
-          SourceOperator = OO_Less;
-        else if (Operator == ">")
-          SourceOperator = OO_Greater;
-        else if (Operator == "<=")
-          SourceOperator = OO_LessEqual;
-        else if (Operator == ">=")
-          SourceOperator = OO_GreaterEqual;
-        if (LeftOptional && RightOptional && SourceOperator &&
-            A.Context.hasSameUnqualifiedType(LeftValueType, RightValueType)) {
-          const auto Comparison = approvedUtilityTrivialSourceComparison(
-              A.S, A.Sources, LeftValueType, *SourceOperator, A.Context);
-          if (Comparison) {
-            auto LeftAddress = snapshot(
-                address(std::move(Left), LeftValueType.withConst(), L), L);
-            auto RightAddress = snapshot(
-                address(std::move(Right), RightValueType.withConst(), L), L);
-            return compareVectorSourceElements(
-                std::move(LeftAddress), std::move(RightAddress),
-                Comparison->Member,
-                Comparison->Friend ? Comparison->Friend : Comparison->Namespace,
-                L);
-          }
+        if (SourceComparison) {
+          auto LeftAddress = snapshot(
+              address(std::move(Left), LeftValueType.withConst(), L), L);
+          auto RightAddress = snapshot(
+              address(std::move(Right), RightValueType.withConst(), L), L);
+          return compareVectorSourceElements(
+              std::move(LeftAddress), std::move(RightAddress),
+              SourceComparison->Member,
+              SourceComparison->Friend ? SourceComparison->Friend
+                                       : SourceComparison->Namespace,
+              L);
         }
         return CompareUtilityValues(Operator, Left, LeftValueType, Right,
                                     RightValueType);

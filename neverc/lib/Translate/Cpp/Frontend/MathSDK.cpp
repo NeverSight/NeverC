@@ -21893,7 +21893,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Context);
   };
   auto ComparableParameter = [&](unsigned Index, QualType Element,
-                                 bool RequireOrderedObject) {
+                                 bool RequireOrderedObject,
+                                 OverloadedOperatorKind SourceOperator) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
     const auto Parameter = Function->getParamDecl(Index)->getType();
@@ -21902,9 +21903,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Parameter->getPointeeType().isVolatileQualified() &&
            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                           Call->getArg(Index)->getType()) &&
-           utilityComparableValue(S, SM, Context, Element,
-                                  Parameter->getPointeeType(),
-                                  RequireOrderedObject);
+           (utilityComparableValue(S, SM, Context, Element,
+                                   Parameter->getPointeeType(),
+                                   RequireOrderedObject) ||
+            (Context.hasSameUnqualifiedType(Element,
+                                            Parameter->getPointeeType()) &&
+             approvedUtilityTrivialSourceComparison(S, SM, Element,
+                                                    SourceOperator, Context)));
   };
   if (Origin->Path == "optional" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Call->isPRValue() &&
@@ -21958,10 +21963,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (LeftNullopt && Right && OptionalParameter(1, *Right, true))
         return Comparison;
       if (Left && OptionalParameter(0, *Left, true) &&
-          ComparableParameter(1, Left->ElementType, RequireOrderedObject))
+          ComparableParameter(1, Left->ElementType, RequireOrderedObject,
+                              Operator->getOperator()))
         return Comparison;
       if (Right &&
-          ComparableParameter(0, Right->ElementType, RequireOrderedObject) &&
+          ComparableParameter(0, Right->ElementType, RequireOrderedObject,
+                              Operator->getOperator()) &&
           OptionalParameter(1, *Right, true))
         return Comparison;
     }

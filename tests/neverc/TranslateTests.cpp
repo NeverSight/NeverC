@@ -50414,6 +50414,102 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OptionalSourceRecordValueComparisonsRun) {
+  const auto Source = tmpFile("optional-source-record-value-comparisons.cpp");
+  const auto Output = tmpFile("optional-source-record-value-comparisons.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+struct Point;
+const Point *expected;
+int bad_identity, calls[6], evaluations;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++calls[0]; if (this != expected && &other != expected) ++bad_identity;
+    return value == other.value;
+  }
+  bool operator!=(const Point &other) const {
+    ++calls[1]; if (this != expected && &other != expected) ++bad_identity;
+    return value != other.value;
+  }
+  bool operator<(const Point &other) const {
+    ++calls[2]; if (this != expected && &other != expected) ++bad_identity;
+    return value < other.value;
+  }
+  bool operator>(const Point &other) const {
+    ++calls[3]; if (this != expected && &other != expected) ++bad_identity;
+    return value > other.value;
+  }
+  bool operator<=(const Point &other) const {
+    ++calls[4]; if (this != expected && &other != expected) ++bad_identity;
+    return value <= other.value;
+  }
+  bool operator>=(const Point &other) const {
+    ++calls[5]; if (this != expected && &other != expected) ++bad_identity;
+    return value >= other.value;
+  }
+};
+const Point &next() { ++evaluations; return *expected; }
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) { return a.value == b.value; }
+bool operator<(const Free &a, const Free &b) { return a.value < b.value; }
+}
+int main() {
+  Point value{2};
+  expected = &value;
+  std::optional<Point> one(Point{1}), empty;
+  if (one == value || value == one || !(one != value) ||
+      !(value != one) || !(one < value) || value < one ||
+      one > value || !(value > one) || !(one <= value) ||
+      value <= one || one >= value || !(value >= one)) return 1;
+  for (int i = 0; i != 6; ++i)
+    if (calls[i] != 2) return 2;
+  if (bad_identity) return 3;
+  if (empty == value || value == empty || !(empty != value) ||
+      !(value != empty) || !(empty < value) || value < empty ||
+      empty > value || !(value > empty) || !(empty <= value) ||
+      value <= empty || empty >= value || !(value >= empty)) return 4;
+  for (int i = 0; i != 6; ++i)
+    if (calls[i] != 2) return 5;
+  if (empty == next() || evaluations != 1 || bad_identity) return 6;
+  if (!(one < next()) || evaluations != 2 || calls[2] != 3 ||
+      bad_identity) return 7;
+  std::optional<Friend> friend_one(Friend{1});
+  Friend friend_two{2};
+  if (friend_one == friend_two || friend_two == friend_one ||
+      !(friend_one < friend_two) || friend_two < friend_one) return 8;
+  std::optional<owned::Free> free_one(owned::Free{1});
+  owned::Free free_two{2};
+  if (free_one == free_two || free_two == free_one ||
+      !(free_one < free_two) || free_two < free_one) return 9;
+  if (!(one < Point{2}) || !(Point{2} > one)) return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("optional-source-record-value-comparisons" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ScalarOptionalUtilitiesRunAtBothOptimizations) {
   const auto Source = tmpFile("optional-utilities.cpp");
   const auto Output = tmpFile("optional-utilities.nc");
