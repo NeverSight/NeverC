@@ -12057,11 +12057,17 @@ class FunctionLowering {
               : nullptr;
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
-        for (unsigned I = 1; I != Call->getNumArgs(); ++I)
-          DirectArguments.push_back(snapshot(
-              argument(Call->getArg(I),
-                       DirectConstructor->getParamDecl(I - 1)->getType()),
-              L));
+        for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
+          const auto *Argument = Call->getArg(I);
+          const auto Parameter =
+              DirectConstructor->getParamDecl(I - 1)->getType();
+          DirectArguments.push_back(
+              snapshot(Parameter->isObjectPointerType() &&
+                               Argument->getType()->isArrayType()
+                           ? decay(lvalue(Argument), type(Parameter, L), L)
+                           : argument(Argument, Parameter),
+                       L));
+        }
       }
       const bool SourceOwnedCopyArgument =
           (Operation == UtilityOperation::VectorInsert ||
@@ -14074,11 +14080,16 @@ class FunctionLowering {
               : nullptr;
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
-        for (unsigned I = 0; I != Call->getNumArgs(); ++I)
+        for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
+          const auto *Argument = Call->getArg(I);
+          const auto Parameter = DirectConstructor->getParamDecl(I)->getType();
           DirectArguments.push_back(
-              snapshot(argument(Call->getArg(I),
-                                DirectConstructor->getParamDecl(I)->getType()),
+              snapshot(Parameter->isObjectPointerType() &&
+                               Argument->getType()->isArrayType()
+                           ? decay(lvalue(Argument), type(Parameter, L), L)
+                           : argument(Argument, Parameter),
                        L));
+        }
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {
           const auto *Argument = Call->getArg(0);

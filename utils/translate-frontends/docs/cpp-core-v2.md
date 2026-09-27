@@ -2685,8 +2685,12 @@ growth with an aliased scalar argument, deferred destruction after relocation,
 and balanced release. Exact integer and floating lvalue/rvalue reference
 constructor parameters are also supported; host fixtures check const and
 mutable lvalue bindings, rvalue bindings, writes through references, and both
-emplacement positions. Single and range `erase` also accept a supported
-source-owned assignment returning `T&`: they use the selected move assignment
+emplacement positions. Exact array-to-object-pointer decay is admitted for
+those constructors too,
+including string literals and local character arrays passed to a `const char*`
+parameter. Host O0/O2 fixtures cover both emplacement forms and growth.
+Single and range `erase` also accept a supported source-owned assignment
+returning `T&`: they use the selected move assignment
 when available, otherwise copy assignment, then destroy only the vacated tail.
 The erase fixtures check stable storage, assignment and destructor counts,
 empty ranges, and complete release.

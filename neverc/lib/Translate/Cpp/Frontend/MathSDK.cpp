@@ -5920,12 +5920,21 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
                  ? (Argument->isLValue() || Referent.isConstQualified())
                  : !Argument->isLValue());
       } else {
+        const auto *Array = Context.getAsArrayType(ArgumentType);
+        const bool ArrayDecay =
+            Parameter->isObjectPointerType() && Array &&
+            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                           Array->getElementType()) &&
+            (!Array->getElementType().isConstQualified() ||
+             Parameter->getPointeeType().isConstQualified()) &&
+            !Array->getElementType().isVolatileQualified();
         ExactScalarArguments &=
             (Parameter->isIntegerType() || Parameter->isFloatingType() ||
              Parameter->isObjectPointerType()) &&
             !Parameter.isVolatileQualified() &&
             !ArgumentType.isVolatileQualified() &&
-            Context.hasSameUnqualifiedType(Parameter, ArgumentType);
+            (Context.hasSameUnqualifiedType(Parameter, ArgumentType) ||
+             ArrayDecay);
       }
     }
     if (!ExactScalarArguments)
