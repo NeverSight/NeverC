@@ -19923,7 +19923,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
       }
     }
-    if (!Vector->MoveElementConstructor && !Operator && Name == "emplace" &&
+    if ((!Vector->MoveElementConstructor || Vector->ShiftElementAssignment) &&
+        !Operator && Name == "emplace" &&
         !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Call->isPRValue() &&
@@ -19945,19 +19946,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Context.getPointerType(Element.withConst())) &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Call->getArg(0)->getType())) {
-        if (Method->getNumParams() == 1)
+        if (Method->getNumParams() == 1 &&
+            (!Vector->MoveElementConstructor ||
+             Vector->DefaultElementConstructor))
           return UtilityOperation::VectorEmplace;
-        const auto Parameter = Method->getParamDecl(1)->getType();
-        if ((((!Vector->OwningElement || CopyableString) &&
-              Parameter->isLValueReferenceType()) ||
-             Parameter->isRValueReferenceType()) &&
-            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                           Element) &&
-            (!Vector->OwningElement ||
-             Context.hasSameType(Parameter->getPointeeType(), Element) ||
-             CopyableString) &&
-            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
-          return UtilityOperation::VectorEmplace;
+        if (Method->getNumParams() == 2) {
+          const auto Parameter = Method->getParamDecl(1)->getType();
+          if ((((!Vector->OwningElement || CopyableString) &&
+                Parameter->isLValueReferenceType()) ||
+               Parameter->isRValueReferenceType()) &&
+              Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                             Element) &&
+              (!Vector->OwningElement ||
+               Context.hasSameType(Parameter->getPointeeType(), Element) ||
+               CopyableString) &&
+              Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                             Element))
+            return UtilityOperation::VectorEmplace;
+        }
       }
     }
     if ((!Vector->OwningElement || CopyableString) && Operator &&

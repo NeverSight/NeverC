@@ -12099,18 +12099,23 @@ class FunctionLowering {
         assign(Count, quantity(1, SizeType, L), L);
         if (Call->getNumArgs() == 2) {
           if (Vector->OwningElement) {
-            Value = temporary(type(Vector->ElementType, L), L);
             const auto *Argument = Call->getArg(1);
-            const auto Parameter =
-                Call->getDirectCallee()->getParamDecl(1)->getType();
-            if (Parameter->isRValueReferenceType() &&
-                A.Context.hasSameType(Parameter->getPointeeType(),
-                                      Vector->ElementType))
-              transferVectorElement(json::Object(*Value), lvalue(Argument),
-                                    *Vector, L);
-            else
-              copyVectorElement(json::Object(*Value), lvalue(Argument),
-                                      *Vector, L, Argument->getType());
+            if (Vector->MoveElementConstructor)
+              SourceAddress = snapshot(
+                  address(lvalue(Argument), Argument->getType(), L), L);
+            else {
+              Value = temporary(type(Vector->ElementType, L), L);
+              const auto Parameter =
+                  Call->getDirectCallee()->getParamDecl(1)->getType();
+              if (Parameter->isRValueReferenceType() &&
+                  A.Context.hasSameType(Parameter->getPointeeType(),
+                                        Vector->ElementType))
+                transferVectorElement(json::Object(*Value), lvalue(Argument),
+                                      *Vector, L);
+              else
+                copyVectorElement(json::Object(*Value), lvalue(Argument),
+                                  *Vector, L, Argument->getType());
+            }
           } else {
             Value = snapshot(expression(Call->getArg(1)), L);
           }
@@ -12205,6 +12210,19 @@ class FunctionLowering {
         } else
           assign(std::move(Target), InsertValue(), L);
       };
+      auto ConstructSourceOwned = [&](Expression Target) {
+        if (SourceAddress)
+          transferVectorElement(std::move(Target),
+                                dereference(json::Object(*SourceAddress), L),
+                                *Vector, L);
+        else if (Operation == UtilityOperation::VectorEmplace &&
+                 Vector->DefaultElementConstructor)
+          constructMemoryDefault(std::move(Target), Vector->ElementType,
+                                 Vector->DefaultElementConstructor, true, L);
+        else
+          reject(L, "vector insert",
+                 "The selected element constructor is unavailable.");
+      };
       auto Member = [&](const char *Name) {
         return Expression{
             {"kind", "member"},
@@ -12266,9 +12284,10 @@ class FunctionLowering {
           InPlace, Grow, L);
       label(InPlace, L);
       if (Vector->MoveElementConstructor) {
-        if (!Vector->ShiftElementAssignment || !SourceAddress ||
-            Operation != UtilityOperation::VectorInsert ||
-            Call->getNumArgs() != 2)
+        if (!Vector->ShiftElementAssignment ||
+            (Operation == UtilityOperation::VectorInsert && !SourceAddress) ||
+            (Operation == UtilityOperation::VectorEmplace &&
+             Call->getNumArgs() == 2 && !SourceAddress))
           reject(L, "vector insert",
                  "The selected element insertion cannot shift live elements.");
         const auto Append = labelName(), ShiftLive = labelName();
@@ -12278,11 +12297,14 @@ class FunctionLowering {
                       L),
                Append, ShiftLive, L);
         label(Append, L);
-        transferVectorElement(dereference(json::Object(End), L),
-                              dereference(json::Object(*SourceAddress), L),
-                              *Vector, L);
+        ConstructSourceOwned(dereference(json::Object(End), L));
         jump(Filled, L);
         label(ShiftLive, L);
+        std::optional<Expression> EmplaceValue;
+        if (Operation == UtilityOperation::VectorEmplace) {
+          EmplaceValue = temporary(type(Vector->ElementType, L), L);
+          ConstructSourceOwned(json::Object(*EmplaceValue));
+        }
         auto Last = snapshot(
             binary("-", json::Object(End), quantity(1, DifferenceType, L),
                    PointerType, L),
@@ -12309,7 +12331,12 @@ class FunctionLowering {
         label(Fill, L);
         assignMemorySource(dereference(json::Object(Position), L),
                            Vector->ElementType, Vector->ShiftElementAssignment,
-                           dereference(json::Object(*SourceAddress), L), L);
+                           EmplaceValue ? json::Object(*EmplaceValue)
+                                        : dereference(json::Object(*SourceAddress),
+                                                      L),
+                           L);
+        if (EmplaceValue)
+          destroy(json::Object(*EmplaceValue), Vector->ElementType, L);
         jump(Filled, L);
         label(Filled, L);
         assign(Member("nct_vector_end"),
@@ -12411,14 +12438,12 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
-      if (SourceAddress) {
+      if (Vector->MoveElementConstructor) {
         auto InsertSlot = snapshot(
             binary("+", json::Object(NewBegin), json::Object(Offset),
                    PointerType, L),
             L);
-        transferVectorElement(dereference(json::Object(InsertSlot), L),
-                              dereference(json::Object(*SourceAddress), L),
-                              *Vector, L);
+        ConstructSourceOwned(dereference(json::Object(InsertSlot), L));
       }
       auto OldCurrent = temporary(PointerType, L);
       auto NewCurrent = temporary(PointerType, L);
@@ -12459,7 +12484,7 @@ class FunctionLowering {
           binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
           GrowFill, GrowFillDone, L);
       label(GrowFill, L);
-      if (!SourceAddress)
+      if (!Vector->MoveElementConstructor)
         StoreInsertedValue(dereference(json::Object(NewCurrent), L));
       assign(NewCurrent,
              binary("+", json::Object(NewCurrent),

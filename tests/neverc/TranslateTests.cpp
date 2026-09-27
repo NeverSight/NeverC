@@ -55822,6 +55822,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedEmplaceRun) {
+  const auto Source = tmpFile("vector-source-owned-emplace.cpp");
+  const auto Output = tmpFile("vector-source-owned-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int defaults;
+int assignments;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(new int(0)) { ++live; ++defaults; }
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    ++assignments;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(8);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    values.push_back(Box(3));
+    auto storage = values.data();
+    auto middle = values.emplace(values.cbegin() + 1);
+    if (middle != values.begin() + 1 || values.data() != storage ||
+        values.size() != 4 || *values[0].value != 1 ||
+        *values[1].value != 0 || *values[2].value != 2 ||
+        *values[3].value != 3 || defaults != 1 || assignments == 0)
+      return 1;
+    auto end = values.emplace(values.cend());
+    if (end != values.end() - 1 || values.data() != storage ||
+        values.size() != 5 || *values[4].value != 0 || defaults != 2)
+      return 2;
+    Box source(9);
+    values.emplace_back(static_cast<Box &&>(source));
+    auto alias = values.emplace(values.cbegin() + 2,
+                                static_cast<Box &&>(values.back()));
+    if (alias != values.begin() + 2 || values.data() != storage ||
+        values.size() != 7 || *values[0].value != 1 ||
+        *values[1].value != 0 || *values[2].value != 9 ||
+        *values[3].value != 2 || *values[4].value != 3 ||
+        *values[5].value != 0 || values[6].value != nullptr)
+      return 3;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(4));
+    values.push_back(Box(5));
+    auto storage = values.data();
+    Box middle(7);
+    auto grown = values.emplace(values.cbegin() + 1,
+                                static_cast<Box &&>(middle));
+    if (grown != values.begin() + 1 || values.data() == storage ||
+        values.size() != 3 || middle.value != nullptr ||
+        *values[0].value != 4 || *values[1].value != 7 ||
+        *values[2].value != 5) return 4;
+  }
+  {
+    std::vector<Box> values;
+    auto only = values.emplace(values.cend());
+    if (only != values.begin() || values.size() != 1 ||
+        *values[0].value != 0 || defaults != 3) return 5;
+  }
+  return live == 0 && allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedVoidAssignmentInsertRejected) {
   const auto Source = tmpFile("vector-source-owned-insert-rejected.cpp");
   writeFile(Source, R"cpp(
@@ -55847,6 +55946,38 @@ int main() {
   std::vector<Box> values;
   values.emplace_back();
   values.insert(values.cbegin(), Box());
+  return 0;
+}
+)cpp");
+  expectCode(translate(Source, {"--profile", "cpp-core-v2", "--check"}),
+             "TR0203");
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedVoidAssignmentEmplaceRejected) {
+  const auto Source = tmpFile("vector-source-owned-emplace-rejected.cpp");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(nullptr) {}
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) { other.value = nullptr; }
+  void operator=(Box &&other) noexcept {
+    value = other.value;
+    other.value = nullptr;
+  }
+  ~Box() {}
+};
+int main() {
+  std::vector<Box> values;
+  values.emplace_back();
+  values.emplace(values.cbegin());
   return 0;
 }
 )cpp");

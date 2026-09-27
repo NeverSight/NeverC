@@ -2684,15 +2684,22 @@ The erase fixtures check stable storage, assignment and destructor counts,
 empty ranges, and complete release.
 Single-rvalue `insert` also uses that assignment to shift live elements when
 capacity permits; it move-constructs the new tail and keeps the original
-storage. With growth it constructs the inserted element before moving old elements,
-including when the argument refers to an element of the same vector. In-place
-insertion retains libc++'s ordering when the rvalue argument aliases a live
-element. The insertion fixtures cover middle, end, aliased, growing, and empty
-vectors with balanced resource release.
+storage. With growth it constructs the inserted element before moving old
+elements, including when the argument refers to an element of the same vector.
+In-place insertion retains libc++'s ordering when an rvalue argument aliases
+a live element. The insertion fixtures cover middle, end, aliased, growing,
+and empty vectors with balanced resource release.
+Positional `emplace` accepts zero arguments when the element has a supported
+default constructor, or one nonconst rvalue of the exact element type. For an
+in-place middle insertion it constructs a temporary before shifting live
+elements, assigns the new position from that temporary, and destroys it. End
+insertion and growth construct directly in the destination. Host O0/O2
+fixtures check default construction, aliased rvalues, capacity reuse, growth,
+and balanced release.
 Unique-pointer elements remain noncopyable. Other positional emplacement
-remains unsupported. Other nontrivial record element operations, other
-allocators, remaining vector methods, and throwing allocation or length-error
-paths remain unsupported. Quoted and shadow headers remain rejected.
+signatures, nontrivial record element operations, allocators, remaining vector
+methods, and throwing allocation or length-error paths remain unsupported.
+Quoted and shadow headers remain rejected.
 
 ## Dynamic local static initialization
 
