@@ -56713,6 +56713,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedStringVectorRelationsRun) {
+  const auto Source = tmpFile("nested-string-vector-relations.cpp");
+  const auto Output = tmpFile("nested-string-vector-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::vector<std::string>> left;
+    left.emplace_back();
+    left[0].emplace_back("a");
+    left[0].emplace_back("a long string stored beyond the short buffer");
+    left.emplace_back();
+    std::vector<std::vector<std::string>> same(left);
+    if (!(left == same) || left != same || left < same || left > same ||
+        !(left <= same) || !(left >= same)) return 1;
+    same[1].emplace_back("tail");
+    if (left == same || !(left != same) || !(left < same) ||
+        left > same || !(left <= same) || left >= same ||
+        same < left || !(same > left)) return 2;
+    same[1].clear();
+    same[0][0][0] = 'b';
+    if (left == same || !(left != same) || !(left < same) ||
+        left > same || !(left <= same) || left >= same) return 3;
+    std::vector<std::vector<std::string>> prefix;
+    prefix.push_back(left[0]);
+    if (prefix == left || !(prefix != left) || !(prefix < left) ||
+        prefix > left || !(left > prefix)) return 4;
+    std::vector<std::vector<std::string>> empty;
+    if (!(empty == empty) || empty != empty || empty == left ||
+        !(empty < left) || empty > left) return 5;
+    char first[] = {'x', 0, 'a'};
+    char second[] = {'x', 0, 'b'};
+    std::vector<std::vector<std::string>> bytes_left;
+    bytes_left.emplace_back();
+    bytes_left[0].emplace_back(first, Size(3));
+    std::vector<std::vector<std::string>> bytes_right;
+    bytes_right.emplace_back();
+    bytes_right[0].emplace_back(second, Size(3));
+    if (bytes_left == bytes_right || !(bytes_left != bytes_right) ||
+        !(bytes_left < bytes_right) || bytes_left > bytes_right ||
+        !(bytes_left <= bytes_right) || bytes_left >= bytes_right) return 6;
+    std::vector<std::vector<std::vector<std::string>>> cube;
+    cube.emplace_back(static_cast<std::vector<std::vector<std::string>>&&>(left));
+    std::vector<std::vector<std::vector<std::string>>> clone(cube);
+    if (!(cube == clone) || cube != clone || cube < clone ||
+        cube > clone || !(cube <= clone) || !(cube >= clone)) return 7;
+    clone[0][0][0][0] = 'z';
+    if (cube == clone || !(cube != clone) || !(cube < clone) ||
+        cube > clone || !(cube <= clone) || cube >= clone) return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-string-vector-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

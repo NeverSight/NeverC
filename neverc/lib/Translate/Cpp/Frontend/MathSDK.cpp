@@ -5907,17 +5907,22 @@ static bool utilityVectorCopyableElements(const State &S,
          utilityVectorCopyableElements(S, SM, *Nested, Context, Depth + 1);
 }
 
-static bool utilityNestedVectorIntegerComparable(
-    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
-    const ASTContext &Context, unsigned Depth = 0) {
+static bool utilityNestedVectorComparable(const State &S,
+                                          const SourceManager &SM,
+                                          const UtilityVectorRecord &Vector,
+                                          const ASTContext &Context,
+                                          unsigned Depth = 0) {
   if (Depth >= 64)
     return false;
   if (Vector.ElementType->isIntegerType())
     return true;
+  if (approvedUtilityStringRecord(
+          S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context))
+    return true;
   const auto Nested = approvedUtilityVectorRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
-  return Nested && utilityNestedVectorIntegerComparable(S, SM, *Nested, Context,
-                                                        Depth + 1);
+  return Nested &&
+         utilityNestedVectorComparable(S, SM, *Nested, Context, Depth + 1);
 }
 
 const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
@@ -21154,9 +21159,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               ->isBuiltinType();
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
-      const bool NestedIntegerRelation =
+      const bool NestedRelation =
           NestedElement &&
-          utilityNestedVectorIntegerComparable(S, SM, *NestedElement, Context);
+          utilityNestedVectorComparable(S, SM, *NestedElement, Context);
       const bool PointerElement =
           Left->ElementType->isObjectPointerType() &&
           (Equality ||
@@ -21173,9 +21178,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        bool(FriendComparison) +
                                        bool(NamespaceComparison);
       const bool SourceComparison = ComparisonForms == 1;
-      if (Matching &&
-          (Arithmetic || StringElement || UniquePointerElement ||
-           PointerElement || SourceComparison || NestedIntegerRelation))
+      if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
+                       PointerElement || SourceComparison || NestedRelation))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

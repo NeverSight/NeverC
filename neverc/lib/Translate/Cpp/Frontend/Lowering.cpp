@@ -1726,68 +1726,7 @@ class FunctionLowering {
     };
     auto ReadStringAt = [&](Expression Address,
                             const UtilityStringRecord &String) {
-      const auto SizeType = type(A.Context.getSizeType(), L);
-      const auto PointerType =
-          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
-      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const char *FlagName =
-          String.AlternateLayout ? "nct_string_word2" : "nct_string_word0";
-      const char *PointerName =
-          String.AlternateLayout ? "nct_string_word0" : "nct_string_word2";
-      const auto LongFlag =
-          String.AlternateLayout
-              ? uint64_t(1)
-                    << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
-              : uint64_t(1);
-      auto Word = [&](const char *Name) {
-        return Expression{
-            {"kind", "member"},
-            {"type", type(llvm::StringRef(Name) == PointerName
-                              ? String.PointerType
-                              : A.Context.getSizeType(),
-                          L)},
-            {"name", Name},
-            {"args", json::Array{dereference(json::Object(Address), L)}},
-            {"loc", A.loc(L)}};
-      };
-      auto First = snapshot(Word(FlagName), L);
-      auto Data = temporary(PointerType, L);
-      auto Size = temporary(SizeType, L);
-      const auto Long = labelName(), Short = labelName();
-      const auto Ready = labelName();
-      branch(binary("!=",
-                    binary("&", json::Object(First),
-                           quantity(LongFlag, SizeType, L), SizeType, L),
-                    quantity(0, SizeType, L), "bool", L),
-             Long, Short, L);
-      label(Long, L);
-      assign(Data, cast(Word(PointerName), PointerType, L), L);
-      assign(Size, Word("nct_string_word1"), L);
-      jump(Ready, L);
-      label(Short, L);
-      auto ShortPointer =
-          cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
-      assign(Data,
-             String.AlternateLayout
-                 ? std::move(ShortPointer)
-                 : binary("+", std::move(ShortPointer),
-                          quantity(1, DifferenceType, L), PointerType, L),
-             L);
-      assign(
-          Size,
-          String.AlternateLayout
-              ? binary(
-                    ">>", json::Object(First),
-                    quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                             SizeType, L),
-                    SizeType, L)
-              : binary("/", json::Object(First), quantity(2, SizeType, L),
-                       SizeType, L),
-          L);
-      jump(Ready, L);
-      label(Ready, L);
-      return std::pair<Expression, Expression>{std::move(Data),
-                                               std::move(Size)};
+      return readStringAt(std::move(Address), String, L);
     };
     auto SliceStringBytes = [&](Expression Data, Expression Size,
                                 Expression Position, Expression Requested) {
@@ -13722,7 +13661,7 @@ class FunctionLowering {
           A.Context);
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
-      const bool NestedIntegerRelation = Nested.has_value();
+      const bool NestedRelation = Nested.has_value();
       const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
       const auto *MemberComparison = approvedUtilityVectorElementComparison(
           A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
@@ -13738,7 +13677,7 @@ class FunctionLowering {
       const auto *FreeComparison =
           FriendComparison ? FriendComparison : NamespaceComparison;
       if (LeftVector->OwningElement && !String && !Unique &&
-          !SourceComparison && !NestedIntegerRelation)
+          !SourceComparison && !NestedRelation)
         reject(L, "vector comparison",
                "The selected owning element comparison is unavailable.");
       const auto PointerType = type(LeftVector->PointerType, L);
@@ -13812,73 +13751,9 @@ class FunctionLowering {
             {"loc", A.loc(L)}});
         return Compared;
       };
-      auto CompareStrings = [&]() -> Expression {
-        auto Left = ReadStringAt(json::Object(LeftCurrent), *String);
-        auto Right = ReadStringAt(json::Object(RightCurrent), *String);
-        const auto SizeType = type(A.Context.getSizeType(), L);
-        auto Position = temporary(SizeType, L);
-        auto Order = temporary("int", L);
-        assign(Position, quantity(0, SizeType, L), L);
-        const auto CheckLeftByte = labelName(), CheckRightByte = labelName();
-        const auto CompareByte = labelName(), DifferentByte = labelName();
-        const auto AdvanceByte = labelName(), CompareSizes = labelName();
-        const auto CheckGreater = labelName(), Less = labelName();
-        const auto Greater = labelName(), Equal = labelName();
-        const auto Compared = labelName();
-        jump(CheckLeftByte, L);
-        label(CheckLeftByte, L);
-        branch(binary("<", json::Object(Position), json::Object(Left.second),
-                      "bool", L),
-               CheckRightByte, CompareSizes, L);
-        label(CheckRightByte, L);
-        branch(binary("<", json::Object(Position), json::Object(Right.second),
-                      "bool", L),
-               CompareByte, CompareSizes, L);
-        label(CompareByte, L);
-        auto LeftByte = snapshot(
-            cast(index(json::Object(Left.first), json::Object(Position),
-                       type(A.Context.CharTy, L), L),
-                 "u8", L),
-            L);
-        auto RightByte = snapshot(
-            cast(index(json::Object(Right.first), json::Object(Position),
-                       type(A.Context.CharTy, L), L),
-                 "u8", L),
-            L);
-        branch(binary("!=", json::Object(LeftByte), json::Object(RightByte),
-                      "bool", L),
-               DifferentByte, AdvanceByte, L);
-        label(DifferentByte, L);
-        branch(binary("<", std::move(LeftByte), std::move(RightByte), "bool", L),
-               Less, Greater, L);
-        label(AdvanceByte, L);
-        assign(Position,
-               binary("+", json::Object(Position), quantity(1, SizeType, L),
-                      SizeType, L),
-               L);
-        jump(CheckLeftByte, L);
-        label(CompareSizes, L);
-        branch(binary("<", json::Object(Left.second),
-                      json::Object(Right.second), "bool", L),
-               Less, CheckGreater, L);
-        label(CheckGreater, L);
-        branch(binary(">", json::Object(Left.second),
-                      json::Object(Right.second), "bool", L),
-               Greater, Equal, L);
-        label(Less, L);
-        assign(Order,
-               binary("-", quantity(0, "int", L), quantity(1, "int", L),
-                      "int", L),
-               L);
-        jump(Compared, L);
-        label(Greater, L);
-        assign(Order, quantity(1, "int", L), L);
-        jump(Compared, L);
-        label(Equal, L);
-        assign(Order, quantity(0, "int", L), L);
-        jump(Compared, L);
-        label(Compared, L);
-        return Order;
+      auto CompareStrings = [&]() {
+        return compareVectorStringsAt(json::Object(LeftCurrent),
+                                      json::Object(RightCurrent), *String, L);
       };
       auto Result = temporary("bool", L);
       const auto CheckLeft = labelName(), CheckRight = labelName();
@@ -13902,8 +13777,8 @@ class FunctionLowering {
           branch(
               binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
               Next, Different, L);
-        } else if (NestedIntegerRelation) {
-          auto Order = compareNestedIntegerVectors(
+        } else if (NestedRelation) {
+          auto Order = compareNestedVectors(
               dereference(json::Object(LeftCurrent), L),
               dereference(json::Object(RightCurrent), L), *Nested, L);
           branch(
@@ -13957,8 +13832,8 @@ class FunctionLowering {
         label(CheckGreater, L);
         branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
                Greater, Next, L);
-      } else if (NestedIntegerRelation) {
-        auto Order = compareNestedIntegerVectors(
+      } else if (NestedRelation) {
+        auto Order = compareNestedVectors(
             dereference(json::Object(LeftCurrent), L),
             dereference(json::Object(RightCurrent), L), *Nested, L);
         branch(
@@ -19375,9 +19250,145 @@ class FunctionLowering {
     assign(std::move(Member), std::move(Pointer), L);
   }
 
-  Expression compareNestedIntegerVectors(Expression Left, Expression Right,
-                                         const UtilityVectorRecord &Vector,
-                                         SourceLocation L) {
+  std::pair<Expression, Expression>
+  readStringAt(Expression Address, const UtilityStringRecord &String,
+               SourceLocation L) {
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto PointerType =
+        type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const char *FlagName =
+        String.AlternateLayout ? "nct_string_word2" : "nct_string_word0";
+    const char *PointerName =
+        String.AlternateLayout ? "nct_string_word0" : "nct_string_word2";
+    const auto LongFlag =
+        String.AlternateLayout
+            ? uint64_t(1) << (A.Context.getTypeSize(A.Context.getSizeType()) -
+                              1)
+            : uint64_t(1);
+    auto Word = [&](const char *Name) {
+      return Expression{
+          {"kind", "member"},
+          {"type",
+           type(llvm::StringRef(Name) == PointerName ? String.PointerType
+                                                     : A.Context.getSizeType(),
+                L)},
+          {"name", Name},
+          {"args", json::Array{dereference(json::Object(Address), L)}},
+          {"loc", A.loc(L)}};
+    };
+    auto First = snapshot(Word(FlagName), L);
+    auto Data = temporary(PointerType, L);
+    auto Size = temporary(SizeType, L);
+    const auto Long = labelName(), Short = labelName();
+    const auto Ready = labelName();
+    branch(binary("!=",
+                  binary("&", json::Object(First),
+                         quantity(LongFlag, SizeType, L), SizeType, L),
+                  quantity(0, SizeType, L), "bool", L),
+           Long, Short, L);
+    label(Long, L);
+    assign(Data, cast(Word(PointerName), PointerType, L), L);
+    assign(Size, Word("nct_string_word1"), L);
+    jump(Ready, L);
+    label(Short, L);
+    auto ShortPointer =
+        cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
+    assign(Data,
+           String.AlternateLayout
+               ? std::move(ShortPointer)
+               : binary("+", std::move(ShortPointer),
+                        quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    assign(Size,
+           String.AlternateLayout
+               ? binary(">>", json::Object(First),
+                        quantity(
+                            A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                            SizeType, L),
+                        SizeType, L)
+               : binary("/", json::Object(First), quantity(2, SizeType, L),
+                        SizeType, L),
+           L);
+    jump(Ready, L);
+    label(Ready, L);
+    return std::pair<Expression, Expression>{std::move(Data), std::move(Size)};
+  }
+
+  Expression compareVectorStringsAt(Expression LeftCurrent,
+                                    Expression RightCurrent,
+                                    const UtilityStringRecord &String,
+                                    SourceLocation L) {
+    auto Left = readStringAt(std::move(LeftCurrent), String, L);
+    auto Right = readStringAt(std::move(RightCurrent), String, L);
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    auto Position = temporary(SizeType, L);
+    auto Order = temporary("int", L);
+    assign(Position, quantity(0, SizeType, L), L);
+    const auto CheckLeftByte = labelName(), CheckRightByte = labelName();
+    const auto CompareByte = labelName(), DifferentByte = labelName();
+    const auto AdvanceByte = labelName(), CompareSizes = labelName();
+    const auto CheckGreater = labelName(), Less = labelName();
+    const auto Greater = labelName(), Equal = labelName();
+    const auto Compared = labelName();
+    jump(CheckLeftByte, L);
+    label(CheckLeftByte, L);
+    branch(binary("<", json::Object(Position), json::Object(Left.second),
+                  "bool", L),
+           CheckRightByte, CompareSizes, L);
+    label(CheckRightByte, L);
+    branch(binary("<", json::Object(Position), json::Object(Right.second),
+                  "bool", L),
+           CompareByte, CompareSizes, L);
+    label(CompareByte, L);
+    auto LeftByte =
+        snapshot(cast(index(json::Object(Left.first), json::Object(Position),
+                            type(A.Context.CharTy, L), L),
+                      "u8", L),
+                 L);
+    auto RightByte =
+        snapshot(cast(index(json::Object(Right.first), json::Object(Position),
+                            type(A.Context.CharTy, L), L),
+                      "u8", L),
+                 L);
+    branch(binary("!=", json::Object(LeftByte), json::Object(RightByte), "bool",
+                  L),
+           DifferentByte, AdvanceByte, L);
+    label(DifferentByte, L);
+    branch(binary("<", std::move(LeftByte), std::move(RightByte), "bool", L),
+           Less, Greater, L);
+    label(AdvanceByte, L);
+    assign(Position,
+           binary("+", json::Object(Position), quantity(1, SizeType, L),
+                  SizeType, L),
+           L);
+    jump(CheckLeftByte, L);
+    label(CompareSizes, L);
+    branch(binary("<", json::Object(Left.second), json::Object(Right.second),
+                  "bool", L),
+           Less, CheckGreater, L);
+    label(CheckGreater, L);
+    branch(binary(">", json::Object(Left.second), json::Object(Right.second),
+                  "bool", L),
+           Greater, Equal, L);
+    label(Less, L);
+    assign(Order,
+           binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L),
+           L);
+    jump(Compared, L);
+    label(Greater, L);
+    assign(Order, quantity(1, "int", L), L);
+    jump(Compared, L);
+    label(Equal, L);
+    assign(Order, quantity(0, "int", L), L);
+    jump(Compared, L);
+    label(Compared, L);
+    return Order;
+  }
+
+  Expression compareNestedVectors(Expression Left, Expression Right,
+                                  const UtilityVectorRecord &Vector,
+                                  SourceLocation L) {
     const auto VectorType = A.Context.getRecordType(Vector.Record);
     auto LeftAddress = snapshot(address(std::move(Left), VectorType, L), L);
     auto RightAddress = snapshot(address(std::move(Right), VectorType, L), L);
@@ -19423,13 +19434,24 @@ class FunctionLowering {
       branch(binary("<", std::move(RightElement), std::move(LeftElement),
                     "bool", L),
              Greater, Next, L);
+    } else if (const auto String = approvedUtilityStringRecord(
+                   A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(),
+                   A.Context)) {
+      auto Order = compareVectorStringsAt(
+          json::Object(LeftCurrent), json::Object(RightCurrent), *String, L);
+      const auto CheckGreater = labelName();
+      branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+             Less, CheckGreater, L);
+      label(CheckGreater, L);
+      branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+             Greater, Next, L);
     } else {
       const auto Nested = approvedUtilityVectorRecord(
           A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
       if (!Nested)
         reject(L, "nested vector comparison",
-               "The nested integer vector layout is unavailable.");
-      auto Order = compareNestedIntegerVectors(
+               "The nested vector layout is unavailable.");
+      auto Order = compareNestedVectors(
           dereference(json::Object(LeftCurrent), L),
           dereference(json::Object(RightCurrent), L), *Nested, L);
       const auto CheckGreater = labelName();

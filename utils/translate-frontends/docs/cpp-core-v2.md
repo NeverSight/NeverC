@@ -2676,9 +2676,9 @@ elements from mutable or const source ranges. Checked initializer-list
 construction, assignment and insertion copy each nested element into
 independent storage, including values referenced from the destination vector.
 All six vector comparisons recurse through nested vectors whose leaves are
-admitted integer types, using lexicographic ordering for `<`, `>`, `<=`, and
-`>=`. Other nested vector copy operations and comparisons remain outside this
-boundary.
+admitted integer types or exact pinned strings, using lexicographic ordering
+for `<`, `>`, `<=`, and `>=`. Other nested vector copy operations and
+comparisons remain outside this boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,

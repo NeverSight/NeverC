@@ -29589,6 +29589,18 @@ bool compare_nested_cube(
   return left == right || left != right || left < right ||
          left > right || left <= right || left >= right;
 }
+bool compare_nested_strings(
+    const std::vector<std::vector<std::string>>& left,
+    const std::vector<std::vector<std::string>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_string_cube(
+    const std::vector<std::vector<std::vector<std::string>>>& left,
+    const std::vector<std::vector<std::vector<std::string>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
 struct NestedBox {
   int *value;
   explicit NestedBox(int n) : value(new int(n)) {}
@@ -29646,13 +29658,6 @@ bool operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }
-""",
-        "nested-string-comparison": """\
-#include <string>
-bool f(const std::vector<std::vector<std::string>>& left,
-       const std::vector<std::vector<std::string>>& right) {
-  return left == right;
-}
 """,
         "owning-pointer-comparison": """\
 #include <memory>
