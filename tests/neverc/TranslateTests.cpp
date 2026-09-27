@@ -56356,6 +56356,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedVectorRangeConstructionRun) {
+  const auto Source = tmpFile("nested-vector-range-construction.cpp");
+  const auto Output = tmpFile("nested-vector-range-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::vector<int>> rows;
+    rows.emplace_back();
+    rows[0].push_back(7);
+    rows.emplace_back();
+    rows.emplace_back();
+    rows[2].push_back(11);
+    std::vector<std::vector<int>> raw(rows.data(),
+                                      rows.data() + rows.size());
+    const auto &view = rows;
+    std::vector<std::vector<int>> const_raw(view.data(),
+                                            view.data() + view.size());
+    std::vector<std::vector<int>> wrapped(view.cbegin(), view.cend());
+    if (raw.size() != 3 || const_raw.size() != 3 || wrapped.size() != 3 ||
+        raw[0].data() == rows[0].data() ||
+        const_raw[0].data() == rows[0].data() ||
+        wrapped[0].data() == rows[0].data() ||
+        raw[0].data() == wrapped[0].data() ||
+        !raw[1].empty() || wrapped[2][0] != 11)
+      return 1;
+    raw[0][0] = 13;
+    if (rows[0][0] != 7 || wrapped[0][0] != 7) return 2;
+    std::vector<std::vector<int>> empty(rows.data(), rows.data());
+    if (!empty.empty()) return 3;
+  }
+  {
+    std::vector<std::vector<std::string>> rows;
+    rows.emplace_back();
+    rows[0].emplace_back("a long string stored beyond the short buffer");
+    std::vector<std::vector<std::string>> copied(rows.cbegin(), rows.cend());
+    if (copied.size() != 1 || copied[0].data() == rows[0].data() ||
+        copied[0][0].data() == rows[0][0].data())
+      return 4;
+    copied[0][0][0] = 'z';
+    if (rows[0][0][0] != 'a') return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-range-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

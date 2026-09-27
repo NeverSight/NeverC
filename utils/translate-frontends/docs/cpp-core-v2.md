@@ -2670,8 +2670,10 @@ sources held by the destination vector. Host O0/O2 fixtures cover aliases
 during growth, positional insertion, deep copies, and three nested levels.
 Bounded fill construction, `resize(count, value)`, `assign(count, value)`, and
 counted `insert` likewise clone each inner vector, including when the value
-comes from the destination vector. Other nested vector copy operations remain
-outside this boundary.
+comes from the destination vector. Raw-pointer and authenticated wrapped
+iterator range construction also deep-copies nested elements from mutable or
+const source ranges. Other nested vector copy operations remain outside this
+boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,

@@ -6270,7 +6270,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                              Context.getPointerType(Element)) ||
          Context.hasSameType(Wrapped->IteratorType,
                              Context.getPointerType(Element.withConst())));
-    if ((!Vector->OwningElement || CopyableString ||
+    if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
          Vector->CopyElementConstructor) &&
         (RawPointer || WrappedPointer) &&
         Context.hasSameType(FirstType, LastType) &&
