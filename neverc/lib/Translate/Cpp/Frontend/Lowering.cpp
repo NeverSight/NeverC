@@ -19502,6 +19502,25 @@ class FunctionLowering {
               binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
               Greater, Next, L);
         }
+      } else if (const auto Array = approvedUtilityArrayRecord(
+                     A.S, A.Sources, Field->getType()->getAsCXXRecordDecl(),
+                     A.Context)) {
+        auto Order = compareVectorArrayValues(
+            std::move(LeftField), std::move(RightField), *Array, Equality, L);
+        if (Equality) {
+          branch(
+              binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+              Next, Greater, L);
+        } else {
+          const auto CheckGreater = labelName();
+          branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool",
+                        L),
+                 Less, CheckGreater, L);
+          label(CheckGreater, L);
+          branch(
+              binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+              Greater, Next, L);
+        }
       } else {
         auto LeftValue = snapshot(std::move(LeftField), L);
         auto RightValue = snapshot(std::move(RightField), L);

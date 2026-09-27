@@ -29669,6 +29669,29 @@ bool compare_empty_array_vectors(
   return left == right || left != right || left < right ||
          left > right || left <= right || left >= right;
 }
+void pair_array_vectors() {
+  using Row = std::array<int, 2>;
+  using Pair = std::pair<Row, int>;
+  Row row{{1, 2}};
+  Pair value(row, 3);
+  std::vector<Pair> values;
+  values.push_back(value);
+  using Nested = std::pair<Pair, int>;
+  std::vector<Nested> nested;
+  nested.push_back(Nested(value, 4));
+}
+bool compare_pair_array_vectors(
+    const std::vector<std::pair<std::array<int, 2>, int>>& left,
+    const std::vector<std::pair<std::array<int, 2>, int>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_pair_array_vectors(
+    const std::vector<std::vector<std::pair<std::array<int, 2>, int>>>& left,
+    const std::vector<std::vector<std::pair<std::array<int, 2>, int>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
 bool compare_pair_vectors(const std::vector<std::pair<int, int>>& left,
                           const std::vector<std::pair<int, int>>& right) {
   return left == right || left != right || left < right ||
@@ -29906,12 +29929,12 @@ bool f(const std::vector<std::array<void*, 2>>& left,
   return left < right;
 }
 """,
-        "pair-array-comparison": """\
+        "pair-array-void-pointer-order": """\
 #include <array>
 #include <utility>
-bool f(const std::vector<std::pair<std::array<int, 2>, int>>& left,
-       const std::vector<std::pair<std::array<int, 2>, int>>& right) {
-  return left == right;
+bool f(const std::vector<std::pair<std::array<void*, 2>, int>>& left,
+       const std::vector<std::pair<std::array<void*, 2>, int>>& right) {
+  return left < right;
 }
 """,
         "pair-user-conversion-emplace": """\

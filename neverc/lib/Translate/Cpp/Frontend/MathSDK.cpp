@@ -5947,6 +5947,12 @@ static bool utilityVectorCopyableElements(const State &S,
          utilityVectorCopyableElements(S, SM, *Nested, Context, Depth + 1);
 }
 
+static bool utilityVectorArrayComparable(const State &S,
+                                         const SourceManager &SM,
+                                         const ASTContext &Context,
+                                         QualType Element, bool Equality,
+                                         unsigned Depth);
+
 static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
                                         const ASTContext &Context,
                                         QualType Element, bool Equality,
@@ -5963,6 +5969,9 @@ static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
     return Equality;
   if (utilityScalar(Context, Element))
     return true;
+  if (approvedUtilityArrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context))
+    return utilityVectorArrayComparable(S, SM, Context, Element, Equality,
+                                        Depth + 1);
   const auto Pair =
       approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
   return Pair &&
