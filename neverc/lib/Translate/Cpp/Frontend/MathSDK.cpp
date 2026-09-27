@@ -5985,6 +5985,21 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
   return std::nullopt;
 }
 
+bool approvedUtilityVectorUniquePtrPointerEmplace(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != FirstArgument + 1 ||
+      !Vector.OwningElement || Vector.MoveElementConstructor)
+    return false;
+  const auto Unique = approvedUtilityUniquePtrRecord(
+      S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
+  if (!Unique || Unique->CustomDeleter || Unique->Deleter.Array)
+    return false;
+  const auto ArgumentType = Call->getArg(FirstArgument)->getType();
+  return Context.hasSameType(ArgumentType, Unique->PointerType) ||
+         ArgumentType->isNullPtrType();
+}
+
 const CXXMethodDecl *approvedUtilityVectorElementComparison(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     OverloadedOperatorKind Operator, const ASTContext &Context) {
@@ -20191,6 +20206,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (approvedUtilityVectorStringEmplace(S, SM, *Vector, Call, 1,
                                                Context))
           return UtilityOperation::VectorEmplace;
+        if (approvedUtilityVectorUniquePtrPointerEmplace(
+                S, SM, *Vector, Call, 1, Context))
+          return UtilityOperation::VectorEmplace;
       }
     }
     if ((!Vector->OwningElement || CopyableString ||
@@ -20311,6 +20329,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                                   Context))
         return UtilityOperation::VectorEmplaceBack;
       if (approvedUtilityVectorStringEmplace(S, SM, *Vector, Call, 0, Context))
+        return UtilityOperation::VectorEmplaceBack;
+      if (approvedUtilityVectorUniquePtrPointerEmplace(
+              S, SM, *Vector, Call, 0, Context))
         return UtilityOperation::VectorEmplaceBack;
     }
     if (!Operator && !Method->isConst() &&

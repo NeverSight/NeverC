@@ -55499,6 +55499,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorUniquePtrRawPointerEmplaceRun) {
+  const auto Source = tmpFile("vector-unique-raw-pointer-emplace.cpp");
+  const auto Output = tmpFile("vector-unique-raw-pointer-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+int main() {
+  {
+    std::vector<std::unique_ptr<int>> values;
+    values.reserve(3);
+    auto storage = values.data();
+    auto &first = values.emplace_back(new int(7));
+    auto &empty = values.emplace_back(nullptr);
+    if (&first != &values[0] || &empty != &values[1] ||
+        values.data() != storage || *values[0] != 7 || values[1]) return 1;
+    auto middle = values.emplace(values.cbegin() + 1, new int(9));
+    if (middle != values.begin() + 1 || values.data() != storage ||
+        *values[0] != 7 || *values[1] != 9 || values[2]) return 2;
+    auto &grown = values.emplace_back(new int(11));
+    if (&grown != &values[3] || values.data() == storage ||
+        *values[0] != 7 || *values[1] != 9 || values[2] ||
+        *values[3] != 11) return 3;
+    auto inserted = values.emplace(values.cbegin() + 2, nullptr);
+    if (inserted != values.begin() + 2 || values[2] ||
+        values[3] || *values[4] != 11) return 4;
+    int *raw = new int(13);
+    auto tail = values.emplace(values.cend(), raw);
+    if (tail != values.end() - 1 || *values.back() != 13) return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-unique-raw-pointer-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

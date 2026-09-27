@@ -12059,6 +12059,10 @@ class FunctionLowering {
       if (Operation == UtilityOperation::VectorEmplace)
         StringEmplace = approvedUtilityVectorStringEmplace(
             A.S, A.Sources, *Vector, Call, 1, A.Context);
+      const bool UniquePointerEmplace =
+          Operation == UtilityOperation::VectorEmplace &&
+          approvedUtilityVectorUniquePtrPointerEmplace(
+              A.S, A.Sources, *Vector, Call, 1, A.Context);
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
@@ -12145,6 +12149,14 @@ class FunctionLowering {
           constructVectorStringEmplace(json::Object(*Value),
                                        Vector->ElementType, &*String, Call, 1,
                                        *StringEmplace, L);
+        } else if (UniquePointerEmplace) {
+          auto Unique = approvedUtilityUniquePtrRecord(
+              A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+              A.Context);
+          Value = temporary(type(Vector->ElementType, L), L);
+          constructVectorUniquePtrPointer(json::Object(*Value),
+                                          Vector->ElementType, *Unique,
+                                          Call->getArg(1), L);
         } else if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);
@@ -14159,6 +14171,10 @@ class FunctionLowering {
       if (Operation == UtilityOperation::VectorEmplaceBack)
         StringEmplace = approvedUtilityVectorStringEmplace(
             A.S, A.Sources, *Vector, Call, 0, A.Context);
+      const bool UniquePointerEmplace =
+          Operation == UtilityOperation::VectorEmplaceBack &&
+          approvedUtilityVectorUniquePtrPointerEmplace(
+              A.S, A.Sources, *Vector, Call, 0, A.Context);
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
@@ -14183,6 +14199,14 @@ class FunctionLowering {
         Value = temporary(type(Vector->ElementType, L), L);
         constructVectorStringEmplace(json::Object(*Value), Vector->ElementType,
                                      &*String, Call, 0, *StringEmplace, L);
+      } else if (UniquePointerEmplace) {
+        auto Unique = approvedUtilityUniquePtrRecord(
+            A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+            A.Context);
+        Value = temporary(type(Vector->ElementType, L), L);
+        constructVectorUniquePtrPointer(json::Object(*Value),
+                                        Vector->ElementType, *Unique,
+                                        Call->getArg(0), L);
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {
           const auto *Argument = Call->getArg(0);
@@ -19132,6 +19156,20 @@ class FunctionLowering {
     label(Scanned, L);
     constructStringBytes(std::move(Place), T, String, std::move(Input),
                          std::move(Length), std::nullopt, L);
+  }
+
+  void constructVectorUniquePtrPointer(Expression Place, QualType T,
+                                       const UtilityUniquePtrRecord &Unique,
+                                       const Expr *Argument, SourceLocation L) {
+    auto Pointer =
+        snapshot(cast(expression(Argument), type(Unique.PointerType, L), L), L);
+    initializeZero(json::Object(Place), T, L);
+    Expression Member{{"kind", "member"},
+                      {"type", type(Unique.PointerType, L)},
+                      {"name", "nct_unique_ptr_pointer"},
+                      {"args", json::Array{json::Object(Place)}},
+                      {"loc", A.loc(L)}};
+    assign(std::move(Member), std::move(Pointer), L);
   }
 
   void copyVectorElement(Expression To, Expression From,
