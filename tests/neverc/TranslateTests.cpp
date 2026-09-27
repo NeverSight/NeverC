@@ -56511,6 +56511,65 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedVectorListConstructionRun) {
+  const auto Source = tmpFile("nested-vector-list-construction.cpp");
+  const auto Output = tmpFile("nested-vector-list-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<int> first(2, 7), second(1, 9);
+    std::vector<std::vector<int>> rows{first, second};
+    if (rows.size() != 2 || rows[0].data() == first.data() ||
+        rows[1].data() == second.data() ||
+        rows[0][1] != 7 || rows[1][0] != 9)
+      return 1;
+    std::vector<std::vector<int>> repeated{rows[0], rows[0]};
+    if (repeated.size() != 2 ||
+        repeated[0].data() == rows[0].data() ||
+        repeated[0].data() == repeated[1].data() ||
+        repeated[1][1] != 7)
+      return 2;
+    repeated[0][0] = 13;
+    if (rows[0][0] != 7 || repeated[1][0] != 7) return 3;
+  }
+  {
+    std::vector<std::string> words;
+    words.emplace_back("a long string stored beyond the short buffer");
+    std::vector<std::vector<std::string>> rows{words, words};
+    if (rows.size() != 2 || rows[0].data() == words.data() ||
+        rows[0][0].data() == words[0].data() ||
+        rows[0][0].data() == rows[1][0].data())
+      return 4;
+    rows[0][0][0] = 'z';
+    if (rows[1][0][0] != 'a' || words[0][0] != 'a') return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-list-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

@@ -6241,7 +6241,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
         Context);
     const auto *Expression =
         dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
-    if ((!Vector->OwningElement || CopyableString ||
+    if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
          Vector->CopyElementConstructor) &&
         List && Expression &&
         Context.hasSameType(List->ElementType, Vector->ElementType) &&
