@@ -29537,6 +29537,49 @@ void nested_vectors() {
   rows.insert(rows.cbegin(), std::vector<int>(1, 8));
   std::vector<std::vector<std::vector<int>>> cube;
   cube.emplace_back(static_cast<std::vector<std::vector<int>>&&>(rows));
+  std::vector<std::vector<std::vector<int>>> copied_cube(cube);
+  std::vector<std::vector<int>> copied_rows(copied_cube[0]);
+  copied_rows = cube[0];
+  copied_rows = copied_rows;
+  copied_rows.push_back(copied_rows[0]);
+  copied_rows.emplace_back(copied_rows[0]);
+  copied_rows.insert(copied_rows.cbegin(), copied_rows[0]);
+  copied_rows.emplace(copied_rows.cbegin(), copied_rows[0]);
+  std::vector<std::vector<std::string>> text_rows;
+  text_rows.emplace_back();
+  text_rows[0].emplace_back("a long string stored beyond the short buffer");
+  std::vector<std::vector<std::string>> copied_text(text_rows);
+  copied_text = text_rows;
+  copied_text.push_back(copied_text[0]);
+}
+struct NestedBox {
+  int *value;
+  explicit NestedBox(int n) : value(new int(n)) {}
+  NestedBox(const NestedBox &other) : value(new int(*other.value)) {}
+  NestedBox(NestedBox &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+  }
+  NestedBox &operator=(const NestedBox &other) {
+    if (this != &other) { delete value; value = new int(*other.value); }
+    return *this;
+  }
+  NestedBox &operator=(NestedBox &&other) noexcept {
+    if (this != &other) {
+      delete value;
+      value = other.value;
+      other.value = nullptr;
+    }
+    return *this;
+  }
+  ~NestedBox() { delete value; }
+};
+void nested_source_owned_copies() {
+  std::vector<NestedBox> leaf;
+  leaf.emplace_back(7);
+  std::vector<std::vector<NestedBox>> rows;
+  rows.emplace_back(static_cast<std::vector<NestedBox>&&>(leaf));
+  std::vector<std::vector<NestedBox>> copied(rows);
+  rows = copied;
 }
 """
     for target in sdk_targets:
@@ -29579,6 +29622,20 @@ bool f(const std::vector<std::unique_ptr<int>>& left,
 int f(const std::vector<std::unique_ptr<int>>& source) {
   std::vector<std::unique_ptr<int>> target(source);
   return target.size();
+}
+""",
+        "unique-pointer-nested-copy": """\
+#include <memory>
+int f(const std::vector<std::vector<std::unique_ptr<int>>>& source) {
+  std::vector<std::vector<std::unique_ptr<int>>> target(source);
+  return target.size();
+}
+""",
+        "unique-pointer-nested-lvalue-push": """\
+#include <memory>
+void f(std::vector<std::vector<std::unique_ptr<int>>>& target,
+       const std::vector<std::unique_ptr<int>>& source) {
+  target.push_back(source);
 }
 """,
         "unique-pointer-copy-assignment": """\

@@ -19353,6 +19353,94 @@ class FunctionLowering {
     assign(std::move(Member), std::move(Pointer), L);
   }
 
+  void copyNestedVectorElement(Expression To, Expression From,
+                               const UtilityVectorRecord &Nested,
+                               QualType SourceType, SourceLocation L) {
+    const auto NestedType = A.Context.getRecordType(Nested.Record);
+    auto SourceAddress = snapshot(address(std::move(From), SourceType, L), L);
+    auto TargetAddress = snapshot(address(std::move(To), NestedType, L), L);
+    auto Member = [&](const Expression &Address, const char *Name) {
+      return Expression{
+          {"kind", "member"},
+          {"type", type(Nested.PointerType, L)},
+          {"name", Name},
+          {"args", json::Array{dereference(json::Object(Address), L)}},
+          {"loc", A.loc(L)}};
+    };
+    auto SourceMember = [&](const char *Name) {
+      return Member(SourceAddress, Name);
+    };
+    auto TargetMember = [&](const char *Name) {
+      return Member(TargetAddress, Name);
+    };
+    auto OldBegin = snapshot(SourceMember("nct_vector_begin"), L);
+    auto OldEnd = snapshot(SourceMember("nct_vector_end"), L);
+    for (const char *Name :
+         {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
+      initializeZero(TargetMember(Name), Nested.PointerType, L);
+    const auto Copy = labelName(), Done = labelName();
+    branch(
+        binary("!=", json::Object(OldBegin), json::Object(OldEnd), "bool", L),
+        Copy, Done, L);
+    label(Copy, L);
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(Nested.PointerType, L);
+    auto Count =
+        snapshot(cast(binary("-", json::Object(OldEnd), json::Object(OldBegin),
+                             DifferenceType, L),
+                      SizeType, L),
+                 L);
+    const uint64_t ElementBytes =
+        A.Context.getTypeSizeInChars(Nested.ElementType).getQuantity();
+    const auto *New = A.allocatorHeapFunction(true, Nested.ElementType, L);
+    json::Array Args;
+    Args.push_back(binary("*", json::Object(Count),
+                          quantity(ElementBytes, SizeType, L), SizeType, L));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(New->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(New)},
+                                {"args", std::move(Args)},
+                                {"target", json::Object(Allocation)},
+                                {"loc", A.loc(L)}});
+    auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+    auto NewEnd = snapshot(binary("+", json::Object(NewBegin),
+                                  cast(json::Object(Count), DifferenceType, L),
+                                  PointerType, L),
+                           L);
+    assign(TargetMember("nct_vector_begin"), json::Object(NewBegin), L);
+    assign(TargetMember("nct_vector_end"), json::Object(NewEnd), L);
+    assign(TargetMember("nct_vector_capacity"), std::move(NewEnd), L);
+    auto SourceCurrent = temporary(PointerType, L);
+    auto TargetCurrent = temporary(PointerType, L);
+    assign(SourceCurrent, std::move(OldBegin), L);
+    assign(TargetCurrent, std::move(NewBegin), L);
+    const auto Check = labelName(), Advance = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", json::Object(SourceCurrent), json::Object(OldEnd),
+                  "bool", L),
+           Advance, Done, L);
+    label(Advance, L);
+    if (Nested.OwningElement)
+      copyVectorElement(dereference(json::Object(TargetCurrent), L),
+                        dereference(json::Object(SourceCurrent), L), Nested, L);
+    else
+      assign(dereference(json::Object(TargetCurrent), L),
+             dereference(json::Object(SourceCurrent), L), L);
+    assign(SourceCurrent,
+           binary("+", json::Object(SourceCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    assign(TargetCurrent,
+           binary("+", json::Object(TargetCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   void copyVectorElement(Expression To, Expression From,
                          const UtilityVectorRecord &Vector, SourceLocation L,
                          QualType SourceType = {}) {
@@ -19363,6 +19451,14 @@ class FunctionLowering {
                            SourceType.isNull() ? Vector.ElementType
                                                : SourceType,
                            L), L), L);
+      return;
+    }
+    if (const auto Nested = approvedUtilityVectorRecord(
+            A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(),
+            A.Context)) {
+      copyNestedVectorElement(
+          std::move(To), std::move(From), *Nested,
+          SourceType.isNull() ? Vector.ElementType : SourceType, L);
       return;
     }
     auto String = approvedUtilityStringRecord(

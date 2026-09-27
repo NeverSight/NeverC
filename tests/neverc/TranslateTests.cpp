@@ -56067,6 +56067,215 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedVectorCopyRun) {
+  const auto Source = tmpFile("nested-vector-copy.cpp");
+  const auto Output = tmpFile("nested-vector-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &other) : value(new int(*other.value)) { ++live; }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &other) {
+    if (this != &other) { delete value; value = new int(*other.value); }
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    if (this != &other) {
+      delete value;
+      value = other.value;
+      other.value = nullptr;
+    }
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<std::vector<int>> rows;
+    rows.emplace_back();
+    rows[0].push_back(7);
+    rows[0].push_back(7);
+    rows.emplace_back();
+    rows.emplace_back();
+    rows[2].push_back(9);
+    std::vector<std::vector<int>> copied(rows);
+    if (copied.size() != 3 || copied[0].data() == rows[0].data() ||
+        copied[0][1] != 7 || !copied[1].empty() ||
+        copied[2].data() == rows[2].data() || copied[2][0] != 9)
+      return 1;
+    copied[0][0] = 13;
+    rows[2][0] = 11;
+    if (rows[0][0] != 7 || copied[2][0] != 9) return 2;
+    std::vector<std::vector<int>> assigned;
+    assigned.reserve(6);
+    assigned.emplace_back();
+    assigned[0].push_back(42);
+    auto storage = assigned.data();
+    assigned = copied;
+    if (assigned.data() != storage || assigned.size() != 3 ||
+        assigned[0].data() == copied[0].data() ||
+        assigned[0][0] != 13 || assigned[2][0] != 9)
+      return 7;
+    assigned = assigned;
+    if (assigned[0][0] != 13 || assigned[2][0] != 9) return 8;
+    std::vector<std::vector<int>> grown;
+    grown = assigned;
+    if (grown.size() != 3 || grown[0].data() == assigned[0].data() ||
+        grown[0][1] != 7)
+      return 9;
+    std::vector<std::vector<std::vector<int>>> cube;
+    cube.emplace_back(static_cast<std::vector<std::vector<int>>&&>(rows));
+    std::vector<std::vector<std::vector<int>>> clone(cube);
+    if (clone.size() != 1 || clone[0].size() != 3 ||
+        clone[0].data() == cube[0].data() ||
+        clone[0][0].data() == cube[0][0].data() ||
+        clone[0][0][1] != 7 || clone[0][2][0] != 11)
+      return 3;
+    clone[0][0][0] = 17;
+    if (cube[0][0][0] != 7) return 4;
+  }
+  {
+    std::vector<std::vector<std::string>> rows;
+    std::vector<std::string> words;
+    words.emplace_back("a long string stored beyond the short buffer");
+    rows.emplace_back(static_cast<std::vector<std::string>&&>(words));
+    std::vector<std::vector<std::string>> copied(rows);
+    if (copied.size() != 1 || copied[0].data() == rows[0].data() ||
+        copied[0][0].data() == rows[0][0].data() ||
+        copied[0][0].size() != rows[0][0].size())
+      return 5;
+    copied[0][0][0] = 'z';
+    if (rows[0][0][0] != 'a') return 6;
+    std::vector<std::vector<std::string>> assigned;
+    assigned = copied;
+    if (assigned[0][0].data() == copied[0][0].data() ||
+        assigned[0][0][0] != 'z')
+      return 10;
+    assigned = assigned;
+    if (assigned[0][0][0] != 'z') return 11;
+  }
+  {
+    std::vector<Box> boxes;
+    boxes.emplace_back(23);
+    std::vector<std::vector<Box>> rows;
+    rows.emplace_back(static_cast<std::vector<Box>&&>(boxes));
+    std::vector<std::vector<Box>> copied(rows);
+    if (copied.size() != 1 || copied[0].data() == rows[0].data() ||
+        copied[0][0].value == rows[0][0].value ||
+        *copied[0][0].value != 23)
+      return 13;
+    std::vector<std::vector<Box>> assigned;
+    assigned = copied;
+    if (assigned[0][0].value == copied[0][0].value ||
+        *assigned[0][0].value != 23)
+      return 14;
+    *assigned[0][0].value = 31;
+    if (*copied[0][0].value != 23) return 15;
+  }
+  return live == 0 && allocations == releases ? 0 : 16;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-vector-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorLvalueInsertRun) {
+  const auto Source = tmpFile("nested-vector-lvalue-insert.cpp");
+  const auto Output = tmpFile("nested-vector-lvalue-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<int> source;
+    source.push_back(4);
+    source.push_back(5);
+    std::vector<std::vector<int>> rows;
+    rows.reserve(2);
+    auto storage = rows.data();
+    rows.push_back(source);
+    auto &second = rows.emplace_back(rows[0]);
+    if (&second != &rows[1] || rows.data() != storage ||
+        rows[0].data() == source.data() ||
+        rows[1].data() == rows[0].data() || rows[1][1] != 5)
+      return 1;
+    source[0] = 8;
+    auto inserted = rows.insert(rows.cbegin() + 1, rows[0]);
+    if (inserted != rows.begin() + 1 || rows.data() == storage ||
+        rows.size() != 3 || rows[0][0] != 4 || rows[1][0] != 4 ||
+        rows[2][0] != 4 || rows[0].data() == rows[1].data())
+      return 2;
+    storage = rows.data();
+    auto emplaced = rows.emplace(rows.cbegin() + 2, rows[1]);
+    if (emplaced != rows.begin() + 2 || rows.data() != storage ||
+        rows.size() != 4 || rows[2][1] != 5 ||
+        rows[2].data() == rows[1].data())
+      return 3;
+    rows[1][0] = 13;
+    if (rows[0][0] != 4 || rows[2][0] != 4 || rows[3][0] != 4)
+      return 4;
+  }
+  {
+    std::vector<std::string> words;
+    words.emplace_back("a long string stored beyond the short buffer");
+    std::vector<std::vector<std::string>> rows;
+    rows.push_back(words);
+    rows.emplace_back(rows[0]);
+    if (rows[0][0].data() == words[0].data() ||
+        rows[1][0].data() == rows[0][0].data())
+      return 5;
+    rows[0][0][0] = 'z';
+    if (words[0][0] != 'a' || rows[1][0][0] != 'a') return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-lvalue-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

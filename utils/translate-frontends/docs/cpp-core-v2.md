@@ -2661,9 +2661,14 @@ An admitted `std::vector` can itself be an owning vector element. Nested
 vectors use the same checked three-pointer layout recursively; default and
 bounded count construction, move insertion and emplacement, growth, reserve,
 shrink, erase, clear, and destruction transfer or release each inner buffer
-once. Host O0/O2 fixtures cover aliases during growth, positional insertion,
-and three nested levels. Nested vector element copies remain outside this
-boundary.
+once. Copy construction and assignment recursively allocate independent inner
+buffers when each leaf element is copyable, including pinned strings and
+admitted source-owned elements. Assignment handles capacity reuse, growth and
+self-assignment. Lvalue `push_back`, `emplace_back`, `insert`, and positional
+`emplace` clone an inner vector before outer storage can move; this includes
+sources held by the destination vector. Host O0/O2 fixtures cover aliases
+during growth, positional insertion, deep copies, and three nested levels.
+Other nested vector copy operations remain outside this boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
