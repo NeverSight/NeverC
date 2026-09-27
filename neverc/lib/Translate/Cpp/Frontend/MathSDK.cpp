@@ -5993,7 +5993,7 @@ bool approvedUtilityVectorUniquePtrPointerEmplace(
     return false;
   const auto Unique = approvedUtilityUniquePtrRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
-  if (!Unique || Unique->CustomDeleter || Unique->Deleter.Array)
+  if (!Unique || Unique->CustomDeleter)
     return false;
   const auto ArgumentType = Call->getArg(FirstArgument)->getType();
   return Context.hasSameType(ArgumentType, Unique->PointerType) ||

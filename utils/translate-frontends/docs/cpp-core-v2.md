@@ -2645,11 +2645,12 @@ Single-rvalue `insert` and positional `emplace` with zero arguments or
 one nonconst rvalue transfer shifted elements in place or into grown storage
 and return the new position. Owning element fixtures check long string and
 pointer ownership, aliasing moves, insertion, growth, shrinking, move assignment
-and release under O0/O2. Scalar `std::unique_ptr<T>` elements with the pinned
-default deleter also accept raw `T*` and `nullptr` in back and positional
-`emplace`. The pointer is captured before vector storage moves or grows and
-transferred into one owner; O0/O2 fixtures cover in-place and growing inserts
-and balanced release. Exact pinned string elements also support deep-copy
+and release under O0/O2. `std::unique_ptr<T>` and `std::unique_ptr<T[]>`
+elements with pinned default deleters also accept matching raw `T*` and
+`nullptr` in back and positional `emplace`. The pointer is captured before
+vector storage moves or grows and transferred into one owner; O0/O2 fixtures
+cover in-place and growing inserts and balanced scalar or array release.
+Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
 and positional `emplace` copy before vector storage moves or grows.
