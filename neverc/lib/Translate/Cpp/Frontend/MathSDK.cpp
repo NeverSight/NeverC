@@ -5995,6 +5995,31 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
   }
   if (Count != 2)
     return std::nullopt;
+  auto LastCharacterType = SecondType;
+  if (const auto *Array = Context.getAsArrayType(SecondType))
+    LastCharacterType = Array->getElementType();
+  else if (SecondType->isPointerType())
+    LastCharacterType = SecondType->getPointeeType();
+  const bool LastCharacterPointer =
+      (SecondType->isPointerType() || Context.getAsArrayType(SecondType)) &&
+      !LastCharacterType.isVolatileQualified() &&
+      Context.hasSameUnqualifiedType(LastCharacterType, Context.CharTy);
+  if (CharacterPointer && LastCharacterPointer &&
+      Context.hasSameType(CharacterType, LastCharacterType))
+    return UtilityVectorStringEmplace::Range;
+  const auto FirstWrapped = approvedUtilityWrapIteratorRecord(
+      S, SM, FirstType->getAsCXXRecordDecl(), Context);
+  const auto LastWrapped = approvedUtilityWrapIteratorRecord(
+      S, SM, SecondType->getAsCXXRecordDecl(), Context);
+  if (FirstWrapped && LastWrapped &&
+      Context.hasSameType(FirstType, SecondType) &&
+      Context.hasSameType(FirstWrapped->IteratorType,
+                          LastWrapped->IteratorType) &&
+      (Context.hasSameType(FirstWrapped->IteratorType,
+                           Context.getPointerType(Context.CharTy)) ||
+       Context.hasSameType(FirstWrapped->IteratorType,
+                           Context.getPointerType(Context.CharTy.withConst()))))
+    return UtilityVectorStringEmplace::Range;
   if (CharacterPointer && SecondType->isIntegerType())
     return UtilityVectorStringEmplace::PointerLength;
   if (FirstType->isIntegerType() && SecondType->isIntegerType())

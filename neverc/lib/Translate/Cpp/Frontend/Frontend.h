@@ -1352,6 +1352,7 @@ enum class UtilityVectorStringEmplace {
   View,
   StringSubstring,
   ViewSubstring,
+  Range,
 };
 std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
     const State &S, const clang::SourceManager &SM,

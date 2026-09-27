@@ -55562,6 +55562,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorStringRangeEmplaceRun) {
+  const auto Source = tmpFile("vector-string-range-emplace.cpp");
+  const auto Output = tmpFile("vector-string-range-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(2);
+    char raw[] = {'a', 0, 'b', 'c', 0};
+    values.emplace_back(raw, raw + 4);
+    values.emplace_back(raw, raw);
+    if (values[0].size() != 4 || values[0][1] != 0 ||
+        values[0][3] != 'c' || !values[1].empty()) return 1;
+    std::string source("wrapped iterator source");
+    values.emplace_back(source.cbegin() + 8, source.cend());
+    values.emplace_back(values[0].begin(), values[0].end());
+    if (values[2] != "iterator source" || values[3].size() != 4 ||
+        values[3][1] != 0) return 2;
+    auto storage = values.data();
+    auto &grown = values.emplace_back(values[0].data(),
+                                      values[0].data() + values[0].size());
+    if (&grown != &values[4] || values.data() == storage ||
+        values[0].size() != 4 || values[4].size() != 4 ||
+        values[4][1] != 0) return 3;
+    auto inserted = values.emplace(values.cbegin() + 1,
+                                   values[3].cbegin(), values[3].cend());
+    if (inserted != values.begin() + 1 || values[1].size() != 4 ||
+        values[1][1] != 0 || values[4].size() != 4 ||
+        values[4][1] != 0) return 4;
+    auto empty = values.emplace(values.cbegin(), raw, raw);
+    if (empty != values.begin() || !values[0].empty() ||
+        values[1].size() != 4 || values[1][1] != 0) return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-string-range-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
   const auto Source = tmpFile("vector-owning-pointers.cpp");
   const auto Output = tmpFile("vector-owning-pointers.nc");

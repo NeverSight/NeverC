@@ -19246,6 +19246,40 @@ class FunctionLowering {
                            std::move(Length), std::nullopt, L);
       return;
     }
+    if (Kind == UtilityVectorStringEmplace::Range) {
+      auto Endpoint = [&](unsigned Index) {
+        const auto *Argument = Call->getArg(Index);
+        auto Wrapped = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (Wrapped) {
+          auto Value = snapshot(expression(Argument), L);
+          return cast(fieldStorage(std::move(Value), Wrapped->Current, L),
+                      PointerType, L);
+        }
+        return Argument->getType()->isArrayType()
+                   ? decay(lvalue(Argument), PointerType, L)
+                   : cast(expression(Argument), PointerType, L);
+      };
+      auto Input = snapshot(Endpoint(FirstArgument), L);
+      auto End = snapshot(Endpoint(FirstArgument + 1), L);
+      auto Length = temporary(SizeType, L);
+      assign(Length, quantity(0, SizeType, L), L);
+      const auto Measure = labelName(), Ready = labelName();
+      branch(binary("!=", json::Object(Input), json::Object(End), "bool", L),
+             Measure, Ready, L);
+      label(Measure, L);
+      assign(Length,
+             cast(binary("-", json::Object(End), json::Object(Input),
+                         DifferenceType, L),
+                  SizeType, L),
+             L);
+      jump(Ready, L);
+      label(Ready, L);
+      constructStringBytes(std::move(Place), T, String, std::move(Input),
+                           std::move(Length), std::nullopt, L);
+      return;
+    }
     const auto *Argument = Call->getArg(FirstArgument);
     auto Input = snapshot(Argument->getType()->isArrayType()
                               ? decay(lvalue(Argument), PointerType, L)

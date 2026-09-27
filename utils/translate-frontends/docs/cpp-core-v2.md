@@ -2672,6 +2672,10 @@ Back and positional `emplace` also construct a substring from an exact pinned
 `std::string_view` with a starting position and count. Counts are clipped to the
 remaining bytes, and aliased source elements are copied before vector storage
 moves or shifts. The starting position must be in range.
+Back and positional `emplace` also accept matching raw character pointers or
+authenticated mutable or const wrapped string iterators as a range. They copy
+the full ordered range, including embedded NUL bytes, before vector storage
+changes; an empty range constructs an empty string.
 All six vector/vector comparisons use element-wise byte content and lexicographic
 ordering for pinned string elements, including embedded zero and high-bit bytes.
 They also compare admitted `std::unique_ptr` elements with the pinned default
