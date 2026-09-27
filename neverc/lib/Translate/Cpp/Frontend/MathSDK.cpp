@@ -2755,6 +2755,15 @@ static bool utilityArrayValue(const State &S, const SourceManager &SM,
   const auto *Record = Type->getAsCXXRecordDecl();
   if (!Record)
     return false;
+  if (const auto Optional =
+          approvedUtilityOptionalRecord(S, SM, Record, Context))
+    return !Optional->ElementType.isConstQualified() &&
+           utilityScalar(Context, Optional->ElementType) &&
+           Optional->Record->hasTrivialCopyConstructor() &&
+           Optional->Record->hasTrivialMoveConstructor() &&
+           Optional->Record->hasTrivialCopyAssignment() &&
+           Optional->Record->hasTrivialMoveAssignment() &&
+           Optional->Record->hasTrivialDestructor();
   if (approvedUtilityArrayMetadata(S, SM, Record)) {
     const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
     return Array && utilityArrayValue(S, SM, Context, Array->ElementType);
@@ -2943,15 +2952,6 @@ static bool utilityPairValue(const State &S, const SourceManager &SM,
     return true;
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
-  if (const auto Optional =
-          approvedUtilityOptionalRecord(S, SM, Record, Context))
-    return !Optional->ElementType.isConstQualified() &&
-           utilityScalar(Context, Optional->ElementType) &&
-           Optional->Record->hasTrivialCopyConstructor() &&
-           Optional->Record->hasTrivialMoveConstructor() &&
-           Optional->Record->hasTrivialCopyAssignment() &&
-           Optional->Record->hasTrivialMoveAssignment() &&
-           Optional->Record->hasTrivialDestructor();
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -2968,8 +2968,6 @@ static bool utilityPairAssignableValue(const State &S,
                                        QualType Type, unsigned Depth = 0) {
   if (Depth > 64 || Type.isNull() || Type.isConstQualified())
     return false;
-  if (utilityArrayValue(S, SM, Context, Type))
-    return utilityArrayTriviallyAssignable(Context, Type);
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
   if (const auto Optional =
@@ -2978,6 +2976,8 @@ static bool utilityPairAssignableValue(const State &S,
            utilityScalar(Context, Optional->ElementType) &&
            Optional->Record->hasTrivialCopyAssignment() &&
            Optional->Record->hasTrivialMoveAssignment();
+  if (utilityArrayValue(S, SM, Context, Type))
+    return utilityArrayTriviallyAssignable(Context, Type);
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -5780,8 +5780,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   const auto ValueArray =
       approvedUtilityArrayRecord(S, SM, ElementRecord, Context);
   const bool ValueArrayElement =
-      ElementRecord && ElementRecord->hasTrivialDefaultConstructor() &&
-      ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
       ElementRecord->hasTrivialMoveConstructor() &&
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
@@ -6030,6 +6029,9 @@ static bool utilityVectorArrayComparable(const State &S,
     return Equality;
   if (utilityScalar(Context, Element))
     return true;
+  if (approvedUtilityOptionalRecord(S, SM, Element->getAsCXXRecordDecl(),
+                                    Context))
+    return utilityVectorOptionalComparable(S, SM, Context, Element, Equality);
   const auto Array =
       approvedUtilityArrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
   return Array && utilityVectorArrayComparable(

@@ -2660,6 +2660,10 @@ Admitted scalar optionals can also be fields of pairs with trivial copy and
 move construction and destruction held by vectors. Pair and nested-vector
 comparisons inspect the optional engagement state before comparing its scalar
 value; void-pointer fields permit only equality and inequality.
+The same scalar optionals are admitted in assignable fixed arrays held by
+vectors, including nested arrays and zero-length arrays. Default construction
+leaves each optional disengaged. Array and nested-vector comparisons follow
+the same engagement and scalar ordering rules.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

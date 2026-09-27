@@ -60310,6 +60310,98 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorArrayOptionalRelationsRun) {
+  const auto Source = tmpFile("vector-array-optional-relations.cpp");
+  const auto Output = tmpFile("vector-array-optional-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <array>
+#include <optional>
+#include <vector>
+using Row = std::array<std::optional<int>, 2>;
+int main() {
+  {
+    std::vector<Row> defaults;
+    defaults.emplace_back();
+    if (defaults.size() != 1 || defaults[0][0].has_value() ||
+        defaults[0][1].has_value()) return 1;
+    std::vector<Row> left;
+    std::vector<Row> right;
+    Row empty{};
+    left.push_back(empty);
+    right.push_back(empty);
+    if (!(left == right) || left != right || left < right || left > right ||
+        !(left <= right) || !(left >= right)) return 1;
+    right[0][1].emplace(3);
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 2;
+    left[0][1].emplace(2);
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 3;
+    left[0][1].emplace(3);
+    right[0][0].emplace(1);
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 4;
+    std::vector<Row> copied(left);
+    copied = right;
+    if (!(copied == right) || copied == left || copied.data() == right.data())
+      return 5;
+    using Nested = std::array<Row, 2>;
+    std::vector<Nested> nested_left;
+    std::vector<Nested> nested_right;
+    Nested nested_empty{};
+    nested_left.push_back(nested_empty);
+    nested_right.push_back(nested_empty);
+    nested_right[0][1][0].emplace(4);
+    if (nested_left == nested_right || !(nested_left != nested_right) ||
+        !(nested_left < nested_right) || nested_left > nested_right)
+      return 6;
+    std::vector<std::vector<Row>> rows_left;
+    std::vector<std::vector<Row>> rows_right;
+    rows_left.push_back(left);
+    rows_right.push_back(right);
+    if (rows_left == rows_right || !(rows_left != rows_right) ||
+        !(rows_left < rows_right) || rows_left > rows_right) return 7;
+    using PointerRow = std::array<std::optional<void*>, 1>;
+    std::vector<PointerRow> pointers_left;
+    std::vector<PointerRow> pointers_right;
+    PointerRow pointer{{std::optional<void*>(nullptr)}};
+    pointers_left.push_back(pointer);
+    pointers_right.push_back(pointer);
+    if (!(pointers_left == pointers_right) || pointers_left != pointers_right)
+      return 8;
+    std::vector<std::array<std::optional<int>, 0>> zero_left;
+    std::vector<std::array<std::optional<int>, 0>> zero_right;
+    zero_left.emplace_back();
+    zero_right.emplace_back();
+    if (!(zero_left == zero_right) || zero_left != zero_right ||
+        zero_left < zero_right || zero_left > zero_right)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-array-optional-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorPairOptionalRelationsRun) {
   const auto Source = tmpFile("vector-pair-optional-relations.cpp");
   const auto Output = tmpFile("vector-pair-optional-relations.nc");
