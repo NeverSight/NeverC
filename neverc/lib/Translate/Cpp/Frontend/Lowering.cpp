@@ -2491,14 +2491,19 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::CStringCompare:
-    case UtilityOperation::CStringCompareN: {
-      const bool Bounded = Operation == UtilityOperation::CStringCompareN;
-      auto Left = snapshot(expression(Call->getArg(0)), L);
-      auto Right = snapshot(expression(Call->getArg(1)), L);
+    case UtilityOperation::CStringCompareN:
+    case UtilityOperation::CStringMemoryCompare: {
+      const bool Memory = Operation == UtilityOperation::CStringMemoryCompare;
+      const bool Bounded = Operation != UtilityOperation::CStringCompare;
+      const auto PointerType =
+          Memory ? std::string("cptr:u8") : type(Call->getArg(0)->getType(), L);
+      auto Left =
+          snapshot(cast(expression(Call->getArg(0)), PointerType, L), L);
+      auto Right =
+          snapshot(cast(expression(Call->getArg(1)), PointerType, L), L);
       std::optional<Expression> Remaining;
       if (Bounded)
         Remaining = snapshot(expression(Call->getArg(2)), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto SizeType =
           Bounded ? type(Call->getArg(2)->getType(), L) : std::string();
@@ -2526,8 +2531,11 @@ class FunctionLowering {
       label(Differ, L);
       branch(binary("<", LeftByte, RightByte, "bool", L), Less, Greater, L);
       label(CheckZero, L);
-      branch(binary("==", LeftByte, quantity(0, "u8", L), "bool", L), Equal,
-             Advance, L);
+      if (Memory)
+        jump(Advance, L);
+      else
+        branch(binary("==", LeftByte, quantity(0, "u8", L), "bool", L), Equal,
+               Advance, L);
       label(Advance, L);
       assign(Left,
              binary("+", Left, quantity(1, DifferenceType, L), PointerType, L),

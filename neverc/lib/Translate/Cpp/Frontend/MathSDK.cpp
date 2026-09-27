@@ -18111,6 +18111,15 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return Name == "strcmp" ? UtilityOperation::CStringCompare
                             : UtilityOperation::CStringCompareN;
+  const auto BytePointer =
+      Context.getPointerType(Context.getConstType(Context.VoidTy));
+  if (Name == "memcmp" && Function->getNumParams() == 3 &&
+      Same(Function->getParamDecl(0)->getType(), BytePointer) &&
+      Same(Function->getParamDecl(1)->getType(), BytePointer) &&
+      Same(Function->getParamDecl(2)->getType(), Context.getSizeType()) &&
+      Same(Function->getReturnType(), Context.IntTy) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::CStringMemoryCompare;
   return std::nullopt;
 }
 

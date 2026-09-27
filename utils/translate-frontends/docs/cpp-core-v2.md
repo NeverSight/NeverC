@@ -2328,12 +2328,14 @@ implementing revision; this increment does not establish complete C++/STL.
 ## C string scans from `<cstring>`
 
 Core v2 admits an exact angle include of the pinned `<cstring>` header. The
-authenticated `std::strlen(const char *)`, `std::strcmp(const char *, const char *)`
-and `std::strncmp(const char *, const char *, std::size_t)` calls lower to direct
+authenticated `std::strlen(const char *)`, `std::strcmp(const char *, const char *)`,
+`std::strncmp(const char *, const char *, std::size_t)` and
+`std::memcmp(const void *, const void *, std::size_t)` calls lower to direct
 byte scans. Each argument is evaluated once. `strlen` stops at the first zero
 byte; `strcmp` and `strncmp` compare as unsigned bytes and return a negative,
-zero or positive `int`. A zero `strncmp` count reads neither string. No runtime
-libc string call is emitted.
+zero or positive `int`. `memcmp` compares the requested bytes as unsigned even
+across embedded zero bytes and returns the comparison sign. A zero count for
+`strncmp` or `memcmp` reads neither input. No runtime libc string call is emitted.
 
 Only the `std::` names introduced by the pinned header are admitted. Global
 `::strlen` and `::strcmp`, other `<cstring>` functions, quoted or shadow headers,
@@ -2342,7 +2344,7 @@ zero-terminated strings to `strlen` and `strcmp`, and readable character arrays
 through the bytes examined by `strncmp`. This does not add `std::string`.
 
 Eight-target protocol checks and O0/O2 execution cover the direct lowering,
-unsigned comparison order, prefix and zero-count behavior, and one-time
+unsigned comparison order, embedded zero bytes, prefix and zero-count behavior, and one-time
 argument evaluation.
 
 ## String-view header and metadata from `<string_view>`

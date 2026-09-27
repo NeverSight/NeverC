@@ -29198,6 +29198,9 @@ int compare(const char *left, const char *right) {
 int compare_n(const char *left, const char *right, std::size_t count) {
   return std::strncmp(left, right, count);
 }
+int compare_bytes(const void *left, const void *right, std::size_t count) {
+  return std::memcmp(left, right, count);
+}
 """
     cstring_dependencies = None
     for target in sdk_targets:
@@ -29211,7 +29214,7 @@ int compare_n(const char *left, const char *right, std::size_t count) {
             cstring_dependencies = dependencies
         else:
             assert dependencies == cstring_dependencies, target
-        assert len(cstring_ir["functions"]) == 3, target
+        assert len(cstring_ir["functions"]) == 4, target
         length_function = cstring_ir["functions"][0]
         character_type = length_function["params"][0]["type"].split(":", 1)[1]
         length_check = next(node for node in length_function["body"]
@@ -29223,6 +29226,8 @@ int compare_n(const char *left, const char *right, std::size_t count) {
                     if node.get("op") in ("call", "mapped_call", "indirect_call",
                                           "native_heap_call")], target
     check("v2-cstring-global-call", '#include <cstring>\nint f(){return ::strcmp("a","b");}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-global-memcmp", '#include <cstring>\nint f(){return ::memcmp("a","b",1);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-function-address", '#include <cstring>\nauto pointer=&std::strlen;',
           "TR0201", profile="cpp-core-v2", sdk=True)

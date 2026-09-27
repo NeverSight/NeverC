@@ -14797,6 +14797,21 @@ int main() {
       std::strncmp("abc", "abd", 2) != 0 ||
       std::strncmp("ab", "abc", 3) >= 0)
     return 3;
+  const char embedded_left[4]{'x', 0, 'a', 'z'};
+  const char embedded_right[4]{'x', 0, 'b', 'z'};
+  int left_effects = 0, right_effects = 0, count_effects = 0;
+  if (std::memcmp((++left_effects, embedded_left),
+                  (++right_effects, embedded_right),
+                  (++count_effects, 0)) != 0 ||
+      left_effects != 1 || right_effects != 1 || count_effects != 1 ||
+      std::memcmp(embedded_left, embedded_right, 2) != 0 ||
+      std::memcmp(embedded_left, embedded_right, 4) >= 0 ||
+      std::memcmp(embedded_right, embedded_left, 4) <= 0 ||
+      std::memcmp(high, low, 2) <= 0)
+    return 4;
+  const int object = 42;
+  if (std::memcmp(&object, &object, sizeof object) != 0)
+    return 5;
   return 0;
 }
 )cpp");
@@ -14828,6 +14843,9 @@ int main() {
 TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
   const std::tuple<const char *, const char *, const char *> Cases[] = {
       {"global-name", "#include <cstring>\nint main(){return ::strlen(\"x\");}",
+       "TR0203"},
+      {"global-memcmp",
+       "#include <cstring>\nint main(){return ::memcmp(\"a\",\"b\",1);}",
        "TR0203"},
       {"unsupported-copy",
        "#include <cstring>\nint main(){char "
