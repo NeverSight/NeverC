@@ -8231,6 +8231,20 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Array->ElementType, true, Depth + 1);
           return;
         }
+        if (const auto Vector = approvedUtilityVectorRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // The authenticated library record supplies vector storage layout.
+          // Retain the element source without walking libc++'s private bases.
+          Self(Self, Vector->ElementType, true, Depth + 1);
+          return;
+        }
+        if (const auto Optional = approvedUtilityOptionalRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // Optional storage has the same pinned SDK boundary. In particular,
+          // nested optionals need not inherit the implementation's base depth.
+          Self(Self, Optional->ElementType, true, Depth + 1);
+          return;
+        }
         if (const auto Tuple = approvedUtilityTupleLikeSource(A.S, A.Sources, T, A.Context)) {
           // SDK tuple-like shape supplies layout; retain the original element
           // sources instead of demanding traversal of private SDK TypeLocs.

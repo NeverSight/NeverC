@@ -2668,6 +2668,12 @@ An admitted assignable fixed array can also be the value inside an optional
 held by a vector. These vectors copy, assign, and compare the optional values
 recursively, including nested arrays and zero-length arrays. Arrays of void
 pointers retain equality and inequality only.
+Nested trivial scalar optionals are likewise admitted as vector elements.
+Every optional layer is checked before its stored value is read, so an outer
+disengaged value sorts before an engaged outer value whose inner layer is
+disengaged. The pinned libc++ layout may place nested optional SFINAE bases
+in the main base's tail padding; that exact layout is authenticated on each
+target before lowering.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

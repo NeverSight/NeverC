@@ -19758,7 +19758,11 @@ class FunctionLowering {
 
   Expression compareVectorOptionalValues(Expression Left, Expression Right,
                                          const UtilityOptionalRecord &Optional,
-                                         bool Equality, SourceLocation L) {
+                                         bool Equality, SourceLocation L,
+                                         unsigned Depth = 0) {
+    if (Depth >= 64)
+      reject(L, "vector optional comparison",
+             "The nested optional comparison exceeds the supported depth.");
     auto Result = temporary("int", L);
     auto LeftEngaged =
         snapshot(fieldStorage(json::Object(Left), Optional.Engaged, L), L);
@@ -19781,6 +19785,24 @@ class FunctionLowering {
             A.Context)) {
       auto Order = compareVectorArrayValues(
           std::move(LeftValue), std::move(RightValue), *Array, Equality, L);
+      if (Equality) {
+        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+               Equal, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Equal, L);
+      }
+    } else if (const auto Nested = approvedUtilityOptionalRecord(
+                   A.S, A.Sources, Optional.ElementType->getAsCXXRecordDecl(),
+                   A.Context)) {
+      auto Order = compareVectorOptionalValues(std::move(LeftValue),
+                                               std::move(RightValue), *Nested,
+                                               Equality, L, Depth + 1);
       if (Equality) {
         branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
                Equal, Greater, L);

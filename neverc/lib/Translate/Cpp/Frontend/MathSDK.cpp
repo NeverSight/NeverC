@@ -2748,7 +2748,10 @@ static bool utilityScalarDirectConversion(const ASTContext &Context,
 }
 
 static bool utilityArrayValue(const State &S, const SourceManager &SM,
-                              const ASTContext &Context, QualType Type) {
+                              const ASTContext &Context, QualType Type,
+                              unsigned Depth = 0) {
+  if (Depth >= 64 || Type.isNull())
+    return false;
   if (utilityScalar(Context, Type))
     return true;
   Type = Type.getUnqualifiedType();
@@ -2758,15 +2761,16 @@ static bool utilityArrayValue(const State &S, const SourceManager &SM,
   if (const auto Optional =
           approvedUtilityOptionalRecord(S, SM, Record, Context))
     return !Optional->ElementType.isConstQualified() &&
-           utilityScalar(Context, Optional->ElementType) &&
            Optional->Record->hasTrivialCopyConstructor() &&
            Optional->Record->hasTrivialMoveConstructor() &&
            Optional->Record->hasTrivialCopyAssignment() &&
            Optional->Record->hasTrivialMoveAssignment() &&
-           Optional->Record->hasTrivialDestructor();
+           Optional->Record->hasTrivialDestructor() &&
+           utilityArrayValue(S, SM, Context, Optional->ElementType, Depth + 1);
   if (approvedUtilityArrayMetadata(S, SM, Record)) {
     const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
-    return Array && utilityArrayValue(S, SM, Context, Array->ElementType);
+    return Array &&
+           utilityArrayValue(S, SM, Context, Array->ElementType, Depth + 1);
   }
   Record = Record->getDefinition();
   return Record && S.owns(SM, Record->getLocation()) && !Record->isUnion() &&
@@ -5733,6 +5737,29 @@ static bool utilityVectorArrayAssignableElements(const State &S,
          utilityArrayTriviallyAssignable(Context, Element);
 }
 
+static bool utilityVectorOptionalValue(const State &S, const SourceManager &SM,
+                                       const ASTContext &Context,
+                                       QualType Element, unsigned Depth = 0) {
+  if (Depth >= 64 || Element.isNull() || Element.isConstQualified() ||
+      Element.isVolatileQualified())
+    return false;
+  if (utilityScalar(Context, Element))
+    return true;
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
+    return utilityArrayValue(S, SM, Context, Element) &&
+           utilityVectorArrayAssignableElements(S, SM, Context,
+                                                Array->ElementType);
+  const auto Nested = approvedUtilityOptionalRecord(S, SM, Record, Context);
+  return Nested && Nested->Record->hasTrivialCopyConstructor() &&
+         Nested->Record->hasTrivialMoveConstructor() &&
+         Nested->Record->hasTrivialCopyAssignment() &&
+         Nested->Record->hasTrivialMoveAssignment() &&
+         Nested->Record->hasTrivialDestructor() &&
+         utilityVectorOptionalValue(S, SM, Context, Nested->ElementType,
+                                    Depth + 1);
+}
+
 std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
                             const CXXRecordDecl *Record,
@@ -5790,24 +5817,13 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
                                            ValueArray->ElementType);
   const auto ValueOptional =
       approvedUtilityOptionalRecord(S, SM, ElementRecord, Context);
-  const auto OptionalArray =
-      ValueOptional
-          ? approvedUtilityArrayRecord(
-                S, SM, ValueOptional->ElementType->getAsCXXRecordDecl(),
-                Context)
-          : std::optional<UtilityArrayRecord>();
   const bool ValueOptionalElement =
       ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
       ElementRecord->hasTrivialMoveConstructor() &&
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor() && ValueOptional &&
-      !ValueOptional->ElementType.isConstQualified() &&
-      (utilityScalar(Context, ValueOptional->ElementType) ||
-       (OptionalArray &&
-        utilityArrayValue(S, SM, Context, ValueOptional->ElementType) &&
-        utilityVectorArrayAssignableElements(S, SM, Context,
-                                             OptionalArray->ElementType)));
+      utilityVectorOptionalValue(S, SM, Context, ValueOptional->ElementType);
   const bool NestedVector =
       ElementRecord &&
       approvedUtilityVectorRecord(S, SM, ElementRecord, Context).has_value();
@@ -5989,7 +6005,8 @@ static bool utilityVectorArrayComparable(const State &S,
 static bool utilityVectorOptionalComparable(const State &S,
                                             const SourceManager &SM,
                                             const ASTContext &Context,
-                                            QualType Element, bool Equality);
+                                            QualType Element, bool Equality,
+                                            unsigned Depth = 0);
 
 static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
                                         const ASTContext &Context,
@@ -6012,7 +6029,8 @@ static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
                                         Depth + 1);
   if (approvedUtilityOptionalRecord(S, SM, Element->getAsCXXRecordDecl(),
                                     Context))
-    return utilityVectorOptionalComparable(S, SM, Context, Element, Equality);
+    return utilityVectorOptionalComparable(S, SM, Context, Element, Equality,
+                                           Depth + 1);
   const auto Pair =
       approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
   return Pair &&
@@ -6041,7 +6059,8 @@ static bool utilityVectorArrayComparable(const State &S,
     return true;
   if (approvedUtilityOptionalRecord(S, SM, Element->getAsCXXRecordDecl(),
                                     Context))
-    return utilityVectorOptionalComparable(S, SM, Context, Element, Equality);
+    return utilityVectorOptionalComparable(S, SM, Context, Element, Equality,
+                                           Depth + 1);
   const auto Array =
       approvedUtilityArrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
   return Array && utilityVectorArrayComparable(
@@ -6051,7 +6070,10 @@ static bool utilityVectorArrayComparable(const State &S,
 static bool utilityVectorOptionalComparable(const State &S,
                                             const SourceManager &SM,
                                             const ASTContext &Context,
-                                            QualType Element, bool Equality) {
+                                            QualType Element, bool Equality,
+                                            unsigned Depth) {
+  if (Depth >= 64 || Element.isNull())
+    return false;
   const auto Optional = approvedUtilityOptionalRecord(
       S, SM, Element->getAsCXXRecordDecl(), Context);
   if (!Optional)
@@ -6059,8 +6081,12 @@ static bool utilityVectorOptionalComparable(const State &S,
   if (utilityScalarComparisonType(Context, Optional->ElementType,
                                   Optional->ElementType, !Equality))
     return true;
+  if (approvedUtilityOptionalRecord(
+          S, SM, Optional->ElementType->getAsCXXRecordDecl(), Context))
+    return utilityVectorOptionalComparable(
+        S, SM, Context, Optional->ElementType, Equality, Depth + 1);
   return utilityVectorArrayComparable(S, SM, Context, Optional->ElementType,
-                                      Equality);
+                                      Equality, Depth + 1);
 }
 
 static bool utilityNestedVectorComparable(const State &S,
@@ -6806,8 +6832,14 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
   const auto AssignOffset = AssignSFINAE
                                 ? TopLayout.getBaseClassOffset(AssignSFINAE)
                                 : CharUnits::Zero();
+  const auto MainDataSize =
+      Main ? Context.getASTRecordLayout(Main).getDataSize() : CharUnits::Zero();
   const bool SharedSFINAEStorage =
-      !MicrosoftABI && CtorOffset.isZero() && AssignOffset.isZero();
+      !MicrosoftABI &&
+      ((CtorOffset.isZero() && AssignOffset.isZero()) ||
+       (approvedUtilityOptionalMetadata(S, SM, ElementRecord) &&
+        CtorOffset == MainDataSize && AssignOffset == MainDataSize &&
+        MainDataSize < MainSize));
   const bool SeparateSFINAEStorage =
       MicrosoftABI && CtorOffset == MainSize &&
       AssignOffset == MainSize + CharUnits::One();

@@ -30036,6 +30036,46 @@ bool equal_pointer(
         check("v2-vector-optional-array-" + target,
               vector_optional_array_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_nested_optional_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <optional>
+#include <vector>
+using Inner = std::optional<int>;
+using Outer = std::optional<Inner>;
+void values() {
+  std::vector<Outer> items;
+  items.emplace_back();
+  items.push_back(Outer(std::in_place));
+  items.push_back(Outer(Inner(3)));
+  std::vector<Outer> copied(items);
+  copied = items;
+  std::vector<std::optional<Outer>> deep;
+  deep.push_back(std::optional<Outer>(Outer(Inner(4))));
+}
+bool compare(const std::vector<Outer>& left,
+             const std::vector<Outer>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested(const std::vector<std::vector<Outer>>& left,
+                    const std::vector<std::vector<Outer>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_deep(const std::vector<std::optional<Outer>>& left,
+                  const std::vector<std::optional<Outer>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-nested-optional-" + target,
+              vector_nested_optional_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30133,6 +30173,13 @@ bool f(const std::vector<std::array<std::optional<void*>, 2>>& left,
 #include <optional>
 bool f(const std::vector<std::optional<std::array<void*, 2>>>& left,
        const std::vector<std::optional<std::array<void*, 2>>>& right) {
+  return left < right;
+}
+""",
+        "nested-optional-void-pointer-order": """\
+#include <optional>
+bool f(const std::vector<std::optional<std::optional<void*>>>& left,
+       const std::vector<std::optional<std::optional<void*>>>& right) {
   return left < right;
 }
 """,
