@@ -19879,10 +19879,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (ValueReference &&
             (!Vector->OwningElement || CopyableString ||
              (Method->getNumParams() == 2 &&
-              (ValueParameter->isRValueReferenceType() ||
-               (ValueParameter->isLValueReferenceType() &&
-                Vector->CopyElementConstructor &&
-                Vector->CopyElementAssignment)))) &&
+              ValueParameter->isRValueReferenceType()) ||
+             (ValueParameter->isLValueReferenceType() &&
+              Vector->CopyElementConstructor &&
+              Vector->CopyElementAssignment)) &&
             Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                            Element) &&
             (Method->getNumParams() == 2 ||

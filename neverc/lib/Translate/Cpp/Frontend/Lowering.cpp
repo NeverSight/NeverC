@@ -12053,8 +12053,13 @@ class FunctionLowering {
       const bool SourceOwnedCopyArgument =
           (Operation == UtilityOperation::VectorInsert ||
            Operation == UtilityOperation::VectorEmplace) &&
-          Vector->MoveElementConstructor && Call->getNumArgs() == 2 &&
-          Call->getDirectCallee()->getParamDecl(1)->getType()
+          Vector->MoveElementConstructor &&
+          (Call->getNumArgs() == 2 ||
+           (Operation == UtilityOperation::VectorInsert &&
+            Call->getNumArgs() == 3)) &&
+          Call->getDirectCallee()
+              ->getParamDecl(Call->getNumArgs() - 1)
+              ->getType()
               ->isLValueReferenceType();
       auto Count = temporary(SizeType, L);
       std::optional<Expression> Value;
@@ -12219,15 +12224,15 @@ class FunctionLowering {
       auto ConstructSourceOwned = [&](Expression Target) {
         if (SourceAddress) {
           if (SourceOwnedCopyArgument)
-            copyVectorElement(std::move(Target),
-                              dereference(json::Object(*SourceAddress), L),
-                              *Vector, L, Call->getArg(1)->getType());
+            copyVectorElement(
+                std::move(Target), dereference(json::Object(*SourceAddress), L),
+                *Vector, L, Call->getArg(Call->getNumArgs() - 1)->getType());
           else
             transferVectorElement(std::move(Target),
                                   dereference(json::Object(*SourceAddress), L),
                                   *Vector, L);
         } else if (Operation == UtilityOperation::VectorEmplace &&
-                 Vector->DefaultElementConstructor)
+                   Vector->DefaultElementConstructor)
           constructMemoryDefault(std::move(Target), Vector->ElementType,
                                  Vector->DefaultElementConstructor, true, L);
         else
@@ -12301,89 +12306,248 @@ class FunctionLowering {
              Call->getNumArgs() == 2 && !SourceAddress))
           reject(L, "vector insert",
                  "The selected element insertion cannot shift live elements.");
-        const auto Append = labelName(), ShiftLive = labelName();
-        const auto ShiftCheck = labelName(), ShiftOne = labelName();
-        const auto Fill = labelName(), Filled = labelName();
-        branch(binary("==", json::Object(Position), json::Object(End), "bool",
-                      L),
-               Append, ShiftLive, L);
-        label(Append, L);
-        ConstructSourceOwned(dereference(json::Object(End), L));
-        jump(Filled, L);
-        label(ShiftLive, L);
-        std::optional<Expression> EmplaceValue;
-        if (Operation == UtilityOperation::VectorEmplace) {
-          EmplaceValue = temporary(type(Vector->ElementType, L), L);
-          ConstructSourceOwned(json::Object(*EmplaceValue));
-        }
-        auto Last = snapshot(
-            binary("-", json::Object(End), quantity(1, DifferenceType, L),
-                   PointerType, L),
-            L);
-        transferVectorElement(dereference(json::Object(End), L),
-                              dereference(json::Object(Last), L), *Vector, L);
-        auto Current = temporary(PointerType, L);
-        assign(Current, json::Object(Last), L);
-        jump(ShiftCheck, L);
-        label(ShiftCheck, L);
-        branch(binary("!=", json::Object(Current), json::Object(Position),
-                      "bool", L),
-               ShiftOne, Fill, L);
-        label(ShiftOne, L);
-        auto Previous = snapshot(
-            binary("-", json::Object(Current),
-                   quantity(1, DifferenceType, L), PointerType, L),
-            L);
-        assignMemorySource(dereference(json::Object(Current), L),
-                           Vector->ElementType, Vector->ShiftElementAssignment,
-                           dereference(json::Object(Previous), L), L);
-        assign(Current, json::Object(Previous), L);
-        jump(ShiftCheck, L);
-        label(Fill, L);
         if (Operation == UtilityOperation::VectorInsert &&
-            SourceOwnedCopyArgument) {
+            Call->getNumArgs() == 3) {
+          if (!SourceOwnedCopyArgument || !Vector->CopyElementAssignment)
+            reject(L, "vector insert",
+                   "The selected element cannot be inserted by count.");
+          auto SuffixCount =
+              snapshot(cast(binary("-", json::Object(End),
+                                   json::Object(Position), DifferenceType, L),
+                            SizeType, L),
+                       L);
+          auto Extra = temporary(SizeType, L);
+          assign(Extra, quantity(0, SizeType, L), L);
+          const auto HasExtra = labelName(), ExtraKnown = labelName();
+          branch(binary(">", json::Object(Count), json::Object(SuffixCount),
+                        "bool", L),
+                 HasExtra, ExtraKnown, L);
+          label(HasExtra, L);
+          assign(Extra,
+                 binary("-", json::Object(Count), json::Object(SuffixCount),
+                        SizeType, L),
+                 L);
+          jump(ExtraKnown, L);
+          label(ExtraKnown, L);
+          auto Remaining = snapshot(binary("-", json::Object(Count),
+                                           json::Object(Extra), SizeType, L),
+                                    L);
+          auto NewEnd =
+              snapshot(binary("+", json::Object(End),
+                              cast(json::Object(Count), DifferenceType, L),
+                              PointerType, L),
+                       L);
+          auto AppendTarget = temporary(PointerType, L);
+          assign(AppendTarget, json::Object(End), L);
+          const auto AppendCheck = labelName(), AppendOne = labelName();
+          const auto Appended = labelName();
+          jump(AppendCheck, L);
+          label(AppendCheck, L);
+          branch(binary("!=", json::Object(AppendTarget),
+                        binary("+", json::Object(End),
+                               cast(json::Object(Extra), DifferenceType, L),
+                               PointerType, L),
+                        "bool", L),
+                 AppendOne, Appended, L);
+          label(AppendOne, L);
+          ConstructSourceOwned(dereference(json::Object(AppendTarget), L));
+          assign(AppendTarget,
+                 binary("+", json::Object(AppendTarget),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          jump(AppendCheck, L);
+          label(Appended, L);
+          auto MoveSource = temporary(PointerType, L);
+          auto MoveTarget = temporary(PointerType, L);
+          assign(MoveSource,
+                 binary("-", json::Object(End),
+                        cast(json::Object(Remaining), DifferenceType, L),
+                        PointerType, L),
+                 L);
+          assign(MoveTarget, json::Object(AppendTarget), L);
+          auto ShiftEnd = snapshot(json::Object(MoveSource), L);
+          const auto MoveCheck = labelName(), MoveOne = labelName();
+          const auto Moved = labelName();
+          jump(MoveCheck, L);
+          label(MoveCheck, L);
+          branch(binary("!=", json::Object(MoveSource), json::Object(End),
+                        "bool", L),
+                 MoveOne, Moved, L);
+          label(MoveOne, L);
+          transferVectorElement(dereference(json::Object(MoveTarget), L),
+                                dereference(json::Object(MoveSource), L),
+                                *Vector, L);
+          assign(MoveSource,
+                 binary("+", json::Object(MoveSource),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assign(MoveTarget,
+                 binary("+", json::Object(MoveTarget),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          jump(MoveCheck, L);
+          label(Moved, L);
+          auto ShiftSource = temporary(PointerType, L);
+          auto ShiftTarget = temporary(PointerType, L);
+          assign(ShiftSource, json::Object(ShiftEnd), L);
+          assign(ShiftTarget, json::Object(AppendTarget), L);
+          const auto ShiftCheck = labelName(), ShiftOne = labelName();
+          const auto Shifted = labelName();
+          jump(ShiftCheck, L);
+          label(ShiftCheck, L);
+          branch(binary("!=", json::Object(ShiftSource), json::Object(Position),
+                        "bool", L),
+                 ShiftOne, Shifted, L);
+          label(ShiftOne, L);
+          assign(ShiftSource,
+                 binary("-", json::Object(ShiftSource),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assign(ShiftTarget,
+                 binary("-", json::Object(ShiftTarget),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assignMemorySource(dereference(json::Object(ShiftTarget), L),
+                             Vector->ElementType,
+                             Vector->ShiftElementAssignment,
+                             dereference(json::Object(ShiftSource), L), L);
+          jump(ShiftCheck, L);
+          label(Shifted, L);
           auto CopySource = temporary(ConstPointerType, L);
           assign(CopySource,
                  cast(json::Object(*SourceAddress), ConstPointerType, L), L);
           const auto CheckEnd = labelName(), Adjust = labelName();
-          const auto Assign = labelName();
+          const auto CopyReady = labelName();
           branch(binary(">=", json::Object(CopySource),
                         cast(json::Object(Position), ConstPointerType, L),
                         "bool", L),
-                 CheckEnd, Assign, L);
+                 CheckEnd, CopyReady, L);
           label(CheckEnd, L);
           branch(binary("<", json::Object(CopySource),
-                        cast(json::Object(End), ConstPointerType, L), "bool", L),
-                 Adjust, Assign, L);
+                        cast(json::Object(NewEnd), ConstPointerType, L), "bool",
+                        L),
+                 Adjust, CopyReady, L);
           label(Adjust, L);
           assign(CopySource,
                  binary("+", json::Object(CopySource),
-                        quantity(1, DifferenceType, L), ConstPointerType, L),
+                        cast(json::Object(Count), DifferenceType, L),
+                        ConstPointerType, L),
                  L);
-          jump(Assign, L);
-          label(Assign, L);
-          assignMemorySource(dereference(json::Object(Position), L),
-                             Vector->ElementType,
-                             Vector->CopyElementAssignment,
+          jump(CopyReady, L);
+          label(CopyReady, L);
+          auto FillTarget = temporary(PointerType, L);
+          auto FillIndex = temporary(SizeType, L);
+          assign(FillTarget, json::Object(Position), L);
+          assign(FillIndex, quantity(0, SizeType, L), L);
+          const auto FillCheck = labelName(), FillOne = labelName();
+          const auto Filled = labelName();
+          jump(FillCheck, L);
+          label(FillCheck, L);
+          branch(binary("<", json::Object(FillIndex), json::Object(Remaining),
+                        "bool", L),
+                 FillOne, Filled, L);
+          label(FillOne, L);
+          assignMemorySource(dereference(json::Object(FillTarget), L),
+                             Vector->ElementType, Vector->CopyElementAssignment,
                              dereference(json::Object(CopySource), L), L);
+          assign(FillTarget,
+                 binary("+", json::Object(FillTarget),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assign(FillIndex,
+                 binary("+", json::Object(FillIndex), quantity(1, SizeType, L),
+                        SizeType, L),
+                 L);
+          jump(FillCheck, L);
+          label(Filled, L);
+          assign(Member("nct_vector_end"), json::Object(NewEnd), L);
+          jump(Done, L);
         } else {
-          assignMemorySource(dereference(json::Object(Position), L),
+          const auto Append = labelName(), ShiftLive = labelName();
+          const auto ShiftCheck = labelName(), ShiftOne = labelName();
+          const auto Fill = labelName(), Filled = labelName();
+          branch(binary("==", json::Object(Position), json::Object(End), "bool",
+                        L),
+                 Append, ShiftLive, L);
+          label(Append, L);
+          ConstructSourceOwned(dereference(json::Object(End), L));
+          jump(Filled, L);
+          label(ShiftLive, L);
+          std::optional<Expression> EmplaceValue;
+          if (Operation == UtilityOperation::VectorEmplace) {
+            EmplaceValue = temporary(type(Vector->ElementType, L), L);
+            ConstructSourceOwned(json::Object(*EmplaceValue));
+          }
+          auto Last =
+              snapshot(binary("-", json::Object(End),
+                              quantity(1, DifferenceType, L), PointerType, L),
+                       L);
+          transferVectorElement(dereference(json::Object(End), L),
+                                dereference(json::Object(Last), L), *Vector, L);
+          auto Current = temporary(PointerType, L);
+          assign(Current, json::Object(Last), L);
+          jump(ShiftCheck, L);
+          label(ShiftCheck, L);
+          branch(binary("!=", json::Object(Current), json::Object(Position),
+                        "bool", L),
+                 ShiftOne, Fill, L);
+          label(ShiftOne, L);
+          auto Previous =
+              snapshot(binary("-", json::Object(Current),
+                              quantity(1, DifferenceType, L), PointerType, L),
+                       L);
+          assignMemorySource(dereference(json::Object(Current), L),
                              Vector->ElementType,
                              Vector->ShiftElementAssignment,
-                             EmplaceValue ? json::Object(*EmplaceValue)
-                                          : dereference(
-                                                json::Object(*SourceAddress), L),
-                             L);
+                             dereference(json::Object(Previous), L), L);
+          assign(Current, json::Object(Previous), L);
+          jump(ShiftCheck, L);
+          label(Fill, L);
+          if (Operation == UtilityOperation::VectorInsert &&
+              SourceOwnedCopyArgument) {
+            auto CopySource = temporary(ConstPointerType, L);
+            assign(CopySource,
+                   cast(json::Object(*SourceAddress), ConstPointerType, L), L);
+            const auto CheckEnd = labelName(), Adjust = labelName();
+            const auto Assign = labelName();
+            branch(binary(">=", json::Object(CopySource),
+                          cast(json::Object(Position), ConstPointerType, L),
+                          "bool", L),
+                   CheckEnd, Assign, L);
+            label(CheckEnd, L);
+            branch(binary("<", json::Object(CopySource),
+                          cast(json::Object(End), ConstPointerType, L), "bool",
+                          L),
+                   Adjust, Assign, L);
+            label(Adjust, L);
+            assign(CopySource,
+                   binary("+", json::Object(CopySource),
+                          quantity(1, DifferenceType, L), ConstPointerType, L),
+                   L);
+            jump(Assign, L);
+            label(Assign, L);
+            assignMemorySource(dereference(json::Object(Position), L),
+                               Vector->ElementType,
+                               Vector->CopyElementAssignment,
+                               dereference(json::Object(CopySource), L), L);
+          } else {
+            assignMemorySource(
+                dereference(json::Object(Position), L), Vector->ElementType,
+                Vector->ShiftElementAssignment,
+                EmplaceValue ? json::Object(*EmplaceValue)
+                             : dereference(json::Object(*SourceAddress), L),
+                L);
+          }
+          if (EmplaceValue)
+            destroy(json::Object(*EmplaceValue), Vector->ElementType, L);
+          jump(Filled, L);
+          label(Filled, L);
+          assign(Member("nct_vector_end"),
+                 binary("+", json::Object(End), quantity(1, DifferenceType, L),
+                        PointerType, L),
+                 L);
+          jump(Done, L);
         }
-        if (EmplaceValue)
-          destroy(json::Object(*EmplaceValue), Vector->ElementType, L);
-        jump(Filled, L);
-        label(Filled, L);
-        assign(Member("nct_vector_end"),
-               binary("+", json::Object(End), quantity(1, DifferenceType, L),
-                      PointerType, L),
-               L);
-        jump(Done, L);
       } else {
         auto ShiftSource = temporary(PointerType, L);
         auto ShiftTarget = temporary(PointerType, L);
@@ -12480,11 +12644,41 @@ class FunctionLowering {
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
       auto NewCurrent = temporary(PointerType, L);
       if (Vector->MoveElementConstructor) {
-        auto InsertSlot = snapshot(
-            binary("+", json::Object(NewBegin), json::Object(Offset),
-                   PointerType, L),
-            L);
-        ConstructSourceOwned(dereference(json::Object(InsertSlot), L));
+        auto InsertSlot = snapshot(binary("+", json::Object(NewBegin),
+                                          json::Object(Offset), PointerType, L),
+                                   L);
+        auto SuffixDestination = temporary(PointerType, L);
+        assign(SuffixDestination, json::Object(InsertSlot), L);
+        if (Operation == UtilityOperation::VectorInsert &&
+            Call->getNumArgs() == 3) {
+          auto InsertIndex = temporary(SizeType, L);
+          assign(InsertIndex, quantity(0, SizeType, L), L);
+          const auto InsertCheck = labelName(), InsertOne = labelName();
+          const auto Inserted = labelName();
+          jump(InsertCheck, L);
+          label(InsertCheck, L);
+          branch(binary("<", json::Object(InsertIndex), json::Object(Count),
+                        "bool", L),
+                 InsertOne, Inserted, L);
+          label(InsertOne, L);
+          ConstructSourceOwned(dereference(json::Object(SuffixDestination), L));
+          assign(SuffixDestination,
+                 binary("+", json::Object(SuffixDestination),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assign(InsertIndex,
+                 binary("+", json::Object(InsertIndex),
+                        quantity(1, SizeType, L), SizeType, L),
+                 L);
+          jump(InsertCheck, L);
+          label(Inserted, L);
+        } else {
+          ConstructSourceOwned(dereference(json::Object(InsertSlot), L));
+          assign(SuffixDestination,
+                 binary("+", json::Object(InsertSlot),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+        }
         auto Relocate = [&](Expression First, Expression Last,
                             Expression Target) {
           auto Old = temporary(PointerType, L);
@@ -12501,12 +12695,12 @@ class FunctionLowering {
           transferVectorElement(dereference(json::Object(New), L),
                                 dereference(json::Object(Old), L), *Vector, L);
           assign(Old,
-                 binary("+", json::Object(Old),
-                        quantity(1, DifferenceType, L), PointerType, L),
+                 binary("+", json::Object(Old), quantity(1, DifferenceType, L),
+                        PointerType, L),
                  L);
           assign(New,
-                 binary("+", json::Object(New),
-                        quantity(1, DifferenceType, L), PointerType, L),
+                 binary("+", json::Object(New), quantity(1, DifferenceType, L),
+                        PointerType, L),
                  L);
           jump(Check, L);
           label(Relocated, L);
@@ -12514,8 +12708,7 @@ class FunctionLowering {
                                        *Vector, L);
         };
         Relocate(json::Object(Position), json::Object(End),
-                 binary("+", json::Object(InsertSlot),
-                        quantity(1, DifferenceType, L), PointerType, L));
+                 json::Object(SuffixDestination));
         Relocate(json::Object(Begin), json::Object(Position),
                  json::Object(NewBegin));
         assign(Position, json::Object(InsertSlot), L);

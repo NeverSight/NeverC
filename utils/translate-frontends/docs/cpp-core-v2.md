@@ -2696,6 +2696,14 @@ assignment. In-place insertion adjusts an aliased argument after shifting the
 live range, then invokes the copy assignment; end insertion and growth invoke
 the copy constructor. Host O0/O2 fixtures check deep copies, both alias
 positions, capacity reuse, growth relocation order, and balanced release.
+`insert(position, count, const T&)` accepts the same source-owned copy
+operations. With spare capacity it constructs any excess inserted elements at
+the end, move-constructs the displaced tail, shifts remaining live elements
+right by move assignment, and copy-assigns the insertion gap. An argument in
+the displaced tail is resolved at its new position. On growth it constructs
+the inserted copies before relocating the old suffix and prefix. Host O0/O2
+fixtures cover zero count, both in-place shift cases, append, aliases, growth,
+deep copies, and balanced release.
 Positional `emplace` accepts zero arguments when the element has a supported
 default constructor, one nonconst rvalue of the exact element type, or one
 const lvalue when a supported copy constructor exists. For an
