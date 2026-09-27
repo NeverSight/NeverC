@@ -12061,12 +12061,17 @@ class FunctionLowering {
           const auto *Argument = Call->getArg(I);
           const auto Parameter =
               DirectConstructor->getParamDecl(I - 1)->getType();
-          DirectArguments.push_back(
-              snapshot(Parameter->isObjectPointerType() &&
-                               Argument->getType()->isArrayType()
-                           ? decay(lvalue(Argument), type(Parameter, L), L)
-                           : argument(Argument, Parameter),
-                       L));
+          Expression Captured;
+          if (Parameter->isObjectPointerType() &&
+              Argument->getType()->isArrayType())
+            Captured = decay(lvalue(Argument), type(Parameter, L), L);
+          else if (Parameter->isObjectPointerType() &&
+                   Argument->getType()->isNullPtrType())
+            Captured =
+                cast(argument(Argument, Parameter), type(Parameter, L), L);
+          else
+            Captured = argument(Argument, Parameter);
+          DirectArguments.push_back(snapshot(std::move(Captured), L));
         }
       }
       const bool SourceOwnedCopyArgument =
@@ -14083,12 +14088,17 @@ class FunctionLowering {
         for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
           const auto *Argument = Call->getArg(I);
           const auto Parameter = DirectConstructor->getParamDecl(I)->getType();
-          DirectArguments.push_back(
-              snapshot(Parameter->isObjectPointerType() &&
-                               Argument->getType()->isArrayType()
-                           ? decay(lvalue(Argument), type(Parameter, L), L)
-                           : argument(Argument, Parameter),
-                       L));
+          Expression Captured;
+          if (Parameter->isObjectPointerType() &&
+              Argument->getType()->isArrayType())
+            Captured = decay(lvalue(Argument), type(Parameter, L), L);
+          else if (Parameter->isObjectPointerType() &&
+                   Argument->getType()->isNullPtrType())
+            Captured =
+                cast(argument(Argument, Parameter), type(Parameter, L), L);
+          else
+            Captured = argument(Argument, Parameter);
+          DirectArguments.push_back(snapshot(std::move(Captured), L));
         }
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {

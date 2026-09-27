@@ -55871,6 +55871,69 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedNullPointerEmplaceRun) {
+  const auto Source = tmpFile("vector-source-owned-null-pointer-emplace.cpp");
+  const auto Output = tmpFile("vector-source-owned-null-pointer-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int *p) : value(p) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> v;
+    v.reserve(2);
+    auto storage = v.data();
+    auto &first = v.emplace_back(nullptr);
+    if (&first != &v.front() || v.data() != storage ||
+        first.value != nullptr) return 1;
+    auto inserted = v.emplace(v.cbegin(), nullptr);
+    if (inserted != v.begin() || v.data() != storage ||
+        v.size() != 2 || v[0].value != nullptr ||
+        v[1].value != nullptr) return 2;
+    auto &grown = v.emplace_back(nullptr);
+    if (&grown != &v.back() || v.data() == storage ||
+        v.size() != 3 || v[0].value != nullptr ||
+        v[1].value != nullptr || v[2].value != nullptr) return 3;
+  }
+  return live == 0 && allocations == releases ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-null-pointer-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRun) {
   const auto Source = tmpFile("vector-source-owned-erase.cpp");
   const auto Output = tmpFile("vector-source-owned-erase.nc");

@@ -5930,13 +5930,15 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
             (!Array->getElementType().isConstQualified() ||
              Parameter->getPointeeType().isConstQualified()) &&
             !Array->getElementType().isVolatileQualified();
+        const bool NullPointer =
+            Parameter->isObjectPointerType() && ArgumentType->isNullPtrType();
         ExactArguments &=
             (Parameter->isIntegerType() || Parameter->isFloatingType() ||
              Parameter->isObjectPointerType()) &&
             !Parameter.isVolatileQualified() &&
             !ArgumentType.isVolatileQualified() &&
             (Context.hasSameUnqualifiedType(Parameter, ArgumentType) ||
-             ArrayDecay);
+             ArrayDecay || NullPointer);
       }
     }
     if (!ExactArguments)
