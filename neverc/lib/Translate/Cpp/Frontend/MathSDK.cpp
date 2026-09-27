@@ -19977,11 +19977,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
     }
     if ((!Vector->MoveElementConstructor || Vector->ShiftElementAssignment) &&
-        !Operator && Name == "emplace" &&
-        !Method->isConst() &&
-        !Object->getType().isConstQualified() &&
-        Call->isPRValue() &&
-        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        !Operator && Name == "emplace" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        Method->getNumParams() >= 1 &&
+        Call->getNumArgs() == Method->getNumParams() &&
         Context.hasSameType(Call->getType(), Method->getReturnType()) &&
         Method->getPrimaryTemplate() &&
         approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
@@ -19999,14 +19998,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Context.getPointerType(Element.withConst())) &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Call->getArg(0)->getType())) {
-        if (Method->getNumParams() == 1 &&
-            (!Vector->MoveElementConstructor ||
-             Vector->DefaultElementConstructor))
+        if (Method->getNumParams() == 1 && (!Vector->MoveElementConstructor ||
+                                            Vector->DefaultElementConstructor))
           return UtilityOperation::VectorEmplace;
         if (Method->getNumParams() == 2) {
           const auto Parameter = Method->getParamDecl(1)->getType();
-          const bool Copyable = CopyableString ||
-                                Vector->CopyElementConstructor;
+          const bool Copyable =
+              CopyableString || Vector->CopyElementConstructor;
           if ((((!Vector->OwningElement || Copyable) &&
                 Parameter->isLValueReferenceType()) ||
                Parameter->isRValueReferenceType()) &&
@@ -20019,6 +20017,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                              Element))
             return UtilityOperation::VectorEmplace;
         }
+        if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
+                                                    Context))
+          return UtilityOperation::VectorEmplace;
       }
     }
     if ((!Vector->OwningElement || CopyableString ||

@@ -2726,6 +2726,10 @@ elements, assigns the new position from that temporary, and destroys it. End
 insertion and growth construct directly in the destination. Host O0/O2
 fixtures check default and copy construction, aliased arguments, capacity
 reuse, growth, and balanced release.
+The same positional `emplace` path accepts exact scalar arguments for a unique
+supported source-owned constructor. Host O0/O2 fixtures cover one- and
+two-argument construction, insertion in the middle and at the end, an aliased
+scalar argument during growth, and balanced release.
 `assign(count, const T&)` accepts source-owned elements with supported copy
 construction and copy assignment. Within capacity it copy-assigns existing
 elements, then copy-constructs a new tail or destroys the excess tail. Growth

@@ -12050,6 +12050,19 @@ class FunctionLowering {
       const auto PointerType = type(Vector->PointerType, L);
       const auto ConstPointerType =
           type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
+      const auto *DirectConstructor =
+          Operation == UtilityOperation::VectorEmplace
+              ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
+                                                        Call, 1, A.Context)
+              : nullptr;
+      std::vector<Expression> DirectArguments;
+      if (DirectConstructor) {
+        for (unsigned I = 1; I != Call->getNumArgs(); ++I)
+          DirectArguments.push_back(snapshot(
+              argument(Call->getArg(I),
+                       DirectConstructor->getParamDecl(I - 1)->getType()),
+              L));
+      }
       const bool SourceOwnedCopyArgument =
           (Operation == UtilityOperation::VectorInsert ||
            Operation == UtilityOperation::VectorEmplace) &&
@@ -12109,7 +12122,7 @@ class FunctionLowering {
         }
       } else if (Operation == UtilityOperation::VectorEmplace) {
         assign(Count, quantity(1, SizeType, L), L);
-        if (Call->getNumArgs() == 2) {
+        if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);
             if (Vector->MoveElementConstructor)
@@ -12224,7 +12237,19 @@ class FunctionLowering {
           assign(std::move(Target), InsertValue(), L);
       };
       auto ConstructSourceOwned = [&](Expression Target) {
-        if (SourceAddress) {
+        if (DirectConstructor) {
+          initializeZero(json::Object(Target), Vector->ElementType, L);
+          json::Array Args;
+          Args.push_back(
+              snapshot(address(std::move(Target), Vector->ElementType, L), L));
+          for (const auto &Argument : DirectArguments)
+            Args.push_back(json::Object(Argument));
+          chargeCall(Args, L);
+          Body.push_back(json::Object{{"op", "call"},
+                                      {"callee", A.name(DirectConstructor)},
+                                      {"args", std::move(Args)},
+                                      {"loc", A.loc(L)}});
+        } else if (SourceAddress) {
           if (SourceOwnedCopyArgument)
             copyVectorElement(
                 std::move(Target), dereference(json::Object(*SourceAddress), L),
@@ -12319,7 +12344,8 @@ class FunctionLowering {
         if (!Vector->ShiftElementAssignment ||
             (Operation == UtilityOperation::VectorInsert && !SourceAddress) ||
             (Operation == UtilityOperation::VectorEmplace &&
-             Call->getNumArgs() == 2 && !SourceAddress))
+             Call->getNumArgs() == 2 && !SourceAddress &&
+             !DirectConstructor))
           reject(L, "vector insert",
                  "The selected element insertion cannot shift live elements.");
         if ((Operation == UtilityOperation::VectorInsert &&

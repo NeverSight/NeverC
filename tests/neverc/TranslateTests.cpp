@@ -56278,6 +56278,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedScalarEmplaceRun) {
+  const auto Source = tmpFile("vector-source-owned-scalar-emplace.cpp");
+  const auto Output = tmpFile("vector-source-owned-scalar-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int assignments;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(int a, int b) : value(new int(a * 10 + b)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &) = delete;
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    ++assignments;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int check(const std::vector<Box> &v, const int *expected, Size count) {
+  if (v.size() != count) return 1;
+  for (Size i = 0; i != count; ++i)
+    if (!v[i].value || *v[i].value != expected[i]) return 2;
+  return 0;
+}
+int main() {
+  {
+    std::vector<Box> v;
+    v.reserve(6);
+    v.emplace_back(1);
+    v.emplace_back(3);
+    v.emplace_back(4);
+    auto storage = v.data();
+    auto middle = v.emplace(v.cbegin() + 1, 2);
+    const int one[] = {1, 2, 3, 4};
+    if (middle != v.begin() + 1 || v.data() != storage ||
+        check(v, one, 4) || assignments == 0) return 1;
+    auto pair = v.emplace(v.cbegin() + 2, 5, 6);
+    const int two[] = {1, 2, 56, 3, 4};
+    if (pair != v.begin() + 2 || v.data() != storage ||
+        check(v, two, 5)) return 2;
+    auto tail = v.emplace(v.cend(), 7);
+    const int three[] = {1, 2, 56, 3, 4, 7};
+    if (tail != v.end() - 1 || v.data() != storage ||
+        check(v, three, 6)) return 3;
+    auto alias = v.emplace(v.cbegin() + 3, *v.front().value);
+    const int four[] = {1, 2, 56, 1, 3, 4, 7};
+    if (alias != v.begin() + 3 || v.data() == storage ||
+        check(v, four, 7) || v[0].value == v[3].value) return 4;
+  }
+  {
+    std::vector<Box> v;
+    auto first = v.emplace(v.cend(), 8, 9);
+    const int expected[] = {89};
+    if (first != v.begin() || check(v, expected, 1)) return 5;
+  }
+  return live == 0 && allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-scalar-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEmplaceRun) {
   const auto Source = tmpFile("vector-source-owned-emplace.cpp");
   const auto Output = tmpFile("vector-source-owned-emplace.nc");
