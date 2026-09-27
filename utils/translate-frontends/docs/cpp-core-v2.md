@@ -2664,11 +2664,24 @@ and unique-pointer ordering uses the profile's selected native address order;
 prefix and equal-length rules remain lexicographic. Source-associated element
 or deleter namespaces can select a different comparison by ADL, so those
 unique-pointer specializations remain outside this comparison boundary.
+Source-owned standard-layout records with nontrivial destruction also work as
+elements when their selected destructor and `noexcept` move constructor can be
+lowered. `push_back(T&&)` and `emplace_back(T&&)` construct directly in the
+destination; growth constructs the new tail before moving old elements so an
+argument may alias the vector. Growth, `reserve`, and
+`shrink_to_fit` invoke the element move constructor and destroy each old
+element. `pop_back`, `clear`, vector destruction, move construction and move
+assignment preserve the selected element lifecycle. `emplace_back()` also
+works when a supported default constructor exists. A supported `const T&`
+copy constructor additionally enables lvalue `push_back`, lvalue
+`emplace_back`, vector copy construction and copy assignment. Each destination
+element is constructed through that copy constructor. Host O0/O2 fixtures
+check aliasing, reallocation, deep copies for a source-owned resource, moves,
+and balanced destruction.
 Unique-pointer elements remain noncopyable. Other positional emplacement
-remains unsupported. Nontrivial record elements, other allocators, remaining
-vector methods, and throwing allocation or length-error paths remain
-unsupported. Quoted and shadow
-headers remain rejected.
+remains unsupported. Other nontrivial record element operations, other
+allocators, remaining vector methods, and throwing allocation or length-error
+paths remain unsupported. Quoted and shadow headers remain rejected.
 
 ## Dynamic local static initialization
 

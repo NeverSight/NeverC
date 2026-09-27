@@ -5738,11 +5738,49 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord &&
       (approvedUtilityStringRecord(S, SM, ElementRecord, Context) ||
        approvedUtilityUniquePtrRecord(S, SM, ElementRecord, Context));
+  const bool SourceOwnedElement =
+      ElementRecord && !ElementRecord->hasTrivialDestructor() &&
+      utilityPairSourceOwnedValue(S, SM, Context, Element);
+  const CXXConstructorDecl *DefaultElementConstructor = nullptr;
+  const CXXConstructorDecl *CopyElementConstructor = nullptr;
+  const CXXConstructorDecl *MoveElementConstructor = nullptr;
+  if (SourceOwnedElement) {
+    const auto *Destructor = ElementRecord->getDestructor();
+    if (!Destructor || !Destructor->hasBody() ||
+        (!ordinaryDestructor(Destructor) && !defaultedLifecycle(Destructor)) ||
+        !S.owns(SM, Destructor->getLocation()))
+      return std::nullopt;
+    const auto ElementType = Context.getRecordType(ElementRecord);
+    for (const auto *Constructor : ElementRecord->ctors()) {
+      if (Constructor->isDeleted() || Constructor->isVariadic() ||
+          !supportedConstructor(Constructor) ||
+          (!Constructor->isTrivial() && !Constructor->hasBody()) ||
+          !S.owns(SM, Constructor->getLocation()))
+        continue;
+      if (Constructor->isDefaultConstructor() && !Constructor->getNumParams())
+        DefaultElementConstructor = Constructor;
+      if (Constructor->getNumParams() != 1)
+        continue;
+      const auto Parameter = Constructor->getParamDecl(0)->getType();
+      if (Constructor->isCopyConstructor() &&
+          Context.hasSameType(Parameter,
+                              Context.getLValueReferenceType(
+                                  ElementType.withConst())))
+        CopyElementConstructor = Constructor;
+      if (Constructor->isMoveConstructor() &&
+          Context.hasSameType(Parameter,
+                              Context.getRValueReferenceType(ElementType)) &&
+          Constructor->getType()->getAs<FunctionProtoType>()->isNothrow())
+        MoveElementConstructor = Constructor;
+    }
+    if (!MoveElementConstructor)
+      return std::nullopt;
+  }
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
         Element->isObjectPointerType() || TrivialSourceRecord ||
-        OwningElement) ||
+        OwningElement || SourceOwnedElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);
@@ -5810,7 +5848,10 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
           Context.getTypeAlign(Pointer))
     return std::nullopt;
-  return UtilityVectorRecord{Vector, Element, Pointer, OwningElement};
+  return UtilityVectorRecord{Vector, Element, Pointer,
+                             OwningElement || SourceOwnedElement,
+                             DefaultElementConstructor, CopyElementConstructor,
+                             MoveElementConstructor};
 }
 
 std::optional<UtilityVectorConstruction>
@@ -5844,7 +5885,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                                      Construction->getType())) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     const auto VectorType = Context.getRecordType(Vector->Record);
-    if ((!Vector->OwningElement ||
+    if ((!Vector->OwningElement || Vector->CopyElementConstructor ||
          approvedUtilityStringRecord(
              S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context)) &&
         Constructor->isCopyConstructor() &&
@@ -5909,8 +5950,11 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
       !Evaluated.Val.isInt() ||
       Evaluated.Val.getInt().getLimitedValue(65537) > 65536)
     return std::nullopt;
-  if (Construction->getNumArgs() == 1)
+  if (Construction->getNumArgs() == 1) {
+    if (Vector->MoveElementConstructor)
+      return std::nullopt;
     return UtilityVectorConstruction::Count;
+  }
   if (Vector->OwningElement && !CopyableString)
     return std::nullopt;
   const auto FillType = Constructor->getParamDecl(1)->getType();
@@ -5962,7 +6006,7 @@ approvedUtilityVectorAssignment(const State &S, const SourceManager &SM,
       !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
                                       VectorType))
     return std::nullopt;
-  if ((!Vector->OwningElement ||
+  if ((!Vector->OwningElement || Vector->CopyElementConstructor ||
        approvedUtilityStringRecord(
            S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context)) &&
       Method->isCopyAssignmentOperator() &&
@@ -19748,7 +19792,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          VectorType))
         return UtilityOperation::VectorMemberSwap;
     }
-    if (!Operator && Name == "erase" && !Method->isConst() &&
+    if (!Vector->MoveElementConstructor && !Operator && Name == "erase" &&
+        !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
@@ -19771,7 +19816,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorErase;
       }
     }
-    if (!Operator && Name == "insert" && !Method->isConst() &&
+    if (!Vector->MoveElementConstructor && !Operator && Name == "insert" &&
+        !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
@@ -19849,7 +19895,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
       }
     }
-    if (!Operator && Name == "emplace" && !Method->isConst() &&
+    if (!Vector->MoveElementConstructor && !Operator && Name == "emplace" &&
+        !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
@@ -19967,10 +20014,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
                       "libcxx", "__vector/vector.h") &&
         Method->getNumParams() <= 1) {
-      if (!Method->getNumParams())
-        return UtilityOperation::VectorEmplaceBack;
+      if (!Method->getNumParams()) {
+        if (!Vector->MoveElementConstructor ||
+            Vector->DefaultElementConstructor)
+          return UtilityOperation::VectorEmplaceBack;
+        return std::nullopt;
+      }
       const auto Parameter = Method->getParamDecl(0)->getType();
-      if ((((!Vector->OwningElement || CopyableString) &&
+      const bool Copyable = CopyableString || Vector->CopyElementConstructor;
+      if ((((!Vector->OwningElement || Copyable) &&
             Parameter->isLValueReferenceType()) ||
            Parameter->isRValueReferenceType()) &&
           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
@@ -19978,7 +20030,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           (!Vector->OwningElement ||
            Context.hasSameType(Parameter->getPointeeType(),
                                Vector->ElementType) ||
-           CopyableString) &&
+           Copyable) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          Vector->ElementType))
         return UtilityOperation::VectorEmplaceBack;
@@ -19996,7 +20048,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType()))
         return UtilityOperation::VectorReserve;
-      if (Name == "resize" &&
+      if (!Vector->MoveElementConstructor && Name == "resize" &&
           (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
           Call->getNumArgs() == Method->getNumParams() &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
@@ -20027,7 +20079,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Parameter->isRValueReferenceType() &&
             Context.hasSameType(Parameter->getPointeeType(),
                                 Vector->ElementType);
-        if ((((!Vector->OwningElement || CopyableString) && Copy) || Move) &&
+        if ((((!Vector->OwningElement || CopyableString ||
+               Vector->CopyElementConstructor) && Copy) || Move) &&
             Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                            Vector->ElementType))
           return UtilityOperation::VectorPushBack;

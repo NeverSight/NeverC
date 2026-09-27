@@ -55417,6 +55417,166 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
+  const auto Source = tmpFile("vector-source-owned-elements.cpp");
+  const auto Output = tmpFile("vector-source-owned-elements.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copies;
+int moves;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(new int(0)) { ++live; }
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &other) : value(other.value ? new int(*other.value) : nullptr) {
+    ++live;
+    ++copies;
+  }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+    ++moves;
+  }
+  Box &operator=(const Box &other) {
+    if (this != &other) {
+      delete value;
+      value = other.value ? new int(*other.value) : nullptr;
+    }
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    if (this != &other) {
+      delete value;
+      value = other.value;
+      other.value = nullptr;
+    }
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+struct MoveOnly {
+  int *value;
+  explicit MoveOnly(int n) : value(new int(n)) { ++live; }
+  MoveOnly(const MoveOnly &) = delete;
+  MoveOnly(MoveOnly &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+    ++moves;
+  }
+  ~MoveOnly() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    Box first(7);
+    const int copies_before = copies;
+    values.push_back(first);
+    if (copies != copies_before + 1) return 14;
+    values.emplace_back();
+    if (values.size() != 2 || *values[0].value != 7 ||
+        *values[1].value != 0 || live != 3) return 1;
+    values[1].value[0] = 9;
+    const int moves_before_growth = moves;
+    values.push_back(static_cast<Box &&>(values[1]));
+    if (values[1].value || *values[2].value != 9 ||
+        moves != moves_before_growth + 3) return 2;
+    values.reserve(12);
+    Box &last = values.emplace_back(static_cast<Box &&>(first));
+    if (first.value || &last != &values[3] || *last.value != 7) return 3;
+    values.shrink_to_fit();
+    if (values.capacity() != values.size() || *values[3].value != 7)
+      return 4;
+    std::vector<Box> copied(values);
+    if (copied.size() != 4 || copied[3].value == values[3].value ||
+        *copied[3].value != 7) return 5;
+    std::vector<Box> assigned;
+    assigned = copied;
+    if (assigned.size() != 4 || assigned[3].value == copied[3].value)
+      return 6;
+    std::vector<Box> moved(static_cast<std::vector<Box> &&>(copied));
+    if (!copied.empty() || moved.size() != 4) return 7;
+    std::vector<Box> moved_again;
+    moved_again = static_cast<std::vector<Box> &&>(moved);
+    if (!moved.empty() || moved_again.size() != 4) return 8;
+    moved_again.pop_back();
+    moved_again.clear();
+    if (!moved_again.empty()) return 9;
+    values.swap(assigned);
+    if (values.size() != 4 || assigned.size() != 4 ||
+        *values[0].value != 7) return 10;
+    std::vector<MoveOnly> only;
+    only.push_back(MoveOnly(17));
+    only.reserve(6);
+    const int moves_before_append = moves;
+    only.push_back(static_cast<MoveOnly &&>(only[0]));
+    if (only[0].value || *only[1].value != 17 ||
+        moves != moves_before_append + 1) return 12;
+    only.shrink_to_fit();
+    only.pop_back();
+    if (only.size() != 1) return 13;
+  }
+  return live == 0 && copies >= 5 && moves >= 5 &&
+                 allocations == releases
+             ? 0
+             : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-source-owned-elements" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRejected) {
+  const auto Source = tmpFile("vector-source-owned-erase-rejected.cpp");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(nullptr) {}
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) { other.value = nullptr; }
+  Box &operator=(Box &&other) noexcept {
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() {}
+};
+int main() {
+  std::vector<Box> values;
+  values.emplace_back();
+  values.erase(values.cbegin());
+  return 0;
+}
+)cpp");
+  expectCode(translate(Source, {"--profile", "cpp-core-v2", "--check"}),
+             "TR0203");
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningFillRun) {
   const auto Source = tmpFile("vector-owning-fill.cpp");
   const auto Output = tmpFile("vector-owning-fill.nc");

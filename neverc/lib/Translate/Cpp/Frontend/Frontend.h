@@ -1331,6 +1331,9 @@ struct UtilityVectorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType, PointerType;
   bool OwningElement;
+  const clang::CXXConstructorDecl *DefaultElementConstructor;
+  const clang::CXXConstructorDecl *CopyElementConstructor;
+  const clang::CXXConstructorDecl *MoveElementConstructor;
 };
 std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const clang::SourceManager &SM,
