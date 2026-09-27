@@ -2150,6 +2150,14 @@ hidden-friend, or enclosing-namespace free comparison sees the original
 referents. The returned reference, or pair of const references for `minmax`,
 retains the selected source object's identity and standard tie behavior.
 
+Default `std::lower_bound`, `std::upper_bound`, `std::binary_search` and
+`std::equal_range` accept exact trivial source-record ranges and a const
+reference key of the same record type. Raw pointers and authenticated mutable
+or const wrapped iterators retain their original result form. Both comparison
+directions use the unique selected Boolean `operator<` and pass original range
+elements and the original key by reference. Empty ranges perform no comparison;
+equal bounds preserve duplicate runs and missing-key insertion positions.
+
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the respective element types in both argument

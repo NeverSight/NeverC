@@ -433,6 +433,8 @@ Default `is_heap` and `is_heap_until` accept the same source-record ordering
 for raw or authenticated wrapped ranges.
 Default direct `min`, `max`, `clamp` and `minmax` accept exact trivial source
 records with that selected ordering and preserve returned reference identity.
+Default `lower_bound`, `upper_bound`, `binary_search` and `equal_range` accept
+raw or authenticated wrapped source-record ranges and exact const record keys.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

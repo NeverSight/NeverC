@@ -22177,6 +22177,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   auto AlgorithmRecordOrderedRangeParameter = [&](unsigned Index) {
     return AlgorithmRecordComparisonRangeParameter(Index, OO_Less);
   };
+  auto AlgorithmRecordOrderedValueParameter = [&](unsigned ValueIndex,
+                                                  unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Pointer = AlgorithmRecordOrderedRangeParameter(IteratorIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Pointer && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           Context.hasSameUnqualifiedType((*Pointer)->getPointeeType(),
+                                          Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
+  };
   auto AlgorithmTransferRangeParameters = [&](unsigned InputIndex,
                                               unsigned OutputIndex) {
     const auto Input = AlgorithmRangePointerParameter(InputIndex);
@@ -23508,11 +23523,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "binary_search")) &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmRangeValueParameter(2, 0) &&
+      ((AlgorithmRangePointerParameter(0) &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangeValueParameter(2, 0)) ||
+       (AlgorithmRecordOrderedRangeParameter(0) &&
+        AlgorithmRecordOrderedRangeParameter(1) &&
+        AlgorithmRecordOrderedValueParameter(2, 0))) &&
       Same(Call->getType(), Function->getReturnType())) {
     const bool Default = Call->getNumArgs() == 3;
     const bool ForwardComparator =
@@ -23521,8 +23539,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool ReverseComparator =
         Call->getNumArgs() == 4 &&
         AlgorithmRangeComparisonValueParameter(3, 0, 2, true);
-    if (!((Default && AlgorithmOrderedRangeParameter(0) &&
-           AlgorithmOrderedRangeValueParameter(2, 0)) ||
+    if (!((Default && ((AlgorithmOrderedRangeParameter(0) &&
+                        AlgorithmOrderedRangeValueParameter(2, 0)) ||
+                       AlgorithmRecordOrderedValueParameter(2, 0))) ||
           (Name == "lower_bound" && ForwardComparator) ||
           (Name == "upper_bound" && ReverseComparator) ||
           (Name == "binary_search" && ForwardComparator && ReverseComparator)))
@@ -23870,14 +23889,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmRangeValueParameter(2, 0) &&
+      ((AlgorithmRangePointerParameter(0) &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangeValueParameter(2, 0)) ||
+       (AlgorithmRecordOrderedRangeParameter(0) &&
+        AlgorithmRecordOrderedRangeParameter(1) &&
+        AlgorithmRecordOrderedValueParameter(2, 0))) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0) &&
-           AlgorithmOrderedRangeValueParameter(2, 0)) ||
+    if (!((Call->getNumArgs() == 3 &&
+           ((AlgorithmOrderedRangeParameter(0) &&
+             AlgorithmOrderedRangeValueParameter(2, 0)) ||
+            AlgorithmRecordOrderedValueParameter(2, 0))) ||
           (Call->getNumArgs() == 4 &&
            AlgorithmRangeComparisonValueParameter(3, 0, 2, false) &&
            AlgorithmRangeComparisonValueParameter(3, 0, 2, true))))

@@ -31590,6 +31590,66 @@ const owned::Free &clamp_free(const owned::Free &v,
           'const Entry& f(const Entry&a,const Entry&b){return std::min(a,b);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_ordered_bounds_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+Member *lower_member(Member *first, Member *last, const Member &key) {
+  return std::lower_bound(first, last, key);
+}
+Member *upper_member(Member *first, Member *last, const Member &key) {
+  return std::upper_bound(first, last, key);
+}
+bool search_member(Member *first, Member *last, const Member &key) {
+  return std::binary_search(first, last, key);
+}
+std::pair<Member *, Member *>
+range_member(Member *first, Member *last, const Member &key) {
+  return std::equal_range(first, last, key);
+}
+Friend *lower_friend(Friend *first, Friend *last, const Friend &key) {
+  return std::lower_bound(first, last, key);
+}
+std::pair<owned::Free *, owned::Free *>
+range_free(owned::Free *first, owned::Free *last, const owned::Free &key) {
+  return std::equal_range(first, last, key);
+}
+std::vector<Member>::const_iterator
+lower_wrapped(const std::vector<Member> &values, const Member &key) {
+  return std::lower_bound(values.cbegin(), values.cend(), key);
+}
+std::pair<std::vector<Member>::iterator, std::vector<Member>::iterator>
+range_wrapped(std::vector<Member> &values, const Member &key) {
+  return std::equal_range(values.begin(), values.end(), key);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-bounds-" + target,
+              source_record_ordered_bounds_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-ordered-bounds-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'int operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'auto f(std::vector<Entry>&a,const Entry&key){'
+          'return std::equal_range(a.begin(),a.end(),key);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

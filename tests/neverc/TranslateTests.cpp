@@ -55430,6 +55430,174 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
+  const auto Source = tmpFile("source-record-ordered-bounds.cpp");
+  const auto Output = tmpFile("source-record-ordered-bounds.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *base, *key_address;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  if (value == key_address) return true;
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point values[5]{{1}, {2}, {2}, {4}, {6}};
+  Point key{2}, absent{3};
+  base = values; count = 5; key_address = &key;
+  auto range = std::equal_range(values, values + 5, key);
+  if (std::lower_bound(values, values + 5, key) != values + 1 ||
+      std::upper_bound(values, values + 5, key) != values + 3 ||
+      !std::binary_search(values, values + 5, key) ||
+      range.first != values + 1 || range.second != values + 3 ||
+      !comparisons || bad_identity) return 1;
+  key_address = &absent;
+  auto missing = std::equal_range(values, values + 5, absent);
+  if (std::lower_bound(values, values + 5, absent) != values + 3 ||
+      std::upper_bound(values, values + 5, absent) != values + 3 ||
+      std::binary_search(values, values + 5, absent) ||
+      missing.first != values + 3 || missing.second != values + 3 ||
+      bad_identity) return 2;
+  comparisons = 0;
+  auto empty = std::equal_range(values, values, absent);
+  if (std::lower_bound(values, values, absent) != values ||
+      std::upper_bound(values, values, absent) != values ||
+      std::binary_search(values, values, absent) ||
+      empty.first != values || empty.second != values || comparisons)
+    return 3;
+  Friend friends[3]{{1}, {2}, {3}}, friend_key{2};
+  auto friend_range = std::equal_range(friends, friends + 3, friend_key);
+  if (std::lower_bound(friends, friends + 3, friend_key) != friends + 1 ||
+      std::upper_bound(friends, friends + 3, friend_key) != friends + 2 ||
+      !std::binary_search(friends, friends + 3, friend_key) ||
+      friend_range.first != friends + 1 ||
+      friend_range.second != friends + 2) return 4;
+  owned::Free frees[3]{{1}, {2}, {3}}, free_key{2};
+  auto free_range = std::equal_range(frees, frees + 3, free_key);
+  if (std::lower_bound(frees, frees + 3, free_key) != frees + 1 ||
+      std::upper_bound(frees, frees + 3, free_key) != frees + 2 ||
+      !std::binary_search(frees, frees + 3, free_key) ||
+      free_range.first != frees + 1 ||
+      free_range.second != frees + 2) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-bounds" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedSourceRecordOrderedBoundsRun) {
+  const auto Source = tmpFile("wrapped-source-record-ordered-bounds.cpp");
+  const auto Output = tmpFile("wrapped-source-record-ordered-bounds.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *base, *key_address;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  if (value == key_address) return true;
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+int main() {
+  std::vector<Point> values;
+  values.push_back(Point{1}); values.push_back(Point{2});
+  values.push_back(Point{2}); values.push_back(Point{4});
+  values.push_back(Point{6});
+  const std::vector<Point> &view = values;
+  Point key{2}, absent{3};
+  base = &values[0]; count = 5; key_address = &key;
+  auto lower = view.cbegin(); ++lower;
+  auto upper = lower; ++upper; ++upper;
+  auto range = std::equal_range(view.cbegin(), view.cend(), key);
+  if (std::lower_bound(view.cbegin(), view.cend(), key) != lower ||
+      std::upper_bound(view.cbegin(), view.cend(), key) != upper ||
+      !std::binary_search(view.cbegin(), view.cend(), key) ||
+      range.first != lower || range.second != upper ||
+      !comparisons || bad_identity) return 1;
+  key_address = &absent;
+  auto missing = std::equal_range(values.begin(), values.end(), absent);
+  auto insertion = values.begin(); ++insertion; ++insertion; ++insertion;
+  if (std::lower_bound(values.begin(), values.end(), absent) != insertion ||
+      std::upper_bound(values.begin(), values.end(), absent) != insertion ||
+      std::binary_search(values.begin(), values.end(), absent) ||
+      missing.first != insertion || missing.second != insertion ||
+      bad_identity) return 2;
+  std::vector<Point> empty;
+  comparisons = 0;
+  auto empty_range = std::equal_range(empty.begin(), empty.end(), absent);
+  if (std::lower_bound(empty.begin(), empty.end(), absent) != empty.end() ||
+      std::upper_bound(empty.begin(), empty.end(), absent) != empty.end() ||
+      std::binary_search(empty.begin(), empty.end(), absent) ||
+      empty_range.first != empty.end() ||
+      empty_range.second != empty.end() || comparisons) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-source-record-ordered-bounds" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

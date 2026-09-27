@@ -2221,6 +2221,34 @@ class FunctionLowering {
       return binary("<", dereference(std::move(LeftAddress), L),
                     dereference(std::move(RightAddress), L), "bool", L);
     };
+    auto AlgorithmRangeValueLess = [&](Expression Left, QualType LeftType,
+                                       Expression Right, QualType RightType) {
+      const auto SourceComparison =
+          A.Context.hasSameUnqualifiedType(LeftType, RightType)
+              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
+                                                       OO_Less, A.Context)
+              : std::nullopt;
+      if (SourceComparison) {
+        auto LeftAddress =
+            snapshot(address(std::move(Left), LeftType.withConst(), L), L);
+        auto RightAddress =
+            snapshot(address(std::move(Right), RightType.withConst(), L), L);
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      }
+      const auto Common =
+          utilityScalarComparisonType(A.Context, LeftType, RightType, true);
+      if (!Common)
+        reject(L, "ordered algorithm query",
+               "The range element and value have no ordered common type.");
+      const auto ComparisonType = type(*Common, L);
+      return binary("<", cast(std::move(Left), ComparisonType, L),
+                    cast(std::move(Right), ComparisonType, L), "bool", L);
+    };
     auto AlgorithmRangeValue = [&](unsigned Index)
         -> std::pair<Expression, QualType> {
       const auto IteratorType = Call->getArg(Index)->getType();
@@ -4931,16 +4959,6 @@ class FunctionLowering {
         if (!SDKForward && !SDKReverse)
           Comparator = snapshot(expression(Call->getArg(3)), L);
       }
-      std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKForward && !SDKReverse) {
-        auto Common = utilityScalarComparisonType(
-            A.Context, FirstRange.second->getPointeeType(),
-            Call->getArg(2)->getType(), true);
-        if (!Common)
-          reject(L, "ordered algorithm query",
-                 "The range element and value have no ordered common type.");
-        DefaultComparisonType = type(*Common, L);
-      }
       auto Less = [&](Expression Left, Expression Right, bool Reversed) {
         const auto &SDKComparator = Reversed ? SDKReverse : SDKForward;
         if (SDKComparator)
@@ -4950,9 +4968,13 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(3)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
-                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
-                      L);
+        return AlgorithmRangeValueLess(
+            std::move(Left),
+            Reversed ? Call->getArg(2)->getType()
+                     : FirstRange.second->getPointeeType(),
+            std::move(Right),
+            Reversed ? FirstRange.second->getPointeeType()
+                     : Call->getArg(2)->getType());
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(FirstRange.second, L);
@@ -5862,16 +5884,6 @@ class FunctionLowering {
           Comparator = snapshot(expression(Call->getArg(3)), L);
         }
       }
-      std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKForward) {
-        auto Common = utilityScalarComparisonType(
-            A.Context, FirstRange.second->getPointeeType(),
-            Call->getArg(2)->getType(), true);
-        if (!Common)
-          reject(L, "algorithm equal_range",
-                 "The range element and value have no ordered common type.");
-        DefaultComparisonType = type(*Common, L);
-      }
       auto Less = [&](Expression Left, Expression Right, bool Reversed) {
         const auto &SDKComparator = Reversed ? SDKReverse : SDKForward;
         if (SDKComparator)
@@ -5881,9 +5893,13 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(3)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
-                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
-                      L);
+        return AlgorithmRangeValueLess(
+            std::move(Left),
+            Reversed ? Call->getArg(2)->getType()
+                     : FirstRange.second->getPointeeType(),
+            std::move(Right),
+            Reversed ? FirstRange.second->getPointeeType()
+                     : Call->getArg(2)->getType());
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(FirstRange.second, L);
