@@ -29691,6 +29691,35 @@ void optional_vectors() {
   std::vector<std::optional<int>> copied(values);
   copied = values;
   copied.swap(values);
+  std::vector<std::optional<float>> floats;
+  std::optional<float> float_value(2.0f);
+  floats.push_back(float_value);
+  void *pointer = nullptr;
+  std::optional<void*> pointer_value(pointer);
+  std::vector<std::optional<void*>> pointers;
+  pointers.push_back(pointer_value);
+}
+bool compare_optional_vectors(const std::vector<std::optional<int>>& left,
+                              const std::vector<std::optional<int>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_optional_vectors(
+    const std::vector<std::vector<std::optional<int>>>& left,
+    const std::vector<std::vector<std::optional<int>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_float_optional_vectors(
+    const std::vector<std::optional<float>>& left,
+    const std::vector<std::optional<float>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool equal_pointer_optional_vectors(
+    const std::vector<std::optional<void*>>& left,
+    const std::vector<std::optional<void*>>& right) {
+  return left == right && !(left != right);
 }
 bool compare_pair_array_vectors(
     const std::vector<std::pair<std::array<int, 2>, int>>& left,
@@ -29939,6 +29968,13 @@ int f() {
 int f() {
   std::vector<std::optional<const int>> values;
   return values.size();
+}
+""",
+        "optional-void-pointer-order": """\
+#include <optional>
+bool f(const std::vector<std::optional<void*>>& left,
+       const std::vector<std::optional<void*>>& right) {
+  return left < right;
 }
 """,
         "array-void-pointer-order": """\

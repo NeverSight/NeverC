@@ -6014,6 +6014,18 @@ static bool utilityVectorArrayComparable(const State &S,
                       S, SM, Context, Array->ElementType, Equality, Depth + 1);
 }
 
+static bool utilityVectorOptionalComparable(const State &S,
+                                            const SourceManager &SM,
+                                            const ASTContext &Context,
+                                            QualType Element, bool Equality) {
+  const auto Optional = approvedUtilityOptionalRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  return Optional &&
+         utilityScalarComparisonType(Context, Optional->ElementType,
+                                     Optional->ElementType, !Equality)
+             .has_value();
+}
+
 static bool utilityNestedVectorComparable(const State &S,
                                           const SourceManager &SM,
                                           const UtilityVectorRecord &Vector,
@@ -6040,6 +6052,9 @@ static bool utilityNestedVectorComparable(const State &S,
     return true;
   if (utilityVectorArrayComparable(S, SM, Context, Vector.ElementType,
                                    Equality))
+    return true;
+  if (utilityVectorOptionalComparable(S, SM, Context, Vector.ElementType,
+                                      Equality))
     return true;
   const auto Nested = approvedUtilityVectorRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
@@ -21316,6 +21331,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           S, SM, Context, Left->ElementType, Equality);
       const bool ArrayElement = utilityVectorArrayComparable(
           S, SM, Context, Left->ElementType, Equality);
+      const bool OptionalElement = utilityVectorOptionalComparable(
+          S, SM, Context, Left->ElementType, Equality);
       const bool NestedRelation =
           NestedElement && utilityNestedVectorComparable(S, SM, *NestedElement,
                                                          Context, Equality);
@@ -21335,9 +21352,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        bool(FriendComparison) +
                                        bool(NamespaceComparison);
       const bool SourceComparison = ComparisonForms == 1;
-      if (Matching && (Arithmetic || StringElement || PairElement ||
-                       ArrayElement || UniquePointerElement || PointerElement ||
-                       SourceComparison || NestedRelation))
+      if (Matching &&
+          (Arithmetic || StringElement || PairElement || ArrayElement ||
+           OptionalElement || UniquePointerElement || PointerElement ||
+           SourceComparison || NestedRelation))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:
