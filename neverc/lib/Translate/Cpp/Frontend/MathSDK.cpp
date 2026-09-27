@@ -6359,14 +6359,33 @@ bool approvedUtilityVectorUniquePtrPointerEmplace(
              DeleterType, Context.getRecordType(Unique->Deleter.Record));
 }
 
+static bool
+utilityVectorComparableSourceElement(const State &S, const SourceManager &SM,
+                                     const UtilityVectorRecord &Vector,
+                                     const ASTContext &Context) {
+  const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record)
+    return false;
+  if (Vector.MoveElementConstructor)
+    return utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType);
+  return !Record->isInvalidDecl() && !Record->isUnion() &&
+         !Record->isDependentContext() && S.owns(SM, Record->getLocation()) &&
+         Record->isStandardLayout() && Record->isTrivial() &&
+         Record->hasTrivialDefaultConstructor() &&
+         Record->hasTrivialCopyConstructor() &&
+         Record->hasTrivialMoveConstructor() &&
+         Record->hasTrivialCopyAssignment() &&
+         Record->hasTrivialMoveAssignment() && Record->hasTrivialDestructor();
+}
+
 const CXXMethodDecl *approvedUtilityVectorElementComparison(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     OverloadedOperatorKind Operator, const ASTContext &Context) {
   const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!Record || !Vector.MoveElementConstructor ||
-      (Operator != OO_EqualEqual && Operator != OO_Less) ||
-      !utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType))
+  if (!Record || (Operator != OO_EqualEqual && Operator != OO_Less) ||
+      !utilityVectorComparableSourceElement(S, SM, Vector, Context))
     return nullptr;
   const auto ConstReference =
       Context.getLValueReferenceType(Vector.ElementType.withConst());
@@ -6394,9 +6413,8 @@ const FunctionDecl *approvedUtilityVectorFriendComparison(
     OverloadedOperatorKind Operator, const ASTContext &Context) {
   const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!Record || !Vector.MoveElementConstructor ||
-      (Operator != OO_EqualEqual && Operator != OO_Less) ||
-      !utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType))
+  if (!Record || (Operator != OO_EqualEqual && Operator != OO_Less) ||
+      !utilityVectorComparableSourceElement(S, SM, Vector, Context))
     return nullptr;
   const auto ConstReference =
       Context.getLValueReferenceType(Vector.ElementType.withConst());
@@ -6427,9 +6445,8 @@ const FunctionDecl *approvedUtilityVectorNamespaceComparison(
     OverloadedOperatorKind Operator, const ASTContext &Context) {
   const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!Record || !Vector.MoveElementConstructor ||
-      (Operator != OO_EqualEqual && Operator != OO_Less) ||
-      !utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType))
+  if (!Record || (Operator != OO_EqualEqual && Operator != OO_Less) ||
+      !utilityVectorComparableSourceElement(S, SM, Vector, Context))
     return nullptr;
   const auto *Parent = Record->getDeclContext();
   if (!isa<NamespaceDecl>(Parent) && !isa<TranslationUnitDecl>(Parent))

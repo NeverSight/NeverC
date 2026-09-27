@@ -61018,6 +61018,87 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorTrivialRecordRelationsRun) {
+  const auto Source = tmpFile("vector-trivial-record-relations.cpp");
+  const auto Output = tmpFile("vector-trivial-record-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  {
+    std::vector<Member> a;
+    std::vector<Member> b;
+    std::vector<Member> same;
+    std::vector<Member> prefix;
+    a.push_back(Member{1}); a.push_back(Member{2});
+    b.push_back(Member{1}); b.push_back(Member{3});
+    same.push_back(Member{1}); same.push_back(Member{2});
+    prefix.push_back(Member{1});
+    if (a == b || !(a != b) || !(a < b) || a > b ||
+        !(a <= b) || a >= b) return 1;
+    if (!(a == same) || a != same || a < same || a > same ||
+        !(a <= same) || !(a >= same)) return 2;
+    if (!(prefix < a) || prefix >= a || !(a > prefix)) return 3;
+    std::vector<std::vector<Member>> nested_a;
+    std::vector<std::vector<Member>> nested_b;
+    nested_a.push_back(a); nested_b.push_back(b);
+    if (!(nested_a < nested_b) || nested_a == nested_b) return 4;
+    std::vector<Friend> friends_a, friends_b;
+    friends_a.push_back(Friend{2}); friends_b.push_back(Friend{3});
+    if (!(friends_a < friends_b) || friends_a == friends_b ||
+        !(friends_a != friends_b)) return 5;
+    std::vector<owned::Free> free_a, free_b;
+    free_a.push_back(owned::Free{4}); free_b.push_back(owned::Free{5});
+    if (!(free_a < free_b) || free_a == free_b || !(free_a != free_b))
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-trivial-record-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

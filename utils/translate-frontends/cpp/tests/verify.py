@@ -30134,6 +30134,53 @@ void values() {
         check("v2-vector-optional-source-record-" + target,
               vector_optional_source_record_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_trivial_record_relations_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) { return a.value == b.value; }
+bool operator<(const Free &a, const Free &b) { return a.value < b.value; }
+}
+bool compare_member(const std::vector<Member>& a,
+                    const std::vector<Member>& b) {
+  return a == b || a != b || a < b || a > b || a <= b || a >= b;
+}
+bool compare_nested(const std::vector<std::vector<Member>>& a,
+                    const std::vector<std::vector<Member>>& b) {
+  return a == b || a != b || a < b || a > b || a <= b || a >= b;
+}
+bool compare_friend(const std::vector<Friend>& a,
+                    const std::vector<Friend>& b) {
+  return a == b || a < b;
+}
+bool compare_free(const std::vector<owned::Free>& a,
+                  const std::vector<owned::Free>& b) {
+  return a == b || a < b;
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-trivial-record-relations-" + target,
+              vector_trivial_record_relations_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     vector_pair_nested_optional_source = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30194,7 +30241,7 @@ int main() { std::vector<DeletedCopy> values; return values.size(); }
 """,
         "record-comparison": """\
 struct Entry { int value; };
-bool operator==(const Entry& left, const Entry& right) {
+int operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }

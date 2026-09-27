@@ -2697,6 +2697,11 @@ admitted scalar values, nested pairs, or arrays of comparable scalar values.
 Equality checks both fields; ordering uses the pair's first field before its
 second and keeps unordered floating values separate from equality. Nested
 vectors of those pairs use the same rule.
+For a source-owned trivial record element, vector comparisons accept one
+selected `bool` equality or less-than operator in a const member, hidden
+friend, or enclosing namespace. The selected call runs for each element until
+the lexicographic result is known, including through nested vectors.
+Ambiguous, non-const, and non-boolean operator forms remain rejected.
 The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
 work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,
