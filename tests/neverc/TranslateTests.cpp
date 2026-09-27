@@ -56063,6 +56063,137 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedRangeInsertRun) {
+  const auto Source = tmpFile("vector-source-owned-range-insert.cpp");
+  const auto Output = tmpFile("vector-source-owned-range-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copies;
+int copy_assignments;
+int move_assignments;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &other) : value(new int(*other.value)) {
+    ++live;
+    ++copies;
+  }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &other) {
+    int *next = new int(*other.value);
+    delete value;
+    value = next;
+    ++copy_assignments;
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    ++move_assignments;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int check(const std::vector<Box> &v, const int *expected, Size count) {
+  if (v.size() != count) return 1;
+  for (Size i = 0; i != count; ++i)
+    if (!v[i].value || *v[i].value != expected[i]) return 2;
+  for (Size i = 0; i != count; ++i)
+    for (Size j = i + 1; j != count; ++j)
+      if (v[i].value == v[j].value) return 3;
+  return 0;
+}
+int main() {
+  {
+    std::vector<Box> v;
+    v.reserve(12);
+    v.push_back(Box(1));
+    v.push_back(Box(4));
+    v.push_back(Box(5));
+    v.push_back(Box(6));
+    auto storage = v.data();
+    Box raw[]{Box(2), Box(3)};
+    auto middle = v.insert(v.cbegin() + 1, raw, raw + 2);
+    const int one[] = {1, 2, 3, 4, 5, 6};
+    if (middle != v.begin() + 1 || v.data() != storage ||
+        check(v, one, 6) || copy_assignments != 2 ||
+        move_assignments == 0) return 1;
+    std::vector<Box> source;
+    source.push_back(Box(7));
+    source.push_back(Box(8));
+    source.push_back(Box(9));
+    auto wrapped = v.insert(v.cbegin() + 5, source.cbegin(), source.cend());
+    const int two[] = {1, 2, 3, 4, 5, 7, 8, 9, 6};
+    if (wrapped != v.begin() + 5 || v.data() != storage ||
+        check(v, two, 9) || *source[0].value != 7 ||
+        *source[1].value != 8 || *source[2].value != 9) return 2;
+    auto appended = v.insert(v.cend(), {Box(10), Box(11)});
+    const int three[] = {1, 2, 3, 4, 5, 7, 8, 9, 6, 10, 11};
+    if (appended != v.begin() + 9 || v.data() != storage ||
+        check(v, three, 11)) return 3;
+    auto unchanged = v.insert(v.cbegin() + 2, raw, raw);
+    if (unchanged != v.begin() + 2 || v.data() != storage ||
+        check(v, three, 11)) return 4;
+  }
+  {
+    std::vector<Box> v;
+    v.reserve(6);
+    v.push_back(Box(4));
+    v.push_back(Box(5));
+    v.push_back(Box(6));
+    auto storage = v.data();
+    auto listed = v.insert(v.cbegin() + 1, {Box(2), Box(3)});
+    const int expected[] = {4, 2, 3, 5, 6};
+    if (listed != v.begin() + 1 || v.data() != storage ||
+        check(v, expected, 5)) return 5;
+  }
+  {
+    std::vector<Box> v;
+    v.reserve(2);
+    v.push_back(Box(1));
+    v.push_back(Box(5));
+    Box raw[]{Box(2), Box(3), Box(4)};
+    auto storage = v.data();
+    auto grown = v.insert(v.cbegin() + 1, raw, raw + 3);
+    const int expected[] = {1, 2, 3, 4, 5};
+    if (grown != v.begin() + 1 || v.data() == storage ||
+        check(v, expected, 5)) return 6;
+  }
+  {
+    std::vector<Box> v;
+    auto first = v.insert(v.cbegin(), {Box(8), Box(9)});
+    const int expected[] = {8, 9};
+    if (first != v.begin() || check(v, expected, 2)) return 7;
+  }
+  return live == 0 && allocations == releases && copies > 0 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-range-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEmplaceRun) {
   const auto Source = tmpFile("vector-source-owned-emplace.cpp");
   const auto Output = tmpFile("vector-source-owned-emplace.nc");

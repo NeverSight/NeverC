@@ -19891,7 +19891,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(1)->getType(),
                                   Context.getSizeType()))))
           return UtilityOperation::VectorInsert;
-        if ((!Vector->OwningElement || CopyableString) &&
+        if ((!Vector->OwningElement || CopyableString ||
+             (Vector->CopyElementConstructor &&
+              Vector->CopyElementAssignment)) &&
             Method->getNumParams() == 2 &&
             !Method->getPrimaryTemplate() &&
             Context.hasSameType(Method->getParamDecl(1)->getType(),
@@ -19902,7 +19904,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           if (List && Context.hasSameType(List->ElementType, Element))
             return UtilityOperation::VectorInsertRange;
         }
-        if ((!Vector->OwningElement || CopyableString) &&
+        if ((!Vector->OwningElement || CopyableString ||
+             (Vector->CopyElementConstructor &&
+              Vector->CopyElementAssignment)) &&
             Method->getNumParams() == 3 &&
             Method->getPrimaryTemplate() &&
             approvedStandardSDKDeclaration(S, SM,

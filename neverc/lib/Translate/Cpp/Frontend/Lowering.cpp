@@ -12065,6 +12065,7 @@ class FunctionLowering {
       std::optional<Expression> Value;
       std::optional<Expression> SourceAddress;
       std::optional<Expression> RangeCurrent;
+      std::optional<Expression> RangeStart;
       QualType RangeElementType;
       std::string RangePointerType = ConstPointerType;
       if (Operation == UtilityOperation::VectorInsert) {
@@ -12180,8 +12181,9 @@ class FunctionLowering {
           jump(RangeMeasured, L);
           label(RangeMeasured, L);
         }
+        RangeStart = snapshot(std::move(RangeBegin), L);
         RangeCurrent = temporary(RangePointerType, L);
-        assign(*RangeCurrent, std::move(RangeBegin), L);
+        assign(*RangeCurrent, json::Object(*RangeStart), L);
       }
       auto InsertValue = [&]() -> Expression {
         if (Value)
@@ -12238,6 +12240,20 @@ class FunctionLowering {
         else
           reject(L, "vector insert",
                  "The selected element constructor is unavailable.");
+      };
+      auto ConstructBulkElement = [&](Expression Target) {
+        if (Operation == UtilityOperation::VectorInsertRange) {
+          auto Source = snapshot(json::Object(*RangeCurrent), L);
+          assign(*RangeCurrent,
+                 binary("+", json::Object(*RangeCurrent),
+                        quantity(1, DifferenceType, L), RangePointerType, L),
+                 L);
+          copyVectorElement(std::move(Target),
+                            dereference(std::move(Source), L), *Vector, L,
+                            RangeElementType);
+        } else {
+          ConstructSourceOwned(std::move(Target));
+        }
       };
       auto Member = [&](const char *Name) {
         return Expression{
@@ -12306,11 +12322,14 @@ class FunctionLowering {
              Call->getNumArgs() == 2 && !SourceAddress))
           reject(L, "vector insert",
                  "The selected element insertion cannot shift live elements.");
-        if (Operation == UtilityOperation::VectorInsert &&
-            Call->getNumArgs() == 3) {
-          if (!SourceOwnedCopyArgument || !Vector->CopyElementAssignment)
+        if ((Operation == UtilityOperation::VectorInsert &&
+             Call->getNumArgs() == 3) ||
+            Operation == UtilityOperation::VectorInsertRange) {
+          if ((Operation == UtilityOperation::VectorInsert &&
+               !SourceOwnedCopyArgument) ||
+              !Vector->CopyElementConstructor || !Vector->CopyElementAssignment)
             reject(L, "vector insert",
-                   "The selected element cannot be inserted by count.");
+                   "The selected element cannot be inserted by range.");
           auto SuffixCount =
               snapshot(cast(binary("-", json::Object(End),
                                    json::Object(Position), DifferenceType, L),
@@ -12332,6 +12351,12 @@ class FunctionLowering {
           auto Remaining = snapshot(binary("-", json::Object(Count),
                                            json::Object(Extra), SizeType, L),
                                     L);
+          if (Operation == UtilityOperation::VectorInsertRange)
+            assign(*RangeCurrent,
+                   binary("+", json::Object(*RangeStart),
+                          cast(json::Object(Remaining), DifferenceType, L),
+                          RangePointerType, L),
+                   L);
           auto NewEnd =
               snapshot(binary("+", json::Object(End),
                               cast(json::Object(Count), DifferenceType, L),
@@ -12350,7 +12375,7 @@ class FunctionLowering {
                         "bool", L),
                  AppendOne, Appended, L);
           label(AppendOne, L);
-          ConstructSourceOwned(dereference(json::Object(AppendTarget), L));
+          ConstructBulkElement(dereference(json::Object(AppendTarget), L));
           assign(AppendTarget,
                  binary("+", json::Object(AppendTarget),
                         quantity(1, DifferenceType, L), PointerType, L),
@@ -12413,28 +12438,33 @@ class FunctionLowering {
                              dereference(json::Object(ShiftSource), L), L);
           jump(ShiftCheck, L);
           label(Shifted, L);
-          auto CopySource = temporary(ConstPointerType, L);
-          assign(CopySource,
-                 cast(json::Object(*SourceAddress), ConstPointerType, L), L);
-          const auto CheckEnd = labelName(), Adjust = labelName();
-          const auto CopyReady = labelName();
-          branch(binary(">=", json::Object(CopySource),
-                        cast(json::Object(Position), ConstPointerType, L),
-                        "bool", L),
-                 CheckEnd, CopyReady, L);
-          label(CheckEnd, L);
-          branch(binary("<", json::Object(CopySource),
-                        cast(json::Object(NewEnd), ConstPointerType, L), "bool",
-                        L),
-                 Adjust, CopyReady, L);
-          label(Adjust, L);
-          assign(CopySource,
-                 binary("+", json::Object(CopySource),
-                        cast(json::Object(Count), DifferenceType, L),
-                        ConstPointerType, L),
-                 L);
-          jump(CopyReady, L);
-          label(CopyReady, L);
+          std::optional<Expression> CopySource;
+          if (Operation == UtilityOperation::VectorInsertRange) {
+            assign(*RangeCurrent, json::Object(*RangeStart), L);
+          } else {
+            CopySource = temporary(ConstPointerType, L);
+            assign(*CopySource,
+                   cast(json::Object(*SourceAddress), ConstPointerType, L), L);
+            const auto CheckEnd = labelName(), Adjust = labelName();
+            const auto CopyReady = labelName();
+            branch(binary(">=", json::Object(*CopySource),
+                          cast(json::Object(Position), ConstPointerType, L),
+                          "bool", L),
+                   CheckEnd, CopyReady, L);
+            label(CheckEnd, L);
+            branch(binary("<", json::Object(*CopySource),
+                          cast(json::Object(NewEnd), ConstPointerType, L),
+                          "bool", L),
+                   Adjust, CopyReady, L);
+            label(Adjust, L);
+            assign(*CopySource,
+                   binary("+", json::Object(*CopySource),
+                          cast(json::Object(Count), DifferenceType, L),
+                          ConstPointerType, L),
+                   L);
+            jump(CopyReady, L);
+            label(CopyReady, L);
+          }
           auto FillTarget = temporary(PointerType, L);
           auto FillIndex = temporary(SizeType, L);
           assign(FillTarget, json::Object(Position), L);
@@ -12447,9 +12477,22 @@ class FunctionLowering {
                         "bool", L),
                  FillOne, Filled, L);
           label(FillOne, L);
-          assignMemorySource(dereference(json::Object(FillTarget), L),
-                             Vector->ElementType, Vector->CopyElementAssignment,
-                             dereference(json::Object(CopySource), L), L);
+          if (Operation == UtilityOperation::VectorInsertRange) {
+            auto Source = snapshot(json::Object(*RangeCurrent), L);
+            assign(*RangeCurrent,
+                   binary("+", json::Object(*RangeCurrent),
+                          quantity(1, DifferenceType, L), RangePointerType, L),
+                   L);
+            assignMemorySource(dereference(json::Object(FillTarget), L),
+                               Vector->ElementType,
+                               Vector->CopyElementAssignment,
+                               dereference(std::move(Source), L), L);
+          } else {
+            assignMemorySource(dereference(json::Object(FillTarget), L),
+                               Vector->ElementType,
+                               Vector->CopyElementAssignment,
+                               dereference(json::Object(*CopySource), L), L);
+          }
           assign(FillTarget,
                  binary("+", json::Object(FillTarget),
                         quantity(1, DifferenceType, L), PointerType, L),
@@ -12649,8 +12692,9 @@ class FunctionLowering {
                                    L);
         auto SuffixDestination = temporary(PointerType, L);
         assign(SuffixDestination, json::Object(InsertSlot), L);
-        if (Operation == UtilityOperation::VectorInsert &&
-            Call->getNumArgs() == 3) {
+        if ((Operation == UtilityOperation::VectorInsert &&
+             Call->getNumArgs() == 3) ||
+            Operation == UtilityOperation::VectorInsertRange) {
           auto InsertIndex = temporary(SizeType, L);
           assign(InsertIndex, quantity(0, SizeType, L), L);
           const auto InsertCheck = labelName(), InsertOne = labelName();
@@ -12661,7 +12705,7 @@ class FunctionLowering {
                         "bool", L),
                  InsertOne, Inserted, L);
           label(InsertOne, L);
-          ConstructSourceOwned(dereference(json::Object(SuffixDestination), L));
+          ConstructBulkElement(dereference(json::Object(SuffixDestination), L));
           assign(SuffixDestination,
                  binary("+", json::Object(SuffixDestination),
                         quantity(1, DifferenceType, L), PointerType, L),

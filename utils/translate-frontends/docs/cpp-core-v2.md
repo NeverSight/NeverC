@@ -2704,6 +2704,15 @@ the displaced tail is resolved at its new position. On growth it constructs
 the inserted copies before relocating the old suffix and prefix. Host O0/O2
 fixtures cover zero count, both in-place shift cases, append, aliases, growth,
 deep copies, and balanced release.
+Range `insert(position, first, last)` with authenticated raw pointers or
+vector iterators, and `insert(position, initializer_list<T>)`, also accept
+source-owned elements with supported copy construction and assignment. The
+input range must be outside the destination vector. Within capacity, the
+elements past the old end are copy-constructed first, the old tail is shifted,
+and the insertion gap is copy-assigned. Growth copy-constructs the full range
+before relocating the old suffix and prefix. Host O0/O2 fixtures cover both
+in-place shift cases, append, empty ranges, growth, deep copies, and balanced
+release.
 Positional `emplace` accepts zero arguments when the element has a supported
 default constructor, one nonconst rvalue of the exact element type, or one
 const lvalue when a supported copy constructor exists. For an
