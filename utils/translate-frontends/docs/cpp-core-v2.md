@@ -1654,8 +1654,8 @@ record elements with a selected supported copy assignment. Their pinned public
 and internal fill bodies, pointer iterator category, count conversion, loop and
 selected assignment are checked before lowering. The value argument stays
 bound while each destination is assigned, including when it aliases an element
-of the range. Other record algorithm forms and nonwritable destinations remain
-rejected.
+of the range. Other record transfer and fill forms, and nonwritable
+destinations, remain rejected.
 
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
@@ -1735,8 +1735,12 @@ Record predicate overloads remain rejected.
 
 `std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
 mutable vector and string iterators, while preserving the existing value
-conversion, single evaluation, and empty-range behavior. Const iterators and
-record elements remain outside these mutation operations.
+conversion, single evaluation, and empty-range behavior. `std::iter_swap`,
+`std::swap_ranges` and `std::reverse` also accept writable raw-pointer or
+authenticated wrapped ranges of exact source-owned trivial records. They copy
+complete record values during swaps, retain the returned second-range iterator
+form for `swap_ranges`, and evaluate each iterator argument once. Empty ranges
+perform no writes. Const iterators and nontrivial records remain rejected.
 
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-

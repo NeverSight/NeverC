@@ -31694,6 +31694,35 @@ void sort_free(owned::Free *first, owned::Free *last) {
           'void f(Entry*first,Entry*last){std::sort(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_swap_reverse_source = """\
+#include <algorithm>
+#include <vector>
+struct Entry { int value; };
+void reverse_raw(Entry *first, Entry *last) {
+  std::reverse(first, last);
+}
+void reverse_wrapped(std::vector<Entry> &values) {
+  std::reverse(values.begin(), values.end());
+}
+void swap_raw_wrapped(Entry *first, Entry *last,
+                      std::vector<Entry> &values) {
+  std::swap_ranges(first, last, values.begin());
+  std::iter_swap(first, values.begin());
+}
+void swap_wrapped_raw(std::vector<Entry> &values, Entry *other) {
+  std::swap_ranges(values.begin(), values.end(), other);
+  std::iter_swap(values.begin(), other);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-swap-reverse-" + target,
+              source_record_swap_reverse_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-reverse-nontrivial",
+          '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
+          'void f(Entry*first,Entry*last){std::reverse(first,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

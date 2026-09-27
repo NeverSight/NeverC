@@ -22150,6 +22150,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Wrapped->IteratorType;
     return std::nullopt;
   };
+  auto AlgorithmWritableRecordRangeParameter =
+      [&](unsigned Index) -> std::optional<QualType> {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return std::nullopt;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Same(Call->getArg(Index)->getType(), Parameter))
+      return std::nullopt;
+    auto Pointer = Parameter;
+    if (!utilityObjectPointer(Context, Pointer)) {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      if (!Wrapped || !utilityObjectPointer(Context, Wrapped->IteratorType))
+        return std::nullopt;
+      Pointer = Wrapped->IteratorType;
+    }
+    if (Pointer->getPointeeType().isConstQualified() ||
+        !utilityComparableSourceElement(S, SM, Pointer->getPointeeType(), false,
+                                        Context))
+      return std::nullopt;
+    return Pointer;
+  };
   auto AlgorithmRecordComparisonRangeParameter =
       [&](unsigned Index,
           OverloadedOperatorKind Operator) -> std::optional<QualType> {
@@ -23466,11 +23487,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto First = AlgorithmRangePointerParameter(0);
     const auto Last = AlgorithmRangePointerParameter(1);
     const auto Second = AlgorithmRangePointerParameter(2);
-    if (First && Last && Second &&
+    const auto RecordFirst = AlgorithmWritableRecordRangeParameter(0);
+    const auto RecordLast = AlgorithmWritableRecordRangeParameter(1);
+    const auto RecordSecond = AlgorithmWritableRecordRangeParameter(2);
+    const bool Scalar =
+        First && Last && Second &&
         utilityAlgorithmWritableScalarPointer(Context, *First) &&
         utilityAlgorithmWritableScalarPointer(Context, *Second) &&
         Context.hasSameUnqualifiedType((*First)->getPointeeType(),
-                                       (*Second)->getPointeeType()))
+                                       (*Second)->getPointeeType());
+    const bool Record =
+        RecordFirst && RecordLast && RecordSecond &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordSecond)->getPointeeType());
+    if (Scalar || Record)
       return UtilityOperation::AlgorithmSwapRanges;
   }
   if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
@@ -23481,8 +23511,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto First = AlgorithmRangePointerParameter(0);
     const auto Last = AlgorithmRangePointerParameter(1);
-    if (First && Last &&
-        utilityAlgorithmWritableScalarPointer(Context, *First))
+    if ((First && Last &&
+         utilityAlgorithmWritableScalarPointer(Context, *First)) ||
+        (AlgorithmWritableRecordRangeParameter(0) &&
+         AlgorithmWritableRecordRangeParameter(1)))
       return UtilityOperation::AlgorithmReverse;
   }
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
@@ -23854,11 +23886,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto First = AlgorithmRangePointerParameter(0);
     const auto Second = AlgorithmRangePointerParameter(1);
-    if (First && Second &&
+    const auto RecordFirst = AlgorithmWritableRecordRangeParameter(0);
+    const auto RecordSecond = AlgorithmWritableRecordRangeParameter(1);
+    const bool Scalar =
+        First && Second &&
         utilityAlgorithmWritableScalarPointer(Context, *First) &&
         utilityAlgorithmWritableScalarPointer(Context, *Second) &&
         Context.hasSameUnqualifiedType((*First)->getPointeeType(),
-                                       (*Second)->getPointeeType()))
+                                       (*Second)->getPointeeType());
+    const bool Record =
+        RecordFirst && RecordSecond &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordSecond)->getPointeeType());
+    if (Scalar || Record)
       return UtilityOperation::AlgorithmIterSwap;
   }
   if (Origin->Path == "__algorithm/rotate.h" && Name == "rotate" &&

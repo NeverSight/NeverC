@@ -55682,6 +55682,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSwapAndReverseRun) {
+  const auto Source = tmpFile("source-record-swap-reverse.cpp");
+  const auto Output = tmpFile("source-record-swap-reverse.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int id, payload; };
+int main() {
+  Item raw[4]{{1, 10}, {2, 20}, {3, 30}, {4, 40}};
+  int first_effects = 0, last_effects = 0;
+  std::reverse((++first_effects, raw), (++last_effects, raw + 4));
+  if (first_effects != 1 || last_effects != 1 ||
+      raw[0].id != 4 || raw[0].payload != 40 ||
+      raw[1].id != 3 || raw[1].payload != 30 ||
+      raw[2].id != 2 || raw[2].payload != 20 ||
+      raw[3].id != 1 || raw[3].payload != 10) return 1;
+  std::vector<Item> values{Item{5, 50}, Item{6, 60},
+                           Item{7, 70}, Item{8, 80}};
+  auto output = std::swap_ranges(raw, raw + 2, values.begin() + 1);
+  if (output != values.begin() + 3 ||
+      raw[0].id != 6 || raw[0].payload != 60 ||
+      raw[1].id != 7 || raw[1].payload != 70 ||
+      values[1].id != 4 || values[1].payload != 40 ||
+      values[2].id != 3 || values[2].payload != 30) return 2;
+  std::iter_swap(raw + 2, values.begin());
+  if (raw[2].id != 5 || raw[2].payload != 50 ||
+      values[0].id != 2 || values[0].payload != 20) return 3;
+  std::reverse(values.begin(), values.end());
+  if (values[0].id != 8 || values[0].payload != 80 ||
+      values[1].id != 3 || values[1].payload != 30 ||
+      values[2].id != 4 || values[2].payload != 40 ||
+      values[3].id != 2 || values[3].payload != 20) return 4;
+  std::iter_swap(values.begin(), values.begin());
+  if (values[0].id != 8 || values[0].payload != 80) return 5;
+  auto untouched = std::swap_ranges(values.begin(), values.begin(), raw);
+  if (untouched != raw) return 6;
+  std::vector<Item> empty;
+  std::reverse(empty.begin(), empty.end());
+  return empty.empty() ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-swap-reverse" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

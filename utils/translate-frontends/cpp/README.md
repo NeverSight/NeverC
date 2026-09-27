@@ -438,6 +438,9 @@ raw or authenticated wrapped source-record ranges and exact const record keys.
 Default `sort` also accepts writable raw or authenticated wrapped ranges of
 those trivial source records, using the selected Boolean `operator<` on current
 range elements.
+`iter_swap`, `swap_ranges` and `reverse` accept writable raw or authenticated
+wrapped ranges of exact source-owned trivial records, preserving complete
+record values and the returned output iterator form.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,
