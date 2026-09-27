@@ -2677,9 +2677,11 @@ target before lowering.
 For a vector of scalar, nested optional, or assignable fixed-array optionals,
 back and positional emplacement accept a directly convertible scalar or an
 exact stored record value, `nullopt`, or `in_place` with zero or one value
-argument. Record arguments are
-captured before vector growth or shifting, including references into the same
-vector.
+argument. Record arguments are captured before vector growth or shifting,
+including references into the same vector.
+Pairs held by vectors also admit nested trivial scalar optionals and
+assignable fixed-array optionals as fields. Copy, assignment, and all six
+comparisons recurse through the optional engagement and stored value.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

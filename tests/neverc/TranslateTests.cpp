@@ -60686,6 +60686,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPairNestedOptionalRelationsRun) {
+  const auto Source = tmpFile("vector-pair-nested-optional-relations.cpp");
+  const auto Output = tmpFile("vector-pair-nested-optional-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <array>
+#include <optional>
+#include <utility>
+#include <vector>
+using Inner = std::optional<int>;
+using Outer = std::optional<Inner>;
+using Row = std::pair<Outer, int>;
+int main() {
+  {
+    std::vector<Row> left;
+    std::vector<Row> right;
+    left.push_back(Row(Outer(), 4));
+    right.push_back(Row(Outer(std::in_place), 4));
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 1;
+    left[0].first = Outer(std::in_place);
+    right[0].first = Outer(Inner(2));
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 2;
+    left[0].first = Outer(Inner(3));
+    if (left == right || !(left != right) || left < right ||
+        !(left > right) || left <= right || !(left >= right)) return 3;
+    std::vector<Row> copied(left);
+    copied = right;
+    if (!(copied == right) || copied.data() == right.data()) return 4;
+    std::vector<std::vector<Row>> rows_left;
+    std::vector<std::vector<Row>> rows_right;
+    rows_left.push_back(right);
+    rows_right.push_back(left);
+    if (!(rows_left < rows_right) || rows_left == rows_right) return 5;
+    using Array = std::array<int, 2>;
+    using ArrayRow = std::pair<std::optional<Array>, int>;
+    std::vector<ArrayRow> arrays_left;
+    std::vector<ArrayRow> arrays_right;
+    arrays_left.push_back(ArrayRow(std::optional<Array>(Array{{1, 2}}), 1));
+    arrays_right.push_back(ArrayRow(std::optional<Array>(Array{{1, 3}}), 1));
+    if (!(arrays_left < arrays_right) || arrays_left == arrays_right ||
+        !(arrays_left != arrays_right)) return 6;
+    arrays_left = arrays_right;
+    if (!(arrays_left == arrays_right)) return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-nested-optional-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOptionalValuesRun) {
   const auto Source = tmpFile("vector-optional-values.cpp");
   const auto Output = tmpFile("vector-optional-values.nc");

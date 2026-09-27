@@ -30106,6 +30106,46 @@ void values() {
         check("v2-vector-optional-record-emplace-" + target,
               vector_optional_record_emplace_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_pair_nested_optional_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <array>
+#include <optional>
+#include <utility>
+#include <vector>
+using Inner = std::optional<int>;
+using Outer = std::optional<Inner>;
+using Row = std::pair<Outer, int>;
+void values() {
+  std::vector<Row> rows;
+  rows.push_back(Row(Outer(Inner(3)), 4));
+  rows.push_back(Row(Outer(std::in_place), 5));
+  std::vector<Row> copied(rows);
+  copied = rows;
+  std::vector<std::vector<Row>> nested;
+  nested.push_back(rows);
+  using ArrayRow = std::pair<std::optional<std::array<int, 2>>, int>;
+  std::vector<ArrayRow> arrays;
+  arrays.push_back(ArrayRow(std::optional<std::array<int, 2>>(
+      std::array<int, 2>{{6, 7}}), 8));
+}
+bool compare(const std::vector<Row>& left, const std::vector<Row>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested(const std::vector<std::vector<Row>>& left,
+                    const std::vector<std::vector<Row>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-pair-nested-optional-" + target,
+              vector_pair_nested_optional_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30172,6 +30212,14 @@ bool f(const std::vector<std::optional<void*>>& left,
 #include <utility>
 bool f(const std::vector<std::pair<std::optional<void*>, int>>& left,
        const std::vector<std::pair<std::optional<void*>, int>>& right) {
+  return left < right;
+}
+""",
+        "pair-nested-optional-void-pointer-order": """\
+#include <optional>
+#include <utility>
+using Row = std::pair<std::optional<std::optional<void*>>, int>;
+bool f(const std::vector<Row>& left, const std::vector<Row>& right) {
   return left < right;
 }
 """,

@@ -2977,9 +2977,10 @@ static bool utilityPairAssignableValue(const State &S,
   if (const auto Optional =
           approvedUtilityOptionalRecord(S, SM, Record, Context))
     return !Optional->ElementType.isConstQualified() &&
-           utilityScalar(Context, Optional->ElementType) &&
            Optional->Record->hasTrivialCopyAssignment() &&
-           Optional->Record->hasTrivialMoveAssignment();
+           Optional->Record->hasTrivialMoveAssignment() &&
+           utilityPairAssignableValue(S, SM, Context, Optional->ElementType,
+                                      Depth + 1);
   if (utilityArrayValue(S, SM, Context, Type))
     return utilityArrayTriviallyAssignable(Context, Type);
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
