@@ -2711,6 +2711,11 @@ releases the old storage before copying new elements, as in the pinned libc++;
 an argument referring to old storage is preserved with a temporary copy.
 Host O0/O2 fixtures check assignment and destruction order, reuse, growth,
 aliased in-place and growing fill, and balanced release.
+`assign(first, last)` with authenticated raw pointers or vector iterators and
+`assign(initializer_list<T>)` use the same copy-assignment and copy-construction
+boundary for source-owned elements. Input ranges must be outside the destination
+vector. Host O0/O2 fixtures check single endpoint evaluation, capacity reuse,
+empty ranges, backing-array cleanup, growth order, and balanced release.
 `resize(count)` admits a supported default constructor, and
 `resize(count, const T&)` admits a supported copy constructor. Shrinking destroys
 the removed tail; growth within capacity constructs new elements in place.

@@ -12648,11 +12648,13 @@ class FunctionLowering {
       if (!Object || !Vector)
         reject(L, "vector assign",
                "The selected std::vector layout is unavailable.");
-      if (Operation == UtilityOperation::VectorAssignFill &&
+      const bool SourceOwnedFill =
+          Operation == UtilityOperation::VectorAssignFill;
+      if ((SourceOwnedFill ||
+           Operation == UtilityOperation::VectorAssignRange) &&
           Vector->MoveElementConstructor) {
         auto Receiver =
             snapshot(address(lvalue(Object), Object->getType(), L), L);
-        auto Count = snapshot(expression(Call->getArg(0)), L);
         const auto PointerType = type(Vector->PointerType, L);
         const auto ConstPointerType =
             type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
@@ -12660,13 +12662,72 @@ class FunctionLowering {
         const auto SizeType = type(A.Context.getSizeType(), L);
         const uint64_t ElementBytes =
             A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+        auto Count = temporary(SizeType, L);
         auto Source = temporary(ConstPointerType, L);
-        assign(Source,
-               cast(snapshot(address(lvalue(Call->getArg(1)),
-                                     Call->getArg(1)->getType(), L),
-                             L),
-                    ConstPointerType, L),
-               L);
+        if (SourceOwnedFill) {
+          assign(Count, expression(Call->getArg(0)), L);
+          assign(Source,
+                 cast(snapshot(address(lvalue(Call->getArg(1)),
+                                       Call->getArg(1)->getType(), L),
+                               L),
+                      ConstPointerType, L),
+                 L);
+        } else if (Call->getNumArgs() == 1) {
+          auto List = approvedUtilityInitializerListRecord(
+              A.S, A.Sources,
+              Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+          if (!List)
+            reject(L, "vector assign",
+                   "The selected initializer-list layout is unavailable.");
+          auto ListValue = snapshot(expression(Call->getArg(0)), L);
+          assign(Source,
+                 cast(fieldStorage(json::Object(ListValue), List->Begin, L),
+                      ConstPointerType, L),
+                 L);
+          assign(Count, fieldStorage(std::move(ListValue), List->Size, L), L);
+        } else {
+          const auto FirstType = Call->getArg(0)->getType();
+          auto Wrapped = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, FirstType->getAsCXXRecordDecl(), A.Context);
+          Expression First, Last;
+          if (Wrapped) {
+            auto FirstValue = snapshot(expression(Call->getArg(0)), L);
+            auto LastValue = snapshot(expression(Call->getArg(1)), L);
+            First = snapshot(
+                fieldStorage(std::move(FirstValue), Wrapped->Current, L), L);
+            Last = snapshot(
+                fieldStorage(std::move(LastValue), Wrapped->Current, L), L);
+          } else {
+            First = snapshot(expression(Call->getArg(0)), L);
+            Last = snapshot(expression(Call->getArg(1)), L);
+          }
+          assign(Count, quantity(0, SizeType, L), L);
+          const auto MeasureRange = labelName();
+          const auto RangeMeasured = labelName();
+          branch(binary("!=", json::Object(First), json::Object(Last),
+                        "bool", L),
+                 MeasureRange, RangeMeasured, L);
+          label(MeasureRange, L);
+          assign(Count,
+                 cast(binary("-", json::Object(Last), json::Object(First),
+                             DifferenceType, L),
+                      SizeType, L),
+                 L);
+          jump(RangeMeasured, L);
+          label(RangeMeasured, L);
+          assign(Source, cast(std::move(First), ConstPointerType, L), L);
+        }
+        const auto SourceElementType =
+            SourceOwnedFill ? Call->getArg(1)->getType()
+                            : Vector->ElementType.withConst();
+        auto AdvanceSource = [&] {
+          if (!SourceOwnedFill)
+            assign(Source,
+                   binary("+", json::Object(Source),
+                          quantity(1, DifferenceType, L), ConstPointerType,
+                          L),
+                   L);
+        };
         auto Member = [&](const char *Name) {
           return Expression{
               {"kind", "member"},
@@ -12731,6 +12792,7 @@ class FunctionLowering {
                            Vector->ElementType,
                            Vector->CopyElementAssignment,
                            dereference(json::Object(Source), L), L);
+        AdvanceSource();
         assign(Current,
                binary("+", json::Object(Current),
                       quantity(1, DifferenceType, L), PointerType, L),
@@ -12756,7 +12818,8 @@ class FunctionLowering {
         label(AppendOne, L);
         copyVectorElement(dereference(json::Object(Current), L),
                           dereference(json::Object(Source), L), *Vector, L,
-                          Call->getArg(1)->getType());
+                          SourceElementType);
+        AdvanceSource();
         assign(Current,
                binary("+", json::Object(Current),
                       quantity(1, DifferenceType, L), PointerType, L),
@@ -12775,29 +12838,35 @@ class FunctionLowering {
         assign(Member("nct_vector_end"), json::Object(Current), L);
         jump(Done, L);
         label(Grow, L);
-        const auto CheckAliasEnd = labelName(), Capture = labelName();
         const auto ReleaseOld = labelName();
-        branch(cast(json::Object(Begin), "bool", L), CheckAliasEnd,
-               ReleaseOld, L);
-        label(CheckAliasEnd, L);
-        const auto CheckAliasStart = labelName();
-        branch(binary("<", json::Object(Source),
-                      cast(json::Object(End), ConstPointerType, L), "bool", L),
-               CheckAliasStart, ReleaseOld, L);
-        label(CheckAliasStart, L);
-        branch(binary(">=", json::Object(Source),
-                      cast(json::Object(Begin), ConstPointerType, L), "bool", L),
-               Capture, ReleaseOld, L);
-        label(Capture, L);
-        copyVectorElement(json::Object(AliasValue),
-                          dereference(json::Object(Source), L), *Vector, L,
-                          Call->getArg(1)->getType());
-        assign(Source,
-               cast(address(json::Object(AliasValue), Vector->ElementType, L),
-                    ConstPointerType, L),
-               L);
-        assign(Aliased, boolean(true, L), L);
-        jump(ReleaseOld, L);
+        if (SourceOwnedFill) {
+          const auto CheckAliasEnd = labelName(), Capture = labelName();
+          branch(cast(json::Object(Begin), "bool", L), CheckAliasEnd,
+                 ReleaseOld, L);
+          label(CheckAliasEnd, L);
+          const auto CheckAliasStart = labelName();
+          branch(binary("<", json::Object(Source),
+                        cast(json::Object(End), ConstPointerType, L), "bool", L),
+                 CheckAliasStart, ReleaseOld, L);
+          label(CheckAliasStart, L);
+          branch(binary(">=", json::Object(Source),
+                        cast(json::Object(Begin), ConstPointerType, L),
+                        "bool", L),
+                 Capture, ReleaseOld, L);
+          label(Capture, L);
+          copyVectorElement(json::Object(AliasValue),
+                            dereference(json::Object(Source), L), *Vector, L,
+                            SourceElementType);
+          assign(Source,
+                 cast(address(json::Object(AliasValue), Vector->ElementType,
+                              L),
+                      ConstPointerType, L),
+                 L);
+          assign(Aliased, boolean(true, L), L);
+          jump(ReleaseOld, L);
+        } else {
+          jump(ReleaseOld, L);
+        }
         label(ReleaseOld, L);
         destroyVectorElements(json::Object(Begin), json::Object(End), *Vector,
                               L);
@@ -12865,7 +12934,8 @@ class FunctionLowering {
         label(GrowOne, L);
         copyVectorElement(dereference(json::Object(NewCurrent), L),
                           dereference(json::Object(Source), L), *Vector, L,
-                          Call->getArg(1)->getType());
+                          SourceElementType);
+        AdvanceSource();
         assign(NewCurrent,
                binary("+", json::Object(NewCurrent),
                       quantity(1, DifferenceType, L), PointerType, L),

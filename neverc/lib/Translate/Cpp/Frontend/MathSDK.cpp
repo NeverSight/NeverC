@@ -20013,7 +20013,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorAssignFill;
       }
-      if ((!Vector->OwningElement || CopyableString) &&
+      if ((!Vector->OwningElement || CopyableString ||
+           (Vector->CopyElementConstructor &&
+            Vector->CopyElementAssignment)) &&
           Method->getNumParams() == 1 &&
           !Method->getPrimaryTemplate() &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
@@ -20024,7 +20026,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (List && Context.hasSameType(List->ElementType, Element))
           return UtilityOperation::VectorAssignRange;
       }
-      if ((!Vector->OwningElement || CopyableString) &&
+      if ((!Vector->OwningElement || CopyableString ||
+           (Vector->CopyElementConstructor &&
+            Vector->CopyElementAssignment)) &&
           Method->getNumParams() == 2 &&
           Method->getPrimaryTemplate() &&
           approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
