@@ -13711,8 +13711,15 @@ class FunctionLowering {
           A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
       const auto *FriendComparison = approvedUtilityVectorFriendComparison(
           A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
-      const bool SourceComparison = (MemberComparison || FriendComparison) &&
-                                    !(MemberComparison && FriendComparison);
+      const auto *NamespaceComparison =
+          approvedUtilityVectorNamespaceComparison(
+              A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
+      const unsigned ComparisonForms = bool(MemberComparison) +
+                                       bool(FriendComparison) +
+                                       bool(NamespaceComparison);
+      const bool SourceComparison = ComparisonForms == 1;
+      const auto *FreeComparison =
+          FriendComparison ? FriendComparison : NamespaceComparison;
       if (LeftVector->OwningElement && !String && !Unique && !SourceComparison)
         reject(L, "vector comparison",
                "The selected owning element comparison is unavailable.");
@@ -13767,11 +13774,11 @@ class FunctionLowering {
         } else {
           Args.push_back(snapshot(
               cast(std::move(Left),
-                   type(FriendComparison->getParamDecl(0)->getType(), L), L),
+                   type(FreeComparison->getParamDecl(0)->getType(), L), L),
               L));
           Args.push_back(snapshot(
               cast(std::move(Right),
-                   type(FriendComparison->getParamDecl(1)->getType(), L), L),
+                   type(FreeComparison->getParamDecl(1)->getType(), L), L),
               L));
         }
         chargeCall(Args, L);
@@ -13781,7 +13788,7 @@ class FunctionLowering {
             {"callee",
              A.name(MemberComparison
                         ? static_cast<const FunctionDecl *>(MemberComparison)
-                        : FriendComparison)},
+                        : FreeComparison)},
             {"args", std::move(Args)},
             {"target", json::Object(Compared)},
             {"loc", A.loc(L)}});

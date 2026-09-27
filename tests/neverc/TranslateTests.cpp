@@ -56171,6 +56171,84 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedNamespaceRelationsRun) {
+  const auto Source = tmpFile("vector-source-owned-namespace-relations.cpp");
+  const auto Output = tmpFile("vector-source-owned-namespace-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int comparisons;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+namespace sample {
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+bool operator==(const Box &, const Box &);
+bool operator<(const Box &, const Box &);
+bool operator==(const Box &left, const Box &right) {
+  ++comparisons;
+  return *left.value == *right.value;
+}
+bool operator<(const Box &left, const Box &right) {
+  ++comparisons;
+  return *left.value < *right.value;
+}
+}
+int main() {
+  {
+    std::vector<sample::Box> a;
+    std::vector<sample::Box> b;
+    std::vector<sample::Box> equal;
+    a.emplace_back(1);
+    a.emplace_back(2);
+    b.emplace_back(1);
+    b.emplace_back(3);
+    equal.emplace_back(1);
+    equal.emplace_back(2);
+    if (a == b || !(a != b) || !(a < b) || a > b ||
+        !(a <= b) || a >= b) return 1;
+    if (!(b > a) || b < a || !(b >= a) || b <= a) return 2;
+    if (!(a == equal) || a != equal || a < equal || a > equal ||
+        !(a <= equal) || !(a >= equal)) return 3;
+    if (comparisons == 0) return 4;
+  }
+  return live == 0 && allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-source-owned-namespace-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRun) {
   const auto Source = tmpFile("vector-source-owned-erase.cpp");
   const auto Output = tmpFile("vector-source-owned-erase.nc");

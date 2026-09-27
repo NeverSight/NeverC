@@ -6048,6 +6048,47 @@ const FunctionDecl *approvedUtilityVectorFriendComparison(
   return Selected;
 }
 
+const FunctionDecl *approvedUtilityVectorNamespaceComparison(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    OverloadedOperatorKind Operator, const ASTContext &Context) {
+  const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record || !Vector.MoveElementConstructor ||
+      (Operator != OO_EqualEqual && Operator != OO_Less) ||
+      !utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType))
+    return nullptr;
+  const auto *Parent = Record->getDeclContext();
+  if (!isa<NamespaceDecl>(Parent) && !isa<TranslationUnitDecl>(Parent))
+    return nullptr;
+  const auto ConstReference =
+      Context.getLValueReferenceType(Vector.ElementType.withConst());
+  const FunctionDecl *Selected = nullptr;
+  for (const auto *Declaration : Parent->decls()) {
+    const auto *Function = dyn_cast<FunctionDecl>(Declaration);
+    if (!Function || isa<CXXMethodDecl>(Function) ||
+        Function->getFriendObjectKind() != Decl::FOK_None ||
+        Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        !Function->isOverloadedOperator() ||
+        Function->getOverloadedOperator() != Operator ||
+        Function->getNumParams() != 2 || Function->isDeleted() ||
+        !ordinaryOperator(Function) ||
+        !Function->getReturnType()->isBooleanType() ||
+        !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             ConstReference) ||
+        !Context.hasSameType(Function->getParamDecl(1)->getType(),
+                             ConstReference))
+      continue;
+    const auto *Definition = Function->getDefinition();
+    if (!Definition || !S.owns(SM, Definition->getLocation()))
+      continue;
+    if (Selected &&
+        Selected->getCanonicalDecl() != Definition->getCanonicalDecl())
+      return nullptr;
+    Selected = Definition;
+  }
+  return Selected;
+}
+
 std::optional<UtilityVectorConstruction>
 approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                                   const CXXConstructExpr *Construction,
@@ -21003,8 +21044,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           S, SM, *Left, ComparisonOperator, Context);
       const auto *FriendComparison = approvedUtilityVectorFriendComparison(
           S, SM, *Left, ComparisonOperator, Context);
-      const bool SourceComparison = (MemberComparison || FriendComparison) &&
-                                    !(MemberComparison && FriendComparison);
+      const auto *NamespaceComparison =
+          approvedUtilityVectorNamespaceComparison(S, SM, *Left,
+                                                   ComparisonOperator, Context);
+      const unsigned ComparisonForms = bool(MemberComparison) +
+                                       bool(FriendComparison) +
+                                       bool(NamespaceComparison);
+      const bool SourceComparison = ComparisonForms == 1;
       if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
                        PointerElement || SourceComparison))
         switch (Operator->getOperator()) {
