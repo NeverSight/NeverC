@@ -22150,8 +22150,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Wrapped->IteratorType;
     return std::nullopt;
   };
-  auto AlgorithmRecordEqualityRangeParameter =
-      [&](unsigned Index) -> std::optional<QualType> {
+  auto AlgorithmRecordComparisonRangeParameter =
+      [&](unsigned Index,
+          OverloadedOperatorKind Operator) -> std::optional<QualType> {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return std::nullopt;
     const auto Parameter = Function->getParamDecl(Index)->getType();
@@ -22166,9 +22167,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Pointer = Wrapped->IteratorType;
     }
     if (!approvedUtilityTrivialSourceComparison(
-            S, SM, Pointer->getPointeeType(), OO_EqualEqual, Context))
+            S, SM, Pointer->getPointeeType(), Operator, Context))
       return std::nullopt;
     return Pointer;
+  };
+  auto AlgorithmRecordEqualityRangeParameter = [&](unsigned Index) {
+    return AlgorithmRecordComparisonRangeParameter(Index, OO_EqualEqual);
+  };
+  auto AlgorithmRecordOrderedRangeParameter = [&](unsigned Index) {
+    return AlgorithmRecordComparisonRangeParameter(Index, OO_Less);
   };
   auto AlgorithmTransferRangeParameters = [&](unsigned InputIndex,
                                               unsigned OutputIndex) {
@@ -23868,19 +23875,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
-           Function->getParamDecl(3)->getType()) &&
-      ((Call->getNumArgs() == 4 && AlgorithmOrderedParameters(0, 2)) ||
-       (Call->getNumArgs() == 5 &&
-        AlgorithmBinaryComparisonParameter(4, 0, 2) &&
-        AlgorithmBinaryComparisonParameter(4, 2, 0))))
-    return Name == "includes"
-               ? UtilityOperation::AlgorithmIncludes
-               : UtilityOperation::AlgorithmLexicographicalCompare;
+           Function->getParamDecl(3)->getType())) {
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarSecond = AlgorithmRangePointerParameter(2);
+    const bool ScalarDefault =
+        ScalarFirst && AlgorithmRangePointerParameter(1) && ScalarSecond &&
+        AlgorithmRangePointerParameter(3) &&
+        utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
+                                    (*ScalarFirst)->getPointeeType(), true) &&
+        utilityScalarComparisonType(Context, (*ScalarSecond)->getPointeeType(),
+                                    (*ScalarSecond)->getPointeeType(), true) &&
+        utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
+                                    (*ScalarSecond)->getPointeeType(), true) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, (*ScalarFirst)->getPointeeType(), OO_Less) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, (*ScalarSecond)->getPointeeType(), OO_Less);
+    const auto RecordFirst = AlgorithmRecordOrderedRangeParameter(0);
+    const auto RecordSecond = AlgorithmRecordOrderedRangeParameter(2);
+    const bool RecordDefault =
+        RecordFirst && AlgorithmRecordOrderedRangeParameter(1) &&
+        RecordSecond && AlgorithmRecordOrderedRangeParameter(3) &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordSecond)->getPointeeType());
+    if ((Call->getNumArgs() == 4 && (ScalarDefault || RecordDefault)) ||
+        (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
+         AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+         AlgorithmPointerParameter(3) &&
+         AlgorithmBinaryComparisonParameter(4, 0, 2) &&
+         AlgorithmBinaryComparisonParameter(4, 2, 0)))
+      return Name == "includes"
+                 ? UtilityOperation::AlgorithmIncludes
+                 : UtilityOperation::AlgorithmLexicographicalCompare;
+  }
   const bool OrderedOutputAlgorithm =
       (Origin->Path == "__algorithm/merge.h" && Name == "merge") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||

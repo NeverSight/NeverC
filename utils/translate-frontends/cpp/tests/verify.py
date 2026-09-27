@@ -31322,6 +31322,67 @@ bool permutation_scalar(std::vector<int> &first, int *second) {
           'b.begin(),b.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_ordered_ranges_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+bool lexical_member(Member *first, Member *last,
+                    Member *second, Member *second_last) {
+  return std::lexicographical_compare(first, last, second, second_last);
+}
+bool includes_member(Member *first, Member *last,
+                     Member *second, Member *second_last) {
+  return std::includes(first, last, second, second_last);
+}
+bool lexical_friend(Friend *first, Friend *last,
+                    Friend *second, Friend *second_last) {
+  return std::lexicographical_compare(first, last, second, second_last);
+}
+bool includes_free(owned::Free *first, owned::Free *last,
+                   owned::Free *second, owned::Free *second_last) {
+  return std::includes(first, last, second, second_last);
+}
+bool lexical_wrapped(const std::vector<Member> &first,
+                     std::vector<Member> &second) {
+  return std::lexicographical_compare(first.cbegin(), first.cend(),
+                                       second.begin(), second.end());
+}
+bool includes_mixed(const std::vector<Member> &first,
+                    Member *second, Member *second_last) {
+  return std::includes(first.cbegin(), first.cend(), second, second_last);
+}
+bool lexical_scalar(std::vector<int> &first, long *second, long *last) {
+  return std::lexicographical_compare(first.begin(), first.end(),
+                                       second, last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-ranges-" + target,
+              source_record_ordered_ranges_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-ordered-ranges-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'int operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'bool f(std::vector<Entry>&a,std::vector<Entry>&b){'
+          'return std::includes(a.begin(),a.end(),b.begin(),b.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

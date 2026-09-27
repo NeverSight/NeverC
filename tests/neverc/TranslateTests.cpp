@@ -42727,6 +42727,172 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedRangesRun) {
+  const auto Source = tmpFile("source-record-ordered-ranges.cpp");
+  const auto Output = tmpFile("source-record-ordered-ranges.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *first_range, *second_range;
+int first_size, second_size, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value, const Point *base, int count) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if ((!within(this, first_range, first_size) &&
+       !within(this, second_range, second_size)) ||
+      (!within(&other, first_range, first_size) &&
+       !within(&other, second_range, second_size))) ++bad_identity;
+  return value < other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point left[4]{{1}, {2}, {2}, {4}};
+  Point right[4]{{1}, {2}, {3}, {4}};
+  first_range = left; first_size = 4;
+  second_range = right; second_size = 4;
+  if (!std::lexicographical_compare(left, left + 4, right, right + 4) ||
+      std::lexicographical_compare(right, right + 4, left, left + 4) ||
+      std::lexicographical_compare(left, left + 4, left, left + 4) ||
+      !comparisons || bad_identity) return 1;
+  Point subset[2]{{2}, {4}};
+  second_range = subset; second_size = 2;
+  if (!std::includes(left, left + 4, subset, subset + 2) || bad_identity)
+    return 2;
+  Point missing[3]{{2}, {2}, {2}};
+  second_range = missing; second_size = 3;
+  if (std::includes(left, left + 4, missing, missing + 3) || bad_identity)
+    return 3;
+  comparisons = 0;
+  if (!std::includes(left, left + 4, missing, missing) ||
+      !std::includes(left, left, missing, missing) ||
+      std::includes(left, left, missing, missing + 1) || comparisons)
+    return 4;
+  if (!std::lexicographical_compare(left, left + 3, left, left + 4) ||
+      bad_identity) return 5;
+  Friend friends[2]{{1}, {2}}, friend_order[2]{{1}, {3}};
+  if (!std::lexicographical_compare(friends, friends + 2,
+                                     friend_order, friend_order + 2) ||
+      !std::includes(friend_order, friend_order + 2,
+                      friend_order + 1, friend_order + 2)) return 6;
+  owned::Free frees[2]{{1}, {2}}, free_order[2]{{1}, {3}};
+  if (!std::lexicographical_compare(frees, frees + 2,
+                                     free_order, free_order + 2) ||
+      !std::includes(free_order, free_order + 2,
+                      free_order + 1, free_order + 2)) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedSourceRecordOrderedRangesRun) {
+  const auto Source = tmpFile("wrapped-source-record-ordered-ranges.cpp");
+  const auto Output = tmpFile("wrapped-source-record-ordered-ranges.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *first_range, *second_range;
+int first_size, second_size, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value, const Point *base, int count) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if ((!within(this, first_range, first_size) &&
+       !within(this, second_range, second_size)) ||
+      (!within(&other, first_range, first_size) &&
+       !within(&other, second_range, second_size))) ++bad_identity;
+  return value < other.value;
+}
+int main() {
+  std::vector<Point> left, right;
+  left.push_back(Point{1}); left.push_back(Point{2});
+  left.push_back(Point{2}); left.push_back(Point{4});
+  right.push_back(Point{1}); right.push_back(Point{2});
+  right.push_back(Point{3}); right.push_back(Point{4});
+  const std::vector<Point> &left_view = left;
+  first_range = &left[0]; first_size = 4;
+  second_range = &right[0]; second_size = 4;
+  if (!std::lexicographical_compare(left_view.cbegin(), left_view.cend(),
+                                     right.begin(), right.end()) ||
+      std::lexicographical_compare(right.begin(), right.end(),
+                                    left_view.cbegin(), left_view.cend()) ||
+      !comparisons || bad_identity) return 1;
+  Point subset[2]{{2}, {4}};
+  second_range = subset; second_size = 2;
+  if (!std::includes(left_view.cbegin(), left_view.cend(),
+                      subset, subset + 2) || bad_identity) return 2;
+  Point raw[4]{{1}, {2}, {2}, {4}};
+  first_range = raw; first_size = 4;
+  second_range = &right[0]; second_size = 4;
+  if (!std::lexicographical_compare(raw, raw + 4,
+                                     right.cbegin(), right.cend()) ||
+      bad_identity) return 3;
+  std::vector<int> scalar{1, 2, 3};
+  long scalar_order[3]{1, 2, 4}, scalar_subset[1]{2};
+  if (!std::lexicographical_compare(scalar.cbegin(), scalar.cend(),
+                                     scalar_order, scalar_order + 3) ||
+      !std::includes(scalar.cbegin(), scalar.cend(),
+                      scalar_subset, scalar_subset + 1)) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-source-record-ordered-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmComparatorOrderedRangesRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-comparator-ordered-ranges.cpp");

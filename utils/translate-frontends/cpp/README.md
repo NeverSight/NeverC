@@ -422,7 +422,10 @@ Built-in arithmetic elements admit default-order
 `partial_sort`,
 `partial_sort_copy`, `nth_element`, `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge` and the four `set_*` range
-algorithms. Checked unary boolean function-pointer predicates with directly
+algorithms. Default `lexicographical_compare` and `includes` additionally
+accept independent wrapped or raw-pointer ranges of exact same-type trivial
+source records with a uniquely selected Boolean `operator<`.
+Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,
 `copy_if`, `remove_if`, `remove_copy_if`, `replace_if`, `replace_copy_if`,

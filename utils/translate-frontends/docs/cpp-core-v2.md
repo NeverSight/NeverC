@@ -2117,6 +2117,14 @@ enum. Object-pointer ranges use a checked compatible common pointer type; as
 with source C++, relational ordering is guaranteed for pointers into the same
 complete object or array.
 
+Default `std::lexicographical_compare` and `std::includes` also accept
+independent authenticated mutable or const wrapped iterators, mixed with raw
+pointer ranges. Exact same-type trivial source-record ranges use one uniquely
+selected const member, hidden-friend, or enclosing-namespace free Boolean
+`operator<`; both comparison directions receive the original elements by
+reference. They preserve lexicographic prefix and sorted-subset behavior,
+including empty ranges and duplicate counts.
+
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the respective element types in both argument

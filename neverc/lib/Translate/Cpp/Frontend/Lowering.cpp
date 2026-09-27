@@ -2157,21 +2157,23 @@ class FunctionLowering {
                "Unknown approved comparison operation.");
       }
     };
-    auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
-                              Expression Right, unsigned RightIndex) {
-      auto ElementType = [&](unsigned Index) {
-        const auto Iterator = Call->getArg(Index)->getType();
-        const auto Wrapped = approvedUtilityWrapIteratorRecord(
-            A.S, A.Sources, Iterator->getAsCXXRecordDecl(), A.Context);
-        return Wrapped ? Wrapped->IteratorType->getPointeeType()
-                       : Iterator->getPointeeType();
-      };
-      const auto LeftType = ElementType(LeftIndex);
-      const auto RightType = ElementType(RightIndex);
+    auto AlgorithmElementType = [&](unsigned Index) {
+      const auto Iterator = Call->getArg(Index)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Iterator->getAsCXXRecordDecl(), A.Context);
+      return Wrapped ? Wrapped->IteratorType->getPointeeType()
+                     : Iterator->getPointeeType();
+    };
+    auto AlgorithmSourceCompare =
+        [&](Expression Left, unsigned LeftIndex, Expression Right,
+            unsigned RightIndex,
+            OverloadedOperatorKind Operator) -> std::optional<Expression> {
+      const auto LeftType = AlgorithmElementType(LeftIndex);
+      const auto RightType = AlgorithmElementType(RightIndex);
       const auto SourceComparison =
           A.Context.hasSameUnqualifiedType(LeftType, RightType)
               ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
-                                                       OO_EqualEqual, A.Context)
+                                                       Operator, A.Context)
               : std::nullopt;
       if (SourceComparison) {
         auto LeftAddress =
@@ -2185,7 +2187,25 @@ class FunctionLowering {
                                      : SourceComparison->Namespace,
             L);
       }
-      return CompareUtilityValues("==", Left, LeftType, Right, RightType);
+      return std::nullopt;
+    };
+    auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
+                              Expression Right, unsigned RightIndex) {
+      if (auto Source = AlgorithmSourceCompare(json::Object(Left), LeftIndex,
+                                               json::Object(Right), RightIndex,
+                                               OO_EqualEqual))
+        return std::move(*Source);
+      return CompareUtilityValues("==", Left, AlgorithmElementType(LeftIndex),
+                                  Right, AlgorithmElementType(RightIndex));
+    };
+    auto AlgorithmLess = [&](Expression Left, unsigned LeftIndex,
+                             Expression Right, unsigned RightIndex) {
+      if (auto Source =
+              AlgorithmSourceCompare(json::Object(Left), LeftIndex,
+                                     json::Object(Right), RightIndex, OO_Less))
+        return std::move(*Source);
+      return CompareUtilityValues("<", Left, AlgorithmElementType(LeftIndex),
+                                  Right, AlgorithmElementType(RightIndex));
     };
     auto AlgorithmRangeValue = [&](unsigned Index)
         -> std::pair<Expression, QualType> {
@@ -5916,32 +5936,27 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::AlgorithmLexicographicalCompare: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
-      auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto SecondLastRange = AlgorithmRangeValue(3);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
+      auto SecondLast = std::move(SecondLastRange.first);
       std::optional<Expression> Comparator;
       std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
           SDKComparators;
       if (Call->getNumArgs() == 5) {
-        const auto LeftElement = Call->getArg(0)->getType()->getPointeeType();
-        const auto RightElement = Call->getArg(2)->getType()->getPointeeType();
+        const auto LeftElement = FirstRange.second->getPointeeType();
+        const auto RightElement = SecondRange.second->getPointeeType();
         SDKComparators =
             captureRangeSDKComparatorPair(Call, 4, LeftElement, RightElement);
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(4)), L);
       }
-      std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKComparators) {
-        auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
-            Call->getArg(2)->getType()->getPointeeType(), true);
-        if (!Common)
-          reject(L, "algorithm lexicographical comparison",
-                 "The range elements have no ordered common type.");
-        DefaultComparisonType = type(*Common, L);
-      }
-      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+      auto Less = [&](Expression Left, unsigned LeftIndex, Expression Right,
+                      unsigned RightIndex, bool Reversed) {
         if (SDKComparators)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
                                            Reversed ? SDKComparators->second
@@ -5950,14 +5965,13 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
-                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
-                      L);
+        return AlgorithmLess(std::move(Left), LeftIndex, std::move(Right),
+                             RightIndex);
       };
       auto Result = temporary("bool", L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = type(SecondRange.second, L);
       const auto CheckFirst = labelName(), CheckSecond = labelName();
       const auto CompareFirst = labelName(), CompareSecond = labelName();
       const auto Advance = labelName(), FirstDone = labelName();
@@ -5969,12 +5983,12 @@ class FunctionLowering {
       branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst, False,
              L);
       label(CompareFirst, L);
-      branch(Less(dereference(json::Object(First), L),
-                  dereference(json::Object(Second), L), false),
+      branch(Less(dereference(json::Object(First), L), 0,
+                  dereference(json::Object(Second), L), 2, false),
              True, CompareSecond, L);
       label(CompareSecond, L);
-      branch(Less(dereference(json::Object(Second), L),
-                  dereference(json::Object(First), L), true),
+      branch(Less(dereference(json::Object(Second), L), 2,
+                  dereference(json::Object(First), L), 0, true),
              False, Advance, L);
       label(Advance, L);
       assign(First,
@@ -5996,32 +6010,27 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::AlgorithmIncludes: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
-      auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto SecondLastRange = AlgorithmRangeValue(3);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
+      auto SecondLast = std::move(SecondLastRange.first);
       std::optional<Expression> Comparator;
       std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
           SDKComparators;
       if (Call->getNumArgs() == 5) {
-        const auto LeftElement = Call->getArg(0)->getType()->getPointeeType();
-        const auto RightElement = Call->getArg(2)->getType()->getPointeeType();
+        const auto LeftElement = FirstRange.second->getPointeeType();
+        const auto RightElement = SecondRange.second->getPointeeType();
         SDKComparators =
             captureRangeSDKComparatorPair(Call, 4, LeftElement, RightElement);
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(4)), L);
       }
-      std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKComparators) {
-        auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
-            Call->getArg(2)->getType()->getPointeeType(), true);
-        if (!Common)
-          reject(L, "algorithm includes",
-                 "The range elements have no ordered common type.");
-        DefaultComparisonType = type(*Common, L);
-      }
-      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+      auto Less = [&](Expression Left, unsigned LeftIndex, Expression Right,
+                      unsigned RightIndex, bool Reversed) {
         if (SDKComparators)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
                                            Reversed ? SDKComparators->second
@@ -6030,14 +6039,13 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
-                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
-                      L);
+        return AlgorithmLess(std::move(Left), LeftIndex, std::move(Right),
+                             RightIndex);
       };
       auto Result = temporary("bool", L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = type(SecondRange.second, L);
       const auto CheckSecond = labelName(), CheckFirst = labelName();
       const auto Missing = labelName(), Compare = labelName();
       const auto AdvanceFirst = labelName(), AdvanceBoth = labelName();
@@ -6048,12 +6056,12 @@ class FunctionLowering {
       label(CheckFirst, L);
       branch(binary("!=", First, Last, "bool", L), Missing, False, L);
       label(Missing, L);
-      branch(Less(dereference(json::Object(Second), L),
-                  dereference(json::Object(First), L), true),
+      branch(Less(dereference(json::Object(Second), L), 2,
+                  dereference(json::Object(First), L), 0, true),
              False, Compare, L);
       label(Compare, L);
-      branch(Less(dereference(json::Object(First), L),
-                  dereference(json::Object(Second), L), false),
+      branch(Less(dereference(json::Object(First), L), 0,
+                  dereference(json::Object(Second), L), 2, false),
              AdvanceFirst, AdvanceBoth, L);
       label(AdvanceFirst, L);
       assign(First,
