@@ -13677,6 +13677,9 @@ class FunctionLowering {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
           A.Context);
+      auto Array = approvedUtilityArrayRecord(
+          A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
+          A.Context);
       auto Unique = approvedUtilityUniquePtrRecord(
           A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
           A.Context);
@@ -13778,6 +13781,13 @@ class FunctionLowering {
           branch(
               binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
               Next, Different, L);
+        } else if (Array) {
+          auto Order = compareVectorArrayValues(
+              dereference(json::Object(LeftCurrent), L),
+              dereference(json::Object(RightCurrent), L), *Array, true, L);
+          branch(
+              binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+              Next, Different, L);
         } else if (NestedRelation) {
           auto Order = compareNestedVectors(
               dereference(json::Object(LeftCurrent), L),
@@ -13837,6 +13847,16 @@ class FunctionLowering {
         auto Order = compareVectorPairValues(
             dereference(json::Object(LeftCurrent), L),
             dereference(json::Object(RightCurrent), L), *Pair, false, L);
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      } else if (Array) {
+        auto Order = compareVectorArrayValues(
+            dereference(json::Object(LeftCurrent), L),
+            dereference(json::Object(RightCurrent), L), *Array, false, L);
         branch(
             binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
             Less, CheckGreater, L);
@@ -19521,6 +19541,95 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression compareVectorArrayValues(Expression Left, Expression Right,
+                                      const UtilityArrayRecord &Array,
+                                      bool Equality, SourceLocation L) {
+    if (!Array.Size)
+      return quantity(0, "int", L);
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto ElementType = type(Array.ElementType, L);
+    const auto PointerType =
+        type(A.Context.getPointerType(Array.ElementType.withConst()), L);
+    auto Index = temporary(SizeType, L);
+    assign(Index, quantity(0, SizeType, L), L);
+    auto Result = temporary("int", L);
+    const auto Check = labelName(), Compare = labelName();
+    const auto Next = labelName(), Less = labelName();
+    const auto Greater = labelName(), Equal = labelName();
+    const auto Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", json::Object(Index), quantity(Array.Size, SizeType, L),
+                  "bool", L),
+           Compare, Equal, L);
+    label(Compare, L);
+    auto ElementAt = [&](Expression Base) {
+      auto Elements = fieldStorage(std::move(Base), Array.Elements, L);
+      return index(decay(std::move(Elements), PointerType, L),
+                   json::Object(Index), ElementType, L);
+    };
+    auto LeftElement = ElementAt(json::Object(Left));
+    auto RightElement = ElementAt(json::Object(Right));
+    if (const auto Nested = approvedUtilityArrayRecord(
+            A.S, A.Sources, Array.ElementType->getAsCXXRecordDecl(),
+            A.Context)) {
+      auto Order = compareVectorArrayValues(std::move(LeftElement),
+                                            std::move(RightElement), *Nested,
+                                            Equality, L);
+      if (Equality) {
+        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+               Next, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      }
+    } else {
+      auto LeftValue = snapshot(std::move(LeftElement), L);
+      auto RightValue = snapshot(std::move(RightElement), L);
+      if (Equality) {
+        branch(binary("==", std::move(LeftValue), std::move(RightValue), "bool",
+                      L),
+               Next, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(binary("<", json::Object(LeftValue), json::Object(RightValue),
+                      "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(
+            binary("<", std::move(RightValue), std::move(LeftValue), "bool", L),
+            Greater, Next, L);
+      }
+    }
+    label(Next, L);
+    assign(
+        Index,
+        binary("+", json::Object(Index), quantity(1, SizeType, L), SizeType, L),
+        L);
+    jump(Check, L);
+    if (!Equality) {
+      label(Less, L);
+      assign(
+          Result,
+          binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L),
+          L);
+      jump(Done, L);
+    }
+    label(Greater, L);
+    assign(Result, quantity(1, "int", L), L);
+    jump(Done, L);
+    label(Equal, L);
+    assign(Result, quantity(0, "int", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
+  }
+
   Expression compareNestedVectors(Expression Left, Expression Right,
                                   const UtilityVectorRecord &Vector,
                                   bool Equality, SourceLocation L) {
@@ -19615,6 +19724,24 @@ class FunctionLowering {
       auto Order = compareVectorPairValues(
           dereference(json::Object(LeftCurrent), L),
           dereference(json::Object(RightCurrent), L), *Pair, Equality, L);
+      if (Equality) {
+        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+               Next, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      }
+    } else if (const auto Array = approvedUtilityArrayRecord(
+                   A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(),
+                   A.Context)) {
+      auto Order = compareVectorArrayValues(
+          dereference(json::Object(LeftCurrent), L),
+          dereference(json::Object(RightCurrent), L), *Array, Equality, L);
       if (Equality) {
         branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
                Next, Greater, L);

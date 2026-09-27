@@ -29631,6 +29631,43 @@ void array_vectors() {
   std::vector<Row> copied(values);
   copied = values;
   copied.swap(values);
+  using Matrix = std::array<Row, 2>;
+  std::vector<Matrix> matrices;
+  Matrix matrix{{Row{{1, 2}}, Row{{3, 4}}}};
+  matrices.push_back(matrix);
+  std::vector<std::array<float, 2>> floats;
+  floats.emplace_back();
+  std::vector<std::array<int, 0>> empty_rows;
+  empty_rows.emplace_back();
+}
+bool compare_array_vectors(const std::vector<std::array<int, 2>>& left,
+                           const std::vector<std::array<int, 2>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_array_vectors(
+    const std::vector<std::vector<std::array<int, 2>>>& left,
+    const std::vector<std::vector<std::array<int, 2>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_matrix_vectors(
+    const std::vector<std::array<std::array<int, 2>, 2>>& left,
+    const std::vector<std::array<std::array<int, 2>, 2>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_float_array_vectors(
+    const std::vector<std::array<float, 2>>& left,
+    const std::vector<std::array<float, 2>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_empty_array_vectors(
+    const std::vector<std::array<int, 0>>& left,
+    const std::vector<std::array<int, 0>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
 }
 bool compare_pair_vectors(const std::vector<std::pair<int, int>>& left,
                           const std::vector<std::pair<int, int>>& right) {
@@ -29860,6 +29897,13 @@ int f() {
 int f() {
   std::vector<std::array<std::array<const int, 2>, 2>> values;
   return values.size();
+}
+""",
+        "array-void-pointer-order": """\
+#include <array>
+bool f(const std::vector<std::array<void*, 2>>& left,
+       const std::vector<std::array<void*, 2>>& right) {
+  return left < right;
 }
 """,
         "pair-array-comparison": """\

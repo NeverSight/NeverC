@@ -60147,6 +60147,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorArrayRelationsRun) {
+  const auto Source = tmpFile("vector-array-relations.cpp");
+  const auto Output = tmpFile("vector-array-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <array>
+#include <vector>
+using Row = std::array<int, 2>;
+int main() {
+  {
+    std::vector<Row> left;
+    std::vector<Row> right;
+    Row first{{1, 2}};
+    Row second{{1, 3}};
+    left.push_back(first);
+    right.push_back(first);
+    if (!(left == right) || left != right || left < right || left > right ||
+        !(left <= right) || !(left >= right)) return 1;
+    right.push_back(second);
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 2;
+    right[0][1] = 3;
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 3;
+    std::vector<Row> empty;
+    if (!(empty == empty) || empty != empty || !(empty < left) ||
+        empty > left || !(left > empty)) return 4;
+    using Matrix = std::array<Row, 2>;
+    std::vector<Matrix> matrices_left;
+    std::vector<Matrix> matrices_right;
+    Matrix matrix_left{{Row{{1, 2}}, Row{{3, 4}}}};
+    Matrix matrix_right{{Row{{1, 2}}, Row{{3, 5}}}};
+    matrices_left.push_back(matrix_left);
+    matrices_right.push_back(matrix_right);
+    if (matrices_left == matrices_right || !(matrices_left != matrices_right) ||
+        !(matrices_left < matrices_right) || matrices_left > matrices_right)
+      return 5;
+    float nan = 0.0f / 0.0f;
+    using FloatRow = std::array<float, 2>;
+    std::vector<FloatRow> floats_left;
+    std::vector<FloatRow> floats_right;
+    FloatRow nan_left{{nan, 2.0f}};
+    FloatRow nan_right{{nan, 3.0f}};
+    floats_left.push_back(nan_left);
+    floats_right.push_back(nan_right);
+    if (floats_left == floats_right || !(floats_left != floats_right) ||
+        !(floats_left < floats_right) || floats_left > floats_right)
+      return 6;
+    std::vector<std::vector<Row>> rows_left;
+    std::vector<std::vector<Row>> rows_right;
+    rows_left.push_back(left);
+    rows_right.push_back(right);
+    if (rows_left == rows_right || !(rows_left != rows_right) ||
+        !(rows_left < rows_right) || rows_left > rows_right)
+      return 7;
+    using EmptyRow = std::array<int, 0>;
+    std::vector<EmptyRow> empties_left;
+    std::vector<EmptyRow> empties_right;
+    empties_left.emplace_back();
+    empties_right.emplace_back();
+    if (!(empties_left == empties_right) || empties_left != empties_right ||
+        empties_left < empties_right || empties_left > empties_right)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-array-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

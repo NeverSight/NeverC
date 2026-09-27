@@ -5972,6 +5972,29 @@ static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
                                      Equality, Depth + 1);
 }
 
+static bool utilityVectorArrayComparable(const State &S,
+                                         const SourceManager &SM,
+                                         const ASTContext &Context,
+                                         QualType Element, bool Equality,
+                                         unsigned Depth = 0) {
+  if (Depth >= 64 || Element.isNull())
+    return false;
+  if (Element->isPointerType()) {
+    if (Element->isFunctionPointerType())
+      return false;
+    return Equality || (Element->isObjectPointerType() &&
+                        !Element->getPointeeType()->isIncompleteType());
+  }
+  if (Element->isNullPtrType())
+    return Equality;
+  if (utilityScalar(Context, Element))
+    return true;
+  const auto Array =
+      approvedUtilityArrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+  return Array && utilityVectorArrayComparable(
+                      S, SM, Context, Array->ElementType, Equality, Depth + 1);
+}
+
 static bool utilityNestedVectorComparable(const State &S,
                                           const SourceManager &SM,
                                           const UtilityVectorRecord &Vector,
@@ -5995,6 +6018,9 @@ static bool utilityNestedVectorComparable(const State &S,
       Context.getBaseElementType(Unique->ElementType)->isBuiltinType())
     return true;
   if (utilityVectorPairComparable(S, SM, Context, Vector.ElementType, Equality))
+    return true;
+  if (utilityVectorArrayComparable(S, SM, Context, Vector.ElementType,
+                                   Equality))
     return true;
   const auto Nested = approvedUtilityVectorRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
@@ -21269,6 +21295,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             Operator->getOperator() == OO_ExclaimEqual;
       const bool PairElement = utilityVectorPairComparable(
           S, SM, Context, Left->ElementType, Equality);
+      const bool ArrayElement = utilityVectorArrayComparable(
+          S, SM, Context, Left->ElementType, Equality);
       const bool NestedRelation =
           NestedElement && utilityNestedVectorComparable(S, SM, *NestedElement,
                                                          Context, Equality);
@@ -21288,9 +21316,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        bool(FriendComparison) +
                                        bool(NamespaceComparison);
       const bool SourceComparison = ComparisonForms == 1;
-      if (Matching &&
-          (Arithmetic || StringElement || PairElement || UniquePointerElement ||
-           PointerElement || SourceComparison || NestedRelation))
+      if (Matching && (Arithmetic || StringElement || PairElement ||
+                       ArrayElement || UniquePointerElement || PointerElement ||
+                       SourceComparison || NestedRelation))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:
