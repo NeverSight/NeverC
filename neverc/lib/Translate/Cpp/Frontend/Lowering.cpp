@@ -1366,8 +1366,9 @@ class FunctionLowering {
                     SourceLocation L,
                     const std::optional<Expression> &Comparator = std::nullopt,
                     QualType ComparatorType = {},
-                    const std::optional<FunctionalOperationInfo> &SDKComparator =
-                        std::nullopt) {
+                    const std::optional<FunctionalOperationInfo>
+                        &SDKComparator = std::nullopt,
+                    QualType SourceElement = {}) {
     auto Root = snapshot(std::move(InitialRoot), L);
     auto Child = temporary(DifferenceType, L);
     auto Left = temporary(DifferenceType, L);
@@ -1378,6 +1379,21 @@ class FunctionLowering {
                          L);
     };
     auto Less = [&](Expression LeftValue, Expression RightValue) {
+      if (!SourceElement.isNull()) {
+        const auto Comparison = approvedUtilityTrivialSourceComparison(
+            A.S, A.Sources, SourceElement, OO_Less, A.Context);
+        if (!Comparison)
+          reject(L, "sort source record",
+                 "The source record must have one supported Boolean less-than "
+                 "operator.");
+        auto LeftAddress = snapshot(
+            address(std::move(LeftValue), SourceElement.withConst(), L), L);
+        auto RightAddress = snapshot(
+            address(std::move(RightValue), SourceElement.withConst(), L), L);
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress), Comparison->Member,
+            Comparison->Friend ? Comparison->Friend : Comparison->Namespace, L);
+      }
       if (SDKComparator)
         return functionalOperationValues(L, std::move(LeftValue),
                                          std::move(RightValue), *SDKComparator);
@@ -1434,7 +1450,8 @@ class FunctionLowering {
                 const std::optional<Expression> &Comparator = std::nullopt,
                 QualType ComparatorType = {},
                 const std::optional<FunctionalOperationInfo> &SDKComparator =
-                    std::nullopt) {
+                    std::nullopt,
+                QualType SourceElement = {}) {
     auto Start = temporary(DifferenceType, L);
     const auto Initialize = labelName(), Sift = labelName();
     const auto Previous = labelName(), Done = labelName();
@@ -1451,7 +1468,7 @@ class FunctionLowering {
     label(Sift, L);
     heapSiftDown(json::Object(First), json::Object(Size), json::Object(Start),
                  PointerType, DifferenceType, L, Comparator, ComparatorType,
-                 SDKComparator);
+                 SDKComparator, SourceElement);
     branch(binary(">", Start, quantity(0, DifferenceType, L), "bool", L),
            Previous, Done, L);
     label(Previous, L);
@@ -1468,7 +1485,8 @@ class FunctionLowering {
                 const std::optional<Expression> &Comparator = std::nullopt,
                 QualType ComparatorType = {},
                 const std::optional<FunctionalOperationInfo> &SDKComparator =
-                    std::nullopt) {
+                    std::nullopt,
+                QualType SourceElement = {}) {
     auto HeapSize = snapshot(std::move(Size), L);
     auto At = [&](const Expression &Position) {
       return dereference(binary("+", json::Object(First),
@@ -1491,7 +1509,7 @@ class FunctionLowering {
     assign(At(HeapSize), std::move(TopValue), L);
     heapSiftDown(json::Object(First), json::Object(HeapSize),
                  quantity(0, DifferenceType, L), PointerType, DifferenceType, L,
-                 Comparator, ComparatorType, SDKComparator);
+                 Comparator, ComparatorType, SDKComparator, SourceElement);
     jump(Check, L);
     label(Done, L);
   }
@@ -6779,11 +6797,20 @@ class FunctionLowering {
           Comparator ? Call->getArg(2)->getType() : QualType{};
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(PointerQualType, L);
+      const auto Element = PointerQualType->getPointeeType();
+      const auto SourceElement =
+          Call->getNumArgs() == 2 &&
+                  approvedUtilityTrivialSourceComparison(
+                      A.S, A.Sources, Element, OO_Less, A.Context)
+              ? Element
+              : QualType{};
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
       makeHeap(json::Object(First), json::Object(Length), PointerType,
-               DifferenceType, L, Comparator, ComparatorType, SDKComparator);
+               DifferenceType, L, Comparator, ComparatorType, SDKComparator,
+               SourceElement);
       sortHeap(json::Object(First), json::Object(Length), PointerType,
-               DifferenceType, L, Comparator, ComparatorType, SDKComparator);
+               DifferenceType, L, Comparator, ComparatorType, SDKComparator,
+               SourceElement);
       return {};
     }
     case UtilityOperation::AlgorithmStableSort: {

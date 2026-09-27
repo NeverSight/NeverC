@@ -2020,7 +2020,15 @@ same writable scalar element and comparison boundary. This includes mutable
 `std::vector<T>` iterators. The iterator arguments are evaluated once, then
 their pinned pointer fields feed the same heap sorting lowering. Default,
 checked function-pointer, and authenticated standard comparison-object
-overloads are admitted; const iterators and record elements remain rejected.
+overloads are admitted; const iterators remain rejected.
+
+The default two-argument `std::sort` additionally accepts writable raw or
+authenticated wrapped ranges of exact trivial source records with one uniquely
+selected const member, hidden-friend, or enclosing-namespace free Boolean
+`operator<`. Its heap comparisons use references to the current range elements;
+swaps preserve complete record values. Empty and single-element ranges perform
+no comparison. Comparator overloads for records and nontrivial records remain
+outside this boundary.
 
 The corresponding comparator overloads accept the same checked scalar
 function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
@@ -2029,7 +2037,7 @@ writable directly convertible output. A greater-than callback therefore sorts or
 selects in descending order. All callback and iterator arguments are retained
 once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
-values. Unsupported callbacks and record elements remain rejected.
+values. Unsupported callbacks and record comparator overloads remain rejected.
 
 The three-argument `std::sort` overload also accepts the same authenticated
 standard comparison objects as the heap algorithms, including comparison

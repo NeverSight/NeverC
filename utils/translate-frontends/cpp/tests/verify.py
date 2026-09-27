@@ -31650,6 +31650,50 @@ range_wrapped(std::vector<Member> &values, const Member &key) {
           'return std::equal_range(a.begin(),a.end(),key);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_sort_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+void sort_member(Member *first, Member *last) {
+  std::sort(first, last);
+}
+void sort_friend(std::vector<Friend> &values) {
+  std::sort(values.begin(), values.end());
+}
+void sort_free(owned::Free *first, owned::Free *last) {
+  std::sort(first, last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-sort-" + target,
+              source_record_sort_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-sort-by-value",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'bool operator<(Entry a,Entry b){return a.value<b.value;}'
+          'void f(Entry*first,Entry*last){std::sort(first,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-record-sort-nontrivial",
+          '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'void f(Entry*first,Entry*last){std::sort(first,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

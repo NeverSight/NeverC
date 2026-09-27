@@ -435,6 +435,9 @@ Default direct `min`, `max`, `clamp` and `minmax` accept exact trivial source
 records with that selected ordering and preserve returned reference identity.
 Default `lower_bound`, `upper_bound`, `binary_search` and `equal_range` accept
 raw or authenticated wrapped source-record ranges and exact const record keys.
+Default `sort` also accepts writable raw or authenticated wrapped ranges of
+those trivial source records, using the selected Boolean `operator<` on current
+range elements.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

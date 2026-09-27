@@ -24139,9 +24139,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType())) {
-    const bool Raw =
-        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1);
     const auto Iterator = Function->getParamDecl(0)->getType();
+    const bool Raw = utilityObjectPointer(Context, Iterator) &&
+                     Same(Call->getArg(0)->getType(), Iterator) &&
+                     Same(Call->getArg(1)->getType(), Iterator);
     const auto Wrapped = Raw ? std::optional<UtilityWrapIteratorRecord>()
                              : approvedUtilityWrapIteratorRecord(
                                    S, SM, Iterator->getAsCXXRecordDecl(),
@@ -24150,18 +24151,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Wrapped && Same(Call->getArg(0)->getType(), Iterator) &&
         Same(Call->getArg(1)->getType(), Iterator);
     const auto Pointer = WrappedRange ? Wrapped->IteratorType : Iterator;
-    if ((Raw || WrappedRange) &&
-        utilityAlgorithmWritableScalarPointer(Context, Pointer)) {
+    const bool WritableScalar =
+        utilityAlgorithmWritableScalarPointer(Context, Pointer);
+    const bool WritableRecord =
+        utilityObjectPointer(Context, Pointer) &&
+        !Pointer->getPointeeType().isConstQualified() &&
+        approvedUtilityTrivialSourceComparison(S, SM, Pointer->getPointeeType(),
+                                               OO_Less, Context);
+    if ((Raw || WrappedRange) && (WritableScalar || WritableRecord)) {
       const auto Element = Pointer->getPointeeType();
       bool Comparison = false;
       if (Call->getNumArgs() == 2) {
-        Comparison = utilityScalarComparisonType(Context, Element, Element,
-                                                 true).has_value() &&
-                     !utilityEnumHasSourceOperator(S, SM, Context, Element,
-                                                   OO_Less);
-      } else if (Raw) {
+        Comparison =
+            WritableRecord ||
+            (utilityScalarComparisonType(Context, Element, Element, true)
+                 .has_value() &&
+             !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less));
+      } else if (WritableScalar && Raw) {
         Comparison = AlgorithmBinaryComparisonParameter(2, 0, 0);
-      } else {
+      } else if (WritableScalar) {
         const auto *Callback = AlgorithmCallbackPrototype(2);
         Comparison =
             (Callback && Callback->getNumParams() == 2 &&

@@ -55598,6 +55598,90 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSortRun) {
+  const auto Source = tmpFile("source-record-sort.cpp");
+  const auto Output = tmpFile("source-record-sort.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *base;
+int count, comparisons, bad_identity;
+struct Point {
+  int value, id;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point values[7]{{4, 0}, {1, 1}, {3, 2}, {1, 3},
+                  {5, 4}, {2, 5}, {0, 6}};
+  base = values; count = 7;
+  int first_effects = 0, last_effects = 0;
+  std::sort((++first_effects, values), (++last_effects, values + 7));
+  if (first_effects != 1 || last_effects != 1 ||
+      !comparisons || bad_identity) return 1;
+  int id_sum = 0;
+  for (int i = 0; i < 7; ++i) {
+    if (values[i].value != (i == 2 ? 1 : i > 2 ? i - 1 : i)) return 2;
+    id_sum += values[i].id;
+  }
+  if (id_sum != 21) return 3;
+  comparisons = 0;
+  std::sort(values, values);
+  std::sort(values, values + 1);
+  if (comparisons || bad_identity) return 4;
+  std::vector<Friend> friends{Friend{4}, Friend{1}, Friend{3}, Friend{2}};
+  std::sort(friends.begin(), friends.end());
+  for (int i = 0; i < 4; ++i)
+    if (friends[i].value != i + 1) return 5;
+  owned::Free frees[4]{{3}, {1}, {4}, {2}};
+  std::sort(frees, frees + 4);
+  for (int i = 0; i < 4; ++i)
+    if (frees[i].value != i + 1) return 6;
+  std::vector<Friend> empty;
+  std::sort(empty.begin(), empty.end());
+  return empty.empty() ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");
