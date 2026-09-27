@@ -12050,8 +12050,9 @@ class FunctionLowering {
       const auto PointerType = type(Vector->PointerType, L);
       const auto ConstPointerType =
           type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
-      const bool SourceOwnedCopyInsert =
-          Operation == UtilityOperation::VectorInsert &&
+      const bool SourceOwnedCopyArgument =
+          (Operation == UtilityOperation::VectorInsert ||
+           Operation == UtilityOperation::VectorEmplace) &&
           Vector->MoveElementConstructor && Call->getNumArgs() == 2 &&
           Call->getDirectCallee()->getParamDecl(1)->getType()
               ->isLValueReferenceType();
@@ -12217,7 +12218,7 @@ class FunctionLowering {
       };
       auto ConstructSourceOwned = [&](Expression Target) {
         if (SourceAddress) {
-          if (SourceOwnedCopyInsert)
+          if (SourceOwnedCopyArgument)
             copyVectorElement(std::move(Target),
                               dereference(json::Object(*SourceAddress), L),
                               *Vector, L, Call->getArg(1)->getType());
@@ -12339,7 +12340,8 @@ class FunctionLowering {
         assign(Current, json::Object(Previous), L);
         jump(ShiftCheck, L);
         label(Fill, L);
-        if (SourceOwnedCopyInsert) {
+        if (Operation == UtilityOperation::VectorInsert &&
+            SourceOwnedCopyArgument) {
           auto CopySource = temporary(ConstPointerType, L);
           assign(CopySource,
                  cast(json::Object(*SourceAddress), ConstPointerType, L), L);

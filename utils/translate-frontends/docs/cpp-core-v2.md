@@ -2697,12 +2697,13 @@ live range, then invokes the copy assignment; end insertion and growth invoke
 the copy constructor. Host O0/O2 fixtures check deep copies, both alias
 positions, capacity reuse, growth relocation order, and balanced release.
 Positional `emplace` accepts zero arguments when the element has a supported
-default constructor, or one nonconst rvalue of the exact element type. For an
+default constructor, one nonconst rvalue of the exact element type, or one
+const lvalue when a supported copy constructor exists. For an
 in-place middle insertion it constructs a temporary before shifting live
 elements, assigns the new position from that temporary, and destroys it. End
 insertion and growth construct directly in the destination. Host O0/O2
-fixtures check default construction, aliased rvalues, capacity reuse, growth,
-and balanced release.
+fixtures check default and copy construction, aliased arguments, capacity
+reuse, growth, and balanced release.
 `resize(count)` admits a supported default constructor, and
 `resize(count, const T&)` admits a supported copy constructor. Shrinking destroys
 the removed tail; growth within capacity constructs new elements in place.

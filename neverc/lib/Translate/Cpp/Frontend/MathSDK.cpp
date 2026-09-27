@@ -19961,14 +19961,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorEmplace;
         if (Method->getNumParams() == 2) {
           const auto Parameter = Method->getParamDecl(1)->getType();
-          if ((((!Vector->OwningElement || CopyableString) &&
+          const bool Copyable = CopyableString ||
+                                Vector->CopyElementConstructor;
+          if ((((!Vector->OwningElement || Copyable) &&
                 Parameter->isLValueReferenceType()) ||
                Parameter->isRValueReferenceType()) &&
               Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                              Element) &&
               (!Vector->OwningElement ||
                Context.hasSameType(Parameter->getPointeeType(), Element) ||
-               CopyableString) &&
+               Copyable) &&
               Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
                                              Element))
             return UtilityOperation::VectorEmplace;
