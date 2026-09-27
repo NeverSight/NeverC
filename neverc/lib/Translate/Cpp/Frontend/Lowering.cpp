@@ -13780,7 +13780,7 @@ class FunctionLowering {
         } else if (NestedRelation) {
           auto Order = compareNestedVectors(
               dereference(json::Object(LeftCurrent), L),
-              dereference(json::Object(RightCurrent), L), *Nested, L);
+              dereference(json::Object(RightCurrent), L), *Nested, true, L);
           branch(
               binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
               Next, Different, L);
@@ -13835,7 +13835,7 @@ class FunctionLowering {
       } else if (NestedRelation) {
         auto Order = compareNestedVectors(
             dereference(json::Object(LeftCurrent), L),
-            dereference(json::Object(RightCurrent), L), *Nested, L);
+            dereference(json::Object(RightCurrent), L), *Nested, false, L);
         branch(
             binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
             Less, CheckGreater, L);
@@ -19388,7 +19388,7 @@ class FunctionLowering {
 
   Expression compareNestedVectors(Expression Left, Expression Right,
                                   const UtilityVectorRecord &Vector,
-                                  SourceLocation L) {
+                                  bool Equality, SourceLocation L) {
     const auto VectorType = A.Context.getRecordType(Vector.Record);
     auto LeftAddress = snapshot(address(std::move(Left), VectorType, L), L);
     auto RightAddress = snapshot(address(std::move(Right), VectorType, L), L);
@@ -19422,29 +19422,44 @@ class FunctionLowering {
                   "bool", L),
            Compare, Greater, L);
     label(Compare, L);
-    if (Vector.ElementType->isIntegerType()) {
+    if (Vector.ElementType->isIntegerType() ||
+        Vector.ElementType->isFloatingType() ||
+        Vector.ElementType->isObjectPointerType() ||
+        Vector.ElementType->isVoidPointerType()) {
       auto LeftElement = snapshot(dereference(json::Object(LeftCurrent), L), L);
       auto RightElement =
           snapshot(dereference(json::Object(RightCurrent), L), L);
-      const auto CheckGreater = labelName();
-      branch(binary("<", json::Object(LeftElement), json::Object(RightElement),
-                    "bool", L),
-             Less, CheckGreater, L);
-      label(CheckGreater, L);
-      branch(binary("<", std::move(RightElement), std::move(LeftElement),
-                    "bool", L),
-             Greater, Next, L);
+      if (Equality) {
+        branch(binary("==", std::move(LeftElement), std::move(RightElement),
+                      "bool", L),
+               Next, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(binary("<", json::Object(LeftElement),
+                      json::Object(RightElement), "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary("<", std::move(RightElement), std::move(LeftElement),
+                      "bool", L),
+               Greater, Next, L);
+      }
     } else if (const auto String = approvedUtilityStringRecord(
                    A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(),
                    A.Context)) {
       auto Order = compareVectorStringsAt(
           json::Object(LeftCurrent), json::Object(RightCurrent), *String, L);
-      const auto CheckGreater = labelName();
-      branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
-             Less, CheckGreater, L);
-      label(CheckGreater, L);
-      branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
-             Greater, Next, L);
+      if (Equality) {
+        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+               Next, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      }
     } else {
       const auto Nested = approvedUtilityVectorRecord(
           A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
@@ -19453,13 +19468,19 @@ class FunctionLowering {
                "The nested vector layout is unavailable.");
       auto Order = compareNestedVectors(
           dereference(json::Object(LeftCurrent), L),
-          dereference(json::Object(RightCurrent), L), *Nested, L);
-      const auto CheckGreater = labelName();
-      branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
-             Less, CheckGreater, L);
-      label(CheckGreater, L);
-      branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
-             Greater, Next, L);
+          dereference(json::Object(RightCurrent), L), *Nested, Equality, L);
+      if (Equality) {
+        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+               Next, Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      }
     }
     label(Next, L);
     assign(LeftCurrent,

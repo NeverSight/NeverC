@@ -56789,6 +56789,77 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedScalarVectorRelationsRun) {
+  const auto Source = tmpFile("nested-scalar-vector-relations.cpp");
+  const auto Output = tmpFile("nested-scalar-vector-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    float nan = 0.0f / 0.0f;
+    std::vector<std::vector<float>> left;
+    left.emplace_back();
+    left[0].push_back(nan);
+    std::vector<std::vector<float>> right(left);
+    if (left == right || !(left != right) || left < right || left > right ||
+        !(left <= right) || !(left >= right)) return 1;
+    left[0].push_back(2.0f);
+    right[0].push_back(3.0f);
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 2;
+    std::vector<std::vector<std::vector<float>>> cube;
+    cube.push_back(left);
+    std::vector<std::vector<std::vector<float>>> clone(cube);
+    if (cube == clone || !(cube != clone) || cube < clone || cube > clone ||
+        !(cube <= clone) || !(cube >= clone)) return 3;
+    clone[0][0][1] = 4.0f;
+    if (!(cube < clone) || cube > clone || !(cube <= clone) ||
+        cube >= clone) return 4;
+    int storage[3] = {0, 1, 2};
+    std::vector<std::vector<int*>> pointers;
+    pointers.emplace_back();
+    pointers[0].push_back(&storage[0]);
+    std::vector<std::vector<int*>> same(pointers);
+    if (!(pointers == same) || pointers != same || pointers < same ||
+        pointers > same || !(pointers <= same) || !(pointers >= same))
+      return 5;
+    same[0][0] = &storage[1];
+    if (pointers == same || !(pointers != same) || !(pointers < same) ||
+        pointers > same || !(pointers <= same) || pointers >= same)
+      return 6;
+    std::vector<std::vector<void*>> opaque;
+    opaque.emplace_back();
+    opaque[0].push_back(&storage[0]);
+    std::vector<std::vector<void*>> opaque_same(opaque);
+    if (!(opaque == opaque_same) || opaque != opaque_same) return 7;
+    opaque_same[0][0] = &storage[2];
+    if (opaque == opaque_same || !(opaque != opaque_same)) return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-scalar-vector-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

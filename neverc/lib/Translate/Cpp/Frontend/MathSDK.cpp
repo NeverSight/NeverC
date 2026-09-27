@@ -5911,18 +5911,23 @@ static bool utilityNestedVectorComparable(const State &S,
                                           const SourceManager &SM,
                                           const UtilityVectorRecord &Vector,
                                           const ASTContext &Context,
-                                          unsigned Depth = 0) {
+                                          bool Equality, unsigned Depth = 0) {
   if (Depth >= 64)
     return false;
-  if (Vector.ElementType->isIntegerType())
+  if (Vector.ElementType->isIntegerType() ||
+      Vector.ElementType->isFloatingType() ||
+      (Vector.ElementType->isObjectPointerType() &&
+       (Equality || !Vector.ElementType->getPointeeType()->isIncompleteType())))
+    return true;
+  if (Equality && Vector.ElementType->isVoidPointerType())
     return true;
   if (approvedUtilityStringRecord(
           S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context))
     return true;
   const auto Nested = approvedUtilityVectorRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
-  return Nested &&
-         utilityNestedVectorComparable(S, SM, *Nested, Context, Depth + 1);
+  return Nested && utilityNestedVectorComparable(S, SM, *Nested, Context,
+                                                 Equality, Depth + 1);
 }
 
 const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
@@ -21160,8 +21165,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
       const bool NestedRelation =
-          NestedElement &&
-          utilityNestedVectorComparable(S, SM, *NestedElement, Context);
+          NestedElement && utilityNestedVectorComparable(S, SM, *NestedElement,
+                                                         Context, Equality);
       const bool PointerElement =
           Left->ElementType->isObjectPointerType() &&
           (Equality ||
