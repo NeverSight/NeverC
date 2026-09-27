@@ -29600,6 +29600,15 @@ void pair_vectors() {
   std::vector<Nested> nested;
   nested.push_back(Nested(Pair(7, 8), 9));
   nested.push_back(nested[0]);
+  std::vector<Pair> positions;
+  positions.reserve(3);
+  positions.emplace_back(1, 2);
+  positions.emplace_back(3, 4);
+  positions.emplace(positions.cbegin() + 1,
+                    positions[0].first, positions[1].second);
+  positions.shrink_to_fit();
+  positions.emplace(positions.cbegin() + 1,
+                    positions[2].first, positions[0].second);
 }
 bool compare_nested_integers(const std::vector<std::vector<int>>& left,
                              const std::vector<std::vector<int>>& right) {
@@ -29806,6 +29815,14 @@ void f() {
   std::vector<std::pair<int, int>> values;
   short first = 1;
   values.emplace_back(first, 2);
+}
+""",
+        "pair-converting-positional-emplace": """\
+#include <utility>
+void f() {
+  std::vector<std::pair<int, int>> values;
+  short first = 1;
+  values.emplace(values.cbegin(), first, 2);
 }
 """,
         "nested-void-pointer-order": """\

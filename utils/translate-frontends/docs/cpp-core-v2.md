@@ -2641,6 +2641,8 @@ resize and recursively nested pairs without element ownership.
 For an admitted pair with exact scalar field types, `emplace_back(first, second)`
 captures both values before vector growth and initializes the corresponding
 fields directly. The returned reference names the inserted pair.
+Positional `emplace(position, first, second)` uses the same capture rule before
+shifting or growth and returns an iterator to the new pair.
 The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
 work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,

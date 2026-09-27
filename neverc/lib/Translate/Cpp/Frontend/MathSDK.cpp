@@ -20335,6 +20335,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                              Element))
             return UtilityOperation::VectorEmplace;
         }
+        if (Method->getNumParams() == 3) {
+          const auto Pair = approvedUtilityPairRecord(
+              S, SM, Element->getAsCXXRecordDecl(), Context);
+          if (Pair && utilityScalar(Context, Pair->First->getType()) &&
+              utilityScalar(Context, Pair->Second->getType()) &&
+              Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                             Pair->First->getType()) &&
+              Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                             Pair->Second->getType()))
+            return UtilityOperation::VectorEmplace;
+        }
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
                                                     Context))
           return UtilityOperation::VectorEmplace;

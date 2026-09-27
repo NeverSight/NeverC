@@ -12002,6 +12002,13 @@ class FunctionLowering {
           Operation == UtilityOperation::VectorEmplace &&
           approvedUtilityVectorUniquePtrPointerEmplace(
               A.S, A.Sources, *Vector, Call, 1, A.Context);
+      const auto PairEmplace =
+          Operation == UtilityOperation::VectorEmplace &&
+                  Call->getNumArgs() == 3
+              ? approvedUtilityPairRecord(
+                    A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::optional<UtilityPairRecord>();
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
@@ -12097,6 +12104,15 @@ class FunctionLowering {
               json::Object(*Value), Vector->ElementType, *Unique,
               Call->getArg(1),
               Call->getNumArgs() == 3 ? Call->getArg(2) : nullptr, L);
+        } else if (PairEmplace) {
+          auto First = snapshot(expression(Call->getArg(1)), L);
+          auto Second = snapshot(expression(Call->getArg(2)), L);
+          Value = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*Value), Vector->ElementType, L);
+          assign(fieldStorage(json::Object(*Value), PairEmplace->First, L),
+                 std::move(First), L);
+          assign(fieldStorage(json::Object(*Value), PairEmplace->Second, L),
+                 std::move(Second), L);
         } else if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);

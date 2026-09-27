@@ -59908,6 +59908,24 @@ int main() {
     Pair &appended = spare.emplace_back(11, 12);
     if (&appended != &spare[0] || appended.first != 11 ||
         appended.second != 12) return 11;
+    std::vector<Pair> positions;
+    positions.reserve(3);
+    positions.emplace_back(1, 2);
+    positions.emplace_back(3, 4);
+    auto inserted = positions.emplace(positions.cbegin() + 1,
+                                      positions[0].first,
+                                      positions[1].second);
+    if (inserted != positions.begin() + 1 || positions.size() != 3 ||
+        positions[1].first != 1 || positions[1].second != 4) return 12;
+    positions.shrink_to_fit();
+    auto old_storage = positions.data();
+    auto grown = positions.emplace(positions.cbegin() + 1,
+                                    positions[2].first,
+                                    positions[0].second);
+    if (grown != positions.begin() + 1 || positions.data() == old_storage ||
+        positions.size() != 4 || positions[1].first != 3 ||
+        positions[1].second != 2 ||
+        positions[2].first != 1 || positions[3].second != 4) return 13;
   }
   return allocations == releases ? 0 : 9;
 }
