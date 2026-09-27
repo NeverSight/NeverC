@@ -60079,6 +60079,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorArrayValuesRun) {
+  const auto Source = tmpFile("vector-array-values.cpp");
+  const auto Output = tmpFile("vector-array-values.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <array>
+#include <vector>
+using Row = std::array<int, 2>;
+int main() {
+  {
+    std::vector<Row> values;
+    values.emplace_back();
+    if (values.size() != 1 || values[0][0] != 0 || values[0][1] != 0)
+      return 1;
+    Row seed{{3, 4}};
+    values.push_back(seed);
+    values.push_back(Row{{5, 6}});
+    if (values.size() != 3 || values[1][0] != 3 || values[2][1] != 6)
+      return 2;
+    values.shrink_to_fit();
+    auto old_storage = values.data();
+    auto &aliased = values.emplace_back(values[1]);
+    if (&aliased != &values.back() || values.data() == old_storage ||
+        aliased[0] != 3 || aliased[1] != 4)
+      return 3;
+    values.insert(values.cbegin() + 1, values[2]);
+    if (values.size() != 5 || values[1][0] != 5 || values[2][1] != 4)
+      return 4;
+    values.erase(values.cbegin() + 2);
+    std::vector<Row> copied(values);
+    if (copied.data() == values.data() || copied.size() != 4 ||
+        copied[1][1] != 6)
+      return 5;
+    values.assign(Size(2), seed);
+    values.resize(Size(4), seed);
+    if (values.size() != 4 || values[0][0] != 3 || values[3][1] != 4)
+      return 6;
+    copied = values;
+    if (copied.size() != 4 || copied[3][0] != 3)
+      return 7;
+    std::vector<Row> spare;
+    spare.swap(values);
+    if (spare.size() != 4 || values.size() != 0 || spare[0][1] != 4)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-array-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

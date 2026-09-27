@@ -5698,6 +5698,26 @@ bool approvedUtilityStringDestructor(const State &S, const SourceManager &SM,
          cstddefOrigin(S, SM, Destructor->getLocation(), "libcxx", "string");
 }
 
+static bool utilityVectorArrayAssignableElements(const State &S,
+                                                 const SourceManager &SM,
+                                                 const ASTContext &Context,
+                                                 QualType Element,
+                                                 unsigned Depth = 0) {
+  if (Depth >= 64 || Element.isNull() || Element.isConstQualified() ||
+      Element.isVolatileQualified())
+    return false;
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (const auto Nested = approvedUtilityArrayRecord(S, SM, Record, Context))
+    return Nested->Record->hasTrivialCopyAssignment() &&
+           Nested->Record->hasTrivialMoveAssignment() &&
+           utilityVectorArrayAssignableElements(S, SM, Context,
+                                                Nested->ElementType, Depth + 1);
+  if (approvedUtilityPairRecord(S, SM, Record, Context))
+    return utilityPairAssignableValue(S, SM, Context, Element);
+  return utilityArrayValue(S, SM, Context, Element) &&
+         utilityArrayTriviallyAssignable(Context, Element);
+}
+
 std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
                             const CXXRecordDecl *Record,
@@ -5742,6 +5762,18 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       approvedUtilityPairRecord(S, SM, ElementRecord, Context) &&
       utilityPairValue(S, SM, Context, Element, 0) &&
       utilityPairAssignableValue(S, SM, Context, Element);
+  const auto ValueArray =
+      approvedUtilityArrayRecord(S, SM, ElementRecord, Context);
+  const bool ValueArrayElement =
+      ElementRecord && ElementRecord->hasTrivialDefaultConstructor() &&
+      ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord->hasTrivialMoveConstructor() &&
+      ElementRecord->hasTrivialCopyAssignment() &&
+      ElementRecord->hasTrivialMoveAssignment() &&
+      ElementRecord->hasTrivialDestructor() && ValueArray &&
+      utilityArrayValue(S, SM, Context, Element) &&
+      utilityVectorArrayAssignableElements(S, SM, Context,
+                                           ValueArray->ElementType);
   const bool NestedVector =
       ElementRecord &&
       approvedUtilityVectorRecord(S, SM, ElementRecord, Context).has_value();
@@ -5818,8 +5850,8 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
         Element->isObjectPointerType() || TrivialSourceRecord ||
-        ValuePairElement ||
-        OwningElement || SourceOwnedElement) ||
+        ValuePairElement || ValueArrayElement || OwningElement ||
+        SourceOwnedElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);

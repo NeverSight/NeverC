@@ -29399,6 +29399,7 @@ void operator delete(void *p) noexcept { free(p); }
 void operator delete(void *p, Size) noexcept { free(p); }
 void operator delete[](void *p) noexcept { free(p); }
 void operator delete[](void *p, Size) noexcept { free(p); }
+#include <array>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -29619,6 +29620,18 @@ void pair_vectors() {
   pointers.emplace_back(&target, 2);
   pointers.emplace(pointers.cbegin(), nullptr, 0);
 }
+void array_vectors() {
+  using Row = std::array<int, 2>;
+  std::vector<Row> values;
+  values.emplace_back();
+  Row seed{{3, 4}};
+  values.push_back(seed);
+  values.emplace_back(values[1]);
+  values.assign(2, seed);
+  std::vector<Row> copied(values);
+  copied = values;
+  copied.swap(values);
+}
 bool compare_pair_vectors(const std::vector<std::pair<int, int>>& left,
                           const std::vector<std::pair<int, int>>& right) {
   return left == right || left != right || left < right ||
@@ -29832,6 +29845,20 @@ int main() { std::vector<Entry> left, right; return left == right; }
 int f() {
   std::vector<std::pair<const int, int>> values;
   values.emplace_back();
+  return values.size();
+}
+""",
+        "nonassignable-array": """\
+#include <array>
+int f() {
+  std::vector<std::array<const int, 2>> values;
+  return values.size();
+}
+""",
+        "nonassignable-nested-array": """\
+#include <array>
+int f() {
+  std::vector<std::array<std::array<const int, 2>, 2>> values;
   return values.size();
 }
 """,
