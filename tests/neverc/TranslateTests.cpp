@@ -53882,6 +53882,97 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordEqualRun) {
+  const auto Source = tmpFile("source-record-equal.cpp");
+  const auto Output = tmpFile("source-record-equal.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *expected_left, *expected_right;
+int comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++comparisons;
+    if (this != expected_left || &other != expected_right) ++bad_identity;
+    ++expected_left;
+    ++expected_right;
+    return value == other.value;
+  }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point left[3]{{1}, {2}, {3}}, right[3]{{1}, {2}, {3}};
+  expected_left = left;
+  expected_right = right;
+  if (!std::equal(left, left + 3, right) || comparisons != 3 ||
+      bad_identity) return 1;
+  expected_left = left;
+  expected_right = right;
+  comparisons = 0;
+  if (!std::equal(left, left + 3, right, right + 3) || comparisons != 3 ||
+      bad_identity) return 2;
+  right[1].value = 9;
+  expected_left = left;
+  expected_right = right;
+  comparisons = 0;
+  if (std::equal(left, left + 3, right) || comparisons != 2 ||
+      bad_identity) return 3;
+  comparisons = 0;
+  expected_left = left;
+  expected_right = right;
+  if (!std::equal(left, left, right, right) || comparisons != 0 ||
+      std::equal(left, left + 3, right, right + 2)) return 4;
+  right[1].value = 2;
+  std::vector<Point> first, second;
+  first.push_back(Point{4});
+  first.push_back(Point{5});
+  second.push_back(Point{4});
+  second.push_back(Point{5});
+  const std::vector<Point> &view = first;
+  expected_left = &first[0];
+  expected_right = &second[0];
+  comparisons = 0;
+  if (!std::equal(view.cbegin(), view.cend(), second.begin(),
+                  second.end()) || comparisons != 2 || bad_identity)
+    return 5;
+  Friend friends_a[2]{{1}, {2}}, friends_b[2]{{1}, {2}};
+  if (!std::equal(friends_a, friends_a + 2, friends_b)) return 6;
+  owned::Free free_a[2]{{1}, {2}}, free_b[2]{{1}, {2}};
+  if (!std::equal(free_a, free_a + 2, free_b, free_b + 2)) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-equal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorEqualFillAndReverseRun) {
   const auto Source = tmpFile("wrapped-iterator-equal-fill-reverse.cpp");
   const auto Output = tmpFile("wrapped-iterator-equal-fill-reverse.nc");

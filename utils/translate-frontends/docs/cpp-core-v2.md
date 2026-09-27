@@ -1684,8 +1684,13 @@ const member, hidden friend or enclosing-namespace free `bool` function.
 Their value argument retains its original address throughout the loop, and an
 empty range performs no record comparison. Each iterator is evaluated once;
 `find` returns a wrapper around the matching pointer or end pointer, and
-`count` returns the target pointer difference type. Other record equality
-algorithms remain rejected.
+`count` returns the target pointer difference type.
+
+The three- and four-iterator default `std::equal` forms also admit two raw or
+wrapped ranges of the same exact source-owned trivial record type under that
+selected Boolean `operator==` check. They compare the original range objects
+without copying them, stop at the first unequal pair, and the four-iterator
+form also checks both range ends. Record predicate overloads remain rejected.
 
 The three- and four-iterator `std::equal` overloads also accept those wrapped
 ranges on either side, including a wrapped range compared with a raw scalar

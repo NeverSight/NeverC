@@ -4466,6 +4466,14 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
+      const auto SourceComparison =
+          !Predicate && A.Context.hasSameUnqualifiedType(
+                            FirstRange.second->getPointeeType(),
+                            SecondRange.second->getPointeeType())
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, FirstRange.second->getPointeeType(),
+                    OO_EqualEqual, A.Context)
+              : std::nullopt;
       auto Result = temporary("bool", L);
       const auto Check = labelName(), CheckSecond = labelName();
       const auto Compare = labelName(), Next = labelName();
@@ -4486,11 +4494,17 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
-                 : CompareUtilityValues(
-                       "==", dereference(First, L),
-                       FirstRange.second->getPointeeType(),
-                       dereference(Second, L),
-                       SecondRange.second->getPointeeType()),
+             : SourceComparison
+                 ? compareVectorSourceElements(
+                       json::Object(First), json::Object(Second),
+                       SourceComparison->Member,
+                       SourceComparison->Friend ? SourceComparison->Friend
+                                                : SourceComparison->Namespace,
+                       L)
+                 : CompareUtilityValues("==", dereference(First, L),
+                                        FirstRange.second->getPointeeType(),
+                                        dereference(Second, L),
+                                        SecondRange.second->getPointeeType()),
              Next, False, L);
       label(Next, L);
       assign(First,

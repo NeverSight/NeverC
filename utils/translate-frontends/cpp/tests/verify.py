@@ -30809,6 +30809,53 @@ owned::Free *find_free(owned::Free *first, owned::Free *last,
           'return std::find(first,last,needle);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_equal_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+bool equal_raw(const Member *first, const Member *last,
+               const Member *second, const Member *second_last) {
+  return std::equal(first, last, second) &&
+         std::equal(first, last, second, second_last);
+}
+bool equal_vector(const std::vector<Member> &first,
+                  const std::vector<Member> &second) {
+  return std::equal(first.cbegin(), first.cend(), second.cbegin(),
+                    second.cend());
+}
+bool equal_friend(Friend *first, Friend *last, Friend *second) {
+  return std::equal(first, last, second);
+}
+bool equal_free(owned::Free *first, owned::Free *last,
+                owned::Free *second, owned::Free *second_last) {
+  return std::equal(first, last, second, second_last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-equal-" + target,
+              source_record_equal_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-equal-nonbool",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'bool f(Entry*a,Entry*b,Entry*c){return std::equal(a,b,c);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_equal_fill_reverse_source = """\
 #include <algorithm>
 #include <string>
