@@ -5950,6 +5950,36 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
   return Selected;
 }
 
+const CXXMethodDecl *approvedUtilityVectorElementComparison(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    OverloadedOperatorKind Operator, const ASTContext &Context) {
+  const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record || !Vector.MoveElementConstructor ||
+      (Operator != OO_EqualEqual && Operator != OO_Less) ||
+      !utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType))
+    return nullptr;
+  const auto ConstReference =
+      Context.getLValueReferenceType(Vector.ElementType.withConst());
+  const CXXMethodDecl *Selected = nullptr;
+  for (const auto *Method : Record->methods()) {
+    if (!Method->isOverloadedOperator() ||
+        Method->getOverloadedOperator() != Operator || Method->isStatic() ||
+        !Method->isConst() || Method->getRefQualifier() == RQ_RValue ||
+        Method->getNumParams() != 1 || Method->isDeleted() ||
+        !ordinaryOperator(Method) || !callableMethod(Method) ||
+        !Method->hasBody() || !S.owns(SM, Method->getLocation()) ||
+        !Method->getReturnType()->isBooleanType() ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                             ConstReference))
+      continue;
+    if (Selected)
+      return nullptr;
+    Selected = Method;
+  }
+  return Selected;
+}
+
 std::optional<UtilityVectorConstruction>
 approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                                   const CXXConstructExpr *Construction,
@@ -20893,9 +20923,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             Operator->getOperator() == OO_ExclaimEqual;
       const bool PointerElement =
           Left->ElementType->isObjectPointerType() &&
-          (Equality || !Left->ElementType->getPointeeType()->isIncompleteType());
+          (Equality ||
+           !Left->ElementType->getPointeeType()->isIncompleteType());
+      const bool SourceComparison = approvedUtilityVectorElementComparison(
+          S, SM, *Left, Equality ? OO_EqualEqual : OO_Less, Context);
       if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
-                       PointerElement))
+                       PointerElement || SourceComparison))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

@@ -2664,6 +2664,13 @@ and unique-pointer ordering uses the profile's selected native address order;
 prefix and equal-length rules remain lexicographic. Source-associated element
 or deleter namespaces can select a different comparison by ADL, so those
 unique-pointer specializations remain outside this comparison boundary.
+Source-owned resource elements with unique, supported const member
+`operator==` and `operator<` also participate in all six vector relations.
+Equality short-circuits on the first unequal element; ordering calls `<` in
+both directions at the first differing position and applies prefix length.
+Host O0/O2 fixtures cover empty, equal, differing and prefix vectors, element
+operator calls, and balanced resource release. Free or ADL-selected element
+operators remain outside this boundary.
 Source-owned standard-layout records with nontrivial destruction also work as
 elements when their selected destructor and `noexcept` move constructor can be
 lowered. `push_back(T&&)` and `emplace_back(T&&)` construct directly in the

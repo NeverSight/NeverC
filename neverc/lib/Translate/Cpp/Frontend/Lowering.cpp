@@ -13692,7 +13692,12 @@ class FunctionLowering {
       auto Unique = approvedUtilityUniquePtrRecord(
           A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
           A.Context);
-      if (LeftVector->OwningElement && !String && !Unique)
+      const bool Equality = Operator->getOperator() == OO_EqualEqual ||
+                            Operator->getOperator() == OO_ExclaimEqual;
+      const auto *SourceComparison = approvedUtilityVectorElementComparison(
+          A.S, A.Sources, *LeftVector, Equality ? OO_EqualEqual : OO_Less,
+          A.Context);
+      if (LeftVector->OwningElement && !String && !Unique && !SourceComparison)
         reject(L, "vector comparison",
                "The selected owning element comparison is unavailable.");
       const auto PointerType = type(LeftVector->PointerType, L);
@@ -13731,6 +13736,24 @@ class FunctionLowering {
         auto Value = dereference(std::move(Current), L);
         return Unique ? snapshot(UniquePtrMember(std::move(Value), *Unique), L)
                       : snapshot(std::move(Value), L);
+      };
+      auto CompareSource = [&](Expression Left, Expression Right) {
+        json::Array Args;
+        Args.push_back(snapshot(
+            cast(std::move(Left), type(SourceComparison->getThisType(), L), L),
+            L));
+        Args.push_back(snapshot(
+            cast(std::move(Right),
+                 type(SourceComparison->getParamDecl(0)->getType(), L), L),
+            L));
+        chargeCall(Args, L);
+        auto Compared = temporary("bool", L);
+        Body.push_back(json::Object{{"op", "call"},
+                                    {"callee", A.name(SourceComparison)},
+                                    {"args", std::move(Args)},
+                                    {"target", json::Object(Compared)},
+                                    {"loc", A.loc(L)}});
+        return Compared;
       };
       auto CompareStrings = [&]() -> Expression {
         auto Left = ReadStringAt(json::Object(LeftCurrent), *String);
@@ -13805,8 +13828,6 @@ class FunctionLowering {
       const auto Compare = labelName(), Next = labelName();
       const auto LeftDone = labelName(), Equal = labelName();
       const auto Done = labelName();
-      const bool Equality = Operator->getOperator() == OO_EqualEqual ||
-                            Operator->getOperator() == OO_ExclaimEqual;
       if (Equality) {
         const auto Different = labelName();
         jump(CheckLeft, L);
@@ -13821,8 +13842,12 @@ class FunctionLowering {
         label(Compare, L);
         if (String) {
           auto Order = CompareStrings();
-          branch(binary("==", std::move(Order), quantity(0, "int", L), "bool",
-                        L),
+          branch(
+              binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+              Next, Different, L);
+        } else if (SourceComparison) {
+          branch(CompareSource(json::Object(LeftCurrent),
+                               json::Object(RightCurrent)),
                  Next, Different, L);
         } else {
           auto LeftElement = ComparableElement(json::Object(LeftCurrent));
@@ -13862,11 +13887,19 @@ class FunctionLowering {
       label(Compare, L);
       if (String) {
         auto Order = CompareStrings();
-        branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool",
-                      L),
-               Less, CheckGreater, L);
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
         label(CheckGreater, L);
         branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      } else if (SourceComparison) {
+        branch(CompareSource(json::Object(LeftCurrent),
+                             json::Object(RightCurrent)),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(CompareSource(json::Object(RightCurrent),
+                             json::Object(LeftCurrent)),
                Greater, Next, L);
       } else {
         auto LeftElement = ComparableElement(json::Object(LeftCurrent));
