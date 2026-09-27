@@ -22150,6 +22150,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Wrapped->IteratorType;
     return std::nullopt;
   };
+  auto AlgorithmRecordEqualityRangeParameter =
+      [&](unsigned Index) -> std::optional<QualType> {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return std::nullopt;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Same(Call->getArg(Index)->getType(), Parameter))
+      return std::nullopt;
+    auto Pointer = Parameter;
+    if (!utilityObjectPointer(Context, Pointer)) {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      if (!Wrapped || !utilityObjectPointer(Context, Wrapped->IteratorType))
+        return std::nullopt;
+      Pointer = Wrapped->IteratorType;
+    }
+    if (!approvedUtilityTrivialSourceComparison(
+            S, SM, Pointer->getPointeeType(), OO_EqualEqual, Context))
+      return std::nullopt;
+    return Pointer;
+  };
   auto AlgorithmTransferRangeParameters = [&](unsigned InputIndex,
                                               unsigned OutputIndex) {
     const auto Input = AlgorithmRangePointerParameter(InputIndex);
@@ -23275,30 +23295,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
-    auto RecordRange = [&](unsigned Index) -> std::optional<QualType> {
-      const auto Parameter = Function->getParamDecl(Index)->getType();
-      if (!Same(Call->getArg(Index)->getType(), Parameter))
-        return std::nullopt;
-      if (utilityObjectPointer(Context, Parameter))
-        return Parameter;
-      const auto Wrapped = approvedUtilityWrapIteratorRecord(
-          S, SM, Parameter->getAsCXXRecordDecl(), Context);
-      if (Wrapped && utilityObjectPointer(Context, Wrapped->IteratorType))
-        return Wrapped->IteratorType;
-      return std::nullopt;
-    };
     if (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) {
-      const auto First = RecordRange(0);
-      const auto Last = RecordRange(1);
-      const auto Second = RecordRange(2);
+      const auto First = AlgorithmRecordEqualityRangeParameter(0);
+      const auto Last = AlgorithmRecordEqualityRangeParameter(1);
+      const auto Second = AlgorithmRecordEqualityRangeParameter(2);
       if (First && Last && Second &&
           Context.hasSameUnqualifiedType((*First)->getPointeeType(),
                                          (*Second)->getPointeeType()) &&
-          approvedUtilityTrivialSourceComparison(
-              S, SM, (*First)->getPointeeType(), OO_EqualEqual, Context) &&
           (Call->getNumArgs() == 3 ||
-           (RecordRange(3) && Same(Function->getParamDecl(2)->getType(),
-                                   Function->getParamDecl(3)->getType()))))
+           (AlgorithmRecordEqualityRangeParameter(3) &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))))
         return UtilityOperation::AlgorithmEqual;
     }
     const auto First = AlgorithmRangePointerParameter(0);
@@ -23675,6 +23682,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Second = AlgorithmRangePointerParameter(2);
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(2)->getType()) &&
+        (Call->getNumArgs() == 3 || Call->getNumArgs() == 4)) {
+      const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
+      const auto RecordLast = AlgorithmRecordEqualityRangeParameter(1);
+      const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
+      if (RecordFirst && RecordLast && RecordSecond &&
+          Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                         (*RecordSecond)->getPointeeType()) &&
+          (Call->getNumArgs() == 3 ||
+           (AlgorithmRecordEqualityRangeParameter(3) &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))))
+        return UtilityOperation::AlgorithmMismatch;
+    }
     if (First && Last && Second && Pair &&
         Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
         Same(Pair->Second->getType(), Function->getParamDecl(2)->getType())) {

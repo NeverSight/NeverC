@@ -54306,6 +54306,107 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordMismatchRun) {
+  const auto Source = tmpFile("source-record-mismatch.cpp");
+  const auto Output = tmpFile("source-record-mismatch.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <utility>
+#include <vector>
+struct Point;
+const Point *expected_left, *expected_right;
+int comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++comparisons;
+    if (this != expected_left || &other != expected_right) ++bad_identity;
+    ++expected_left;
+    ++expected_right;
+    return value == other.value;
+  }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point left[4]{{1}, {2}, {3}, {4}};
+  Point right[4]{{1}, {2}, {8}, {4}};
+  expected_left = left;
+  expected_right = right;
+  auto unbounded = std::mismatch(left, left + 4, right);
+  if (unbounded.first != left + 2 || unbounded.second != right + 2 ||
+      comparisons != 3 || bad_identity) return 1;
+  expected_left = left;
+  expected_right = right;
+  comparisons = 0;
+  auto bounded = std::mismatch(left, left + 4, right, right + 4);
+  if (bounded.first != left + 2 || bounded.second != right + 2 ||
+      comparisons != 3 || bad_identity) return 2;
+  expected_left = left;
+  expected_right = right;
+  comparisons = 0;
+  auto short_range = std::mismatch(left, left + 4, right, right + 1);
+  if (short_range.first != left + 1 || short_range.second != right + 1 ||
+      comparisons != 1 || bad_identity) return 3;
+  comparisons = 0;
+  auto empty = std::mismatch(left, left, right, right + 4);
+  if (empty.first != left || empty.second != right || comparisons) return 4;
+  std::vector<Point> first, second;
+  first.push_back(Point{5});
+  first.push_back(Point{6});
+  second.push_back(Point{5});
+  second.push_back(Point{9});
+  const std::vector<Point> &view = first;
+  expected_left = &first[0];
+  expected_right = &second[0];
+  comparisons = 0;
+  auto wrapped = std::mismatch(view.cbegin(), view.cend(),
+                               second.begin(), second.end());
+  auto expected_first = view.cbegin();
+  auto expected_second = second.begin();
+  ++expected_first;
+  ++expected_second;
+  if (wrapped.first != expected_first || wrapped.second != expected_second ||
+      comparisons != 2 || bad_identity) return 5;
+  Friend friends_a[2]{{1}, {2}}, friends_b[2]{{1}, {3}};
+  auto friend_result = std::mismatch(friends_a, friends_a + 2, friends_b);
+  if (friend_result.first != friends_a + 1 ||
+      friend_result.second != friends_b + 1) return 6;
+  owned::Free free_a[2]{{1}, {2}}, free_b[2]{{1}, {3}};
+  auto free_result = std::mismatch(free_a, free_a + 2, free_b, free_b + 2);
+  if (free_result.first != free_a + 1 ||
+      free_result.second != free_b + 1) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-mismatch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");

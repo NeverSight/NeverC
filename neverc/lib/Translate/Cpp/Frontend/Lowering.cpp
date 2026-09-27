@@ -5512,6 +5512,14 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
+      const auto SourceComparison =
+          !Predicate && A.Context.hasSameUnqualifiedType(
+                            FirstRange.second->getPointeeType(),
+                            SecondRange.second->getPointeeType())
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, FirstRange.second->getPointeeType(),
+                    OO_EqualEqual, A.Context)
+              : std::nullopt;
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(FirstRange.second, L);
       const auto SecondType = type(SecondRange.second, L);
@@ -5532,11 +5540,17 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
-                 : CompareUtilityValues(
-                       "==", dereference(First, L),
-                       FirstRange.second->getPointeeType(),
-                       dereference(Second, L),
-                       SecondRange.second->getPointeeType()),
+             : SourceComparison
+                 ? compareVectorSourceElements(
+                       json::Object(First), json::Object(Second),
+                       SourceComparison->Member,
+                       SourceComparison->Friend ? SourceComparison->Friend
+                                                : SourceComparison->Namespace,
+                       L)
+                 : CompareUtilityValues("==", dereference(First, L),
+                                        FirstRange.second->getPointeeType(),
+                                        dereference(Second, L),
+                                        SecondRange.second->getPointeeType()),
              Advance, End, L);
       label(Advance, L);
       assign(First,

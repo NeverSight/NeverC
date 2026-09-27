@@ -1703,6 +1703,11 @@ form stops at either end; the unbounded form follows the first range. Its
 checked function-pointer predicate forms keep one callback value and direct
 scalar parameter conversions. The returned authenticated `std::pair` contains
 each input's own iterator type and wraps the two final pointers independently.
+The default comparison forms also accept two raw or wrapped ranges of the same
+source-owned trivial record type with a uniquely selected Boolean `operator==`.
+They compare original elements without copies, stop at the first mismatch or
+bounded end, and return both positions in that same authenticated pair.
+Record predicate forms remain rejected.
 `std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
 mutable vector and string iterators, while preserving the existing value
 conversion, single evaluation, and empty-range behavior. Const iterators and

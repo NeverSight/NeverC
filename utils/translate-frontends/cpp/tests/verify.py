@@ -31031,6 +31031,57 @@ letter_mismatch(std::string& first, const std::string& second) {
           'return std::mismatch(values.begin(),values.end(),values.begin());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_mismatch_source = """\
+#include <algorithm>
+#include <utility>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+std::pair<Member*, Member*> mismatch_raw(Member *first, Member *last,
+                                         Member *second) {
+  return std::mismatch(first, last, second);
+}
+std::pair<std::vector<Member>::const_iterator,
+          std::vector<Member>::iterator>
+mismatch_vector(const std::vector<Member> &first,
+                std::vector<Member> &second) {
+  return std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                       second.end());
+}
+std::pair<Friend*, Friend*> mismatch_friend(Friend *first, Friend *last,
+                                            Friend *second) {
+  return std::mismatch(first, last, second);
+}
+std::pair<owned::Free*, owned::Free*>
+mismatch_free(owned::Free *first, owned::Free *last,
+              owned::Free *second, owned::Free *second_last) {
+  return std::mismatch(first, last, second, second_last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-mismatch-" + target,
+              source_record_mismatch_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-mismatch-nonbool",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'auto f(Entry*a,Entry*b,Entry*c){return std::mismatch(a,b,c);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>
