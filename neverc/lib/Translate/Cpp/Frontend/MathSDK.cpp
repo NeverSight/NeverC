@@ -5930,7 +5930,9 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
         Context);
     const auto *Expression =
         dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
-    if ((!Vector->OwningElement || CopyableString) && List && Expression &&
+    if ((!Vector->OwningElement || CopyableString ||
+         Vector->CopyElementConstructor) &&
+        List && Expression &&
         Context.hasSameType(List->ElementType, Vector->ElementType) &&
         Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
                                        Context.getRecordType(List->Record)) &&
@@ -5957,7 +5959,8 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                              Context.getPointerType(Element)) ||
          Context.hasSameType(Wrapped->IteratorType,
                              Context.getPointerType(Element.withConst())));
-    if ((!Vector->OwningElement || CopyableString) &&
+    if ((!Vector->OwningElement || CopyableString ||
+         Vector->CopyElementConstructor) &&
         (RawPointer || WrappedPointer) &&
         Context.hasSameType(FirstType, LastType) &&
         Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
@@ -5977,11 +5980,13 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
       Evaluated.Val.getInt().getLimitedValue(65537) > 65536)
     return std::nullopt;
   if (Construction->getNumArgs() == 1) {
-    if (Vector->MoveElementConstructor)
+    if (Vector->MoveElementConstructor &&
+        !Vector->DefaultElementConstructor)
       return std::nullopt;
     return UtilityVectorConstruction::Count;
   }
-  if (Vector->OwningElement && !CopyableString)
+  if (Vector->OwningElement && !CopyableString &&
+      !Vector->CopyElementConstructor)
     return std::nullopt;
   const auto FillType = Constructor->getParamDecl(1)->getType();
   if (!FillType->isLValueReferenceType() ||
@@ -20082,22 +20087,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType()))
         return UtilityOperation::VectorReserve;
-      if (!Vector->MoveElementConstructor && Name == "resize" &&
+      if (Name == "resize" &&
           (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
           Call->getNumArgs() == Method->getNumParams() &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType())) {
-        if (Method->getNumParams() == 1)
-          return UtilityOperation::VectorResize;
-        const auto Parameter = Method->getParamDecl(1)->getType();
-        if ((!Vector->OwningElement || CopyableString) &&
-            Parameter->isLValueReferenceType() &&
-            Context.hasSameType(Parameter->getPointeeType(),
-                                Vector->ElementType.withConst()) &&
-            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
-                                           Vector->ElementType))
-          return UtilityOperation::VectorResizeFill;
+        if (Method->getNumParams() == 1) {
+          if (!Vector->MoveElementConstructor ||
+              Vector->DefaultElementConstructor)
+            return UtilityOperation::VectorResize;
+        } else {
+          const auto Parameter = Method->getParamDecl(1)->getType();
+          if ((!Vector->OwningElement || CopyableString ||
+               Vector->CopyElementConstructor) &&
+              Parameter->isLValueReferenceType() &&
+              Context.hasSameType(Parameter->getPointeeType(),
+                                  Vector->ElementType.withConst()) &&
+              Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                             Vector->ElementType))
+            return UtilityOperation::VectorResizeFill;
+        }
       }
       if (Name == "pop_back" && !Method->getNumParams() &&
           !Call->getNumArgs())

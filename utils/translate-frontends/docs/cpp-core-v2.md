@@ -2696,6 +2696,27 @@ elements, assigns the new position from that temporary, and destroys it. End
 insertion and growth construct directly in the destination. Host O0/O2
 fixtures check default construction, aliased rvalues, capacity reuse, growth,
 and balanced release.
+`resize(count)` admits a supported default constructor, and
+`resize(count, const T&)` admits a supported copy constructor. Shrinking destroys
+the removed tail; growth within capacity constructs new elements in place.
+Growth beyond capacity constructs the new tail before moving old elements, then
+destroys the old objects from first to last after all moves. The same deferred
+destruction applies to `reserve`. Host O0/O2 fixtures check default and copy
+construction order, aliased fill values, capacity reuse, growth, shrinking,
+and balanced release.
+Checked constant-count `vector(count)` constructs each source-owned element
+through its supported default constructor. `vector(count, const T&)` constructs
+each through its supported copy constructor, preserving independent ownership.
+The source-owned count fixtures cover zero and nonzero counts, deep copies, and
+balanced release at host O0/O2.
+Raw-pointer and authenticated vector-iterator range constructors also copy
+source-owned elements through the selected copy constructor. Host O0/O2
+fixtures check single evaluation of range endpoints, deep copies, empty
+ranges, and balanced release.
+Initializer-list construction also copies each source-owned backing element
+through its selected copy constructor and releases the backing array at the
+end of the full expression. Host O0/O2 fixtures check deep copies and all
+four destructor calls for a two-element list.
 Unique-pointer elements remain noncopyable. Other positional emplacement
 signatures, nontrivial record element operations, allocators, remaining vector
 methods, and throwing allocation or length-error paths remain unsupported.

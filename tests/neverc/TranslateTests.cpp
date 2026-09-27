@@ -55921,6 +55921,288 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedResizeRun) {
+  const auto Source = tmpFile("vector-source-owned-resize.cpp");
+  const auto Output = tmpFile("vector-source-owned-resize.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int tracing;
+int sequence;
+void note(int n) { if (tracing) sequence = sequence * 10 + n; }
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(new int(0)) { ++live; note(1); }
+  explicit Box(int n) : value(new int(n)) { ++live; note(5); }
+  Box(const Box &other) : value(new int(*other.value)) {
+    ++live;
+    note(2);
+  }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+    note(3);
+  }
+  ~Box() { delete value; --live; note(4); }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(5);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    auto storage = values.data();
+    sequence = 0; tracing = 1;
+    values.resize(4);
+    tracing = 0;
+    if (sequence != 11 || values.data() != storage ||
+        values.size() != 4 || *values[0].value != 1 ||
+        *values[1].value != 2 || *values[2].value != 0 ||
+        *values[3].value != 0) return 1;
+    sequence = 0; tracing = 1;
+    values.resize(5, values[0]);
+    tracing = 0;
+    if (sequence != 2 || values.data() != storage ||
+        values.size() != 5 || *values[4].value != 1) return 2;
+    values.resize(1);
+    if (values.size() != 1 || *values[0].value != 1) return 3;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(4));
+    values.push_back(Box(5));
+    auto storage = values.data();
+    sequence = 0; tracing = 1;
+    values.resize(4);
+    tracing = 0;
+    if (sequence != 113344 || values.data() == storage ||
+        values.size() != 4 || *values[0].value != 4 ||
+        *values[1].value != 5 || *values[2].value != 0 ||
+        *values[3].value != 0) return 4;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(6));
+    values.push_back(Box(7));
+    auto storage = values.data();
+    sequence = 0; tracing = 1;
+    values.resize(4, values[0]);
+    tracing = 0;
+    if (sequence != 223344 || values.data() == storage ||
+        values.size() != 4 || *values[0].value != 6 ||
+        *values[1].value != 7 || *values[2].value != 6 ||
+        *values[3].value != 6) return 5;
+  }
+  {
+    std::vector<Box> values;
+    sequence = 0; tracing = 1;
+    values.resize(2);
+    tracing = 0;
+    if (sequence != 11 || values.size() != 2 ||
+        *values[0].value != 0 || *values[1].value != 0) return 6;
+  }
+  return live == 0 && allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-resize" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedCountConstructionRun) {
+  const auto Source = tmpFile("vector-source-owned-count.cpp");
+  const auto Output = tmpFile("vector-source-owned-count.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int defaults;
+int copies;
+int moves;
+int destroyed;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(new int(7)) { ++defaults; }
+  Box(const Box &other) : value(new int(*other.value)) { ++copies; }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++moves;
+  }
+  ~Box() { delete value; ++destroyed; }
+};
+int main() {
+  {
+    std::vector<Box> values(3);
+    if (defaults != 3 || values.size() != 3 ||
+        *values[0].value != 7 || *values[2].value != 7 ||
+        values[0].value == values[1].value) return 1;
+    *values[1].value = 42;
+    std::vector<Box> copiesOfValue(3, values[1]);
+    if (copies != 3 || copiesOfValue.size() != 3 ||
+        *copiesOfValue[0].value != 42 || *copiesOfValue[2].value != 42 ||
+        copiesOfValue[0].value == values[1].value ||
+        copiesOfValue[0].value == copiesOfValue[1].value) return 2;
+    std::vector<Box> empty(0, values[0]);
+    std::vector<Box> one(1, values[2]);
+    if (empty.size() != 0 || one.size() != 1 ||
+        *one[0].value != 7 || copies != 4 || moves != 0) return 3;
+  }
+  return defaults == 3 && copies == 4 && moves == 0 &&
+         destroyed == 7 && allocations == releases ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedRangeConstructionRun) {
+  const auto Source = tmpFile("vector-source-owned-range.cpp");
+  const auto Output = tmpFile("vector-source-owned-range.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int defaults;
+int copies;
+int destroyed;
+int first_calls;
+int last_calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  Box() : value(new int(7)) { ++defaults; }
+  Box(const Box &other) : value(new int(*other.value)) { ++copies; }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+  }
+  ~Box() { delete value; ++destroyed; }
+};
+Box *first(Box *p) { ++first_calls; return p; }
+Box *last(Box *p) { ++last_calls; return p; }
+int main() {
+  {
+    std::vector<Box> source(2);
+    *source[0].value = 17;
+    *source[1].value = 23;
+    std::vector<Box> raw(first(source.data()), last(source.data() + 2));
+    if (first_calls != 1 || last_calls != 1 || raw.size() != 2 ||
+        *raw[0].value != 17 || *raw[1].value != 23 ||
+        raw[0].value == source[0].value) return 1;
+    std::vector<Box> wrapped(raw.cbegin(), raw.cend());
+    if (wrapped.size() != 2 || *wrapped[0].value != 17 ||
+        *wrapped[1].value != 23 || wrapped[0].value == raw[0].value)
+      return 2;
+    int before_empty = allocations;
+    std::vector<Box> empty(source.data() + 1, source.data() + 1);
+    if (!empty.empty() || empty.data() != nullptr ||
+        allocations != before_empty) return 3;
+  }
+  return defaults == 2 && copies == 4 && destroyed == 6 &&
+         allocations == releases ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedInitializerListRun) {
+  const auto Source = tmpFile("vector-source-owned-list.cpp");
+  const auto Output = tmpFile("vector-source-owned-list.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int constructed;
+int copies;
+int moves;
+int destroyed;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++constructed; }
+  Box(const Box &other) : value(new int(*other.value)) { ++copies; }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++moves;
+  }
+  ~Box() { delete value; ++destroyed; }
+};
+int main() {
+  {
+    std::vector<Box> values{Box(3), Box(4)};
+    if (values.size() != 2 || *values[0].value != 3 ||
+        *values[1].value != 4 || values[0].value == values[1].value ||
+        constructed != 2 || copies != 2 || moves != 0 || destroyed != 2)
+      return 1;
+  }
+  return destroyed == 4 && allocations == releases ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-list" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedVoidAssignmentInsertRejected) {
   const auto Source = tmpFile("vector-source-owned-insert-rejected.cpp");
   writeFile(Source, R"cpp(
