@@ -2685,8 +2685,10 @@ comparisons recurse through the optional engagement and stored value.
 An optional wrapping a source-owned trivial standard-layout record is also an
 admitted vector element when its copy, move, assignment, and destruction are
 trivial. Vector growth, emplacement, copying, erasure, and fill construction
-preserve the record value. Vector comparisons of these optionals remain
-rejected because source-record value comparison is outside this lowering.
+preserve the record value. When the source record has one supported const
+equality and less-than operator, vector comparisons recurse through its
+optional engagement state and selected record comparison. The same rule
+applies inside nested optionals, pairs, and fixed arrays.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

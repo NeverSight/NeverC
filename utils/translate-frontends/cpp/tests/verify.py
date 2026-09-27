@@ -30181,6 +30181,64 @@ bool compare_free(const std::vector<owned::Free>& a,
         check("v2-vector-trivial-record-relations-" + target,
               vector_trivial_record_relations_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_optional_source_relations_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <array>
+#include <optional>
+#include <utility>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) { return a.value == b.value; }
+bool operator<(const Free &a, const Free &b) { return a.value < b.value; }
+}
+using Maybe = std::optional<Member>;
+bool compare(const std::vector<Maybe>& a, const std::vector<Maybe>& b) {
+  return a == b || a != b || a < b || a > b || a <= b || a >= b;
+}
+bool compare_deep(const std::vector<std::optional<Maybe>>& a,
+                  const std::vector<std::optional<Maybe>>& b) {
+  return a == b || a < b;
+}
+bool compare_pair(const std::vector<std::pair<Maybe, int>>& a,
+                  const std::vector<std::pair<Maybe, int>>& b) {
+  return a == b || a < b;
+}
+bool compare_array(const std::vector<std::array<Maybe, 2>>& a,
+                   const std::vector<std::array<Maybe, 2>>& b) {
+  return a == b || a < b;
+}
+bool compare_friend(const std::vector<std::optional<Friend>>& a,
+                    const std::vector<std::optional<Friend>>& b) {
+  return a == b || a < b;
+}
+bool compare_free(const std::vector<std::optional<owned::Free>>& a,
+                  const std::vector<std::optional<owned::Free>>& b) {
+  return a == b || a < b;
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-optional-source-relations-" + target,
+              vector_optional_source_relations_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     vector_pair_nested_optional_source = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30245,6 +30303,17 @@ int operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }
+""",
+        "optional-record-nonbool-comparison": """\
+#include <optional>
+struct Entry { int value; };
+int operator==(const Entry& left, const Entry& right) {
+  return left.value == right.value;
+}
+bool f(const std::vector<std::optional<Entry>>& left,
+       const std::vector<std::optional<Entry>>& right) {
+  return left == right;
+}
 """,
         "nonassignable-pair": """\
 #include <utility>

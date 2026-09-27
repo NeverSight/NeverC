@@ -61099,6 +61099,100 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOptionalSourceRecordRelationsRun) {
+  const auto Source = tmpFile("vector-optional-source-record-relations.cpp");
+  const auto Output = tmpFile("vector-optional-source-record-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <array>
+#include <optional>
+#include <utility>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  {
+    using Maybe = std::optional<Member>;
+    std::vector<Maybe> left, right;
+    left.push_back(Maybe());
+    right.push_back(Maybe(Member{2}));
+    if (left == right || !(left != right) || !(left < right) ||
+        left > right || !(left <= right) || left >= right) return 1;
+    left[0] = Maybe(Member{1});
+    if (left == right || !(left < right) || left > right) return 2;
+    left[0] = Maybe(Member{2});
+    if (!(left == right) || left != right || left < right || left > right ||
+        !(left <= right) || !(left >= right)) return 3;
+    using Deep = std::optional<Maybe>;
+    std::vector<Deep> deep_left, deep_right;
+    deep_left.push_back(Deep(Maybe(Member{3})));
+    deep_right.push_back(Deep(Maybe(Member{4})));
+    if (!(deep_left < deep_right) || deep_left == deep_right) return 4;
+    using Row = std::pair<Maybe, int>;
+    std::vector<Row> rows_left, rows_right;
+    rows_left.push_back(Row(Maybe(Member{1}), 2));
+    rows_right.push_back(Row(Maybe(Member{2}), 2));
+    if (!(rows_left < rows_right) || rows_left == rows_right) return 5;
+    using Array = std::array<Maybe, 2>;
+    std::vector<Array> arrays_left, arrays_right;
+    arrays_left.push_back(Array{{Maybe(Member{1}), Maybe(Member{2})}});
+    arrays_right.push_back(Array{{Maybe(Member{1}), Maybe(Member{3})}});
+    if (!(arrays_left < arrays_right) || arrays_left == arrays_right) return 6;
+    std::vector<std::optional<Friend>> friends_left, friends_right;
+    friends_left.push_back(std::optional<Friend>(Friend{1}));
+    friends_right.push_back(std::optional<Friend>(Friend{2}));
+    if (!(friends_left < friends_right) || friends_left == friends_right)
+      return 7;
+    std::vector<std::optional<owned::Free>> free_left, free_right;
+    free_left.push_back(std::optional<owned::Free>(owned::Free{1}));
+    free_right.push_back(std::optional<owned::Free>(owned::Free{2}));
+    if (!(free_left < free_right) || free_left == free_right) return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-optional-source-record-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

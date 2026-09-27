@@ -1438,6 +1438,13 @@ struct UtilityOptionalRecord {
   const clang::FieldDecl *Value, *Engaged;
   clang::QualType ElementType;
 };
+struct UtilitySourceComparison {
+  const clang::CXXMethodDecl *Member;
+  const clang::FunctionDecl *Friend, *Namespace;
+};
+std::optional<UtilitySourceComparison> approvedUtilityTrivialSourceComparison(
+    const State &S, const clang::SourceManager &SM, clang::QualType Element,
+    clang::OverloadedOperatorKind Operator, const clang::ASTContext &Context);
 bool approvedUtilityOptionalMetadata(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXRecordDecl *Record);

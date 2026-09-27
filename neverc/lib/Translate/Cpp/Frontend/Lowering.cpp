@@ -19816,6 +19816,33 @@ class FunctionLowering {
         branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
                Greater, Equal, L);
       }
+    } else if (const auto Comparison = approvedUtilityTrivialSourceComparison(
+                   A.S, A.Sources, Optional.ElementType,
+                   Equality ? OO_EqualEqual : OO_Less, A.Context)) {
+      auto LeftAddress = snapshot(
+          address(std::move(LeftValue), Optional.ElementType.withConst(), L),
+          L);
+      auto RightAddress = snapshot(
+          address(std::move(RightValue), Optional.ElementType.withConst(), L),
+          L);
+      const auto *FreeComparison =
+          Comparison->Friend ? Comparison->Friend : Comparison->Namespace;
+      auto Compare = [&](Expression First, Expression Second) {
+        return compareVectorSourceElements(std::move(First), std::move(Second),
+                                           Comparison->Member, FreeComparison,
+                                           L);
+      };
+      if (Equality) {
+        branch(Compare(std::move(LeftAddress), std::move(RightAddress)), Equal,
+               Greater, L);
+      } else {
+        const auto CheckGreater = labelName();
+        branch(Compare(json::Object(LeftAddress), json::Object(RightAddress)),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(Compare(std::move(RightAddress), std::move(LeftAddress)),
+               Greater, Equal, L);
+      }
     } else {
       const auto Common = utilityScalarComparisonType(
           A.Context, Optional.ElementType, Optional.ElementType, !Equality);
