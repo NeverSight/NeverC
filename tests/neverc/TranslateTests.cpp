@@ -55498,6 +55498,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorStringSubstringEmplaceRun) {
+  const auto Source = tmpFile("vector-string-substring-emplace.cpp");
+  const auto Output = tmpFile("vector-string-substring-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(2);
+    auto storage = values.data();
+    std::string source("a\0bcd", Size(5));
+    values.emplace_back(source, Size(1));
+    values.emplace_back(source, Size(2), Size(2));
+    if (values.data() != storage || values[0].size() != 4 ||
+        values[0][0] != 0 || values[0][1] != 'b' ||
+        values[0][3] != 'd' || values[1] != "bc") return 1;
+    auto &grown = values.emplace_back(values[0], Size(1), Size(3));
+    if (&grown != &values[2] || values.data() == storage ||
+        values[0].size() != 4 || values[2] != "bcd") return 2;
+    std::string_view view("prefix:long text with independent storage");
+    auto &from_view = values.emplace_back(view, Size(7), Size(100));
+    if (&from_view != &values[3] ||
+        values[3] != "long text with independent storage") return 3;
+    auto inserted = values.emplace(values.cbegin() + 1, values[0], Size(0), Size(2));
+    if (inserted != values.begin() + 1 || values[1].size() != 2 ||
+        values[1][0] != 0 || values[1][1] != 'b' ||
+        values[0].size() != 4 || values[3] != "bcd") return 4;
+    auto view_inserted = values.emplace(values.cbegin() + 2, view, Size(7), Size(4));
+    if (view_inserted != values.begin() + 2 || values[2] != "long" ||
+        values[5] != "long text with independent storage") return 5;
+    values.shrink_to_fit();
+    auto compact = values.data();
+    auto &long_copy = values.emplace_back(values[5], Size(5), Size(100));
+    if (&long_copy != &values[6] || values.data() == compact ||
+        values[5] != "long text with independent storage" ||
+        long_copy != "text with independent storage") return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-string-substring-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
   const auto Source = tmpFile("vector-owning-pointers.cpp");
   const auto Output = tmpFile("vector-owning-pointers.nc");

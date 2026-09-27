@@ -19120,18 +19120,128 @@ class FunctionLowering {
                            std::move(Character), L);
       return;
     }
-    if (Kind == UtilityVectorStringEmplace::View) {
-      auto View = approvedUtilityStringViewRecord(
-          A.S, A.Sources,
-          Call->getArg(FirstArgument)->getType()->getAsCXXRecordDecl(),
-          A.Context);
-      if (!View)
-        reject(L, "vector string emplacement",
-               "The selected std::string_view layout is unavailable.");
-      auto Source = snapshot(expression(Call->getArg(FirstArgument)), L);
-      auto Input =
-          snapshot(fieldStorage(json::Object(Source), View->Data, L), L);
-      auto Length = snapshot(fieldStorage(std::move(Source), View->Size, L), L);
+    if (Kind == UtilityVectorStringEmplace::View ||
+        Kind == UtilityVectorStringEmplace::ViewSubstring ||
+        Kind == UtilityVectorStringEmplace::StringSubstring) {
+      auto Input = temporary(PointerType, L);
+      auto Length = temporary(SizeType, L);
+      if (Kind == UtilityVectorStringEmplace::StringSubstring) {
+        auto SourceAddress =
+            snapshot(address(lvalue(Call->getArg(FirstArgument)),
+                             Call->getArg(FirstArgument)->getType(), L),
+                     L);
+        const char *FlagName =
+            String->AlternateLayout ? "nct_string_word2" : "nct_string_word0";
+        const char *PointerName =
+            String->AlternateLayout ? "nct_string_word0" : "nct_string_word2";
+        auto Word = [&](const char *Name) {
+          return Expression{{"kind", "member"},
+                            {"type", type(llvm::StringRef(Name) == PointerName
+                                              ? String->PointerType
+                                              : A.Context.getSizeType(),
+                                          L)},
+                            {"name", Name},
+                            {"args", json::Array{dereference(
+                                         json::Object(SourceAddress), L)}},
+                            {"loc", A.loc(L)}};
+        };
+        auto Flag = snapshot(Word(FlagName), L);
+        const auto LongFlag =
+            String->AlternateLayout
+                ? uint64_t(1)
+                      << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
+                : uint64_t(1);
+        const auto Long = labelName(), Short = labelName(), Ready = labelName();
+        branch(binary("!=",
+                      binary("&", json::Object(Flag),
+                             quantity(LongFlag, SizeType, L), SizeType, L),
+                      quantity(0, SizeType, L), "bool", L),
+               Long, Short, L);
+        label(Long, L);
+        assign(Input, cast(Word(PointerName), PointerType, L), L);
+        assign(Length, Word("nct_string_word1"), L);
+        jump(Ready, L);
+        label(Short, L);
+        auto ShortData = cast(cast(json::Object(SourceAddress), "ptr:void", L),
+                              PointerType, L);
+        assign(Input,
+               String->AlternateLayout
+                   ? std::move(ShortData)
+                   : binary("+", std::move(ShortData),
+                            quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        assign(
+            Length,
+            String->AlternateLayout
+                ? binary(">>", json::Object(Flag),
+                         quantity(
+                             A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                             SizeType, L),
+                         SizeType, L)
+                : binary("/", json::Object(Flag), quantity(2, SizeType, L),
+                         SizeType, L),
+            L);
+        jump(Ready, L);
+        label(Ready, L);
+      } else {
+        auto View = approvedUtilityStringViewRecord(
+            A.S, A.Sources,
+            Call->getArg(FirstArgument)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!View)
+          reject(L, "vector string emplacement",
+                 "The selected std::string_view layout is unavailable.");
+        auto Source = snapshot(expression(Call->getArg(FirstArgument)), L);
+        assign(Input, fieldStorage(json::Object(Source), View->Data, L), L);
+        assign(Length, fieldStorage(std::move(Source), View->Size, L), L);
+      }
+      if (Kind != UtilityVectorStringEmplace::View) {
+        auto Position = snapshot(
+            cast(expression(Call->getArg(FirstArgument + 1)), SizeType, L), L);
+        std::optional<Expression> Requested;
+        if (Call->getNumArgs() == FirstArgument + 3)
+          Requested = snapshot(
+              cast(expression(Call->getArg(FirstArgument + 2)), SizeType, L),
+              L);
+        const auto InRange = labelName(), OutOfRange = labelName(),
+                   Positioned = labelName();
+        branch(binary("<=", json::Object(Position), json::Object(Length),
+                      "bool", L),
+               InRange, OutOfRange, L);
+        label(InRange, L);
+        auto Remaining = snapshot(binary("-", json::Object(Length),
+                                         json::Object(Position), SizeType, L),
+                                  L);
+        if (Requested) {
+          const auto UseRequested = labelName(), UseRemaining = labelName();
+          branch(binary("<", json::Object(*Requested), json::Object(Remaining),
+                        "bool", L),
+                 UseRequested, UseRemaining, L);
+          label(UseRequested, L);
+          assign(Length, json::Object(*Requested), L);
+          jump(Positioned, L);
+          label(UseRemaining, L);
+        }
+        assign(Length, json::Object(Remaining), L);
+        jump(Positioned, L);
+        label(OutOfRange, L);
+        assign(Position, json::Object(Length), L);
+        assign(Length, quantity(0, SizeType, L), L);
+        jump(Positioned, L);
+        label(Positioned, L);
+        const auto Offset = labelName(), Ready = labelName();
+        branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                      "bool", L),
+               Offset, Ready, L);
+        label(Offset, L);
+        assign(Input,
+               binary("+", json::Object(Input),
+                      cast(json::Object(Position), DifferenceType, L),
+                      PointerType, L),
+               L);
+        jump(Ready, L);
+        label(Ready, L);
+      }
       constructStringBytes(std::move(Place), T, String, std::move(Input),
                            std::move(Length), std::nullopt, L);
       return;

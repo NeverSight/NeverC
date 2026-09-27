@@ -5960,7 +5960,7 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
           S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context))
     return std::nullopt;
   const unsigned Count = Call->getNumArgs() - FirstArgument;
-  if (Count != 1 && Count != 2)
+  if (Count < 1 || Count > 3)
     return std::nullopt;
   const auto FirstType = Call->getArg(FirstArgument)->getType();
   auto CharacterType = FirstType;
@@ -5981,6 +5981,20 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
     return std::nullopt;
   }
   const auto SecondType = Call->getArg(FirstArgument + 1)->getType();
+  if (SecondType->isIntegerType()) {
+    const bool HasLength = Count == 3;
+    if (!HasLength ||
+        Call->getArg(FirstArgument + 2)->getType()->isIntegerType()) {
+      if (approvedUtilityStringRecord(S, SM, FirstType->getAsCXXRecordDecl(),
+                                      Context))
+        return UtilityVectorStringEmplace::StringSubstring;
+      if (HasLength && approvedUtilityStringViewRecord(
+                           S, SM, FirstType->getAsCXXRecordDecl(), Context))
+        return UtilityVectorStringEmplace::ViewSubstring;
+    }
+  }
+  if (Count != 2)
+    return std::nullopt;
   if (CharacterPointer && SecondType->isIntegerType())
     return UtilityVectorStringEmplace::PointerLength;
   if (FirstType->isIntegerType() && SecondType->isIntegerType())
