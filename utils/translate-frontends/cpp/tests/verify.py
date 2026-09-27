@@ -29578,6 +29578,15 @@ void nested_vectors() {
   listed_text.assign({copied_text[0]});
   listed_text.insert(listed_text.cend(), {copied_text[0]});
 }
+bool compare_nested_integers(const std::vector<std::vector<int>>& left,
+                             const std::vector<std::vector<int>>& right) {
+  return left == right || left != right;
+}
+bool compare_nested_cube(
+    const std::vector<std::vector<std::vector<int>>>& left,
+    const std::vector<std::vector<std::vector<int>>>& right) {
+  return left == right || left != right;
+}
 struct NestedBox {
   int *value;
   explicit NestedBox(int n) : value(new int(n)) {}
@@ -29635,6 +29644,19 @@ bool operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }
+""",
+        "nested-string-comparison": """\
+#include <string>
+bool f(const std::vector<std::vector<std::string>>& left,
+       const std::vector<std::vector<std::string>>& right) {
+  return left == right;
+}
+""",
+        "nested-integer-order": """\
+bool f(const std::vector<std::vector<int>>& left,
+       const std::vector<std::vector<int>>& right) {
+  return left < right;
+}
 """,
         "owning-pointer-comparison": """\
 #include <memory>

@@ -13717,8 +13717,12 @@ class FunctionLowering {
       auto Unique = approvedUtilityUniquePtrRecord(
           A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
           A.Context);
+      auto Nested = approvedUtilityVectorRecord(
+          A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
+          A.Context);
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
+      const bool NestedEquality = Equality && Nested.has_value();
       const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
       const auto *MemberComparison = approvedUtilityVectorElementComparison(
           A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
@@ -13733,7 +13737,8 @@ class FunctionLowering {
       const bool SourceComparison = ComparisonForms == 1;
       const auto *FreeComparison =
           FriendComparison ? FriendComparison : NamespaceComparison;
-      if (LeftVector->OwningElement && !String && !Unique && !SourceComparison)
+      if (LeftVector->OwningElement && !String && !Unique &&
+          !SourceComparison && !NestedEquality)
         reject(L, "vector comparison",
                "The selected owning element comparison is unavailable.");
       const auto PointerType = type(LeftVector->PointerType, L);
@@ -13897,6 +13902,11 @@ class FunctionLowering {
           branch(
               binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
               Next, Different, L);
+        } else if (NestedEquality) {
+          branch(compareNestedIntegerVectors(
+                     dereference(json::Object(LeftCurrent), L),
+                     dereference(json::Object(RightCurrent), L), *Nested, L),
+                 Next, Different, L);
         } else if (SourceComparison) {
           branch(CompareSource(json::Object(LeftCurrent),
                                json::Object(RightCurrent)),
@@ -19351,6 +19361,80 @@ class FunctionLowering {
                       {"args", json::Array{json::Object(Place)}},
                       {"loc", A.loc(L)}};
     assign(std::move(Member), std::move(Pointer), L);
+  }
+
+  Expression compareNestedIntegerVectors(Expression Left, Expression Right,
+                                         const UtilityVectorRecord &Vector,
+                                         SourceLocation L) {
+    const auto VectorType = A.Context.getRecordType(Vector.Record);
+    auto LeftAddress = snapshot(address(std::move(Left), VectorType, L), L);
+    auto RightAddress = snapshot(address(std::move(Right), VectorType, L), L);
+    auto Member = [&](const Expression &Address, const char *Name) {
+      return Expression{
+          {"kind", "member"},
+          {"type", type(Vector.PointerType, L)},
+          {"name", Name},
+          {"args", json::Array{dereference(json::Object(Address), L)}},
+          {"loc", A.loc(L)}};
+    };
+    auto LeftCurrent = snapshot(Member(LeftAddress, "nct_vector_begin"), L);
+    auto LeftEnd = snapshot(Member(LeftAddress, "nct_vector_end"), L);
+    auto RightCurrent = snapshot(Member(RightAddress, "nct_vector_begin"), L);
+    auto RightEnd = snapshot(Member(RightAddress, "nct_vector_end"), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(Vector.PointerType, L);
+    auto Result = temporary("bool", L);
+    const auto CheckLeft = labelName(), CheckRight = labelName();
+    const auto Compare = labelName(), Next = labelName();
+    const auto LeftDone = labelName(), Equal = labelName();
+    const auto Different = labelName(), Done = labelName();
+    jump(CheckLeft, L);
+    label(CheckLeft, L);
+    branch(binary("!=", json::Object(LeftCurrent), json::Object(LeftEnd),
+                  "bool", L),
+           CheckRight, LeftDone, L);
+    label(CheckRight, L);
+    branch(binary("!=", json::Object(RightCurrent), json::Object(RightEnd),
+                  "bool", L),
+           Compare, Different, L);
+    label(Compare, L);
+    if (Vector.ElementType->isIntegerType()) {
+      branch(binary("==", dereference(json::Object(LeftCurrent), L),
+                    dereference(json::Object(RightCurrent), L), "bool", L),
+             Next, Different, L);
+    } else {
+      const auto Nested = approvedUtilityVectorRecord(
+          A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
+      if (!Nested)
+        reject(L, "nested vector comparison",
+               "The nested integer vector layout is unavailable.");
+      branch(compareNestedIntegerVectors(
+                 dereference(json::Object(LeftCurrent), L),
+                 dereference(json::Object(RightCurrent), L), *Nested, L),
+             Next, Different, L);
+    }
+    label(Next, L);
+    assign(LeftCurrent,
+           binary("+", json::Object(LeftCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    assign(RightCurrent,
+           binary("+", json::Object(RightCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    jump(CheckLeft, L);
+    label(LeftDone, L);
+    branch(binary("==", json::Object(RightCurrent), json::Object(RightEnd),
+                  "bool", L),
+           Equal, Different, L);
+    label(Equal, L);
+    assign(Result, boolean(true, L), L);
+    jump(Done, L);
+    label(Different, L);
+    assign(Result, boolean(false, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
   }
 
   void copyNestedVectorElement(Expression To, Expression From,

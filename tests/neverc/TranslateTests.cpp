@@ -56649,6 +56649,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedIntegerVectorEqualityRun) {
+  const auto Source = tmpFile("nested-integer-vector-equality.cpp");
+  const auto Output = tmpFile("nested-integer-vector-equality.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<std::vector<int>> left;
+    left.emplace_back();
+    left[0].push_back(7);
+    left.emplace_back();
+    std::vector<std::vector<int>> same(left);
+    if (!(left == same) || left != same) return 1;
+    same[1].push_back(9);
+    if (left == same || !(left != same)) return 2;
+    same[1].clear();
+    same[0][0] = 8;
+    if (left == same || !(left != same)) return 3;
+    std::vector<std::vector<int>> prefix;
+    prefix.emplace_back();
+    prefix[0].push_back(7);
+    if (prefix == left || !(prefix != left)) return 4;
+    std::vector<std::vector<int>> empty;
+    if (!(empty == empty) || empty != empty || empty == left) return 5;
+    std::vector<std::vector<std::vector<int>>> cube;
+    cube.emplace_back(static_cast<std::vector<std::vector<int>>&&>(left));
+    std::vector<std::vector<std::vector<int>>> clone(cube);
+    if (!(cube == clone) || cube != clone) return 6;
+    clone[0][0][0] = 11;
+    if (cube == clone || !(cube != clone)) return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-integer-vector-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

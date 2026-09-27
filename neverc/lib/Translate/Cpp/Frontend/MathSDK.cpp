@@ -5907,6 +5907,19 @@ static bool utilityVectorCopyableElements(const State &S,
          utilityVectorCopyableElements(S, SM, *Nested, Context, Depth + 1);
 }
 
+static bool utilityNestedVectorIntegerComparable(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    const ASTContext &Context, unsigned Depth = 0) {
+  if (Depth >= 64)
+    return false;
+  if (Vector.ElementType->isIntegerType())
+    return true;
+  const auto Nested = approvedUtilityVectorRecord(
+      S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
+  return Nested && utilityNestedVectorIntegerComparable(S, SM, *Nested, Context,
+                                                        Depth + 1);
+}
+
 const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
@@ -21129,6 +21142,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Left->ElementType->isFloatingType();
       const bool StringElement = approvedUtilityStringRecord(
           S, SM, Left->ElementType->getAsCXXRecordDecl(), Context).has_value();
+      const auto NestedElement = approvedUtilityVectorRecord(
+          S, SM, Left->ElementType->getAsCXXRecordDecl(), Context);
       const auto UniquePointer = approvedUtilityUniquePtrRecord(
           S, SM, Left->ElementType->getAsCXXRecordDecl(), Context);
       // A source type or deleter namespace can add an operator found by ADL
@@ -21139,6 +21154,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               ->isBuiltinType();
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
+      const bool NestedEquality =
+          Equality && NestedElement &&
+          utilityNestedVectorIntegerComparable(S, SM, *NestedElement, Context);
       const bool PointerElement =
           Left->ElementType->isObjectPointerType() &&
           (Equality ||
@@ -21156,7 +21174,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        bool(NamespaceComparison);
       const bool SourceComparison = ComparisonForms == 1;
       if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
-                       PointerElement || SourceComparison))
+                       PointerElement || SourceComparison || NestedEquality))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:
