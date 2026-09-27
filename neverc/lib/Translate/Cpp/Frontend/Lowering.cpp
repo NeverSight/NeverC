@@ -12651,8 +12651,16 @@ class FunctionLowering {
       const bool SourceOwnedFill =
           Operation == UtilityOperation::VectorAssignFill;
       if ((SourceOwnedFill ||
-           Operation == UtilityOperation::VectorAssignRange) &&
+           Operation == UtilityOperation::VectorAssignRange ||
+           Operation == UtilityOperation::VectorAssignList) &&
           Vector->MoveElementConstructor) {
+        std::optional<Expression> ListArgument;
+        if (Operation == UtilityOperation::VectorAssignList) {
+          if (Destination)
+            reject(L, "vector assignment",
+                   "std::vector assignment cannot initialize a record result.");
+          ListArgument = snapshot(expression(Call->getArg(1)), L);
+        }
         auto Receiver =
             snapshot(address(lvalue(Object), Object->getType(), L), L);
         const auto PointerType = type(Vector->PointerType, L);
@@ -12672,14 +12680,16 @@ class FunctionLowering {
                                L),
                       ConstPointerType, L),
                  L);
-        } else if (Call->getNumArgs() == 1) {
+        } else if (ListArgument || Call->getNumArgs() == 1) {
+          const auto *Argument = Call->getArg(ListArgument ? 1 : 0);
           auto List = approvedUtilityInitializerListRecord(
-              A.S, A.Sources,
-              Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
           if (!List)
             reject(L, "vector assign",
                    "The selected initializer-list layout is unavailable.");
-          auto ListValue = snapshot(expression(Call->getArg(0)), L);
+          auto ListValue = ListArgument ? json::Object(*ListArgument)
+                                        : snapshot(expression(Argument), L);
           assign(Source,
                  cast(fieldStorage(json::Object(ListValue), List->Begin, L),
                       ConstPointerType, L),
@@ -12961,6 +12971,8 @@ class FunctionLowering {
         destroy(json::Object(AliasValue), Vector->ElementType, L);
         jump(Finish, L);
         label(Finish, L);
+        if (Operation == UtilityOperation::VectorAssignList)
+          return dereference(json::Object(Receiver), L);
         return {};
       }
       std::optional<Expression> OperatorListValue;

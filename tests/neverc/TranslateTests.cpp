@@ -56367,6 +56367,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedListAssignmentRun) {
+  const auto Source = tmpFile("vector-source-owned-list-assignment.cpp");
+  const auto Output = tmpFile("vector-source-owned-list-assignment.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copies;
+int assignments;
+int destroyed;
+int receivers;
+int tracing;
+int sequence;
+void note(int n) { if (tracing) sequence = sequence * 10 + n; }
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; note(1); }
+  Box(const Box &other) : value(new int(*other.value)) {
+    ++live;
+    ++copies;
+    note(2);
+  }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &other) {
+    int *next = new int(*other.value);
+    delete value;
+    value = next;
+    ++assignments;
+    note(6);
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() { delete value; --live; ++destroyed; note(4); }
+};
+std::vector<Box> &receiver(std::vector<Box> &v) {
+  ++receivers;
+  note(9);
+  return v;
+}
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(4);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    auto storage = values.data();
+    int before_destroyed = destroyed;
+    sequence = 0; tracing = 1;
+    auto &result = (receiver(values) = {Box(7), Box(8)});
+    tracing = 0;
+    if (&result != &values || receivers != 1 ||
+        sequence != 1196644 || values.data() != storage ||
+        values.size() != 2 || values.capacity() != 4 ||
+        *values[0].value != 7 || *values[1].value != 8 ||
+        copies != 0 || assignments != 2 ||
+        destroyed - before_destroyed != 2) return 1;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(1);
+    values.push_back(Box(9));
+    auto storage = values.data();
+    auto &result = (values = {Box(3), Box(4), Box(5)});
+    if (&result != &values || values.data() == storage ||
+        values.size() != 3 || values.capacity() != 3 ||
+        *values[0].value != 3 || *values[2].value != 5 ||
+        copies != 3) return 2;
+  }
+  return live == 0 && allocations == releases ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-list-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedResizeRun) {
   const auto Source = tmpFile("vector-source-owned-resize.cpp");
   const auto Output = tmpFile("vector-source-owned-resize.nc");

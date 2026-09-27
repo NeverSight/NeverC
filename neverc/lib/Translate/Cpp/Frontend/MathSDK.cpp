@@ -19977,7 +19977,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
       }
     }
-    if ((!Vector->OwningElement || CopyableString) && Operator &&
+    if ((!Vector->OwningElement || CopyableString ||
+         (Vector->CopyElementConstructor &&
+          Vector->CopyElementAssignment)) &&
+        Operator &&
         Method->getOverloadedOperator() == OO_Equal && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&

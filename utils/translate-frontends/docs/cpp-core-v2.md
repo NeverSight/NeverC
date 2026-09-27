@@ -2716,6 +2716,10 @@ aliased in-place and growing fill, and balanced release.
 boundary for source-owned elements. Input ranges must be outside the destination
 vector. Host O0/O2 fixtures check single endpoint evaluation, capacity reuse,
 empty ranges, backing-array cleanup, growth order, and balanced release.
+Initializer-list assignment through `operator=` uses that same source-owned
+range path, returns the destination reference, and evaluates the right operand
+before the receiver. Host O0/O2 fixtures cover capacity reuse, growth,
+backing-array cleanup, and balanced release.
 `resize(count)` admits a supported default constructor, and
 `resize(count, const T&)` admits a supported copy constructor. Shrinking destroys
 the removed tail; growth within capacity constructs new elements in place.
