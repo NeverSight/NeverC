@@ -31383,6 +31383,56 @@ bool lexical_scalar(std::vector<int> &first, long *second, long *last) {
           'return std::includes(a.begin(),a.end(),b.begin(),b.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_sorted_queries_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+bool sorted_member(Member *first, Member *last) {
+  return std::is_sorted(first, last);
+}
+Member *sorted_until_member(Member *first, Member *last) {
+  return std::is_sorted_until(first, last);
+}
+bool sorted_friend(Friend *first, Friend *last) {
+  return std::is_sorted(first, last);
+}
+owned::Free *sorted_until_free(owned::Free *first, owned::Free *last) {
+  return std::is_sorted_until(first, last);
+}
+bool sorted_wrapped(const std::vector<Member> &values) {
+  return std::is_sorted(values.cbegin(), values.cend());
+}
+std::vector<Member>::iterator sorted_until_wrapped(std::vector<Member> &values) {
+  return std::is_sorted_until(values.begin(), values.end());
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-sorted-queries-" + target,
+              source_record_sorted_queries_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-sorted-queries-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'int operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'bool f(std::vector<Entry>&a){'
+          'return std::is_sorted(a.begin(),a.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

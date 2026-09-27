@@ -425,6 +425,8 @@ Built-in arithmetic elements admit default-order
 algorithms. Default `lexicographical_compare` and `includes` additionally
 accept independent wrapped or raw-pointer ranges of exact same-type trivial
 source records with a uniquely selected Boolean `operator<`.
+Default `is_sorted` and `is_sorted_until` accept the same source-record
+comparison in raw or authenticated wrapped ranges.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

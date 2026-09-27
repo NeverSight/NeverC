@@ -5022,7 +5022,7 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);
       };
       auto Current = snapshot(json::Object(Previous), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);

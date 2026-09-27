@@ -23524,13 +23524,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "is_sorted_until")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
-          (Call->getNumArgs() == 3 &&
+    if (!((Call->getNumArgs() == 2 &&
+           ((AlgorithmRangePointerParameter(0) &&
+             AlgorithmRangePointerParameter(1) &&
+             AlgorithmOrderedRangeParameter(0)) ||
+            (AlgorithmRecordOrderedRangeParameter(0) &&
+             AlgorithmRecordOrderedRangeParameter(1)))) ||
+          (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
+           AlgorithmRangePointerParameter(1) &&
            AlgorithmRangeComparisonParameter(2, 0))))
       return std::nullopt;
     if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())

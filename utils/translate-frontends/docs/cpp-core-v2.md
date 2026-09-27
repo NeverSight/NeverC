@@ -2125,6 +2125,12 @@ selected const member, hidden-friend, or enclosing-namespace free Boolean
 reference. They preserve lexicographic prefix and sorted-subset behavior,
 including empty ranges and duplicate counts.
 
+Default `std::is_sorted` and `std::is_sorted_until` likewise accept exact
+trivial source-record pointer or authenticated wrapped ranges with that unique
+Boolean `operator<`. Adjacent comparisons receive the original elements by
+reference; `is_sorted_until` returns the first inversion in the original
+iterator form, including the end iterator for a sorted range.
+
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the respective element types in both argument
