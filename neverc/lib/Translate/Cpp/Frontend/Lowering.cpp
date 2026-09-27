@@ -5424,8 +5424,10 @@ class FunctionLowering {
       return Current;
     }
     case UtilityOperation::AlgorithmSearchN: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       auto CountType = Call->getArg(2)->getType();
       if (const auto *Enumeration = CountType->getAs<EnumType>())
         CountType = Enumeration->getDecl()->getPromotionType();
@@ -5440,20 +5442,29 @@ class FunctionLowering {
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
       std::optional<std::string> DefaultComparisonType;
+      const auto SourceComparison =
+          !Predicate && A.Context.hasSameUnqualifiedType(
+                            FirstRange.second->getPointeeType(),
+                            Call->getArg(3)->getType())
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, FirstRange.second->getPointeeType(),
+                    OO_EqualEqual, A.Context)
+              : std::nullopt;
       if (!Predicate) {
         auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            A.Context, FirstRange.second->getPointeeType(),
             Call->getArg(3)->getType(), false);
-        if (!Common)
+        if (!Common && !SourceComparison)
           reject(L, "algorithm search_n",
                  "The range element and value have no equality common type.");
-        DefaultComparisonType = type(*Common, L);
+        if (Common)
+          DefaultComparisonType = type(*Common, L);
       }
       auto Candidate = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       auto Remaining = temporary(CountTypeName, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       const auto Outer = labelName(), Start = labelName();
       const auto Inner = labelName(), CheckSource = labelName();
       const auto Compare = labelName(), Advance = labelName();
@@ -5474,11 +5485,17 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Compare, NotFound, L);
       label(Compare, L);
       branch(
-          Predicate
-              ? emitBinaryPredicate(
-                    json::Object(*Predicate), Call->getArg(4)->getType(),
-                    dereference(json::Object(Current), L),
-                    dereference(json::Object(ValueAddress), L), L)
+          Predicate ? emitBinaryPredicate(
+                          json::Object(*Predicate), Call->getArg(4)->getType(),
+                          dereference(json::Object(Current), L),
+                          dereference(json::Object(ValueAddress), L), L)
+          : SourceComparison
+              ? compareVectorSourceElements(
+                    json::Object(Current), json::Object(ValueAddress),
+                    SourceComparison->Member,
+                    SourceComparison->Friend ? SourceComparison->Friend
+                                             : SourceComparison->Namespace,
+                    L)
               : binary("==",
                        cast(dereference(Current, L), *DefaultComparisonType, L),
                        cast(dereference(ValueAddress, L),
@@ -5504,7 +5521,7 @@ class FunctionLowering {
       assign(Candidate, Last, L);
       jump(End, L);
       label(End, L);
-      return Candidate;
+      return AlgorithmIteratorResult(std::move(Candidate), 0);
     }
     case UtilityOperation::AlgorithmMismatch: {
       auto FirstRange = AlgorithmRangeValue(0);

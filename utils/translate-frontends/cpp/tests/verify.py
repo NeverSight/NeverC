@@ -31128,6 +31128,54 @@ owned::Free *find_free(owned::Free *first, owned::Free *last) {
           'Entry*f(Entry*a,Entry*b){return std::adjacent_find(a,b);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_search_n_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+Member *find_raw(Member *first, Member *last, const Member &needle) {
+  return std::search_n(first, last, 2, needle);
+}
+std::vector<Member>::const_iterator
+find_vector(const std::vector<Member> &values, const Member &needle) {
+  return std::search_n(values.cbegin(), values.cend(), 2, needle);
+}
+std::vector<int>::iterator find_scalar(std::vector<int> &values, int needle) {
+  return std::search_n(values.begin(), values.end(), 2, needle);
+}
+Friend *find_friend(Friend *first, Friend *last, const Friend &needle) {
+  return std::search_n(first, last, 2, needle);
+}
+owned::Free *find_free(owned::Free *first, owned::Free *last,
+                       const owned::Free &needle) {
+  return std::search_n(first, last, 2, needle);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-search-n-" + target,
+              source_record_search_n_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-search-n-nonbool",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'Entry*f(Entry*a,Entry*b,const Entry&v){'
+          'return std::search_n(a,b,2,v);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

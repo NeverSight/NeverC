@@ -23667,17 +23667,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/search_n.h" && Name == "search_n" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       AlgorithmCountParameter(2) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (Call->getNumArgs() == 4 && AlgorithmEqualityPointerParameter(0) &&
-        AlgorithmEqualityPointerParameter(1) &&
-        AlgorithmEqualityValueParameter(3, 0))
-      return UtilityOperation::AlgorithmSearchN;
-    if (Call->getNumArgs() == 5 &&
+    if (Call->getNumArgs() == 4) {
+      const auto First = AlgorithmRangePointerParameter(0);
+      const auto Last = AlgorithmRangePointerParameter(1);
+      const auto Value = Function->getParamDecl(3)->getType();
+      const bool ScalarValue =
+          First && Last && utilityAlgorithmEqualityPointer(Context, *First) &&
+          !utilityEnumHasSourceOperator(
+              S, SM, Context, (*First)->getPointeeType(), OO_EqualEqual) &&
+          Value->isLValueReferenceType() &&
+          Value->getPointeeType().isConstQualified() &&
+          !Value->getPointeeType().isVolatileQualified() &&
+          utilityScalar(Context, Value->getPointeeType()) &&
+          Context.hasSameUnqualifiedType(Call->getArg(3)->getType(),
+                                         Value->getPointeeType()) &&
+          utilityScalarComparisonType(Context, (*First)->getPointeeType(),
+                                      Value->getPointeeType(), false);
+      const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
+      const auto RecordLast = AlgorithmRecordEqualityRangeParameter(1);
+      const bool RecordValue =
+          RecordFirst && RecordLast && Value->isLValueReferenceType() &&
+          Value->getPointeeType().isConstQualified() &&
+          !Value->getPointeeType().isVolatileQualified() &&
+          Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                         Value->getPointeeType()) &&
+          Context.hasSameUnqualifiedType(Call->getArg(3)->getType(),
+                                         Value->getPointeeType());
+      if (ScalarValue || RecordValue)
+        return UtilityOperation::AlgorithmSearchN;
+    }
+    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
+        AlgorithmPointerParameter(1) &&
         AlgorithmBinaryPredicateValueParameter(4, 0, 3))
       return UtilityOperation::AlgorithmSearchN;
   }

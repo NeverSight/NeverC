@@ -54492,6 +54492,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSearchNRun) {
+  const auto Source = tmpFile("source-record-search-n.cpp");
+  const auto Output = tmpFile("source-record-search-n.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *expected;
+int comparisons, bad_identity, evaluations;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++comparisons;
+    if (&other != expected) ++bad_identity;
+    return value == other.value;
+  }
+};
+const Point &next() { ++evaluations; return *expected; }
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point raw[7]{{1}, {2}, {2}, {3}, {2}, {2}, {2}};
+  Point needle{2};
+  expected = &needle;
+  if (std::search_n(raw, raw + 7, 2, next()) != raw + 1 ||
+      evaluations != 1 || !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  if (std::search_n(raw, raw + 7, 3, needle) != raw + 4 ||
+      !comparisons || bad_identity) return 2;
+  comparisons = 0;
+  if (std::search_n(raw, raw + 7, 0, next()) != raw ||
+      evaluations != 2 || comparisons) return 3;
+  if (std::search_n(raw, raw + 7, 4, needle) != raw + 7 ||
+      bad_identity) return 4;
+  std::vector<Point> values;
+  values.push_back(Point{1});
+  values.push_back(Point{2});
+  values.push_back(Point{2});
+  const std::vector<Point> &view = values;
+  auto found = std::search_n(view.cbegin(), view.cend(), 2, needle);
+  auto second = view.cbegin();
+  ++second;
+  if (found != second || bad_identity) return 5;
+  std::vector<int> numbers{1, 3, 3};
+  auto scalar = std::search_n(numbers.begin(), numbers.end(), 2, 3);
+  auto scalar_second = numbers.begin();
+  ++scalar_second;
+  if (scalar != scalar_second) return 6;
+  Friend friends[3]{{1}, {2}, {2}};
+  Friend friend_needle{2};
+  if (std::search_n(friends, friends + 3, 2, friend_needle) !=
+      friends + 1) return 7;
+  owned::Free free_values[3]{{1}, {2}, {2}};
+  owned::Free free_needle{2};
+  if (std::search_n(free_values, free_values + 3, 2, free_needle) !=
+      free_values + 1) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-search-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");
