@@ -53792,6 +53792,96 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
+  const auto Source = tmpFile("source-record-find-count.cpp");
+  const auto Output = tmpFile("source-record-find-count.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *expected;
+int comparisons, bad_identity, evaluations;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++comparisons;
+    if (expected && &other != expected) ++bad_identity;
+    return value == other.value;
+  }
+};
+const Point &next() { ++evaluations; return *expected; }
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point raw[4]{{1}, {2}, {1}, {3}};
+  Point needle{1};
+  expected = &needle;
+  if (std::find(raw, raw + 4, next()) != raw || evaluations != 1 ||
+      comparisons != 1 || bad_identity) return 1;
+  comparisons = 0;
+  if (std::count(raw, raw + 4, next()) != 2 || evaluations != 2 ||
+      comparisons != 4 || bad_identity) return 2;
+  if (std::find(raw, raw, next()) != raw || evaluations != 3 ||
+      comparisons != 4) return 3;
+  expected = &raw[1];
+  if (std::find(raw, raw + 4, raw[1]) != raw + 1 ||
+      std::count(raw, raw + 4, raw[1]) != 1 || bad_identity) return 4;
+  std::vector<Point> values;
+  values.push_back(Point{2});
+  values.push_back(Point{1});
+  values.push_back(Point{1});
+  const std::vector<Point> &view = values;
+  expected = &needle;
+  auto found = std::find(view.cbegin(), view.cend(), next());
+  auto second = view.cbegin();
+  ++second;
+  if (found != second || evaluations != 4 ||
+      std::count(values.begin(), values.end(), needle) != 2 ||
+      bad_identity) return 5;
+  Point missing{9};
+  expected = &missing;
+  if (std::find(values.begin(), values.end(), missing) != values.end() ||
+      std::count(view.cbegin(), view.cend(), missing) != 0 ||
+      bad_identity) return 6;
+  Friend friends[2]{{1}, {2}};
+  Friend friend_needle{2};
+  if (std::find(friends, friends + 2, friend_needle) != friends + 1 ||
+      std::count(friends, friends + 2, friend_needle) != 1) return 7;
+  owned::Free free_values[2]{{1}, {2}};
+  owned::Free free_needle{1};
+  if (std::find(free_values, free_values + 2, free_needle) != free_values ||
+      std::count(free_values, free_values + 2, free_needle) != 1) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-find-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorEqualFillAndReverseRun) {
   const auto Source = tmpFile("wrapped-iterator-equal-fill-reverse.cpp");
   const auto Output = tmpFile("wrapped-iterator-equal-fill-reverse.nc");

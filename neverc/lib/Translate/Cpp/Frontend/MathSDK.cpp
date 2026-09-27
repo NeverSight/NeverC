@@ -23222,25 +23222,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                              : approvedUtilityWrapIteratorRecord(
                                    S, SM, Iterator->getAsCXXRecordDecl(),
                                    Context);
+    const auto Pointer = Wrapped ? Wrapped->IteratorType : Iterator;
+    const auto Value = Function->getParamDecl(2)->getType();
+    const bool RecordValue =
+        utilityObjectPointer(Context, Pointer) &&
+        Value->isLValueReferenceType() &&
+        Value->getPointeeType().isConstQualified() &&
+        !Value->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(Pointer->getPointeeType(),
+                                       Value->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Value->getPointeeType()) &&
+        approvedUtilityTrivialSourceComparison(S, SM, Pointer->getPointeeType(),
+                                               OO_EqualEqual, Context);
     const bool WrappedRange =
         Wrapped && Same(Call->getArg(0)->getType(), Iterator) &&
         Same(Call->getArg(1)->getType(), Iterator) &&
-        utilityAlgorithmEqualityPointer(Context, Wrapped->IteratorType) &&
-        !utilityEnumHasSourceOperator(
-            S, SM, Context, Wrapped->IteratorType->getPointeeType(),
-            OO_EqualEqual);
-    const auto Pointer = WrappedRange ? Wrapped->IteratorType : Iterator;
-    const auto Value = Function->getParamDecl(2)->getType();
+        ((utilityAlgorithmEqualityPointer(Context, Wrapped->IteratorType) &&
+          !utilityEnumHasSourceOperator(S, SM, Context,
+                                        Wrapped->IteratorType->getPointeeType(),
+                                        OO_EqualEqual)) ||
+         RecordValue);
     const bool WrappedValue =
         WrappedRange && Value->isLValueReferenceType() &&
         Value->getPointeeType().isConstQualified() &&
         !Value->getPointeeType().isVolatileQualified() &&
-        utilityScalar(Context, Value->getPointeeType()) &&
         Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
                                        Value->getPointeeType()) &&
-        utilityScalarComparisonType(Context, Pointer->getPointeeType(),
-                                    Value->getPointeeType(), false).has_value();
-    if ((Raw && AlgorithmEqualityValueParameter(2, 0)) || WrappedValue) {
+        ((utilityScalar(Context, Value->getPointeeType()) &&
+          utilityScalarComparisonType(Context, Pointer->getPointeeType(),
+                                      Value->getPointeeType(), false)) ||
+         RecordValue);
+    const bool RawRecord = !Wrapped && RecordValue &&
+                           Same(Call->getArg(0)->getType(), Iterator) &&
+                           Same(Call->getArg(1)->getType(), Iterator);
+    if ((Raw && AlgorithmEqualityValueParameter(2, 0)) || WrappedValue ||
+        RawRecord) {
       if (Name == "find" && Origin->Path == "__algorithm/find.h" &&
           Same(Function->getReturnType(), Iterator) &&
           Same(Call->getType(), Function->getReturnType()))

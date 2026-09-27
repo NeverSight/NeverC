@@ -30760,6 +30760,55 @@ std::string::iterator find_string(std::string& value, char needle) {
           'std::find(values.begin(),values.end(),needle);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_find_count_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+Member *find_raw(Member *first, Member *last, const Member &needle) {
+  return std::find(first, last, needle);
+}
+long count_raw(const Member *first, const Member *last,
+               const Member &needle) {
+  return std::count(first, last, needle);
+}
+std::vector<Member>::const_iterator
+find_vector(const std::vector<Member> &values, const Member &needle) {
+  return std::find(values.cbegin(), values.cend(), needle);
+}
+long count_vector(std::vector<Friend> &values, const Friend &needle) {
+  return std::count(values.begin(), values.end(), needle);
+}
+owned::Free *find_free(owned::Free *first, owned::Free *last,
+                       const owned::Free &needle) {
+  return std::find(first, last, needle);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-find-count-" + target,
+              source_record_find_count_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-find-nonbool",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'Entry*f(Entry*first,Entry*last,const Entry&needle){'
+          'return std::find(first,last,needle);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_equal_fill_reverse_source = """\
 #include <algorithm>
 #include <string>

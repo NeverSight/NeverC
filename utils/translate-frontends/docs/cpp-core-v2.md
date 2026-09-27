@@ -1678,9 +1678,14 @@ rejected instead of being silently bypassed.
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`
 and `std::string` objects. The same scalar equality and heterogeneous value
-checks apply. Each iterator is evaluated once; `find` returns a wrapper around
-the matching pointer or end pointer, and `count` returns the target pointer
-difference type. Record elements remain rejected.
+checks apply. Exact source-owned trivial records are admitted in raw-pointer
+and wrapped ranges when the selected `operator==` is uniquely supported as a
+const member, hidden friend or enclosing-namespace free `bool` function.
+Their value argument retains its original address throughout the loop, and an
+empty range performs no record comparison. Each iterator is evaluated once;
+`find` returns a wrapper around the matching pointer or end pointer, and
+`count` returns the target pointer difference type. Other record equality
+algorithms remain rejected.
 
 The three- and four-iterator `std::equal` overloads also accept those wrapped
 ranges on either side, including a wrapped range compared with a raw scalar
