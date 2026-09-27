@@ -55544,6 +55544,90 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedScalarEmplaceBackRun) {
+  const auto Source = tmpFile("vector-source-owned-scalar-emplace-back.cpp");
+  const auto Output = tmpFile("vector-source-owned-scalar-emplace-back.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int sequence;
+int tracing;
+void note(int n) { if (tracing) sequence = sequence * 10 + n; }
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; note(n); }
+  Box(int a, int b) : value(new int(a * 10 + b)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    note(*value);
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &) = delete;
+  Box &operator=(Box &&) = delete;
+  ~Box() { note(value ? *value : 5); delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> v;
+    v.reserve(3);
+    auto storage = v.data();
+    auto &one = v.emplace_back(1);
+    auto &two = v.emplace_back(2, 3);
+    auto &three = v.emplace_back(4);
+    if (&one != &v[0] || &two != &v[1] || &three != &v[2] ||
+        v.data() != storage || *v[0].value != 1 ||
+        *v[1].value != 23 || *v[2].value != 4) return 1;
+    auto &aliased = v.emplace_back(*v.front().value);
+    if (&aliased != &v[3] || v.data() == storage || v.size() != 4 ||
+        *v[0].value != 1 || *v[1].value != 23 ||
+        *v[2].value != 4 || *v[3].value != 1 ||
+        v[0].value == v[3].value) return 2;
+    auto &pair = v.emplace_back(5, 6);
+    if (&pair != &v[4] || v.size() != 5 ||
+        *v[4].value != 56) return 3;
+  }
+  {
+    std::vector<Box> v;
+    auto &first = v.emplace_back(7);
+    if (&first != &v.front() || v.size() != 1 ||
+        *first.value != 7) return 4;
+  }
+  {
+    std::vector<Box> v;
+    v.reserve(2);
+    v.emplace_back(1);
+    v.emplace_back(2);
+    sequence = 0;
+    tracing = 1;
+    v.emplace_back(3);
+    tracing = 0;
+    if (sequence != 31255) return 5;
+  }
+  return live == 0 && allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-scalar-emplace-back" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRun) {
   const auto Source = tmpFile("vector-source-owned-erase.cpp");
   const auto Output = tmpFile("vector-source-owned-erase.nc");

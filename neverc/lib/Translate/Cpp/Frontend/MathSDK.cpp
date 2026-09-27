@@ -5874,11 +5874,51 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
           Context.getTypeAlign(Pointer))
     return std::nullopt;
-  return UtilityVectorRecord{Vector, Element, Pointer,
+  return UtilityVectorRecord{Vector,
+                             Element,
+                             Pointer,
                              OwningElement || SourceOwnedElement,
-                             DefaultElementConstructor, CopyElementConstructor,
-                             MoveElementConstructor, ShiftElementAssignment,
+                             DefaultElementConstructor,
+                             CopyElementConstructor,
+                             MoveElementConstructor,
+                             ShiftElementAssignment,
                              CopyElementAssignment};
+}
+
+const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
+  if (!Vector.MoveElementConstructor || !Call ||
+      Call->getNumArgs() <= FirstArgument)
+    return nullptr;
+  const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
+  if (!Record || !Record->getDefinition())
+    return nullptr;
+  const unsigned Count = Call->getNumArgs() - FirstArgument;
+  const CXXConstructorDecl *Selected = nullptr;
+  for (const auto *Constructor : Record->ctors()) {
+    if (Constructor->isDeleted() || Constructor->isVariadic() ||
+        Constructor->isCopyOrMoveConstructor() ||
+        Constructor->getNumParams() != Count ||
+        !supportedConstructor(Constructor) || !Constructor->hasBody() ||
+        !S.owns(SM, Constructor->getLocation()))
+      continue;
+    bool ExactScalarArguments = true;
+    for (unsigned I = 0; I != Count; ++I) {
+      const auto Parameter = Constructor->getParamDecl(I)->getType();
+      ExactScalarArguments &=
+          (Parameter->isIntegerType() || Parameter->isFloatingType() ||
+           Parameter->isObjectPointerType()) &&
+          Context.hasSameUnqualifiedType(
+              Parameter, Call->getArg(FirstArgument + I)->getType());
+    }
+    if (!ExactScalarArguments)
+      continue;
+    if (Selected)
+      return nullptr;
+    Selected = Constructor;
+  }
+  return Selected;
 }
 
 std::optional<UtilityVectorConstruction>
@@ -20072,26 +20112,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
         cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
                       "libcxx", "__vector/vector.h") &&
-        Method->getNumParams() <= 1) {
+        Call->getNumArgs() == Method->getNumParams()) {
       if (!Method->getNumParams()) {
         if (!Vector->MoveElementConstructor ||
             Vector->DefaultElementConstructor)
           return UtilityOperation::VectorEmplaceBack;
         return std::nullopt;
       }
-      const auto Parameter = Method->getParamDecl(0)->getType();
-      const bool Copyable = CopyableString || Vector->CopyElementConstructor;
-      if ((((!Vector->OwningElement || Copyable) &&
-            Parameter->isLValueReferenceType()) ||
-           Parameter->isRValueReferenceType()) &&
-          Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                         Vector->ElementType) &&
-          (!Vector->OwningElement ||
-           Context.hasSameType(Parameter->getPointeeType(),
-                               Vector->ElementType) ||
-           Copyable) &&
-          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                         Vector->ElementType))
+      if (Method->getNumParams() == 1) {
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        const bool Copyable = CopyableString || Vector->CopyElementConstructor;
+        if ((((!Vector->OwningElement || Copyable) &&
+              Parameter->isLValueReferenceType()) ||
+             Parameter->isRValueReferenceType()) &&
+            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                           Vector->ElementType) &&
+            (!Vector->OwningElement ||
+             Context.hasSameType(Parameter->getPointeeType(),
+                                 Vector->ElementType) ||
+             Copyable) &&
+            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                           Vector->ElementType))
+          return UtilityOperation::VectorEmplaceBack;
+      }
+      if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
+                                                  Context))
         return UtilityOperation::VectorEmplaceBack;
     }
     if (!Operator && !Method->isConst() &&
