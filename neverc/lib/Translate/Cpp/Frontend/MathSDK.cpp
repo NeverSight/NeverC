@@ -5903,15 +5903,17 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
         !supportedConstructor(Constructor) || !Constructor->hasBody() ||
         !S.owns(SM, Constructor->getLocation()))
       continue;
-    bool ExactScalarArguments = true;
+    bool ExactArguments = true;
     for (unsigned I = 0; I != Count; ++I) {
       const auto Parameter = Constructor->getParamDecl(I)->getType();
       const auto *Argument = Call->getArg(FirstArgument + I);
       const auto ArgumentType = Argument->getType();
       if (Parameter->isReferenceType()) {
         const auto Referent = Parameter->getPointeeType();
-        ExactScalarArguments &=
-            (Referent->isIntegerType() || Referent->isFloatingType()) &&
+        ExactArguments &=
+            (Referent->isIntegerType() || Referent->isFloatingType() ||
+             utilityPairSourceOwnedValue(S, SM, Context,
+                                         Referent.getUnqualifiedType())) &&
             !Referent.isVolatileQualified() &&
             !ArgumentType.isVolatileQualified() &&
             Context.hasSameUnqualifiedType(Referent, ArgumentType) &&
@@ -5928,7 +5930,7 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
             (!Array->getElementType().isConstQualified() ||
              Parameter->getPointeeType().isConstQualified()) &&
             !Array->getElementType().isVolatileQualified();
-        ExactScalarArguments &=
+        ExactArguments &=
             (Parameter->isIntegerType() || Parameter->isFloatingType() ||
              Parameter->isObjectPointerType()) &&
             !Parameter.isVolatileQualified() &&
@@ -5937,7 +5939,7 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
              ArrayDecay);
       }
     }
-    if (!ExactScalarArguments)
+    if (!ExactArguments)
       continue;
     if (Selected)
       return nullptr;

@@ -55800,6 +55800,77 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedRecordReferenceEmplaceRun) {
+  const auto Source = tmpFile("vector-source-owned-record-reference-emplace.cpp");
+  const auto Output = tmpFile("vector-source-owned-record-reference-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int seeds;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Seed {
+  int number;
+  explicit Seed(int n) : number(n) { ++seeds; }
+  ~Seed() { --seeds; }
+};
+struct Box {
+  int *value;
+  explicit Box(const Seed &source) : value(new int(source.number)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<Box> v;
+    v.reserve(2);
+    Seed source(3);
+    auto storage = v.data();
+    auto &first = v.emplace_back(source);
+    if (&first != &v.front() || v.data() != storage ||
+        *first.value != 3 || seeds != 1) return 1;
+    auto inserted = v.emplace(v.cbegin(), Seed(7));
+    if (inserted != v.begin() || v.data() != storage ||
+        v.size() != 2 || *v[0].value != 7 ||
+        *v[1].value != 3 || seeds != 1) return 2;
+    auto &grown = v.emplace_back(source);
+    if (&grown != &v.back() || v.data() == storage ||
+        v.size() != 3 || *v[0].value != 7 ||
+        *v[1].value != 3 || *v[2].value != 3 ||
+        v[1].value == v[2].value || seeds != 1) return 3;
+  }
+  return live == 0 && seeds == 0 && allocations == releases ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-record-reference-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRun) {
   const auto Source = tmpFile("vector-source-owned-erase.cpp");
   const auto Output = tmpFile("vector-source-owned-erase.nc");

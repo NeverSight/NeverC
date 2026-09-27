@@ -2689,6 +2689,10 @@ emplacement positions. Exact array-to-object-pointer decay is admitted for
 those constructors too,
 including string literals and local character arrays passed to a `const char*`
 parameter. Host O0/O2 fixtures cover both emplacement forms and growth.
+Exact lvalue and rvalue references to admitted source-owned records may also
+initialize an element through a unique supported constructor. The referenced
+object remains live through construction; host O0/O2 fixtures cover a named
+source, a temporary source, positional insertion, and growth.
 Single and range `erase` also accept a supported source-owned assignment
 returning `T&`: they use the selected move assignment
 when available, otherwise copy assignment, then destroy only the vacated tail.
