@@ -23903,17 +23903,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/rotate.h" && Name == "rotate" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmRotate;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarMiddle = AlgorithmRangePointerParameter(1);
+    const auto ScalarLast = AlgorithmRangePointerParameter(2);
+    const bool Scalar =
+        ScalarFirst && ScalarMiddle && ScalarLast &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst);
+    const bool Record = AlgorithmWritableRecordRangeParameter(0) &&
+                        AlgorithmWritableRecordRangeParameter(1) &&
+                        AlgorithmWritableRecordRangeParameter(2);
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmRotate;
+  }
   if (Origin->Path == "__algorithm/rotate_copy.h" && Name == "rotate_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&

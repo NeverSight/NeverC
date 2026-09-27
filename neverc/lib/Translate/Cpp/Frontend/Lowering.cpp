@@ -5802,11 +5802,14 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmRotate: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Middle = snapshot(expression(Call->getArg(1)), L);
-      auto Last = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto MiddleRange = AlgorithmRangeValue(1);
+      auto LastRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Middle = std::move(MiddleRange.first);
+      auto Last = std::move(LastRange.first);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       auto TailLength =
           snapshot(binary("-", Last, Middle, DifferenceType, L), L);
       auto Result = snapshot(binary("+", First, TailLength, PointerType, L), L);
@@ -5839,7 +5842,7 @@ class FunctionLowering {
       ReverseRange(First, Middle);
       ReverseRange(Middle, Last);
       ReverseRange(First, Last);
-      return Result;
+      return AlgorithmIteratorResult(std::move(Result), 0);
     }
     case UtilityOperation::AlgorithmRotateCopy: {
       auto First = snapshot(expression(Call->getArg(0)), L);

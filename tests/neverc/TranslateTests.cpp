@@ -42577,9 +42577,9 @@ TEST_F(TranslateTest, CoreV2AlgorithmRearrangementRequiresPinnedScalarForms) {
       {"volatile-rotate",
        "#include <algorithm>\nint main(){volatile int a[2]{1,2};"
        "return std::rotate(a,a+1,a+2)==a+1?0:1;}"},
-      {"record-rotate",
-       "#include <algorithm>\nstruct R{int n;};int main(){R a[2]{{1},{2}};"
-       "return std::rotate(a,a+1,a+2)==a+1?0:1;}"}};
+      {"nontrivial-record-rotate", "#include <algorithm>\nstruct R{int "
+                                   "n;~R(){}};int main(){R a[2]{{1},{2}};"
+                                   "return std::rotate(a,a+1,a+2)==a+1?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -55735,6 +55735,68 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("source-record-swap-reverse" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordRotateRun) {
+  const auto Source = tmpFile("source-record-rotate.cpp");
+  const auto Output = tmpFile("source-record-rotate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int id, payload; };
+int main() {
+  Item raw[5]{{1, 10}, {2, 20}, {3, 30}, {4, 40}, {5, 50}};
+  int first_effects = 0, middle_effects = 0, last_effects = 0;
+  auto position = std::rotate((++first_effects, raw),
+                              (++middle_effects, raw + 2),
+                              (++last_effects, raw + 5));
+  if (first_effects != 1 || middle_effects != 1 || last_effects != 1 ||
+      position != raw + 3 ||
+      raw[0].id != 3 || raw[0].payload != 30 ||
+      raw[1].id != 4 || raw[1].payload != 40 ||
+      raw[2].id != 5 || raw[2].payload != 50 ||
+      raw[3].id != 1 || raw[3].payload != 10 ||
+      raw[4].id != 2 || raw[4].payload != 20) return 1;
+  if (std::rotate(raw, raw, raw + 5) != raw + 5 ||
+      std::rotate(raw, raw + 5, raw + 5) != raw ||
+      std::rotate(raw + 2, raw + 3, raw + 3) != raw + 2 ||
+      raw[0].id != 3 || raw[4].id != 2) return 2;
+  std::vector<Item> values{Item{1, 10}, Item{2, 20},
+                           Item{3, 30}, Item{4, 40}};
+  auto wrapped = std::rotate(values.begin(), values.begin() + 1,
+                             values.end());
+  if (wrapped != values.begin() + 3 ||
+      values[0].id != 2 || values[0].payload != 20 ||
+      values[1].id != 3 || values[1].payload != 30 ||
+      values[2].id != 4 || values[2].payload != 40 ||
+      values[3].id != 1 || values[3].payload != 10) return 3;
+  std::vector<int> numbers{1, 2, 3};
+  auto scalar = std::rotate(numbers.begin(), numbers.begin() + 1,
+                            numbers.end());
+  if (scalar != numbers.begin() + 2 ||
+      numbers[0] != 2 || numbers[1] != 3 || numbers[2] != 1) return 4;
+  std::vector<Item> empty;
+  if (std::rotate(empty.begin(), empty.begin(), empty.end()) != empty.end())
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-rotate" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

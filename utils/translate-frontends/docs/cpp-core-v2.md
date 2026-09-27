@@ -1742,6 +1742,12 @@ complete record values during swaps, retain the returned second-range iterator
 form for `swap_ranges`, and evaluate each iterator argument once. Empty ranges
 perform no writes. Const iterators and nontrivial records remain rejected.
 
+`std::rotate` accepts those writable trivial source-record ranges and writable
+authenticated wrapped scalar ranges. Its three range endpoints are evaluated
+once, and the three-reversal lowering moves complete values. The returned
+position has the original raw-pointer or wrapped iterator type, including for
+empty and zero-rotation ranges.
+
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
 and four-iterator `std::is_permutation`, plus `std::unique`,

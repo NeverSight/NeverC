@@ -441,6 +441,8 @@ range elements.
 `iter_swap`, `swap_ranges` and `reverse` accept writable raw or authenticated
 wrapped ranges of exact source-owned trivial records, preserving complete
 record values and the returned output iterator form.
+`rotate` admits those record ranges and writable wrapped scalar ranges,
+returning the original iterator type.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

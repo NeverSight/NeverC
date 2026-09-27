@@ -11915,8 +11915,8 @@ extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
         check("v2-algorithm-rearrangement-" + target,
               algorithm_rearrangement_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-rearrangement-record-rotate",
-          '#include <algorithm>\nstruct R{int n;};int main(){R a[2]{{1},{2}};return std::rotate(a,a+1,a+2)==a+1?0:1;}',
+    check("v2-algorithm-rearrangement-nontrivial-record-rotate",
+          '#include <algorithm>\nstruct R{int n;~R(){}};int main(){R a[2]{{1},{2}};return std::rotate(a,a+1,a+2)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_ordered_ranges_source = """\
@@ -31722,6 +31722,25 @@ void swap_wrapped_raw(std::vector<Entry> &values, Entry *other) {
           '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
           'void f(Entry*first,Entry*last){std::reverse(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+
+    source_record_rotate_source = """\
+#include <algorithm>
+#include <vector>
+struct Entry { int value; };
+Entry *rotate_raw(Entry *first, Entry *middle, Entry *last) {
+  return std::rotate(first, middle, last);
+}
+std::vector<Entry>::iterator rotate_wrapped(std::vector<Entry> &values) {
+  return std::rotate(values.begin(), values.begin() + 1, values.end());
+}
+std::vector<int>::iterator rotate_scalar_wrapped(std::vector<int> &values) {
+  return std::rotate(values.begin(), values.begin() + 1, values.end());
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-rotate-" + target,
+              source_record_rotate_source, profile="cpp-core-v2",
+              target=target, sdk=True)
 
     wrapped_transfer_source = """\
 #include <algorithm>
