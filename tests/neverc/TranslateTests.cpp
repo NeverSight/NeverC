@@ -56123,6 +56123,130 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedAssignFillRun) {
+  const auto Source = tmpFile("vector-source-owned-assign-fill.cpp");
+  const auto Output = tmpFile("vector-source-owned-assign-fill.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copies;
+int assignments;
+int tracing;
+int sequence;
+void note(int n) { if (tracing) sequence = sequence * 10 + n; }
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &other) : value(new int(*other.value)) {
+    ++live;
+    ++copies;
+    note(2);
+  }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  Box &operator=(const Box &other) {
+    int *next = new int(*other.value);
+    delete value;
+    value = next;
+    ++assignments;
+    note(6);
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~Box() { delete value; --live; note(4); }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(5);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    values.push_back(Box(3));
+    auto storage = values.data();
+    Box donor(9);
+    sequence = 0; tracing = 1;
+    values.assign(2, donor);
+    tracing = 0;
+    if (sequence != 664 || values.data() != storage ||
+        values.size() != 2 || values.capacity() != 5 ||
+        *values[0].value != 9 || *values[1].value != 9 ||
+        values[0].value == donor.value || assignments != 2) return 1;
+    sequence = 0; tracing = 1;
+    values.assign(4, values[0]);
+    tracing = 0;
+    if (sequence != 6622 || values.data() != storage ||
+        values.size() != 4 || *values[3].value != 9 ||
+        values[0].value == values[1].value ||
+        values[2].value == values[3].value ||
+        assignments != 4 || copies != 2) return 2;
+    sequence = 0; tracing = 1;
+    values.assign(0, donor);
+    tracing = 0;
+    if (sequence != 4444 || values.data() != storage ||
+        values.size() != 0 || values.capacity() != 5) return 3;
+    values.assign(3, donor);
+    if (values.data() != storage || values.size() != 3 ||
+        *values[2].value != 9 || copies != 5) return 4;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(4));
+    values.push_back(Box(5));
+    auto storage = values.data();
+    Box donor(8);
+    sequence = 0; tracing = 1;
+    values.assign(4, donor);
+    tracing = 0;
+    if (sequence != 442222 || values.data() == storage ||
+        values.size() != 4 || values.capacity() != 4 ||
+        *values[0].value != 8 || *values[3].value != 8 ||
+        values[0].value == donor.value) return 5;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(6));
+    values.push_back(Box(7));
+    auto storage = values.data();
+    int before = copies;
+    values.assign(4, values[0]);
+    if (values.data() == storage || values.size() != 4 ||
+        *values[0].value != 6 || *values[3].value != 6 ||
+        values[0].value == values[1].value || copies - before != 5)
+      return 6;
+  }
+  return live == 0 && allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-assign-fill" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedResizeRun) {
   const auto Source = tmpFile("vector-source-owned-resize.cpp");
   const auto Output = tmpFile("vector-source-owned-resize.nc");

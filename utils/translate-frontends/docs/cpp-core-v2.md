@@ -2704,6 +2704,13 @@ elements, assigns the new position from that temporary, and destroys it. End
 insertion and growth construct directly in the destination. Host O0/O2
 fixtures check default and copy construction, aliased arguments, capacity
 reuse, growth, and balanced release.
+`assign(count, const T&)` accepts source-owned elements with supported copy
+construction and copy assignment. Within capacity it copy-assigns existing
+elements, then copy-constructs a new tail or destroys the excess tail. Growth
+releases the old storage before copying new elements, as in the pinned libc++;
+an argument referring to old storage is preserved with a temporary copy.
+Host O0/O2 fixtures check assignment and destruction order, reuse, growth,
+aliased in-place and growing fill, and balanced release.
 `resize(count)` admits a supported default constructor, and
 `resize(count, const T&)` admits a supported copy constructor. Shrinking destroys
 the removed tail; growth within capacity constructs new elements in place.

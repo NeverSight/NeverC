@@ -19993,7 +19993,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getType(), VectorType))
         return UtilityOperation::VectorAssignList;
     }
-    if ((!Vector->OwningElement || CopyableString) && !Operator &&
+    if ((!Vector->OwningElement || CopyableString ||
+         (Vector->CopyElementConstructor &&
+          Vector->CopyElementAssignment)) &&
+        !Operator &&
         Name == "assign" &&
         !Method->isConst() && !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
