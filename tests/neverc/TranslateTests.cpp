@@ -59873,16 +59873,20 @@ int main() {
     values.push_back(Pair(5, 6));
     if (values.size() != 3 || values[1].first != 3 ||
         values[2].second != 6) return 2;
+    values.shrink_to_fit();
+    Pair &placed = values.emplace_back(values[1].first, values[2].second);
+    if (&placed != &values.back() || values.size() != 4 ||
+        placed.first != 3 || placed.second != 6) return 10;
     values.reserve(9);
     auto storage = values.data();
     values.insert(values.cbegin() + 1, values[1]);
-    if (values.data() != storage || values.size() != 4 ||
+    if (values.data() != storage || values.size() != 5 ||
         values[1].first != 3 || values[2].second != 4 ||
         values[3].first != 5) return 3;
     values.erase(values.cbegin() + 2);
-    if (values.size() != 3 || values[2].first != 5) return 4;
+    if (values.size() != 4 || values[2].first != 5) return 4;
     std::vector<Pair> copied(values);
-    if (copied.data() == values.data() || copied.size() != 3 ||
+    if (copied.data() == values.data() || copied.size() != 4 ||
         copied[1].second != 4) return 5;
     values.assign(Size(2), seed);
     values.insert(values.cend(), copied.cbegin(), copied.cend());
@@ -59899,6 +59903,11 @@ int main() {
     nested.push_back(nested[0]);
     if (nested.size() != 2 || nested[0].first.second != 8 ||
         nested[1].second != 9) return 8;
+    std::vector<Pair> spare;
+    spare.reserve(2);
+    Pair &appended = spare.emplace_back(11, 12);
+    if (&appended != &spare[0] || appended.first != 11 ||
+        appended.second != 12) return 11;
   }
   return allocations == releases ? 0 : 9;
 }

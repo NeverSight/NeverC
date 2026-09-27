@@ -2638,6 +2638,9 @@ access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
 Pair-value fixtures additionally cover default construction, value insertion,
 capacity reuse, aliasing, erase, fill and range modifiers, copy/assignment,
 resize and recursively nested pairs without element ownership.
+For an admitted pair with exact scalar field types, `emplace_back(first, second)`
+captures both values before vector growth and initializes the corresponding
+fields directly. The returned reference names the inserted pair.
 The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
 work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,

@@ -29586,6 +29586,8 @@ void pair_vectors() {
   Pair source(3, 4);
   values.push_back(source);
   values.push_back(Pair(5, 6));
+  values.shrink_to_fit();
+  values.emplace_back(values[1].first, values[2].second);
   values.reserve(8);
   values.insert(values.cbegin(), values[0]);
   values.erase(values.cbegin() + 1);
@@ -29796,6 +29798,14 @@ int f() {
   std::vector<std::pair<const int, int>> values;
   values.emplace_back();
   return values.size();
+}
+""",
+        "pair-converting-emplace": """\
+#include <utility>
+void f() {
+  std::vector<std::pair<int, int>> values;
+  short first = 1;
+  values.emplace_back(first, 2);
 }
 """,
         "nested-void-pointer-order": """\

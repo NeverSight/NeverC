@@ -20453,6 +20453,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                            Vector->ElementType))
           return UtilityOperation::VectorEmplaceBack;
       }
+      if (Method->getNumParams() == 2) {
+        const auto Pair = approvedUtilityPairRecord(
+            S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context);
+        if (Pair && utilityScalar(Context, Pair->First->getType()) &&
+            utilityScalar(Context, Pair->Second->getType()) &&
+            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                           Pair->First->getType()) &&
+            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                           Pair->Second->getType()))
+          return UtilityOperation::VectorEmplaceBack;
+      }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
                                                   Context))
         return UtilityOperation::VectorEmplaceBack;
