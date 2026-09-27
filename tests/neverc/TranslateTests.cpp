@@ -55822,6 +55822,120 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedCopyInsertRun) {
+  const auto Source = tmpFile("vector-source-owned-copy-insert.cpp");
+  const auto Output = tmpFile("vector-source-owned-copy-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int copied;
+int copy_assigned;
+int move_assigned;
+int tracing;
+int sequence;
+void note(int n) { if (tracing) sequence = sequence * 10 + n; }
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct Box {
+  int *value;
+  int identity;
+  explicit Box(int n) : value(new int(n)), identity(n) { ++live; }
+  Box(const Box &other)
+      : value(new int(*other.value)), identity(other.identity) {
+    ++live;
+    ++copied;
+    note(2);
+  }
+  Box(Box &&other) noexcept : value(other.value), identity(other.identity) {
+    other.value = nullptr;
+    ++live;
+    note(identity);
+  }
+  Box &operator=(const Box &other) {
+    int *next = new int(*other.value);
+    delete value;
+    value = next;
+    ++copy_assigned;
+    return *this;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    ++move_assigned;
+    return *this;
+  }
+  ~Box() { delete value; --live; note(identity + 2); }
+};
+int main() {
+  {
+    std::vector<Box> values;
+    values.reserve(8);
+    values.push_back(Box(1));
+    values.push_back(Box(2));
+    values.push_back(Box(3));
+    auto storage = values.data();
+    Box donor(9);
+    auto inserted = values.insert(values.cbegin() + 1, donor);
+    if (inserted != values.begin() + 1 || values.data() != storage ||
+        values.size() != 4 || *donor.value != 9 ||
+        *values[0].value != 1 || *values[1].value != 9 ||
+        *values[2].value != 2 || *values[3].value != 3 ||
+        copy_assigned != 1 || move_assigned == 0) return 1;
+    auto alias = values.insert(values.cbegin() + 1, values.back());
+    if (alias != values.begin() + 1 || values.data() != storage ||
+        values.size() != 5 || *values[1].value != 3 ||
+        *values[2].value != 9 || *values[4].value != 3 ||
+        values[1].value == values[4].value || copy_assigned != 2)
+      return 2;
+    auto same = values.insert(values.cbegin() + 2, values[2]);
+    if (same != values.begin() + 2 || values.size() != 6 ||
+        *values[2].value != 9 || *values[3].value != 9 ||
+        values[2].value == values[3].value || copy_assigned != 3)
+      return 3;
+    Box tail(10);
+    auto appended = values.insert(values.cend(), tail);
+    if (appended != values.end() - 1 || values.data() != storage ||
+        values.size() != 7 || *tail.value != 10 ||
+        *values.back().value != 10 || copied != 1) return 4;
+  }
+  {
+    std::vector<Box> values;
+    values.reserve(2);
+    values.push_back(Box(4));
+    values.push_back(Box(5));
+    auto storage = values.data();
+    sequence = 0; tracing = 1;
+    auto grown = values.insert(values.cbegin() + 1, values[0]);
+    tracing = 0;
+    if (grown != values.begin() + 1 || values.data() == storage ||
+        values.size() != 3 || *values[0].value != 4 ||
+        *values[1].value != 4 || *values[2].value != 5 ||
+        values[0].value == values[1].value || copied != 2 ||
+        sequence != 25746) return 5;
+  }
+  return live == 0 && allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-copy-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEmplaceRun) {
   const auto Source = tmpFile("vector-source-owned-emplace.cpp");
   const auto Output = tmpFile("vector-source-owned-emplace.nc");

@@ -5745,6 +5745,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   const CXXConstructorDecl *CopyElementConstructor = nullptr;
   const CXXConstructorDecl *MoveElementConstructor = nullptr;
   const CXXMethodDecl *ShiftElementAssignment = nullptr;
+  const CXXMethodDecl *CopyElementAssignment = nullptr;
   if (SourceOwnedElement) {
     const auto *Destructor = ElementRecord->getDestructor();
     if (!Destructor || !Destructor->hasBody() ||
@@ -5780,7 +5781,6 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
     const auto ConstReference =
         Context.getLValueReferenceType(ElementType.withConst());
     const auto RValueReference = Context.getRValueReferenceType(ElementType);
-    const CXXMethodDecl *CopyAssignment = nullptr;
     for (const auto *Method : ElementRecord->methods()) {
       if ((!Method->isMoveAssignmentOperator() &&
            !Method->isCopyAssignmentOperator()) ||
@@ -5797,10 +5797,10 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
         ShiftElementAssignment = Method;
       else if (Method->isCopyAssignmentOperator() &&
                Context.hasSameType(Parameter, ConstReference))
-        CopyAssignment = Method;
+        CopyElementAssignment = Method;
     }
     if (!ShiftElementAssignment)
-      ShiftElementAssignment = CopyAssignment;
+      ShiftElementAssignment = CopyElementAssignment;
   }
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
@@ -5877,7 +5877,8 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   return UtilityVectorRecord{Vector, Element, Pointer,
                              OwningElement || SourceOwnedElement,
                              DefaultElementConstructor, CopyElementConstructor,
-                             MoveElementConstructor, ShiftElementAssignment};
+                             MoveElementConstructor, ShiftElementAssignment,
+                             CopyElementAssignment};
 }
 
 std::optional<UtilityVectorConstruction>
@@ -19878,7 +19879,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (ValueReference &&
             (!Vector->OwningElement || CopyableString ||
              (Method->getNumParams() == 2 &&
-              ValueParameter->isRValueReferenceType())) &&
+              (ValueParameter->isRValueReferenceType() ||
+               (ValueParameter->isLValueReferenceType() &&
+                Vector->CopyElementConstructor &&
+                Vector->CopyElementAssignment)))) &&
             Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                            Element) &&
             (Method->getNumParams() == 2 ||

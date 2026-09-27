@@ -2686,9 +2686,16 @@ Single-rvalue `insert` also uses that assignment to shift live elements when
 capacity permits; it move-constructs the new tail and keeps the original
 storage. With growth it constructs the inserted element before moving old
 elements, including when the argument refers to an element of the same vector.
+For source-owned records it relocates the suffix before the prefix and
+destroys each old segment after completing its moves.
 In-place insertion retains libc++'s ordering when an rvalue argument aliases
 a live element. The insertion fixtures cover middle, end, aliased, growing,
 and empty vectors with balanced resource release.
+Single-lvalue `insert` also accepts supported copy construction and copy
+assignment. In-place insertion adjusts an aliased argument after shifting the
+live range, then invokes the copy assignment; end insertion and growth invoke
+the copy constructor. Host O0/O2 fixtures check deep copies, both alias
+positions, capacity reuse, growth relocation order, and balanced release.
 Positional `emplace` accepts zero arguments when the element has a supported
 default constructor, or one nonconst rvalue of the exact element type. For an
 in-place middle insertion it constructs a temporary before shifting live
