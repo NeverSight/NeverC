@@ -29681,6 +29681,34 @@ void pair_array_vectors() {
   std::vector<Nested> nested;
   nested.push_back(Nested(value, 4));
 }
+void pair_optional_vectors() {
+  using Row = std::pair<std::optional<int>, int>;
+  Row value(std::optional<int>(3), 4);
+  std::vector<Row> values;
+  values.push_back(value);
+  values.push_back(Row(std::optional<int>(), 5));
+  std::vector<Row> copied(values);
+  copied = values;
+  std::vector<std::vector<Row>> nested;
+  nested.push_back(values);
+}
+bool compare_pair_optional_vectors(
+    const std::vector<std::pair<std::optional<int>, int>>& left,
+    const std::vector<std::pair<std::optional<int>, int>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_pair_optional_vectors(
+    const std::vector<std::vector<std::pair<std::optional<int>, int>>>& left,
+    const std::vector<std::vector<std::pair<std::optional<int>, int>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool equal_pair_pointer_optional_vectors(
+    const std::vector<std::pair<std::optional<void*>, int>>& left,
+    const std::vector<std::pair<std::optional<void*>, int>>& right) {
+  return left == right && !(left != right);
+}
 void optional_vectors() {
   std::vector<std::optional<int>> values;
   values.emplace_back();
@@ -29983,6 +30011,14 @@ int f() {
 #include <optional>
 bool f(const std::vector<std::optional<void*>>& left,
        const std::vector<std::optional<void*>>& right) {
+  return left < right;
+}
+""",
+        "pair-optional-void-pointer-order": """\
+#include <optional>
+#include <utility>
+bool f(const std::vector<std::pair<std::optional<void*>, int>>& left,
+       const std::vector<std::pair<std::optional<void*>, int>>& right) {
   return left < right;
 }
 """,

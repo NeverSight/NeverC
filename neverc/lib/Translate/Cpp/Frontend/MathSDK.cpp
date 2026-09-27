@@ -2943,6 +2943,15 @@ static bool utilityPairValue(const State &S, const SourceManager &SM,
     return true;
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (const auto Optional =
+          approvedUtilityOptionalRecord(S, SM, Record, Context))
+    return !Optional->ElementType.isConstQualified() &&
+           utilityScalar(Context, Optional->ElementType) &&
+           Optional->Record->hasTrivialCopyConstructor() &&
+           Optional->Record->hasTrivialMoveConstructor() &&
+           Optional->Record->hasTrivialCopyAssignment() &&
+           Optional->Record->hasTrivialMoveAssignment() &&
+           Optional->Record->hasTrivialDestructor();
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -2963,6 +2972,12 @@ static bool utilityPairAssignableValue(const State &S,
     return utilityArrayTriviallyAssignable(Context, Type);
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (const auto Optional =
+          approvedUtilityOptionalRecord(S, SM, Record, Context))
+    return !Optional->ElementType.isConstQualified() &&
+           utilityScalar(Context, Optional->ElementType) &&
+           Optional->Record->hasTrivialCopyAssignment() &&
+           Optional->Record->hasTrivialMoveAssignment();
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -5962,6 +5977,10 @@ static bool utilityVectorArrayComparable(const State &S,
                                          const ASTContext &Context,
                                          QualType Element, bool Equality,
                                          unsigned Depth);
+static bool utilityVectorOptionalComparable(const State &S,
+                                            const SourceManager &SM,
+                                            const ASTContext &Context,
+                                            QualType Element, bool Equality);
 
 static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
                                         const ASTContext &Context,
@@ -5982,6 +6001,9 @@ static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
   if (approvedUtilityArrayRecord(S, SM, Element->getAsCXXRecordDecl(), Context))
     return utilityVectorArrayComparable(S, SM, Context, Element, Equality,
                                         Depth + 1);
+  if (approvedUtilityOptionalRecord(S, SM, Element->getAsCXXRecordDecl(),
+                                    Context))
+    return utilityVectorOptionalComparable(S, SM, Context, Element, Equality);
   const auto Pair =
       approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
   return Pair &&

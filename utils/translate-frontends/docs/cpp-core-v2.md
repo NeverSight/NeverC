@@ -2656,6 +2656,10 @@ only equality and inequality. Back and positional emplacement accept an
 admitted scalar value, `std::nullopt`, `std::in_place` for a default value,
 or `std::in_place` plus one convertible scalar value. The scalar is captured
 before vector storage changes, including when it aliases an existing element.
+Admitted scalar optionals can also be fields of pairs with trivial copy and
+move construction and destruction held by vectors. Pair and nested-vector
+comparisons inspect the optional engagement state before comparing its scalar
+value; void-pointer fields permit only equality and inequality.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.
