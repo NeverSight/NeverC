@@ -2159,9 +2159,28 @@ class FunctionLowering {
     };
     auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
                               Expression Right, unsigned RightIndex) {
-      return CompareUtilityValues(
-          "==", Left, Call->getArg(LeftIndex)->getType()->getPointeeType(),
-          Right, Call->getArg(RightIndex)->getType()->getPointeeType());
+      const auto LeftType =
+          Call->getArg(LeftIndex)->getType()->getPointeeType();
+      const auto RightType =
+          Call->getArg(RightIndex)->getType()->getPointeeType();
+      const auto SourceComparison =
+          A.Context.hasSameUnqualifiedType(LeftType, RightType)
+              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, LeftType,
+                                                       OO_EqualEqual, A.Context)
+              : std::nullopt;
+      if (SourceComparison) {
+        auto LeftAddress =
+            snapshot(address(std::move(Left), LeftType.withConst(), L), L);
+        auto RightAddress =
+            snapshot(address(std::move(Right), RightType.withConst(), L), L);
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      }
+      return CompareUtilityValues("==", Left, LeftType, Right, RightType);
     };
     auto AlgorithmRangeValue = [&](unsigned Index)
         -> std::pair<Expression, QualType> {

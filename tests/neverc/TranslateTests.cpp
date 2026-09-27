@@ -54579,6 +54579,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
+  const auto Source = tmpFile("source-record-subrange-search.cpp");
+  const auto Output = tmpFile("source-record-subrange-search.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *haystack, *pattern;
+int haystack_size, pattern_size, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const;
+};
+bool within(const Point *value, const Point *base, int count) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator==(const Point &other) const {
+  ++comparisons;
+  if (!within(this, haystack, haystack_size) ||
+      !within(&other, pattern, pattern_size)) ++bad_identity;
+  return value == other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point values[6]{{1}, {2}, {3}, {2}, {3}, {4}};
+  Point needle[2]{{2}, {3}};
+  haystack = values; haystack_size = 6;
+  pattern = needle; pattern_size = 2;
+  if (std::search(values, values + 6, needle, needle + 2) != values + 1 ||
+      std::find_end(values, values + 6, needle, needle + 2) != values + 3 ||
+      std::find_first_of(values, values + 6, needle, needle + 2) !=
+          values + 1 || !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  if (std::search(values, values + 6, needle, needle) != values ||
+      std::find_end(values, values + 6, needle, needle) != values + 6 ||
+      std::find_first_of(values, values + 6, needle, needle) != values + 6 ||
+      comparisons) return 2;
+  Point missing[1]{{9}};
+  pattern = missing; pattern_size = 1;
+  if (std::search(values, values + 6, missing, missing + 1) != values + 6 ||
+      std::find_end(values, values + 6, missing, missing + 1) != values + 6 ||
+      std::find_first_of(values, values + 6, missing, missing + 1) !=
+          values + 6 || bad_identity) return 3;
+  Friend friends[3]{{1}, {2}, {3}}, friend_needle[1]{{2}};
+  if (std::search(friends, friends + 3, friend_needle, friend_needle + 1) !=
+          friends + 1 ||
+      std::find_end(friends, friends + 3, friend_needle,
+                    friend_needle + 1) != friends + 1 ||
+      std::find_first_of(friends, friends + 3, friend_needle,
+                         friend_needle + 1) != friends + 1) return 4;
+  owned::Free free_values[3]{{1}, {2}, {3}};
+  owned::Free free_needle[1]{{2}};
+  if (std::search(free_values, free_values + 3, free_needle,
+                  free_needle + 1) != free_values + 1 ||
+      std::find_end(free_values, free_values + 3, free_needle,
+                    free_needle + 1) != free_values + 1 ||
+      std::find_first_of(free_values, free_values + 3, free_needle,
+                         free_needle + 1) != free_values + 1) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-subrange-search" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");

@@ -1723,6 +1723,13 @@ comparisons, returns the first run of the requested length, and wraps the
 result when the input is wrapped. Zero and non-positive count behavior keeps
 the existing fast path. Predicate overloads retain their raw scalar boundary.
 
+Default `std::search`, `std::find_end` and `std::find_first_of` also accept two
+raw-pointer ranges of the same exact source-owned trivial record type when
+their selected `operator==` is a uniquely supported Boolean const member,
+hidden friend or enclosing-namespace free function. Element addresses are
+preserved, and their first-match, last-match and empty-pattern results follow
+the existing scalar loops. Record predicate overloads remain rejected.
+
 `std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
 mutable vector and string iterators, while preserving the existing value
 conversion, single evaluation, and empty-range behavior. Const iterators and

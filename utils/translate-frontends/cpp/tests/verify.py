@@ -31176,6 +31176,56 @@ owned::Free *find_free(owned::Free *first, owned::Free *last,
           'return std::search_n(a,b,2,v);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_subrange_search_source = """\
+#include <algorithm>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+Member *search_member(Member *first, Member *last,
+                      Member *pattern, Member *pattern_last) {
+  return std::search(first, last, pattern, pattern_last);
+}
+Member *find_end_member(Member *first, Member *last,
+                        Member *pattern, Member *pattern_last) {
+  return std::find_end(first, last, pattern, pattern_last);
+}
+Member *find_first_of_member(Member *first, Member *last,
+                             Member *pattern, Member *pattern_last) {
+  return std::find_first_of(first, last, pattern, pattern_last);
+}
+Friend *search_friend(Friend *first, Friend *last,
+                      Friend *pattern, Friend *pattern_last) {
+  return std::search(first, last, pattern, pattern_last);
+}
+owned::Free *find_end_free(owned::Free *first, owned::Free *last,
+                            owned::Free *pattern, owned::Free *pattern_last) {
+  return std::find_end(first, last, pattern, pattern_last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-subrange-search-" + target,
+              source_record_subrange_search_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-subrange-search-nonbool",
+          '#include <algorithm>\nstruct Entry{int value;};'
+          'int operator==(const Entry&a,const Entry&b){return a.value==b.value;}'
+          'Entry*f(Entry*a,Entry*b,Entry*c,Entry*d){'
+          'return std::search(a,b,c,d);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

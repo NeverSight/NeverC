@@ -23642,20 +23642,33 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "find_first_of")) &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
-                                 AlgorithmEqualityPointerParameter(1) &&
-                                 AlgorithmEqualityPointerParameter(3) &&
-                                 AlgorithmEqualityParameters(0, 2);
+    const bool ScalarRanges =
+        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+        AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3);
+    const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
+    const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
+    const bool RecordRanges =
+        Call->getNumArgs() == 4 &&
+        Function->getParamDecl(0)->getType()->isPointerType() &&
+        Function->getParamDecl(2)->getType()->isPointerType() && RecordFirst &&
+        AlgorithmRecordEqualityRangeParameter(1) && RecordSecond &&
+        AlgorithmRecordEqualityRangeParameter(3) &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordSecond)->getPointeeType());
+    const bool DefaultElements =
+        (ScalarRanges && AlgorithmEqualityPointerParameter(0) &&
+         AlgorithmEqualityPointerParameter(1) &&
+         AlgorithmEqualityPointerParameter(3) &&
+         AlgorithmEqualityParameters(0, 2)) ||
+        RecordRanges;
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
-          (Call->getNumArgs() == 5 &&
+          (Call->getNumArgs() == 5 && ScalarRanges &&
            AlgorithmBinaryPredicateParameter(4, 0, 2))))
       return std::nullopt;
     if (Name == "search")
