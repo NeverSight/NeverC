@@ -20217,11 +20217,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           if (List && Context.hasSameType(List->ElementType, Element))
             return UtilityOperation::VectorInsertRange;
         }
-        if ((!Vector->OwningElement || CopyableString ||
+        if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
              (Vector->CopyElementConstructor &&
               Vector->CopyElementAssignment)) &&
-            Method->getNumParams() == 3 &&
-            Method->getPrimaryTemplate() &&
+            Method->getNumParams() == 3 && Method->getPrimaryTemplate() &&
             approvedStandardSDKDeclaration(S, SM,
                                            Method->getPrimaryTemplate()) &&
             cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
@@ -20351,11 +20350,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (List && Context.hasSameType(List->ElementType, Element))
           return UtilityOperation::VectorAssignRange;
       }
-      if ((!Vector->OwningElement || CopyableString ||
-           (Vector->CopyElementConstructor &&
-            Vector->CopyElementAssignment)) &&
-          Method->getNumParams() == 2 &&
-          Method->getPrimaryTemplate() &&
+      if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
+           (Vector->CopyElementConstructor && Vector->CopyElementAssignment)) &&
+          Method->getNumParams() == 2 && Method->getPrimaryTemplate() &&
           approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
           cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
                         "libcxx", "__vector/vector.h")) {
