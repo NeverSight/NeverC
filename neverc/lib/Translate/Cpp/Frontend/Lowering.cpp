@@ -12055,10 +12055,10 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 1, A.Context)
               : nullptr;
-      const bool CStringEmplace =
-          Operation == UtilityOperation::VectorEmplace &&
-          approvedUtilityVectorCStringEmplace(A.S, A.Sources, *Vector, Call, 1,
-                                              A.Context);
+      std::optional<UtilityVectorStringEmplace> StringEmplace;
+      if (Operation == UtilityOperation::VectorEmplace)
+        StringEmplace = approvedUtilityVectorStringEmplace(
+            A.S, A.Sources, *Vector, Call, 1, A.Context);
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
@@ -12137,13 +12137,14 @@ class FunctionLowering {
         }
       } else if (Operation == UtilityOperation::VectorEmplace) {
         assign(Count, quantity(1, SizeType, L), L);
-        if (CStringEmplace) {
+        if (StringEmplace) {
           auto String = approvedUtilityStringRecord(
               A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
               A.Context);
           Value = temporary(type(Vector->ElementType, L), L);
-          constructVectorCString(json::Object(*Value), Vector->ElementType,
-                                 &*String, Call->getArg(1), L);
+          constructVectorStringEmplace(json::Object(*Value),
+                                       Vector->ElementType, &*String, Call, 1,
+                                       *StringEmplace, L);
         } else if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);
@@ -14147,10 +14148,10 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 0, A.Context)
               : nullptr;
-      const bool CStringEmplace =
-          Operation == UtilityOperation::VectorEmplaceBack &&
-          approvedUtilityVectorCStringEmplace(A.S, A.Sources, *Vector, Call, 0,
-                                              A.Context);
+      std::optional<UtilityVectorStringEmplace> StringEmplace;
+      if (Operation == UtilityOperation::VectorEmplaceBack)
+        StringEmplace = approvedUtilityVectorStringEmplace(
+            A.S, A.Sources, *Vector, Call, 0, A.Context);
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
@@ -14168,13 +14169,13 @@ class FunctionLowering {
             Captured = argument(Argument, Parameter);
           DirectArguments.push_back(snapshot(std::move(Captured), L));
         }
-      } else if (CStringEmplace) {
+      } else if (StringEmplace) {
         auto String = approvedUtilityStringRecord(
             A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
             A.Context);
         Value = temporary(type(Vector->ElementType, L), L);
-        constructVectorCString(json::Object(*Value), Vector->ElementType,
-                               &*String, Call->getArg(0), L);
+        constructVectorStringEmplace(json::Object(*Value), Vector->ElementType,
+                                     &*String, Call, 0, *StringEmplace, L);
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {
           const auto *Argument = Call->getArg(0);
@@ -19066,18 +19067,41 @@ class FunctionLowering {
            quantity(0, type(A.Context.CharTy, L), L), L);
   }
 
-  void constructVectorCString(Expression Place, QualType T,
-                              const UtilityStringRecord *String,
-                              const Expr *Argument, SourceLocation L) {
+  void constructVectorStringEmplace(Expression Place, QualType T,
+                                    const UtilityStringRecord *String,
+                                    const CallExpr *Call,
+                                    unsigned FirstArgument,
+                                    UtilityVectorStringEmplace Kind,
+                                    SourceLocation L) {
     const auto PointerType =
         type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
     const auto SizeType = type(A.Context.getSizeType(), L);
     const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    if (Kind == UtilityVectorStringEmplace::Fill) {
+      auto Length = snapshot(
+          cast(expression(Call->getArg(FirstArgument)), SizeType, L), L);
+      auto Character =
+          snapshot(cast(expression(Call->getArg(FirstArgument + 1)),
+                        type(A.Context.CharTy, L), L),
+                   L);
+      constructStringBytes(std::move(Place), T, String,
+                           quantity(0, PointerType, L), std::move(Length),
+                           std::move(Character), L);
+      return;
+    }
+    const auto *Argument = Call->getArg(FirstArgument);
     auto Input = snapshot(Argument->getType()->isArrayType()
                               ? decay(lvalue(Argument), PointerType, L)
                               : cast(expression(Argument), PointerType, L),
                           L);
     auto Length = temporary(SizeType, L);
+    if (Kind == UtilityVectorStringEmplace::PointerLength) {
+      assign(Length,
+             cast(expression(Call->getArg(FirstArgument + 1)), SizeType, L), L);
+      constructStringBytes(std::move(Place), T, String, std::move(Input),
+                           std::move(Length), std::nullopt, L);
+      return;
+    }
     assign(Length, quantity(0, SizeType, L), L);
     auto Cursor = temporary(PointerType, L);
     assign(Cursor, json::Object(Input), L);

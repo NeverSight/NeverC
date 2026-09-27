@@ -55400,7 +55400,28 @@ int main() {
     auto tail = values.emplace(values.cend(), "");
     if (tail != values.end() - 1 || !values.back().empty()) return 5;
   }
-  return allocations == releases ? 0 : 6;
+  {
+    std::vector<std::string> values;
+    values.reserve(3);
+    auto &binary = values.emplace_back("a\0b", Size(3));
+    auto &filled = values.emplace_back(Size(24), 'q');
+    if (&binary != &values[0] || binary.size() != 3 ||
+        binary[0] != 'a' || binary[1] != 0 || binary[2] != 'b' ||
+        &filled != &values[1] || filled.size() != 24 ||
+        filled[0] != 'q' || filled[23] != 'q') return 6;
+    auto inserted = values.emplace(values.cbegin() + 1, "x\0yz", Size(4));
+    if (inserted != values.begin() + 1 || values[1].size() != 4 ||
+        values[1][0] != 'x' || values[1][1] != 0 ||
+        values[1][3] != 'z') return 7;
+    auto grown = values.emplace(values.cbegin() + 1, Size(3), 'r');
+    if (grown != values.begin() + 1 || values[1].size() != 3 ||
+        values[1][0] != 'r' || values[1][2] != 'r' ||
+        values[0].size() != 3 || values[3].size() != 24) return 8;
+    auto &aliased = values.emplace_back(values[0].c_str(), Size(3));
+    if (&aliased != &values.back() || aliased.size() != 3 ||
+        aliased[1] != 0 || aliased[2] != 'b') return 9;
+  }
+  return allocations == releases ? 0 : 10;
 }
 )cpp");
   auto Result =

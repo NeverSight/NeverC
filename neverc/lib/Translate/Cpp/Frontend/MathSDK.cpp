@@ -5951,24 +5951,38 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
   return Selected;
 }
 
-bool approvedUtilityVectorCStringEmplace(
+std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
-  if (!Call || Call->getNumArgs() != FirstArgument + 1 ||
-      !Vector.OwningElement || Vector.MoveElementConstructor ||
+  if (!Call || Call->getNumArgs() < FirstArgument || !Vector.OwningElement ||
+      Vector.MoveElementConstructor ||
       !approvedUtilityStringRecord(
           S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context))
-    return false;
-  auto ArgumentType = Call->getArg(FirstArgument)->getType();
-  auto CharacterType = ArgumentType;
-  if (const auto *Array = Context.getAsArrayType(ArgumentType))
+    return std::nullopt;
+  const unsigned Count = Call->getNumArgs() - FirstArgument;
+  if (Count != 1 && Count != 2)
+    return std::nullopt;
+  const auto FirstType = Call->getArg(FirstArgument)->getType();
+  auto CharacterType = FirstType;
+  if (const auto *Array = Context.getAsArrayType(FirstType))
     CharacterType = Array->getElementType();
-  else if (ArgumentType->isPointerType())
-    CharacterType = ArgumentType->getPointeeType();
-  else
-    return false;
-  return !CharacterType.isVolatileQualified() &&
-         Context.hasSameUnqualifiedType(CharacterType, Context.CharTy);
+  else if (FirstType->isPointerType())
+    CharacterType = FirstType->getPointeeType();
+  const bool CharacterPointer =
+      (FirstType->isPointerType() || Context.getAsArrayType(FirstType)) &&
+      !CharacterType.isVolatileQualified() &&
+      Context.hasSameUnqualifiedType(CharacterType, Context.CharTy);
+  if (Count == 1) {
+    if (CharacterPointer)
+      return UtilityVectorStringEmplace::CString;
+    return std::nullopt;
+  }
+  const auto SecondType = Call->getArg(FirstArgument + 1)->getType();
+  if (CharacterPointer && SecondType->isIntegerType())
+    return UtilityVectorStringEmplace::PointerLength;
+  if (FirstType->isIntegerType() && SecondType->isIntegerType())
+    return UtilityVectorStringEmplace::Fill;
+  return std::nullopt;
 }
 
 const CXXMethodDecl *approvedUtilityVectorElementComparison(
@@ -20133,8 +20147,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
                                                     Context))
           return UtilityOperation::VectorEmplace;
-        if (approvedUtilityVectorCStringEmplace(S, SM, *Vector, Call, 1,
-                                                Context))
+        if (approvedUtilityVectorStringEmplace(S, SM, *Vector, Call, 1,
+                                               Context))
           return UtilityOperation::VectorEmplace;
       }
     }
@@ -20255,7 +20269,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
                                                   Context))
         return UtilityOperation::VectorEmplaceBack;
-      if (approvedUtilityVectorCStringEmplace(S, SM, *Vector, Call, 0, Context))
+      if (approvedUtilityVectorStringEmplace(S, SM, *Vector, Call, 0, Context))
         return UtilityOperation::VectorEmplaceBack;
     }
     if (!Operator && !Method->isConst() &&
