@@ -24162,23 +24162,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (HeapMutationAlgorithm &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
-    if (Name == "make_heap")
-      return UtilityOperation::AlgorithmMakeHeap;
-    if (Name == "push_heap")
-      return UtilityOperation::AlgorithmPushHeap;
-    if (Name == "pop_heap")
-      return UtilityOperation::AlgorithmPopHeap;
-    return UtilityOperation::AlgorithmSortHeap;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarLast = AlgorithmRangePointerParameter(1);
+    const bool Scalar =
+        ScalarFirst && ScalarLast &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
+        ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
+         (Call->getNumArgs() == 3 && AlgorithmRangeComparisonParameter(2, 0)));
+    const bool Record = Call->getNumArgs() == 2 &&
+                        AlgorithmRecordOrderedRangeParameter(0) &&
+                        AlgorithmRecordOrderedRangeParameter(1) &&
+                        AlgorithmWritableRecordRangeParameter(0) &&
+                        AlgorithmWritableRecordRangeParameter(1);
+    if (Scalar || Record) {
+      if (Name == "make_heap")
+        return UtilityOperation::AlgorithmMakeHeap;
+      if (Name == "push_heap")
+        return UtilityOperation::AlgorithmPushHeap;
+      if (Name == "pop_heap")
+        return UtilityOperation::AlgorithmPopHeap;
+      return UtilityOperation::AlgorithmSortHeap;
+    }
   }
   if (Origin->Path == "__algorithm/sort.h" && Name == "sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&

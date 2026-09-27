@@ -31694,6 +31694,57 @@ void sort_free(owned::Free *first, owned::Free *last) {
           'void f(Entry*first,Entry*last){std::sort(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_heap_mutation_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+void heap_raw(Member *first, Member *last) {
+  std::make_heap(first, last);
+  std::push_heap(first, last);
+  std::pop_heap(first, last);
+  std::sort_heap(first, last);
+}
+void heap_wrapped(std::vector<Friend> &values) {
+  std::make_heap(values.begin(), values.end());
+  std::push_heap(values.begin(), values.end());
+  std::pop_heap(values.begin(), values.end());
+  std::sort_heap(values.begin(), values.end());
+}
+void heap_free(owned::Free *first, owned::Free *last) {
+  std::make_heap(first, last);
+  std::sort_heap(first, last);
+}
+void heap_scalar_wrapped(std::vector<int> &values) {
+  std::make_heap(values.begin(), values.end(), std::greater<int>{});
+  std::sort_heap(values.begin(), values.end(), std::greater<int>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-heap-mutation-" + target,
+              source_record_heap_mutation_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-heap-mutation-nontrivial",
+          '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'void f(Entry*first,Entry*last){std::sort_heap(first,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_swap_reverse_source = """\
 #include <algorithm>
 #include <vector>

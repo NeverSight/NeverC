@@ -43618,8 +43618,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmHeapRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"record-sort",
-       "#include <algorithm>\nstruct R{int n;};"
+      {"nontrivial-record-sort",
+       "#include <algorithm>\nstruct R{int n;~R(){}};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
        "int main(){R a[2]{{2},{1}};std::sort_heap(a,a+2);return 0;}"}};
   for (const auto &Case : Cases) {
@@ -55797,6 +55797,93 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("source-record-rotate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordHeapMutationRun) {
+  const auto Source = tmpFile("source-record-heap-mutation.cpp");
+  const auto Output = tmpFile("source-record-heap-mutation.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Point {
+  int value, id;
+  bool operator<(const Point &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point raw[8]{{4, 0}, {1, 1}, {7, 2}, {3, 3},
+               {5, 4}, {2, 5}, {6, 6}, {9, 7}};
+  int first_effects = 0, last_effects = 0;
+  std::make_heap((++first_effects, raw), (++last_effects, raw + 7));
+  if (first_effects != 1 || last_effects != 1 ||
+      !std::is_heap(raw, raw + 7)) return 1;
+  std::push_heap(raw, raw + 8);
+  if (raw[0].value != 9 || !std::is_heap(raw, raw + 8)) return 2;
+  std::pop_heap(raw, raw + 8);
+  if (raw[7].value != 9 || !std::is_heap(raw, raw + 7)) return 3;
+  std::sort_heap(raw, raw + 7);
+  int id_sum = 0;
+  for (int i = 0; i < 7; ++i) {
+    if (raw[i].value != i + 1) return 4;
+    id_sum += raw[i].id;
+  }
+  if (id_sum != 21) return 5;
+  std::vector<Friend> friends{Friend{5}, Friend{1}, Friend{4},
+                              Friend{2}, Friend{3}};
+  std::make_heap(friends.begin(), friends.end());
+  if (!std::is_heap(friends.begin(), friends.end())) return 6;
+  friends.push_back(Friend{6});
+  std::push_heap(friends.begin(), friends.end());
+  if (friends[0].value != 6) return 7;
+  std::pop_heap(friends.begin(), friends.end());
+  if (friends[5].value != 6) return 8;
+  std::sort_heap(friends.begin(), friends.begin() + 5);
+  for (int i = 0; i < 5; ++i)
+    if (friends[i].value != i + 1) return 9;
+  owned::Free frees[3]{{2}, {1}, {3}};
+  std::make_heap(frees, frees + 3);
+  std::sort_heap(frees, frees + 3);
+  for (int i = 0; i < 3; ++i)
+    if (frees[i].value != i + 1) return 10;
+  std::vector<int> numbers{1, 3, 2};
+  std::make_heap(numbers.begin(), numbers.end(), std::greater<int>{});
+  std::sort_heap(numbers.begin(), numbers.end(), std::greater<int>{});
+  if (numbers[0] != 3 || numbers[1] != 2 || numbers[2] != 1) return 11;
+  std::vector<Friend> empty;
+  std::make_heap(empty.begin(), empty.end());
+  std::sort_heap(empty.begin(), empty.end());
+  return empty.empty() ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-heap-mutation" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
