@@ -5735,6 +5735,13 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor();
+  const bool ValuePairElement =
+      ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord->hasTrivialMoveConstructor() &&
+      ElementRecord->hasTrivialDestructor() &&
+      approvedUtilityPairRecord(S, SM, ElementRecord, Context) &&
+      utilityPairValue(S, SM, Context, Element, 0) &&
+      utilityPairAssignableValue(S, SM, Context, Element);
   const bool NestedVector =
       ElementRecord &&
       approvedUtilityVectorRecord(S, SM, ElementRecord, Context).has_value();
@@ -5811,6 +5818,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
         Element->isObjectPointerType() || TrivialSourceRecord ||
+        ValuePairElement ||
         OwningElement || SourceOwnedElement) ||
       Element->isIncompleteType())
     return std::nullopt;

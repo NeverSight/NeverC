@@ -59847,6 +59847,75 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPairValuesRun) {
+  const auto Source = tmpFile("vector-pair-values.cpp");
+  const auto Output = tmpFile("vector-pair-values.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <utility>
+#include <vector>
+using Pair = std::pair<int, int>;
+int main() {
+  {
+    std::vector<Pair> values;
+    values.emplace_back();
+    if (values.size() != 1 || values[0].first != 0 || values[0].second != 0)
+      return 1;
+    Pair seed(3, 4);
+    values.push_back(seed);
+    values.push_back(Pair(5, 6));
+    if (values.size() != 3 || values[1].first != 3 ||
+        values[2].second != 6) return 2;
+    values.reserve(9);
+    auto storage = values.data();
+    values.insert(values.cbegin() + 1, values[1]);
+    if (values.data() != storage || values.size() != 4 ||
+        values[1].first != 3 || values[2].second != 4 ||
+        values[3].first != 5) return 3;
+    values.erase(values.cbegin() + 2);
+    if (values.size() != 3 || values[2].first != 5) return 4;
+    std::vector<Pair> copied(values);
+    if (copied.data() == values.data() || copied.size() != 3 ||
+        copied[1].second != 4) return 5;
+    values.assign(Size(2), seed);
+    values.insert(values.cend(), copied.cbegin(), copied.cend());
+    values.resize(Size(7), seed);
+    if (values.size() != 7 || values[0].first != 3 ||
+        values[2].first != 0 || values[4].second != 6 ||
+        values[6].second != 4) return 6;
+    copied = values;
+    if (copied.size() != 7 || copied.data() == values.data() ||
+        copied[6].first != 3) return 7;
+    using Nested = std::pair<Pair, int>;
+    std::vector<Nested> nested;
+    nested.push_back(Nested(Pair(7, 8), 9));
+    nested.push_back(nested[0]);
+    if (nested.size() != 2 || nested[0].first.second != 8 ||
+        nested[1].second != 9) return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-pair-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

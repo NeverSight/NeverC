@@ -2587,7 +2587,9 @@ queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
 integer and floating elements, object and void pointer elements, plus
 source-owned standard-layout records with trivial default/copy/move
-construction, assignment and destruction. They use
+construction, assignment and destruction. Authenticated `std::pair` values
+whose fields are recursively admitted, assignable values also use this storage
+path when copy/move construction and destruction are trivial. They use
 direct lowering for default, bounded count/fill/list, pointer or wrapped
 iterator range, copy and move
 construction; copy, move and initializer-list assignment; destruction; size,
@@ -2633,6 +2635,9 @@ lexicographic ordering, empty and prefix ranges, signed and floating elements,
 single evaluation of operands, and the pinned NaN behavior.
 Trivial-record fixtures cover construction, growth with an aliased source,
 access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
+Pair-value fixtures additionally cover default construction, value insertion,
+capacity reuse, aliasing, erase, fill and range modifiers, copy/assignment,
+resize and recursively nested pairs without element ownership.
 The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
 work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,

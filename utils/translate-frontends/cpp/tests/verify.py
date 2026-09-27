@@ -29402,6 +29402,7 @@ void operator delete[](void *p, Size) noexcept { free(p); }
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 void default_owners() {
   std::vector<std::string> strings(2);
@@ -29577,6 +29578,26 @@ void nested_vectors() {
       copied_text[0], copied_text[0]};
   listed_text.assign({copied_text[0]});
   listed_text.insert(listed_text.cend(), {copied_text[0]});
+}
+void pair_vectors() {
+  using Pair = std::pair<int, int>;
+  std::vector<Pair> values;
+  values.emplace_back();
+  Pair source(3, 4);
+  values.push_back(source);
+  values.push_back(Pair(5, 6));
+  values.reserve(8);
+  values.insert(values.cbegin(), values[0]);
+  values.erase(values.cbegin() + 1);
+  std::vector<Pair> copied(values);
+  values.assign(2, source);
+  values.insert(values.cend(), copied.cbegin(), copied.cend());
+  values.resize(7, source);
+  copied = values;
+  using Nested = std::pair<Pair, int>;
+  std::vector<Nested> nested;
+  nested.push_back(Nested(Pair(7, 8), 9));
+  nested.push_back(nested[0]);
 }
 bool compare_nested_integers(const std::vector<std::vector<int>>& left,
                              const std::vector<std::vector<int>>& right) {
@@ -29768,6 +29789,14 @@ bool operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }
+""",
+        "nonassignable-pair": """\
+#include <utility>
+int f() {
+  std::vector<std::pair<const int, int>> values;
+  values.emplace_back();
+  return values.size();
+}
 """,
         "nested-void-pointer-order": """\
 bool f(const std::vector<std::vector<void*>>& left,
