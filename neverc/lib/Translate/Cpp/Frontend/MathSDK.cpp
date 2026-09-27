@@ -20204,11 +20204,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(1)->getType(),
                                   Context.getSizeType()))))
           return UtilityOperation::VectorInsert;
-        if ((!Vector->OwningElement || CopyableString ||
+        if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
              (Vector->CopyElementConstructor &&
               Vector->CopyElementAssignment)) &&
-            Method->getNumParams() == 2 &&
-            !Method->getPrimaryTemplate() &&
+            Method->getNumParams() == 2 && !Method->getPrimaryTemplate() &&
             Context.hasSameType(Method->getParamDecl(1)->getType(),
                                 Call->getArg(1)->getType())) {
           const auto List = approvedUtilityInitializerListRecord(
@@ -20300,12 +20299,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorEmplace;
       }
     }
-    if ((!Vector->OwningElement || CopyableString ||
-         (Vector->CopyElementConstructor &&
-          Vector->CopyElementAssignment)) &&
-        Operator &&
-        Method->getOverloadedOperator() == OO_Equal && !Method->isConst() &&
-        !Object->getType().isConstQualified() &&
+    if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
+         (Vector->CopyElementConstructor && Vector->CopyElementAssignment)) &&
+        Operator && Method->getOverloadedOperator() == OO_Equal &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
         !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
         Call->isLValue() && Method->getReturnType()->isLValueReferenceType()) {
       const auto VectorType = Context.getRecordType(Vector->Record);
@@ -20337,11 +20334,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorAssignFill;
       }
-      if ((!Vector->OwningElement || CopyableString ||
-           (Vector->CopyElementConstructor &&
-            Vector->CopyElementAssignment)) &&
-          Method->getNumParams() == 1 &&
-          !Method->getPrimaryTemplate() &&
+      if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
+           (Vector->CopyElementConstructor && Vector->CopyElementAssignment)) &&
+          Method->getNumParams() == 1 && !Method->getPrimaryTemplate() &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Call->getArg(0)->getType())) {
         const auto List = approvedUtilityInitializerListRecord(
