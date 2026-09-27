@@ -5752,13 +5752,22 @@ static bool utilityVectorOptionalValue(const State &S, const SourceManager &SM,
            utilityVectorArrayAssignableElements(S, SM, Context,
                                                 Array->ElementType);
   const auto Nested = approvedUtilityOptionalRecord(S, SM, Record, Context);
-  return Nested && Nested->Record->hasTrivialCopyConstructor() &&
-         Nested->Record->hasTrivialMoveConstructor() &&
-         Nested->Record->hasTrivialCopyAssignment() &&
-         Nested->Record->hasTrivialMoveAssignment() &&
-         Nested->Record->hasTrivialDestructor() &&
-         utilityVectorOptionalValue(S, SM, Context, Nested->ElementType,
-                                    Depth + 1);
+  if (Nested)
+    return Nested->Record->hasTrivialCopyConstructor() &&
+           Nested->Record->hasTrivialMoveConstructor() &&
+           Nested->Record->hasTrivialCopyAssignment() &&
+           Nested->Record->hasTrivialMoveAssignment() &&
+           Nested->Record->hasTrivialDestructor() &&
+           utilityVectorOptionalValue(S, SM, Context, Nested->ElementType,
+                                      Depth + 1);
+  Record = Record ? Record->getDefinition() : nullptr;
+  return Record && S.owns(SM, Record->getLocation()) &&
+         utilityArrayValue(S, SM, Context, Element) &&
+         Record->hasTrivialDefaultConstructor() &&
+         Record->hasTrivialCopyConstructor() &&
+         Record->hasTrivialMoveConstructor() &&
+         Record->hasTrivialCopyAssignment() &&
+         Record->hasTrivialMoveAssignment() && Record->hasTrivialDestructor();
 }
 
 std::optional<UtilityVectorRecord>

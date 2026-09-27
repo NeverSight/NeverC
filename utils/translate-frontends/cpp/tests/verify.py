@@ -30106,6 +30106,34 @@ void values() {
         check("v2-vector-optional-record-emplace-" + target,
               vector_optional_record_emplace_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_optional_source_record_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <optional>
+#include <vector>
+struct Point { int x, y; };
+using MaybePoint = std::optional<Point>;
+void values() {
+  std::vector<MaybePoint> points;
+  Point seed{1, 2};
+  points.emplace_back(seed);
+  points.emplace_back(*points[0]);
+  points.emplace(points.begin(), *points[1]);
+  points.push_back(MaybePoint(std::in_place, seed));
+  points.push_back(std::nullopt);
+  std::vector<MaybePoint> copied(points);
+  copied = points;
+  copied.erase(copied.begin());
+  std::vector<MaybePoint> filled(Size(2), MaybePoint(seed));
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-optional-source-record-" + target,
+              vector_optional_source_record_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     vector_pair_nested_optional_source = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30198,6 +30226,13 @@ int f() {
 int f() {
   std::vector<std::optional<const int>> values;
   return values.size();
+}
+""",
+        "nontrivial-optional-record": """\
+#include <optional>
+struct Item { int value; ~Item() {} };
+void f() {
+  std::vector<std::optional<Item>> values;
 }
 """,
         "optional-void-pointer-order": """\

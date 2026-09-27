@@ -2682,6 +2682,11 @@ including references into the same vector.
 Pairs held by vectors also admit nested trivial scalar optionals and
 assignable fixed-array optionals as fields. Copy, assignment, and all six
 comparisons recurse through the optional engagement and stored value.
+An optional wrapping a source-owned trivial standard-layout record is also an
+admitted vector element when its copy, move, assignment, and destruction are
+trivial. Vector growth, emplacement, copying, erasure, and fill construction
+preserve the record value. Vector comparisons of these optionals remain
+rejected because source-record value comparison is outside this lowering.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

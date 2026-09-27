@@ -60616,6 +60616,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOptionalSourceRecordRun) {
+  const auto Source = tmpFile("vector-optional-source-record.cpp");
+  const auto Output = tmpFile("vector-optional-source-record.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <optional>
+#include <vector>
+struct Point { int x, y; };
+using MaybePoint = std::optional<Point>;
+int main() {
+  {
+    std::vector<MaybePoint> points;
+    points.reserve(1);
+    Point seed{1, 2};
+    points.emplace_back(seed);
+    points.emplace_back(*points[0]);
+    if (points.size() != 2 || !points[0] || !points[1] ||
+        points[0]->x != 1 || points[1]->y != 2) return 1;
+    points.emplace(points.begin(), *points[1]);
+    if (points.size() != 3 || !points[0] || points[0]->x != 1 ||
+        !points[2] || points[2]->y != 2) return 2;
+    points.emplace_back(std::nullopt);
+    points.emplace_back(std::in_place);
+    if (points.size() != 5 || points[3] || !points[4] ||
+        points[4]->x != 0 || points[4]->y != 0) return 3;
+    std::vector<MaybePoint> copied(points);
+    copied[0]->x = 9;
+    if (points[0]->x != 1 || copied[0]->x != 9) return 4;
+    copied = points;
+    if (copied.size() != points.size() || !copied[2] ||
+        copied[2]->y != 2 || copied.data() == points.data()) return 5;
+    copied.erase(copied.begin() + 1);
+    if (copied.size() != 4 || !copied[1] || copied[1]->x != 1) return 6;
+    std::vector<MaybePoint> filled(Size(2), MaybePoint(seed));
+    if (filled.size() != 2 || !filled[0] || !filled[1] ||
+        filled[1]->y != 2) return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-optional-source-record" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorPairOptionalRelationsRun) {
   const auto Source = tmpFile("vector-pair-optional-relations.cpp");
   const auto Output = tmpFile("vector-pair-optional-relations.nc");
