@@ -13722,7 +13722,7 @@ class FunctionLowering {
           A.Context);
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
-      const bool NestedEquality = Equality && Nested.has_value();
+      const bool NestedIntegerRelation = Nested.has_value();
       const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
       const auto *MemberComparison = approvedUtilityVectorElementComparison(
           A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
@@ -13738,7 +13738,7 @@ class FunctionLowering {
       const auto *FreeComparison =
           FriendComparison ? FriendComparison : NamespaceComparison;
       if (LeftVector->OwningElement && !String && !Unique &&
-          !SourceComparison && !NestedEquality)
+          !SourceComparison && !NestedIntegerRelation)
         reject(L, "vector comparison",
                "The selected owning element comparison is unavailable.");
       const auto PointerType = type(LeftVector->PointerType, L);
@@ -13902,11 +13902,13 @@ class FunctionLowering {
           branch(
               binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
               Next, Different, L);
-        } else if (NestedEquality) {
-          branch(compareNestedIntegerVectors(
-                     dereference(json::Object(LeftCurrent), L),
-                     dereference(json::Object(RightCurrent), L), *Nested, L),
-                 Next, Different, L);
+        } else if (NestedIntegerRelation) {
+          auto Order = compareNestedIntegerVectors(
+              dereference(json::Object(LeftCurrent), L),
+              dereference(json::Object(RightCurrent), L), *Nested, L);
+          branch(
+              binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+              Next, Different, L);
         } else if (SourceComparison) {
           branch(CompareSource(json::Object(LeftCurrent),
                                json::Object(RightCurrent)),
@@ -13949,6 +13951,16 @@ class FunctionLowering {
       label(Compare, L);
       if (String) {
         auto Order = CompareStrings();
+        branch(
+            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+            Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      } else if (NestedIntegerRelation) {
+        auto Order = compareNestedIntegerVectors(
+            dereference(json::Object(LeftCurrent), L),
+            dereference(json::Object(RightCurrent), L), *Nested, L);
         branch(
             binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
             Less, CheckGreater, L);
@@ -19383,11 +19395,12 @@ class FunctionLowering {
     auto RightEnd = snapshot(Member(RightAddress, "nct_vector_end"), L);
     const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
     const auto PointerType = type(Vector.PointerType, L);
-    auto Result = temporary("bool", L);
+    auto Result = temporary("int", L);
     const auto CheckLeft = labelName(), CheckRight = labelName();
     const auto Compare = labelName(), Next = labelName();
     const auto LeftDone = labelName(), Equal = labelName();
-    const auto Different = labelName(), Done = labelName();
+    const auto Less = labelName(), Greater = labelName();
+    const auto Done = labelName();
     jump(CheckLeft, L);
     label(CheckLeft, L);
     branch(binary("!=", json::Object(LeftCurrent), json::Object(LeftEnd),
@@ -19396,22 +19409,35 @@ class FunctionLowering {
     label(CheckRight, L);
     branch(binary("!=", json::Object(RightCurrent), json::Object(RightEnd),
                   "bool", L),
-           Compare, Different, L);
+           Compare, Greater, L);
     label(Compare, L);
     if (Vector.ElementType->isIntegerType()) {
-      branch(binary("==", dereference(json::Object(LeftCurrent), L),
-                    dereference(json::Object(RightCurrent), L), "bool", L),
-             Next, Different, L);
+      auto LeftElement = snapshot(dereference(json::Object(LeftCurrent), L), L);
+      auto RightElement =
+          snapshot(dereference(json::Object(RightCurrent), L), L);
+      const auto CheckGreater = labelName();
+      branch(binary("<", json::Object(LeftElement), json::Object(RightElement),
+                    "bool", L),
+             Less, CheckGreater, L);
+      label(CheckGreater, L);
+      branch(binary("<", std::move(RightElement), std::move(LeftElement),
+                    "bool", L),
+             Greater, Next, L);
     } else {
       const auto Nested = approvedUtilityVectorRecord(
           A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
       if (!Nested)
         reject(L, "nested vector comparison",
                "The nested integer vector layout is unavailable.");
-      branch(compareNestedIntegerVectors(
-                 dereference(json::Object(LeftCurrent), L),
-                 dereference(json::Object(RightCurrent), L), *Nested, L),
-             Next, Different, L);
+      auto Order = compareNestedIntegerVectors(
+          dereference(json::Object(LeftCurrent), L),
+          dereference(json::Object(RightCurrent), L), *Nested, L);
+      const auto CheckGreater = labelName();
+      branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
+             Less, CheckGreater, L);
+      label(CheckGreater, L);
+      branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+             Greater, Next, L);
     }
     label(Next, L);
     assign(LeftCurrent,
@@ -19426,12 +19452,17 @@ class FunctionLowering {
     label(LeftDone, L);
     branch(binary("==", json::Object(RightCurrent), json::Object(RightEnd),
                   "bool", L),
-           Equal, Different, L);
-    label(Equal, L);
-    assign(Result, boolean(true, L), L);
+           Equal, Less, L);
+    label(Less, L);
+    assign(Result,
+           binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L),
+           L);
     jump(Done, L);
-    label(Different, L);
-    assign(Result, boolean(false, L), L);
+    label(Greater, L);
+    assign(Result, quantity(1, "int", L), L);
+    jump(Done, L);
+    label(Equal, L);
+    assign(Result, quantity(0, "int", L), L);
     jump(Done, L);
     label(Done, L);
     return Result;

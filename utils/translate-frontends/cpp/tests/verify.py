@@ -29580,12 +29580,14 @@ void nested_vectors() {
 }
 bool compare_nested_integers(const std::vector<std::vector<int>>& left,
                              const std::vector<std::vector<int>>& right) {
-  return left == right || left != right;
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
 }
 bool compare_nested_cube(
     const std::vector<std::vector<std::vector<int>>>& left,
     const std::vector<std::vector<std::vector<int>>>& right) {
-  return left == right || left != right;
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
 }
 struct NestedBox {
   int *value;
@@ -29650,12 +29652,6 @@ int main() { std::vector<Entry> left, right; return left == right; }
 bool f(const std::vector<std::vector<std::string>>& left,
        const std::vector<std::vector<std::string>>& right) {
   return left == right;
-}
-""",
-        "nested-integer-order": """\
-bool f(const std::vector<std::vector<int>>& left,
-       const std::vector<std::vector<int>>& right) {
-  return left < right;
 }
 """,
         "owning-pointer-comparison": """\

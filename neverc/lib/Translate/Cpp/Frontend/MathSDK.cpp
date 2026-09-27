@@ -21154,8 +21154,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               ->isBuiltinType();
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
-      const bool NestedEquality =
-          Equality && NestedElement &&
+      const bool NestedIntegerRelation =
+          NestedElement &&
           utilityNestedVectorIntegerComparable(S, SM, *NestedElement, Context);
       const bool PointerElement =
           Left->ElementType->isObjectPointerType() &&
@@ -21173,8 +21173,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        bool(FriendComparison) +
                                        bool(NamespaceComparison);
       const bool SourceComparison = ComparisonForms == 1;
-      if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
-                       PointerElement || SourceComparison || NestedEquality))
+      if (Matching &&
+          (Arithmetic || StringElement || UniquePointerElement ||
+           PointerElement || SourceComparison || NestedIntegerRelation))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

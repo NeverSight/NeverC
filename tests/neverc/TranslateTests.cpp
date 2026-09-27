@@ -56649,9 +56649,9 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2NestedIntegerVectorEqualityRun) {
-  const auto Source = tmpFile("nested-integer-vector-equality.cpp");
-  const auto Output = tmpFile("nested-integer-vector-equality.nc");
+TEST_F(TranslateTest, CoreV2NestedIntegerVectorRelationsRun) {
+  const auto Source = tmpFile("nested-integer-vector-relations.cpp");
+  const auto Output = tmpFile("nested-integer-vector-relations.nc");
   writeFile(Source, R"cpp(
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -56669,24 +56669,32 @@ int main() {
     left[0].push_back(7);
     left.emplace_back();
     std::vector<std::vector<int>> same(left);
-    if (!(left == same) || left != same) return 1;
+    if (!(left == same) || left != same || left < same || left > same ||
+        !(left <= same) || !(left >= same)) return 1;
     same[1].push_back(9);
-    if (left == same || !(left != same)) return 2;
+    if (left == same || !(left != same) || !(left < same) ||
+        left > same || !(left <= same) || left >= same ||
+        same < left || !(same > left)) return 2;
     same[1].clear();
     same[0][0] = 8;
-    if (left == same || !(left != same)) return 3;
+    if (left == same || !(left != same) || !(left < same) ||
+        left > same || !(left <= same) || left >= same) return 3;
     std::vector<std::vector<int>> prefix;
     prefix.emplace_back();
     prefix[0].push_back(7);
-    if (prefix == left || !(prefix != left)) return 4;
+    if (prefix == left || !(prefix != left) || !(prefix < left) ||
+        prefix > left || !(left > prefix)) return 4;
     std::vector<std::vector<int>> empty;
-    if (!(empty == empty) || empty != empty || empty == left) return 5;
+    if (!(empty == empty) || empty != empty || empty == left ||
+        !(empty < left) || empty > left) return 5;
     std::vector<std::vector<std::vector<int>>> cube;
     cube.emplace_back(static_cast<std::vector<std::vector<int>>&&>(left));
     std::vector<std::vector<std::vector<int>>> clone(cube);
-    if (!(cube == clone) || cube != clone) return 6;
+    if (!(cube == clone) || cube != clone || cube < clone ||
+        cube > clone || !(cube <= clone) || !(cube >= clone)) return 6;
     clone[0][0][0] = 11;
-    if (cube == clone || !(cube != clone)) return 7;
+    if (cube == clone || !(cube != clone) || !(cube < clone) ||
+        cube > clone || !(cube <= clone) || cube >= clone) return 7;
   }
   return allocations == releases ? 0 : 8;
 }
@@ -56697,7 +56705,7 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable =
-        tmpFile("nested-integer-vector-equality" + Optimization);
+        tmpFile("nested-integer-vector-relations" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
