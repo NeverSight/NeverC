@@ -55356,6 +55356,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorStringCStringEmplaceRun) {
+  const auto Source = tmpFile("vector-string-cstring-emplace.cpp");
+  const auto Output = tmpFile("vector-string-cstring-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(3);
+    auto storage = values.data();
+    auto &first = values.emplace_back("short");
+    char mutableText[] = "mutable";
+    auto &second = values.emplace_back(mutableText);
+    auto &third = values.emplace_back(
+        "a long string that has to own separately allocated bytes");
+    if (&first != &values[0] || &second != &values[1] ||
+        &third != &values[2] || values.data() != storage ||
+        values[0] != "short" || values[1] != "mutable" ||
+        values[2] !=
+            "a long string that has to own separately allocated bytes")
+      return 1;
+    const char *aliased = values[0].c_str();
+    auto &grown = values.emplace_back(aliased);
+    if (&grown != &values[3] || values.data() == storage ||
+        values[0] != "short" || values[3] != "short") return 2;
+    auto inserted = values.emplace(values.cbegin() + 1, "middle");
+    if (inserted != values.begin() + 1 || values[1] != "middle" ||
+        values[2] != "mutable") return 3;
+    auto aliasedInsert = values.emplace(values.cbegin() + 2,
+                                        values[0].c_str());
+    if (aliasedInsert != values.begin() + 2 || values[2] != "short" ||
+        values[0] != "short") return 4;
+    auto tail = values.emplace(values.cend(), "");
+    if (tail != values.end() - 1 || !values.back().empty()) return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-string-cstring-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
   const auto Source = tmpFile("vector-owning-pointers.cpp");
   const auto Output = tmpFile("vector-owning-pointers.nc");

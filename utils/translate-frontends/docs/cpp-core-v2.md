@@ -2656,6 +2656,12 @@ with capacity reuse. Initializer-list and raw-pointer or pinned wrapped-iterator
 ranges also deep-copy string elements for construction, assignment and insertion.
 Host fixtures cover list-backed temporary destruction, destination capacity
 reuse and growth, empty ranges, and independent string allocations.
+For pinned string elements, `emplace_back(const char*)` and
+`emplace(pos, const char*)` also accept narrow character pointers and arrays.
+The input is copied into an independent string before vector storage changes,
+including when it points into an existing element. Host O0/O2 fixtures cover
+short and allocated strings, mutable arrays, capacity reuse, growth, and
+aliased inputs.
 All six vector/vector comparisons use element-wise byte content and lexicographic
 ordering for pinned string elements, including embedded zero and high-bit bytes.
 They also compare admitted `std::unique_ptr` elements with the pinned default

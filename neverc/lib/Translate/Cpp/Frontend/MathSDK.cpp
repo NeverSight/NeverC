@@ -5951,6 +5951,26 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
   return Selected;
 }
 
+bool approvedUtilityVectorCStringEmplace(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != FirstArgument + 1 ||
+      !Vector.OwningElement || Vector.MoveElementConstructor ||
+      !approvedUtilityStringRecord(
+          S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context))
+    return false;
+  auto ArgumentType = Call->getArg(FirstArgument)->getType();
+  auto CharacterType = ArgumentType;
+  if (const auto *Array = Context.getAsArrayType(ArgumentType))
+    CharacterType = Array->getElementType();
+  else if (ArgumentType->isPointerType())
+    CharacterType = ArgumentType->getPointeeType();
+  else
+    return false;
+  return !CharacterType.isVolatileQualified() &&
+         Context.hasSameUnqualifiedType(CharacterType, Context.CharTy);
+}
+
 const CXXMethodDecl *approvedUtilityVectorElementComparison(
     const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
     OverloadedOperatorKind Operator, const ASTContext &Context) {
@@ -20113,6 +20133,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
                                                     Context))
           return UtilityOperation::VectorEmplace;
+        if (approvedUtilityVectorCStringEmplace(S, SM, *Vector, Call, 1,
+                                                Context))
+          return UtilityOperation::VectorEmplace;
       }
     }
     if ((!Vector->OwningElement || CopyableString ||
@@ -20231,6 +20254,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
                                                   Context))
+        return UtilityOperation::VectorEmplaceBack;
+      if (approvedUtilityVectorCStringEmplace(S, SM, *Vector, Call, 0, Context))
         return UtilityOperation::VectorEmplaceBack;
     }
     if (!Operator && !Method->isConst() &&

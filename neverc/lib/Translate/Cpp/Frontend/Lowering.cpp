@@ -12055,6 +12055,10 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 1, A.Context)
               : nullptr;
+      const bool CStringEmplace =
+          Operation == UtilityOperation::VectorEmplace &&
+          approvedUtilityVectorCStringEmplace(A.S, A.Sources, *Vector, Call, 1,
+                                              A.Context);
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
@@ -12133,7 +12137,14 @@ class FunctionLowering {
         }
       } else if (Operation == UtilityOperation::VectorEmplace) {
         assign(Count, quantity(1, SizeType, L), L);
-        if (Call->getNumArgs() == 2 && !DirectConstructor) {
+        if (CStringEmplace) {
+          auto String = approvedUtilityStringRecord(
+              A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+              A.Context);
+          Value = temporary(type(Vector->ElementType, L), L);
+          constructVectorCString(json::Object(*Value), Vector->ElementType,
+                                 &*String, Call->getArg(1), L);
+        } else if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);
             if (Vector->MoveElementConstructor)
@@ -14136,6 +14147,10 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 0, A.Context)
               : nullptr;
+      const bool CStringEmplace =
+          Operation == UtilityOperation::VectorEmplaceBack &&
+          approvedUtilityVectorCStringEmplace(A.S, A.Sources, *Vector, Call, 0,
+                                              A.Context);
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
@@ -14153,6 +14168,13 @@ class FunctionLowering {
             Captured = argument(Argument, Parameter);
           DirectArguments.push_back(snapshot(std::move(Captured), L));
         }
+      } else if (CStringEmplace) {
+        auto String = approvedUtilityStringRecord(
+            A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+            A.Context);
+        Value = temporary(type(Vector->ElementType, L), L);
+        constructVectorCString(json::Object(*Value), Vector->ElementType,
+                               &*String, Call->getArg(0), L);
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {
           const auto *Argument = Call->getArg(0);
@@ -18899,9 +18921,191 @@ class FunctionLowering {
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
   }
+  void constructStringBytes(Expression Place, QualType T,
+                            const UtilityStringRecord *String, Expression Input,
+                            Expression Length,
+                            std::optional<Expression> FillCharacter,
+                            SourceLocation L) {
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(String->PointerType, L);
+    const auto ConstPointerType =
+        type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    auto WordType = [&](const char *Name) {
+      const bool PointerWord =
+          String->AlternateLayout ? llvm::StringRef(Name) == "nct_string_word0"
+                                  : llvm::StringRef(Name) == "nct_string_word2";
+      return PointerWord ? String->PointerType : A.Context.getSizeType();
+    };
+    auto Word = [&](const char *Name) {
+      return Expression{{"kind", "member"},
+                        {"type", type(WordType(Name), L)},
+                        {"name", Name},
+                        {"args", json::Array{json::Object(Place)}},
+                        {"loc", A.loc(L)}};
+    };
+    for (const char *Name :
+         {"nct_string_word0", "nct_string_word1", "nct_string_word2"})
+      initializeZero(Word(Name), WordType(Name), L);
+    auto Data = temporary(PointerType, L);
+    const auto Short = labelName(), Long = labelName(), Copy = labelName();
+    branch(binary("<=", json::Object(Length),
+                  quantity(String->ShortCapacity, SizeType, L), "bool", L),
+           Short, Long, L);
+    label(Short, L);
+    if (String->AlternateLayout) {
+      assign(Word("nct_string_word2"),
+             binary("<<", json::Object(Length),
+                    quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                             SizeType, L),
+                    SizeType, L),
+             L);
+      assign(Data,
+             cast(cast(address(json::Object(Place), T, L), "ptr:void", L),
+                  PointerType, L),
+             L);
+    } else {
+      assign(Word("nct_string_word0"),
+             binary("*", json::Object(Length), quantity(2, SizeType, L),
+                    SizeType, L),
+             L);
+      assign(
+          Data,
+          binary("+",
+                 cast(cast(address(json::Object(Place), T, L), "ptr:void", L),
+                      PointerType, L),
+                 quantity(1, DifferenceType, L), PointerType, L),
+          L);
+    }
+    jump(Copy, L);
+    label(Long, L);
+    auto AllocationBytes = temporary(SizeType, L);
+    assign(AllocationBytes,
+           binary("*",
+                  binary("/",
+                         binary("+", json::Object(Length),
+                                quantity(8, SizeType, L), SizeType, L),
+                         quantity(8, SizeType, L), SizeType, L),
+                  quantity(8, SizeType, L), SizeType, L),
+           L);
+    const auto Adjust = labelName(), Allocate = labelName();
+    branch(binary("==", json::Object(AllocationBytes),
+                  quantity(String->ShortCapacity + 2, SizeType, L), "bool", L),
+           Adjust, Allocate, L);
+    label(Adjust, L);
+    assign(AllocationBytes,
+           binary("+", json::Object(AllocationBytes),
+                  quantity(String->AlternateLayout ? 1 : 2, SizeType, L),
+                  SizeType, L),
+           L);
+    jump(Allocate, L);
+    label(Allocate, L);
+    const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
+    json::Array Args;
+    Args.push_back(json::Object(AllocationBytes));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(New->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(New)},
+                                {"args", std::move(Args)},
+                                {"target", json::Object(Allocation)},
+                                {"loc", A.loc(L)}});
+    assign(Data, cast(std::move(Allocation), PointerType, L), L);
+    assign(Word("nct_string_word1"), json::Object(Length), L);
+    if (String->AlternateLayout) {
+      const auto LongFlag =
+          uint64_t(1) << (A.Context.getTypeSize(A.Context.getSizeType()) - 1);
+      assign(Word("nct_string_word0"), json::Object(Data), L);
+      assign(Word("nct_string_word2"),
+             binary("|", json::Object(AllocationBytes),
+                    quantity(LongFlag, SizeType, L), SizeType, L),
+             L);
+    } else {
+      assign(Word("nct_string_word0"),
+             binary("|", json::Object(AllocationBytes),
+                    quantity(1, SizeType, L), SizeType, L),
+             L);
+      assign(Word("nct_string_word2"), json::Object(Data), L);
+    }
+    jump(Copy, L);
+    label(Copy, L);
+    auto SourceCurrent = temporary(ConstPointerType, L);
+    auto TargetCurrent = temporary(PointerType, L);
+    auto Count = temporary(SizeType, L);
+    if (!FillCharacter)
+      assign(SourceCurrent, std::move(Input), L);
+    assign(TargetCurrent, json::Object(Data), L);
+    assign(Count, quantity(0, SizeType, L), L);
+    const auto CopyCheck = labelName(), Advance = labelName(),
+               Finish = labelName();
+    jump(CopyCheck, L);
+    label(CopyCheck, L);
+    branch(binary("<", json::Object(Count), json::Object(Length), "bool", L),
+           Advance, Finish, L);
+    label(Advance, L);
+    assign(dereference(json::Object(TargetCurrent), L),
+           FillCharacter ? json::Object(*FillCharacter)
+                         : dereference(json::Object(SourceCurrent), L),
+           L);
+    if (!FillCharacter)
+      assign(SourceCurrent,
+             binary("+", json::Object(SourceCurrent),
+                    quantity(1, DifferenceType, L), ConstPointerType, L),
+             L);
+    assign(TargetCurrent,
+           binary("+", json::Object(TargetCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    assign(
+        Count,
+        binary("+", json::Object(Count), quantity(1, SizeType, L), SizeType, L),
+        L);
+    jump(CopyCheck, L);
+    label(Finish, L);
+    assign(dereference(std::move(TargetCurrent), L),
+           quantity(0, type(A.Context.CharTy, L), L), L);
+  }
+
+  void constructVectorCString(Expression Place, QualType T,
+                              const UtilityStringRecord *String,
+                              const Expr *Argument, SourceLocation L) {
+    const auto PointerType =
+        type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    auto Input = snapshot(Argument->getType()->isArrayType()
+                              ? decay(lvalue(Argument), PointerType, L)
+                              : cast(expression(Argument), PointerType, L),
+                          L);
+    auto Length = temporary(SizeType, L);
+    assign(Length, quantity(0, SizeType, L), L);
+    auto Cursor = temporary(PointerType, L);
+    assign(Cursor, json::Object(Input), L);
+    const auto Check = labelName(), Advance = labelName(),
+               Scanned = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", dereference(json::Object(Cursor), L),
+                  quantity(0, type(A.Context.CharTy, L), L), "bool", L),
+           Advance, Scanned, L);
+    label(Advance, L);
+    assign(Length,
+           binary("+", json::Object(Length), quantity(1, SizeType, L), SizeType,
+                  L),
+           L);
+    assign(Cursor,
+           binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                  PointerType, L),
+           L);
+    jump(Check, L);
+    label(Scanned, L);
+    constructStringBytes(std::move(Place), T, String, std::move(Input),
+                         std::move(Length), std::nullopt, L);
+  }
+
   void copyVectorElement(Expression To, Expression From,
-                         const UtilityVectorRecord &Vector,
-                         SourceLocation L, QualType SourceType = {}) {
+                         const UtilityVectorRecord &Vector, SourceLocation L,
+                         QualType SourceType = {}) {
     if (Vector.CopyElementConstructor) {
       constructMemorySource(
           std::move(To), Vector.ElementType, Vector.CopyElementConstructor,
@@ -20163,115 +20367,8 @@ class FunctionLowering {
         jump(Ready, L);
         label(Ready, L);
       }
-      for (const char *Name : {"nct_string_word0", "nct_string_word1",
-                               "nct_string_word2"})
-        initializeZero(Word(Name), WordType(Name), L);
-      auto Data = temporary(PointerType, L);
-      const auto Short = labelName(), Long = labelName(), Copy = labelName();
-      branch(binary("<=", json::Object(Length),
-                    quantity(String->ShortCapacity, SizeType, L), "bool", L),
-             Short, Long, L);
-      label(Short, L);
-      if (String->AlternateLayout) {
-        assign(Word("nct_string_word2"),
-               binary("<<", json::Object(Length),
-                      quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                               SizeType, L),
-                      SizeType, L), L);
-        assign(Data,
-               cast(cast(address(json::Object(Place), T, L), "ptr:void", L),
-                    PointerType, L), L);
-      } else {
-        assign(Word("nct_string_word0"),
-               binary("*", json::Object(Length), quantity(2, SizeType, L),
-                      SizeType, L), L);
-        assign(Data,
-               binary("+", cast(cast(address(json::Object(Place), T, L),
-                                      "ptr:void", L), PointerType, L),
-                      quantity(1, DifferenceType, L), PointerType, L), L);
-      }
-      jump(Copy, L);
-      label(Long, L);
-      auto AllocationBytes = temporary(SizeType, L);
-      assign(AllocationBytes,
-             binary("*", binary("/", binary("+", json::Object(Length),
-                                             quantity(8, SizeType, L),
-                                             SizeType, L),
-                                   quantity(8, SizeType, L), SizeType, L),
-                    quantity(8, SizeType, L), SizeType, L), L);
-      const auto Adjust = labelName(), Allocate = labelName();
-      branch(binary("==", json::Object(AllocationBytes),
-                    quantity(String->ShortCapacity + 2, SizeType, L), "bool",
-                    L), Adjust, Allocate, L);
-      label(Adjust, L);
-      assign(AllocationBytes,
-             binary("+", json::Object(AllocationBytes),
-                    quantity(String->AlternateLayout ? 1 : 2, SizeType, L),
-                    SizeType, L),
-             L);
-      jump(Allocate, L);
-      label(Allocate, L);
-      const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
-      json::Array Args;
-      Args.push_back(json::Object(AllocationBytes));
-      chargeCall(Args, L);
-      auto Allocation = temporary(type(New->getReturnType(), L), L);
-      Body.push_back(json::Object{{"op", "call"},
-                                  {"callee", A.name(New)},
-                                  {"args", std::move(Args)},
-                                  {"target", json::Object(Allocation)},
-                                  {"loc", A.loc(L)}});
-      assign(Data, cast(std::move(Allocation), PointerType, L), L);
-      assign(Word("nct_string_word1"), json::Object(Length), L);
-      if (String->AlternateLayout) {
-        const auto LongFlag = uint64_t(1)
-                              << (A.Context.getTypeSize(A.Context.getSizeType()) - 1);
-        assign(Word("nct_string_word0"), json::Object(Data), L);
-        assign(Word("nct_string_word2"),
-               binary("|", json::Object(AllocationBytes),
-                      quantity(LongFlag, SizeType, L), SizeType, L), L);
-      } else {
-        assign(Word("nct_string_word0"),
-               binary("|", json::Object(AllocationBytes),
-                      quantity(1, SizeType, L), SizeType, L), L);
-        assign(Word("nct_string_word2"), json::Object(Data), L);
-      }
-      jump(Copy, L);
-      label(Copy, L);
-      auto SourceCurrent = temporary(ConstPointerType, L);
-      auto TargetCurrent = temporary(PointerType, L);
-      auto Count = temporary(SizeType, L);
-      if (!FillCharacter)
-        assign(SourceCurrent, std::move(Input), L);
-      assign(TargetCurrent, json::Object(Data), L);
-      assign(Count, quantity(0, SizeType, L), L);
-      const auto CopyCheck = labelName(), Advance = labelName(),
-                 Finish = labelName();
-      jump(CopyCheck, L);
-      label(CopyCheck, L);
-      branch(binary("<", json::Object(Count), json::Object(Length), "bool", L),
-             Advance, Finish, L);
-      label(Advance, L);
-      assign(dereference(json::Object(TargetCurrent), L),
-             FillCharacter ? json::Object(*FillCharacter)
-                           : dereference(json::Object(SourceCurrent), L),
-             L);
-      if (!FillCharacter)
-        assign(SourceCurrent,
-               binary("+", json::Object(SourceCurrent),
-                      quantity(1, DifferenceType, L), ConstPointerType, L),
-               L);
-      assign(TargetCurrent,
-             binary("+", json::Object(TargetCurrent),
-                    quantity(1, DifferenceType, L), PointerType, L),
-             L);
-      assign(Count,
-             binary("+", json::Object(Count), quantity(1, SizeType, L),
-                    SizeType, L), L);
-      jump(CopyCheck, L);
-      label(Finish, L);
-      assign(dereference(std::move(TargetCurrent), L),
-             quantity(0, type(A.Context.CharTy, L), L), L);
+      constructStringBytes(std::move(Place), T, &*String, std::move(Input),
+                           std::move(Length), std::move(FillCharacter), L);
       return;
     }
     if (auto Kind = approvedUtilityVectorConstruction(A.S, A.Sources, C,

@@ -1345,6 +1345,12 @@ const clang::CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, const clang::CallExpr *Call,
     unsigned FirstArgument, const clang::ASTContext &Context);
+bool approvedUtilityVectorCStringEmplace(const State &S,
+                                         const clang::SourceManager &SM,
+                                         const UtilityVectorRecord &Vector,
+                                         const clang::CallExpr *Call,
+                                         unsigned FirstArgument,
+                                         const clang::ASTContext &Context);
 const clang::CXXMethodDecl *approvedUtilityVectorElementComparison(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, clang::OverloadedOperatorKind Operator,
