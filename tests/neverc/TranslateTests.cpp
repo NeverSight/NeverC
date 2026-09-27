@@ -55921,6 +55921,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorUniquePtrConstPointerEmplaceRun) {
+  const auto Source = tmpFile("vector-unique-const-pointer-emplace.cpp");
+  const auto Output = tmpFile("vector-unique-const-pointer-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void *operator new[](Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+void operator delete[](void *p) noexcept { ++releases; free(p); }
+void operator delete[](void *p, Size) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+int main() {
+  {
+    std::vector<std::unique_ptr<const int>> values;
+    values.reserve(2);
+    auto storage = values.data();
+    int *raw = new int(7);
+    auto &first = values.emplace_back(raw);
+    auto &second = values.emplace_back(
+        new int(9), std::default_delete<const int>{});
+    if (&first != &values[0] || &second != &values[1] ||
+        values.data() != storage || *values[0] != 7 ||
+        *values[1] != 9) return 1;
+    auto middle = values.emplace(values.cbegin() + 1, new int(11));
+    if (middle != values.begin() + 1 || values.data() == storage ||
+        *values[0] != 7 || *values[1] != 11 || *values[2] != 9)
+      return 2;
+    values.emplace_back(nullptr);
+    if (values.back()) return 3;
+  }
+  {
+    std::vector<std::unique_ptr<const int[]>> arrays;
+    arrays.reserve(1);
+    auto storage = arrays.data();
+    auto &first = arrays.emplace_back(new int[2]{3, 4});
+    if (&first != &arrays[0] || arrays[0][0] != 3 ||
+        arrays[0][1] != 4) return 4;
+    auto inserted = arrays.emplace(
+        arrays.cbegin(), new int[1]{5},
+        std::default_delete<const int[]>{});
+    if (inserted != arrays.begin() || arrays.data() == storage ||
+        arrays[0][0] != 5 || arrays[1][1] != 4) return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-unique-const-pointer-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

@@ -6043,8 +6043,17 @@ bool approvedUtilityVectorUniquePtrPointerEmplace(
   if (!Unique)
     return false;
   const auto ArgumentType = Call->getArg(FirstArgument)->getType();
-  if (!Context.hasSameType(ArgumentType, Unique->PointerType) &&
-      !ArgumentType->isNullPtrType())
+  const auto PointerConversion = [&] {
+    if (!ArgumentType->isObjectPointerType() ||
+        !Unique->PointerType->isObjectPointerType())
+      return false;
+    const auto Source = ArgumentType->getPointeeType();
+    const auto Target = Unique->PointerType->getPointeeType();
+    return Context.hasSameUnqualifiedType(Source, Target) &&
+           (!Source.isConstQualified() || Target.isConstQualified()) &&
+           (!Source.isVolatileQualified() || Target.isVolatileQualified());
+  }();
+  if (!PointerConversion && !ArgumentType->isNullPtrType())
     return false;
   if (Call->getNumArgs() == FirstArgument + 1)
     return true;

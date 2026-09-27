@@ -2654,6 +2654,9 @@ The same forms accept admitted empty custom deleters, with an optional exact
 deleter argument following the pointer or `nullptr`. That argument is evaluated
 once before vector storage changes, and the selected deleter still runs once
 when a non-null element is destroyed.
+For the same scalar or array base type, emplacement can also add `const` to
+the captured pointee type, such as constructing `unique_ptr<const int>` from
+an `int*`. Removing a pointee qualifier or changing the base type is rejected.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
