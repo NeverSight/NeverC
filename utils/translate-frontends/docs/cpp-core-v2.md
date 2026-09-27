@@ -2131,6 +2131,12 @@ Boolean `operator<`. Adjacent comparisons receive the original elements by
 reference; `is_sorted_until` returns the first inversion in the original
 iterator form, including the end iterator for a sorted range.
 
+Default `std::min_element`, `std::max_element` and `std::minmax_element` also
+accept those source-record raw or authenticated wrapped ranges. Comparisons
+retain original element addresses. The single extrema return the first tied
+minimum or maximum; `minmax_element` returns the first tied minimum and last
+tied maximum as a pair of the original iterator type.
+
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the respective element types in both argument

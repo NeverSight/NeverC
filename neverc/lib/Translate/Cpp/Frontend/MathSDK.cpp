@@ -23472,14 +23472,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "max_element")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
-          (Call->getNumArgs() == 3 &&
+    if (!((Call->getNumArgs() == 2 &&
+           ((AlgorithmRangePointerParameter(0) &&
+             AlgorithmRangePointerParameter(1) &&
+             AlgorithmOrderedRangeParameter(0)) ||
+            (AlgorithmRecordOrderedRangeParameter(0) &&
+             AlgorithmRecordOrderedRangeParameter(1)))) ||
+          (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
+           AlgorithmRangePointerParameter(1) &&
            AlgorithmRangeComparisonParameter(2, 0))))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
@@ -24005,13 +24009,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "minmax_element" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
+      ((Call->getNumArgs() == 2 &&
+        ((AlgorithmRangePointerParameter(0) &&
+          AlgorithmRangePointerParameter(1) &&
+          AlgorithmOrderedRangeParameter(0)) ||
+         (AlgorithmRecordOrderedRangeParameter(0) &&
+          AlgorithmRecordOrderedRangeParameter(1)))) ||
+       (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
+        AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeComparisonParameter(2, 0)))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);

@@ -31433,6 +31433,62 @@ std::vector<Member>::iterator sorted_until_wrapped(std::vector<Member> &values) 
           'return std::is_sorted(a.begin(),a.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_extrema_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+Member *minimum_member(Member *first, Member *last) {
+  return std::min_element(first, last);
+}
+Member *maximum_member(Member *first, Member *last) {
+  return std::max_element(first, last);
+}
+std::pair<Member *, Member *> extrema_member(Member *first, Member *last) {
+  return std::minmax_element(first, last);
+}
+Friend *minimum_friend(Friend *first, Friend *last) {
+  return std::min_element(first, last);
+}
+std::pair<owned::Free *, owned::Free *>
+extrema_free(owned::Free *first, owned::Free *last) {
+  return std::minmax_element(first, last);
+}
+std::vector<Member>::const_iterator
+minimum_wrapped(const std::vector<Member> &values) {
+  return std::min_element(values.cbegin(), values.cend());
+}
+std::pair<std::vector<Member>::iterator, std::vector<Member>::iterator>
+extrema_wrapped(std::vector<Member> &values) {
+  return std::minmax_element(values.begin(), values.end());
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-extrema-" + target,
+              source_record_extrema_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-extrema-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'int operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'auto f(std::vector<Entry>&a){'
+          'return std::minmax_element(a.begin(),a.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

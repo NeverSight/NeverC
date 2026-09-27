@@ -43271,16 +43271,16 @@ TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
     const char *Code = "TR0203";
   };
   const Rejection Cases[] = {
-      {"record-minmax-element",
+      {"record-nonbool-minmax-element",
        "#include <algorithm>\nstruct R{int n;};"
-       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
+       "int operator<(const R&a,const R&b){return a.n<b.n;}"
        "int main(){R a[2]{{1},{2}};return "
        "std::minmax_element(a,a+2).first==a?0:1;}"},
-      {"manual-reference-pair",
-       "#include <utility>\nint main(){int a=1,b=2;"
-       "std::pair<const int&,const int&> value(a,b);"
-       "return value.first;}",
-       "TR0201"}};
+      {"record-nonbool-min-element",
+       "#include <algorithm>\nstruct R{int n;};"
+       "int operator<(const R&a,const R&b){return a.n<b.n;}"
+       "int main(){R a[2]{{1},{2}};return "
+       "std::min_element(a,a+2)==a?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -55034,6 +55034,158 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("wrapped-source-record-sorted-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordExtremaRun) {
+  const auto Source = tmpFile("source-record-extrema.cpp");
+  const auto Output = tmpFile("source-record-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Point;
+const Point *base;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point values[6]{{4}, {1}, {1}, {4}, {2}, {4}};
+  base = values; count = 6;
+  auto extremes = std::minmax_element(values, values + 6);
+  if (std::min_element(values, values + 6) != values + 1 ||
+      std::max_element(values, values + 6) != values ||
+      extremes.first != values + 1 || extremes.second != values + 5 ||
+      !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  auto empty = std::minmax_element(values, values);
+  auto one = std::minmax_element(values, values + 1);
+  if (std::min_element(values, values) != values ||
+      std::max_element(values, values) != values ||
+      empty.first != values || empty.second != values ||
+      one.first != values || one.second != values || comparisons)
+    return 2;
+  Point odd[5]{{3}, {1}, {2}, {3}, {3}};
+  base = odd; count = 5;
+  auto odd_extremes = std::minmax_element(odd, odd + 5);
+  if (odd_extremes.first != odd + 1 || odd_extremes.second != odd + 4 ||
+      bad_identity) return 3;
+  Friend friends[4]{{3}, {1}, {3}, {2}};
+  auto friend_extremes = std::minmax_element(friends, friends + 4);
+  if (std::min_element(friends, friends + 4) != friends + 1 ||
+      std::max_element(friends, friends + 4) != friends ||
+      friend_extremes.first != friends + 1 ||
+      friend_extremes.second != friends + 2) return 4;
+  owned::Free frees[4]{{3}, {1}, {3}, {2}};
+  auto free_extremes = std::minmax_element(frees, frees + 4);
+  if (std::min_element(frees, frees + 4) != frees + 1 ||
+      std::max_element(frees, frees + 4) != frees ||
+      free_extremes.first != frees + 1 ||
+      free_extremes.second != frees + 2) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedSourceRecordExtremaRun) {
+  const auto Source = tmpFile("wrapped-source-record-extrema.cpp");
+  const auto Output = tmpFile("wrapped-source-record-extrema.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *base;
+int count, comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator<(const Point &other) const;
+};
+bool within(const Point *value) {
+  for (int i = 0; i < count; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool Point::operator<(const Point &other) const {
+  ++comparisons;
+  if (!within(this) || !within(&other)) ++bad_identity;
+  return value < other.value;
+}
+int main() {
+  std::vector<Point> values;
+  values.push_back(Point{4}); values.push_back(Point{1});
+  values.push_back(Point{1}); values.push_back(Point{4});
+  values.push_back(Point{2}); values.push_back(Point{4});
+  const std::vector<Point> &view = values;
+  base = &values[0]; count = 6;
+  auto first_minimum = view.cbegin(); ++first_minimum;
+  auto last_maximum = view.cend(); --last_maximum;
+  auto extremes = std::minmax_element(view.cbegin(), view.cend());
+  if (std::min_element(view.cbegin(), view.cend()) != first_minimum ||
+      std::max_element(view.cbegin(), view.cend()) != view.cbegin() ||
+      extremes.first != first_minimum || extremes.second != last_maximum ||
+      !comparisons || bad_identity) return 1;
+  comparisons = 0;
+  std::vector<Point> empty;
+  auto empty_extremes = std::minmax_element(empty.begin(), empty.end());
+  if (std::min_element(empty.begin(), empty.end()) != empty.end() ||
+      std::max_element(empty.begin(), empty.end()) != empty.end() ||
+      empty_extremes.first != empty.end() ||
+      empty_extremes.second != empty.end() || comparisons) return 2;
+  auto mutable_extremes = std::minmax_element(values.begin(), values.end());
+  if (mutable_extremes.first != values.begin() + 1 ||
+      mutable_extremes.second != values.end() - 1 || bad_identity) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-source-record-extrema" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

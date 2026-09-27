@@ -4850,7 +4850,7 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);
       };
       auto Current = snapshot(json::Object(Candidate), L);
       const auto Initialize = labelName(), Check = labelName();
@@ -6408,7 +6408,7 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);
       };
       auto Minimum = snapshot(json::Object(First), L);
       auto Maximum = snapshot(json::Object(First), L);
