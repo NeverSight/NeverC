@@ -2337,12 +2337,15 @@ zero or positive `int`. `memcmp` compares the requested bytes as unsigned even
 across embedded zero bytes and returns the comparison sign. A zero count for
 `strncmp` or `memcmp` reads neither input. No runtime libc string call is emitted.
 
-The exact `std::memcpy(void *, const void *, std::size_t)` and
+The exact `std::memcpy(void *, const void *, std::size_t)`,
+`std::memmove(void *, const void *, std::size_t)` and
 `std::memset(void *, int, std::size_t)` calls write bytes directly and return
 the original destination pointer. `memcpy` copies the requested source bytes;
-`memset` converts its integer value to an unsigned byte before filling. A zero
-count writes nothing. The caller supplies readable and writable ranges and,
-for `memcpy`, nonoverlapping ranges. No runtime libc memory call is emitted.
+`memmove` also handles overlapping ranges by copying in the safe direction.
+It detects overlap through byte-pointer equality, without pointer ordering or
+integer casts. `memset` converts its integer value to an unsigned byte before
+filling. A zero count writes nothing. The caller supplies readable and writable
+ranges and, for `memcpy`, nonoverlapping ranges. No runtime libc memory call is emitted.
 
 Only the `std::` names introduced by the pinned header are admitted. Global
 `::strlen` and `::strcmp`, other `<cstring>` functions, quoted or shadow headers,
@@ -2352,7 +2355,7 @@ through the bytes examined by `strncmp`. This does not add `std::string`.
 
 Eight-target protocol checks and O0/O2 execution cover the direct lowering,
 unsigned comparison order, embedded zero bytes, prefix and zero-count behavior,
-byte copying and filling, and one-time argument evaluation.
+byte copying, overlapping moves and filling, and one-time argument evaluation.
 
 ## String-view header and metadata from `<string_view>`
 

@@ -14887,6 +14887,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CMemoryMoveRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cmemory-move.cpp");
+  const auto Output = tmpFile("cmemory-move.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  unsigned char right[8]{'a', 'b', 'c', 'd', 'e', 'f', 0, 0};
+  int destination_effects = 0, source_effects = 0, count_effects = 0;
+  void *moved = std::memmove((++destination_effects, right + 2),
+                             (++source_effects, right), (++count_effects, 4));
+  if (moved != right + 2 || destination_effects != 1 ||
+      source_effects != 1 || count_effects != 1 ||
+      right[0] != 'a' || right[1] != 'b' || right[2] != 'a' ||
+      right[3] != 'b' || right[4] != 'c' || right[5] != 'd' ||
+      right[6] != 0)
+    return 1;
+  unsigned char left[8]{'a', 'b', 'c', 'd', 'e', 'f', 0, 0};
+  std::memmove(left, left + 2, 4);
+  if (left[0] != 'c' || left[1] != 'd' || left[2] != 'e' ||
+      left[3] != 'f' || left[4] != 'e' || left[5] != 'f')
+    return 2;
+  std::memmove(right + 1, right + 1, 5);
+  if (right[1] != 'b' || right[2] != 'a' || right[5] != 'd')
+    return 3;
+  const unsigned char source[4]{0x80, 0, 0x7f, 0x42};
+  unsigned char target[4]{};
+  if (std::memmove(target, source, 4) != target ||
+      target[0] != 0x80 || target[1] != 0 ||
+      target[2] != 0x7f || target[3] != 0x42)
+    return 4;
+  std::memmove(target + 4, source + 4, 0);
+  return target[3] == 0x42 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cmemory-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
   const std::tuple<const char *, const char *, const char *> Cases[] = {
       {"global-name", "#include <cstring>\nint main(){return ::strlen(\"x\");}",
@@ -14896,6 +14943,10 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
        "TR0203"},
       {"global-memcpy",
        "#include <cstring>\nint main(){char d[2]{};::memcpy(d,\"a\",2);return "
+       "0;}",
+       "TR0203"},
+      {"global-memmove",
+       "#include <cstring>\nint main(){char d[2]{};::memmove(d,\"a\",2);return "
        "0;}",
        "TR0203"},
       {"global-memset",

@@ -2565,8 +2565,10 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::CStringMemoryCopy:
+    case UtilityOperation::CStringMemoryMove:
     case UtilityOperation::CStringMemorySet: {
-      const bool Copy = Operation == UtilityOperation::CStringMemoryCopy;
+      const bool Move = Operation == UtilityOperation::CStringMemoryMove;
+      const bool Copy = Operation != UtilityOperation::CStringMemorySet;
       auto Destination = snapshot(expression(Call->getArg(0)), L);
       auto Source = snapshot(
           cast(expression(Call->getArg(1)), Copy ? "cptr:u8" : "u8", L), L);
@@ -2575,7 +2577,81 @@ class FunctionLowering {
       const auto SizeType = type(Call->getArg(2)->getType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Write = labelName(), End = labelName();
-      jump(Check, L);
+      if (Move) {
+        // Pointer equality is defined across objects. Find whether the
+        // destination starts inside the source range before selecting the
+        // backward path; no pointer ordering or integer cast is needed.
+        auto Scan = snapshot(json::Object(Source), L);
+        auto ScanRemaining = snapshot(json::Object(Remaining), L);
+        const auto ScanCheck = labelName(), Compare = labelName();
+        const auto ScanNext = labelName(), PrepareBack = labelName();
+        jump(ScanCheck, L);
+        label(ScanCheck, L);
+        branch(binary("!=", json::Object(ScanRemaining),
+                      quantity(0, SizeType, L), "bool", L),
+               Compare, Check, L);
+        label(Compare, L);
+        branch(binary("==", json::Object(Scan),
+                      cast(json::Object(Cursor), "cptr:u8", L), "bool", L),
+               PrepareBack, ScanNext, L);
+        label(ScanNext, L);
+        assign(Scan,
+               binary("+", json::Object(Scan), quantity(1, DifferenceType, L),
+                      "cptr:u8", L),
+               L);
+        assign(ScanRemaining,
+               binary("-", json::Object(ScanRemaining),
+                      quantity(1, SizeType, L), SizeType, L),
+               L);
+        jump(ScanCheck, L);
+        label(PrepareBack, L);
+        auto BackDestination = snapshot(json::Object(Cursor), L);
+        auto BackSource = snapshot(json::Object(Source), L);
+        auto ToEnd = snapshot(json::Object(Remaining), L);
+        const auto EndCheck = labelName(), EndAdvance = labelName();
+        const auto BackCheck = labelName(), BackWrite = labelName();
+        jump(EndCheck, L);
+        label(EndCheck, L);
+        branch(binary("!=", json::Object(ToEnd), quantity(0, SizeType, L),
+                      "bool", L),
+               EndAdvance, BackCheck, L);
+        label(EndAdvance, L);
+        assign(BackDestination,
+               binary("+", json::Object(BackDestination),
+                      quantity(1, DifferenceType, L), "ptr:u8", L),
+               L);
+        assign(BackSource,
+               binary("+", json::Object(BackSource),
+                      quantity(1, DifferenceType, L), "cptr:u8", L),
+               L);
+        assign(ToEnd,
+               binary("-", json::Object(ToEnd), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(EndCheck, L);
+        label(BackCheck, L);
+        branch(binary("!=", json::Object(Remaining), quantity(0, SizeType, L),
+                      "bool", L),
+               BackWrite, End, L);
+        label(BackWrite, L);
+        assign(BackDestination,
+               binary("-", json::Object(BackDestination),
+                      quantity(1, DifferenceType, L), "ptr:u8", L),
+               L);
+        assign(BackSource,
+               binary("-", json::Object(BackSource),
+                      quantity(1, DifferenceType, L), "cptr:u8", L),
+               L);
+        assign(dereference(json::Object(BackDestination), L),
+               dereference(json::Object(BackSource), L), L);
+        assign(Remaining,
+               binary("-", json::Object(Remaining), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(BackCheck, L);
+      } else {
+        jump(Check, L);
+      }
       label(Check, L);
       branch(binary("!=", json::Object(Remaining), quantity(0, SizeType, L),
                     "bool", L),
