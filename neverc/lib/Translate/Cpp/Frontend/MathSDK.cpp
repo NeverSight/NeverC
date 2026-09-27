@@ -6383,12 +6383,26 @@ static bool utilityComparableSourceElement(const State &S,
          Record->hasTrivialMoveAssignment() && Record->hasTrivialDestructor();
 }
 
+static bool utilitySourceComparisonOperator(OverloadedOperatorKind Operator) {
+  switch (Operator) {
+  case OO_EqualEqual:
+  case OO_ExclaimEqual:
+  case OO_Less:
+  case OO_Greater:
+  case OO_LessEqual:
+  case OO_GreaterEqual:
+    return true;
+  default:
+    return false;
+  }
+}
+
 static const CXXMethodDecl *utilitySourceElementMemberComparison(
     const State &S, const SourceManager &SM, QualType Element, bool Owning,
     OverloadedOperatorKind Operator, const ASTContext &Context) {
   const auto *Record = Element->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!Record || (Operator != OO_EqualEqual && Operator != OO_Less) ||
+  if (!Record || !utilitySourceComparisonOperator(Operator) ||
       !utilityComparableSourceElement(S, SM, Element, Owning, Context))
     return nullptr;
   const auto ConstReference =
@@ -6417,7 +6431,7 @@ static const FunctionDecl *utilitySourceElementFriendComparison(
     OverloadedOperatorKind Operator, const ASTContext &Context) {
   const auto *Record = Element->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!Record || (Operator != OO_EqualEqual && Operator != OO_Less) ||
+  if (!Record || !utilitySourceComparisonOperator(Operator) ||
       !utilityComparableSourceElement(S, SM, Element, Owning, Context))
     return nullptr;
   const auto ConstReference =
@@ -6449,7 +6463,7 @@ static const FunctionDecl *utilitySourceElementNamespaceComparison(
     OverloadedOperatorKind Operator, const ASTContext &Context) {
   const auto *Record = Element->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!Record || (Operator != OO_EqualEqual && Operator != OO_Less) ||
+  if (!Record || !utilitySourceComparisonOperator(Operator) ||
       !utilityComparableSourceElement(S, SM, Element, Owning, Context))
     return nullptr;
   const auto *Parent = Record->getDeclContext();
@@ -21932,8 +21946,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool RightNullopt = NulloptParameter(1);
       if (Left && Right && OptionalParameter(0, *Left, true) &&
           OptionalParameter(1, *Right, true) &&
-          utilityComparableValue(S, SM, Context, Left->ElementType,
-                                 Right->ElementType, RequireOrderedObject))
+          (utilityComparableValue(S, SM, Context, Left->ElementType,
+                                  Right->ElementType, RequireOrderedObject) ||
+           (Context.hasSameUnqualifiedType(Left->ElementType,
+                                           Right->ElementType) &&
+            approvedUtilityTrivialSourceComparison(
+                S, SM, Left->ElementType, Operator->getOperator(), Context))))
         return Comparison;
       if (Left && RightNullopt && OptionalParameter(0, *Left, true))
         return Comparison;

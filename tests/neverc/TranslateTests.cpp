@@ -50332,6 +50332,88 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OptionalSourceRecordComparisonsRun) {
+  const auto Source = tmpFile("optional-source-record-comparisons.cpp");
+  const auto Output = tmpFile("optional-source-record-comparisons.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+int eq_calls, ne_calls, lt_calls, gt_calls, le_calls, ge_calls;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++eq_calls; return value == other.value;
+  }
+  bool operator!=(const Point &other) const {
+    ++ne_calls; return value != other.value;
+  }
+  bool operator<(const Point &other) const {
+    ++lt_calls; return value < other.value;
+  }
+  bool operator>(const Point &other) const {
+    ++gt_calls; return value > other.value;
+  }
+  bool operator<=(const Point &other) const {
+    ++le_calls; return value <= other.value;
+  }
+  bool operator>=(const Point &other) const {
+    ++ge_calls; return value >= other.value;
+  }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  std::optional<Point> empty, one(Point{1}), two(Point{2}), same(Point{1});
+  if (!(one == same) || one != same || one == two || !(one != two) ||
+      !(one < two) || one > two || !(two > one) || one >= two ||
+      !(one <= two) || !(two >= one)) return 1;
+  if (!eq_calls || !ne_calls || !lt_calls || !gt_calls || !le_calls ||
+      !ge_calls) return 2;
+  int calls = eq_calls + ne_calls + lt_calls + gt_calls + le_calls + ge_calls;
+  if (empty == one || !(empty != one) || !(empty < one) || empty > one ||
+      !(empty <= one) || empty >= one || !(one > empty) ||
+      !(one >= empty) || one < empty || one <= empty) return 3;
+  if (calls != eq_calls + ne_calls + lt_calls + gt_calls + le_calls + ge_calls)
+    return 4;
+  std::optional<Friend> friend_one(Friend{1}), friend_two(Friend{2});
+  if (friend_one == friend_two || !(friend_one < friend_two)) return 5;
+  std::optional<owned::Free> free_one(owned::Free{1});
+  std::optional<owned::Free> free_two(owned::Free{2});
+  if (free_one == free_two || !(free_one < free_two)) return 6;
+  if (!(empty == std::nullopt) || empty != std::nullopt ||
+      !(std::nullopt < one) || !(one > std::nullopt)) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("optional-source-record-comparisons" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ScalarOptionalUtilitiesRunAtBothOptimizations) {
   const auto Source = tmpFile("optional-utilities.cpp");
   const auto Output = tmpFile("optional-utilities.nc");

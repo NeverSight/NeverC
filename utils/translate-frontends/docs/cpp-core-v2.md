@@ -779,10 +779,16 @@ are false, and inequality is true; this also applies to optional-versus-value
 comparisons in either order. Pair, tuple and array values retain their C++17
 lexicographical definitions, including `<=` and `>=` expressed through `<`.
 Engagement and `nullopt` comparisons are unchanged.
+For two optionals with the same source-owned trivial record value, each
+comparison form calls its uniquely selected `bool` record operator: `==`,
+`!=`, `<`, `>`, `<=`, or `>=`. Const member, hidden-friend and enclosing-namespace
+free operators follow the same source and signature checks as vector record
+comparisons. An empty operand skips the record call.
 
 Reference, incomplete, volatile, restricted-address-space, nontrivially
 destructible, `long double` and function-pointer elements remain outside this
-boundary. Source-record value comparisons, throwing `value`, base-adjusting or
+boundary. Heterogeneous source-record and optional-versus-record comparisons,
+throwing `value`, base-adjusting or
 otherwise incompatible pointer comparisons, heterogeneous enumeration
 comparisons, initializer-list emplacement and the `in_place_type`/
 `in_place_index` tags are not admitted. The authenticated `in_place` tag is

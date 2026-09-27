@@ -6122,6 +6122,49 @@ int main() {
             profile="cpp-core-v2", target=target, sdk=True)
         check_optional_scalar_nan(optional_scalar_nan_target)
 
+    optional_source_record_relations_source = """\
+#include <optional>
+struct Member {
+  int value;
+  bool operator==(const Member &other) const { return value == other.value; }
+  bool operator!=(const Member &other) const { return value != other.value; }
+  bool operator<(const Member &other) const { return value < other.value; }
+  bool operator>(const Member &other) const { return value > other.value; }
+  bool operator<=(const Member &other) const { return value <= other.value; }
+  bool operator>=(const Member &other) const { return value >= other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) { return a.value == b.value; }
+bool operator<(const Free &a, const Free &b) { return a.value < b.value; }
+}
+bool compare(const std::optional<Member>& a,
+             const std::optional<Member>& b) {
+  return a == b || a != b || a < b || a > b || a <= b || a >= b;
+}
+bool compare_friend(const std::optional<Friend>& a,
+                    const std::optional<Friend>& b) {
+  return a == b || a < b;
+}
+bool compare_free(const std::optional<owned::Free>& a,
+                  const std::optional<owned::Free>& b) {
+  return a == b || a < b;
+}
+"""
+    for target in sdk_targets:
+        check("v2-optional-source-record-relations-" + target,
+              optional_source_record_relations_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     optional_operations_source = """\
 #include <optional>
 extern "C" int optional_operations(int value) {
@@ -6251,8 +6294,8 @@ extern "C" int optional_operations(int value) {
         ("nontrivial-record",
          '#include <optional>\nstruct R{int n;~R(){}};int main(){std::optional<R>v(R{3});return v->n;}',
          "TR0203"),
-        ("composite-comparison",
-         '#include <optional>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::optional<R>a(R{1}),b(R{1});return a==b;}',
+        ("nonbool-record-comparison",
+         '#include <optional>\nstruct R{int n;};int operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::optional<R>a(R{1}),b(R{1});return a==b;}',
          "TR0203"),
         ("throwing-value",
          '#include <optional>\nint main(){std::optional<int>v;return v.value();}',

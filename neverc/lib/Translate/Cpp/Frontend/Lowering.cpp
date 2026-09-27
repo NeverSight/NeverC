@@ -9310,6 +9310,35 @@ class FunctionLowering {
           return binary(Operator, cast(std::move(Left), Converted, L),
                         cast(std::move(Right), Converted, L), "bool", L);
         }
+        std::optional<OverloadedOperatorKind> SourceOperator;
+        if (Operator == "==")
+          SourceOperator = OO_EqualEqual;
+        else if (Operator == "!=")
+          SourceOperator = OO_ExclaimEqual;
+        else if (Operator == "<")
+          SourceOperator = OO_Less;
+        else if (Operator == ">")
+          SourceOperator = OO_Greater;
+        else if (Operator == "<=")
+          SourceOperator = OO_LessEqual;
+        else if (Operator == ">=")
+          SourceOperator = OO_GreaterEqual;
+        if (LeftOptional && RightOptional && SourceOperator &&
+            A.Context.hasSameUnqualifiedType(LeftValueType, RightValueType)) {
+          const auto Comparison = approvedUtilityTrivialSourceComparison(
+              A.S, A.Sources, LeftValueType, *SourceOperator, A.Context);
+          if (Comparison) {
+            auto LeftAddress = snapshot(
+                address(std::move(Left), LeftValueType.withConst(), L), L);
+            auto RightAddress = snapshot(
+                address(std::move(Right), RightValueType.withConst(), L), L);
+            return compareVectorSourceElements(
+                std::move(LeftAddress), std::move(RightAddress),
+                Comparison->Member,
+                Comparison->Friend ? Comparison->Friend : Comparison->Namespace,
+                L);
+          }
+        }
         return CompareUtilityValues(Operator, Left, LeftValueType, Right,
                                     RightValueType);
       };
