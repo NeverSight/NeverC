@@ -55628,6 +55628,113 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSourceOwnedScalarReferenceEmplaceRun) {
+  const auto Source = tmpFile("vector-source-owned-scalar-reference-emplace.cpp");
+  const auto Output = tmpFile("vector-source-owned-scalar-reference-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct ConstBox {
+  int *value;
+  explicit ConstBox(const int &n) : value(new int(n)) { ++live; }
+  ConstBox(const ConstBox &) = delete;
+  ConstBox(ConstBox &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  ConstBox &operator=(ConstBox &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~ConstBox() { delete value; --live; }
+};
+struct MutableBox {
+  int *value;
+  explicit MutableBox(int &n) : value(new int(n)) { ++live; ++n; }
+  MutableBox(const MutableBox &) = delete;
+  MutableBox(MutableBox &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  MutableBox &operator=(MutableBox &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~MutableBox() { delete value; --live; }
+};
+struct RvalueBox {
+  int *value;
+  explicit RvalueBox(int &&n) : value(new int(n)) { ++live; n = 0; }
+  RvalueBox(const RvalueBox &) = delete;
+  RvalueBox(RvalueBox &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+    ++live;
+  }
+  RvalueBox &operator=(RvalueBox &&other) noexcept {
+    delete value;
+    value = other.value;
+    other.value = nullptr;
+    return *this;
+  }
+  ~RvalueBox() { delete value; --live; }
+};
+int main() {
+  {
+    std::vector<ConstBox> v;
+    const int n = 4;
+    auto &last = v.emplace_back(n);
+    if (&last != &v.front() || *last.value != 4) return 1;
+    auto first = v.emplace(v.cbegin(), 5);
+    if (first != v.begin() || v.size() != 2 ||
+        *v[0].value != 5 || *v[1].value != 4) return 2;
+  }
+  {
+    std::vector<MutableBox> v;
+    v.reserve(3);
+    int n = 6;
+    auto &last = v.emplace_back(n);
+    if (&last != &v.front() || *last.value != 6 || n != 7) return 3;
+    auto first = v.emplace(v.cbegin(), n);
+    if (first != v.begin() || n != 8 || v.size() != 2 ||
+        *v[0].value != 7 || *v[1].value != 6) return 4;
+  }
+  {
+    std::vector<RvalueBox> v;
+    int n = 9;
+    auto &last = v.emplace_back(static_cast<int &&>(n));
+    if (&last != &v.front() || n != 0 || *last.value != 9) return 5;
+    auto first = v.emplace(v.cbegin(), 10);
+    if (first != v.begin() || v.size() != 2 ||
+        *v[0].value != 10 || *v[1].value != 9) return 6;
+  }
+  return live == 0 && allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-source-owned-scalar-reference-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedEraseRun) {
   const auto Source = tmpFile("vector-source-owned-erase.cpp");
   const auto Output = tmpFile("vector-source-owned-erase.nc");

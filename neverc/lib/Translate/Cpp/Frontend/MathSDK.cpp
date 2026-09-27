@@ -5906,11 +5906,27 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
     bool ExactScalarArguments = true;
     for (unsigned I = 0; I != Count; ++I) {
       const auto Parameter = Constructor->getParamDecl(I)->getType();
-      ExactScalarArguments &=
-          (Parameter->isIntegerType() || Parameter->isFloatingType() ||
-           Parameter->isObjectPointerType()) &&
-          Context.hasSameUnqualifiedType(
-              Parameter, Call->getArg(FirstArgument + I)->getType());
+      const auto *Argument = Call->getArg(FirstArgument + I);
+      const auto ArgumentType = Argument->getType();
+      if (Parameter->isReferenceType()) {
+        const auto Referent = Parameter->getPointeeType();
+        ExactScalarArguments &=
+            (Referent->isIntegerType() || Referent->isFloatingType()) &&
+            !Referent.isVolatileQualified() &&
+            !ArgumentType.isVolatileQualified() &&
+            Context.hasSameUnqualifiedType(Referent, ArgumentType) &&
+            (!ArgumentType.isConstQualified() || Referent.isConstQualified()) &&
+            (Parameter->isLValueReferenceType()
+                 ? (Argument->isLValue() || Referent.isConstQualified())
+                 : !Argument->isLValue());
+      } else {
+        ExactScalarArguments &=
+            (Parameter->isIntegerType() || Parameter->isFloatingType() ||
+             Parameter->isObjectPointerType()) &&
+            !Parameter.isVolatileQualified() &&
+            !ArgumentType.isVolatileQualified() &&
+            Context.hasSameUnqualifiedType(Parameter, ArgumentType);
+      }
     }
     if (!ExactScalarArguments)
       continue;

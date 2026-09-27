@@ -2682,7 +2682,10 @@ for a unique supported source-owned constructor. Arguments are captured before
 growth, and the new element is constructed before old elements move. Host
 O0/O2 fixtures cover one- and two-argument construction, spare capacity,
 growth with an aliased scalar argument, deferred destruction after relocation,
-and balanced release. Single and range `erase` also accept a supported
+and balanced release. Exact integer and floating lvalue/rvalue reference
+constructor parameters are also supported; host fixtures check const and
+mutable lvalue bindings, rvalue bindings, writes through references, and both
+emplacement positions. Single and range `erase` also accept a supported
 source-owned assignment returning `T&`: they use the selected move assignment
 when available, otherwise copy assignment, then destroy only the vacated tail.
 The erase fixtures check stable storage, assignment and destructor counts,
