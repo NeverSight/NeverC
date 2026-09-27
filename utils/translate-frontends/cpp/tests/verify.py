@@ -29394,9 +29394,14 @@ using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
 extern "C" void free(void *);
 void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
 void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 void default_owners() {
   std::vector<std::string> strings(2);
@@ -29482,6 +29487,42 @@ void move_pointers(std::vector<std::unique_ptr<int>>& values,
       static_cast<std::vector<std::unique_ptr<int>>&&>(values));
   values = static_cast<std::vector<std::unique_ptr<int>>&&>(moved);
   values.clear();
+}
+void emplace_strings() {
+  std::vector<std::string> values;
+  std::string text("abcdef");
+  std::string_view view(text.data(), text.size());
+  char raw[] = {'a', 0, 'b'};
+  values.emplace_back(raw);
+  values.emplace_back(raw, Size(3));
+  values.emplace_back(Size(3), 'x');
+  values.emplace_back(view);
+  values.emplace_back(text, Size(1));
+  values.emplace_back(text, Size(1), Size(3));
+  values.emplace_back(view, Size(1), Size(3));
+  values.emplace_back(raw, raw + 3);
+  values.emplace_back(text.cbegin(), text.cend());
+  values.emplace_back(std::initializer_list<char>{'x', 0, 'y'});
+  values.emplace(values.cbegin(), view);
+  values.emplace(values.cbegin(), text, Size(1), Size(2));
+  values.emplace(values.cbegin(), raw, raw + 3);
+  values.emplace(values.cbegin(), std::initializer_list<char>{});
+}
+struct EmptyDelete {
+  void operator()(int *p) noexcept { delete p; }
+};
+void emplace_owners() {
+  std::vector<std::unique_ptr<int, EmptyDelete>> custom;
+  custom.emplace_back(new int(1));
+  custom.emplace(custom.cbegin(), new int(2), EmptyDelete{});
+  std::vector<std::unique_ptr<const int>> fixed;
+  fixed.emplace_back(new int(3));
+  fixed.emplace(fixed.cbegin(), new int(4),
+                std::default_delete<const int>{});
+  std::vector<std::unique_ptr<const int[]>> arrays;
+  arrays.emplace_back(new int[2]{5, 6});
+  arrays.emplace(arrays.cbegin(), new int[1]{7},
+                 std::default_delete<const int[]>{});
 }
 """
     for target in sdk_targets:
