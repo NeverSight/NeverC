@@ -56860,6 +56860,134 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedSourceOwnedVectorRelationsRun) {
+  const auto Source = tmpFile("nested-source-owned-vector-relations.cpp");
+  const auto Output = tmpFile("nested-source-owned-vector-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int live;
+int equality_calls;
+int less_calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <vector>
+struct MemberBox {
+  int *value;
+  explicit MemberBox(int n) : value(new int(n)) { ++live; }
+  MemberBox(const MemberBox &) = delete;
+  MemberBox(MemberBox &&other) noexcept : value(other.value) {
+    other.value = nullptr; ++live;
+  }
+  MemberBox &operator=(MemberBox &&other) noexcept {
+    delete value; value = other.value; other.value = nullptr; return *this;
+  }
+  bool operator==(const MemberBox &other) const {
+    ++equality_calls; return *value == *other.value;
+  }
+  bool operator<(const MemberBox &other) const {
+    ++less_calls; return *value < *other.value;
+  }
+  ~MemberBox() { delete value; --live; }
+};
+struct FriendBox {
+  int *value;
+  explicit FriendBox(int n) : value(new int(n)) { ++live; }
+  FriendBox(const FriendBox &) = delete;
+  FriendBox(FriendBox &&other) noexcept : value(other.value) {
+    other.value = nullptr; ++live;
+  }
+  FriendBox &operator=(FriendBox &&other) noexcept {
+    delete value; value = other.value; other.value = nullptr; return *this;
+  }
+  friend bool operator==(const FriendBox &left, const FriendBox &right) {
+    ++equality_calls; return *left.value == *right.value;
+  }
+  friend bool operator<(const FriendBox &left, const FriendBox &right) {
+    ++less_calls; return *left.value < *right.value;
+  }
+  ~FriendBox() { delete value; --live; }
+};
+namespace sample {
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; }
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr; ++live;
+  }
+  Box &operator=(Box &&other) noexcept {
+    delete value; value = other.value; other.value = nullptr; return *this;
+  }
+  ~Box() { delete value; --live; }
+};
+bool operator==(const Box &left, const Box &right) {
+  ++equality_calls; return *left.value == *right.value;
+}
+bool operator<(const Box &left, const Box &right) {
+  ++less_calls; return *left.value < *right.value;
+}
+}
+int main() {
+  {
+    std::vector<std::vector<MemberBox>> member_left;
+    std::vector<std::vector<MemberBox>> member_right;
+    member_left.emplace_back(); member_right.emplace_back();
+    member_left[0].emplace_back(1); member_right[0].emplace_back(1);
+    if (!(member_left == member_right) || member_left != member_right ||
+        member_left < member_right || member_left > member_right ||
+        !(member_left <= member_right) || !(member_left >= member_right))
+      return 1;
+    member_left[0].emplace_back(2); member_right[0].emplace_back(3);
+    if (member_left == member_right || !(member_left != member_right) ||
+        !(member_left < member_right) || member_left > member_right ||
+        !(member_left <= member_right) || member_left >= member_right)
+      return 2;
+    std::vector<std::vector<std::vector<MemberBox>>> cube_left;
+    std::vector<std::vector<std::vector<MemberBox>>> cube_right;
+    cube_left.push_back(static_cast<std::vector<std::vector<MemberBox>>&&>(member_left));
+    cube_right.push_back(static_cast<std::vector<std::vector<MemberBox>>&&>(member_right));
+    if (cube_left == cube_right || !(cube_left != cube_right) ||
+        !(cube_left < cube_right) || cube_left > cube_right) return 3;
+    std::vector<std::vector<FriendBox>> friend_left;
+    std::vector<std::vector<FriendBox>> friend_right;
+    friend_left.emplace_back(); friend_right.emplace_back();
+    friend_left[0].emplace_back(4); friend_right[0].emplace_back(5);
+    if (friend_left == friend_right || !(friend_left != friend_right) ||
+        !(friend_left < friend_right) || friend_left > friend_right ||
+        !(friend_left <= friend_right) || friend_left >= friend_right)
+      return 4;
+    std::vector<std::vector<sample::Box>> free_left;
+    std::vector<std::vector<sample::Box>> free_right;
+    free_left.emplace_back(); free_right.emplace_back();
+    free_left[0].emplace_back(6); free_right[0].emplace_back(7);
+    if (free_left == free_right || !(free_left != free_right) ||
+        !(free_left < free_right) || free_left > free_right ||
+        !(free_left <= free_right) || free_left >= free_right)
+      return 5;
+    if (equality_calls == 0 || less_calls == 0) return 6;
+  }
+  return live == 0 && allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-source-owned-vector-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

@@ -2680,6 +2680,8 @@ admitted integer or floating types, complete object pointers, or exact pinned
 strings, using lexicographic ordering for `<`, `>`, `<=`, and `>=`. Nested void
 pointer vectors support equality and inequality. Floating equality and ordering
 remain separate so unordered values follow libc++'s vector comparison rules.
+Nested source-owned resource elements also use the unique admitted const member,
+hidden-friend, or enclosing-namespace equality and less-than operators.
 Other nested vector copy operations and comparisons remain outside this boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.

@@ -5926,8 +5926,19 @@ static bool utilityNestedVectorComparable(const State &S,
     return true;
   const auto Nested = approvedUtilityVectorRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
-  return Nested && utilityNestedVectorComparable(S, SM, *Nested, Context,
-                                                 Equality, Depth + 1);
+  if (Nested)
+    return utilityNestedVectorComparable(S, SM, *Nested, Context, Equality,
+                                         Depth + 1);
+  const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
+  const auto *MemberComparison = approvedUtilityVectorElementComparison(
+      S, SM, Vector, ComparisonOperator, Context);
+  const auto *FriendComparison = approvedUtilityVectorFriendComparison(
+      S, SM, Vector, ComparisonOperator, Context);
+  const auto *NamespaceComparison = approvedUtilityVectorNamespaceComparison(
+      S, SM, Vector, ComparisonOperator, Context);
+  return bool(MemberComparison) + bool(FriendComparison) +
+             bool(NamespaceComparison) ==
+         1;
 }
 
 const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(

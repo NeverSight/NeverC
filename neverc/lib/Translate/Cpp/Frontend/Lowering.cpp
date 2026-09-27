@@ -13718,38 +13718,8 @@ class FunctionLowering {
                       : snapshot(std::move(Value), L);
       };
       auto CompareSource = [&](Expression Left, Expression Right) {
-        json::Array Args;
-        if (MemberComparison) {
-          Args.push_back(
-              snapshot(cast(std::move(Left),
-                            type(MemberComparison->getThisType(), L), L),
-                       L));
-          Args.push_back(snapshot(
-              cast(std::move(Right),
-                   type(MemberComparison->getParamDecl(0)->getType(), L), L),
-              L));
-        } else {
-          Args.push_back(snapshot(
-              cast(std::move(Left),
-                   type(FreeComparison->getParamDecl(0)->getType(), L), L),
-              L));
-          Args.push_back(snapshot(
-              cast(std::move(Right),
-                   type(FreeComparison->getParamDecl(1)->getType(), L), L),
-              L));
-        }
-        chargeCall(Args, L);
-        auto Compared = temporary("bool", L);
-        Body.push_back(json::Object{
-            {"op", "call"},
-            {"callee",
-             A.name(MemberComparison
-                        ? static_cast<const FunctionDecl *>(MemberComparison)
-                        : FreeComparison)},
-            {"args", std::move(Args)},
-            {"target", json::Object(Compared)},
-            {"loc", A.loc(L)}});
-        return Compared;
+        return compareVectorSourceElements(std::move(Left), std::move(Right),
+                                           MemberComparison, FreeComparison, L);
       };
       auto CompareStrings = [&]() {
         return compareVectorStringsAt(json::Object(LeftCurrent),
@@ -19250,6 +19220,42 @@ class FunctionLowering {
     assign(std::move(Member), std::move(Pointer), L);
   }
 
+  Expression compareVectorSourceElements(Expression Left, Expression Right,
+                                         const CXXMethodDecl *MemberComparison,
+                                         const FunctionDecl *FreeComparison,
+                                         SourceLocation L) {
+    json::Array Args;
+    if (MemberComparison) {
+      Args.push_back(snapshot(
+          cast(std::move(Left), type(MemberComparison->getThisType(), L), L),
+          L));
+      Args.push_back(snapshot(
+          cast(std::move(Right),
+               type(MemberComparison->getParamDecl(0)->getType(), L), L),
+          L));
+    } else {
+      Args.push_back(
+          snapshot(cast(std::move(Left),
+                        type(FreeComparison->getParamDecl(0)->getType(), L), L),
+                   L));
+      Args.push_back(
+          snapshot(cast(std::move(Right),
+                        type(FreeComparison->getParamDecl(1)->getType(), L), L),
+                   L));
+    }
+    chargeCall(Args, L);
+    auto Compared = temporary("bool", L);
+    Body.push_back(json::Object{
+        {"op", "call"},
+        {"callee", A.name(MemberComparison ? static_cast<const FunctionDecl *>(
+                                                 MemberComparison)
+                                           : FreeComparison)},
+        {"args", std::move(Args)},
+        {"target", json::Object(Compared)},
+        {"loc", A.loc(L)}});
+    return Compared;
+  }
+
   std::pair<Expression, Expression>
   readStringAt(Expression Address, const UtilityStringRecord &String,
                SourceLocation L) {
@@ -19463,23 +19469,60 @@ class FunctionLowering {
     } else {
       const auto Nested = approvedUtilityVectorRecord(
           A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
-      if (!Nested)
-        reject(L, "nested vector comparison",
-               "The nested vector layout is unavailable.");
-      auto Order = compareNestedVectors(
-          dereference(json::Object(LeftCurrent), L),
-          dereference(json::Object(RightCurrent), L), *Nested, Equality, L);
-      if (Equality) {
-        branch(binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
-               Next, Greater, L);
+      if (Nested) {
+        auto Order = compareNestedVectors(
+            dereference(json::Object(LeftCurrent), L),
+            dereference(json::Object(RightCurrent), L), *Nested, Equality, L);
+        if (Equality) {
+          branch(
+              binary("==", std::move(Order), quantity(0, "int", L), "bool", L),
+              Next, Greater, L);
+        } else {
+          const auto CheckGreater = labelName();
+          branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool",
+                        L),
+                 Less, CheckGreater, L);
+          label(CheckGreater, L);
+          branch(
+              binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+              Greater, Next, L);
+        }
       } else {
-        const auto CheckGreater = labelName();
-        branch(
-            binary("<", json::Object(Order), quantity(0, "int", L), "bool", L),
-            Less, CheckGreater, L);
-        label(CheckGreater, L);
-        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
-               Greater, Next, L);
+        const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
+        const auto *MemberComparison = approvedUtilityVectorElementComparison(
+            A.S, A.Sources, Vector, ComparisonOperator, A.Context);
+        const auto *FriendComparison = approvedUtilityVectorFriendComparison(
+            A.S, A.Sources, Vector, ComparisonOperator, A.Context);
+        const auto *NamespaceComparison =
+            approvedUtilityVectorNamespaceComparison(
+                A.S, A.Sources, Vector, ComparisonOperator, A.Context);
+        const unsigned ComparisonForms = bool(MemberComparison) +
+                                         bool(FriendComparison) +
+                                         bool(NamespaceComparison);
+        if (ComparisonForms != 1)
+          reject(L, "nested vector comparison",
+                 "The selected owning element comparison is unavailable.");
+        const auto *FreeComparison =
+            FriendComparison ? FriendComparison : NamespaceComparison;
+        auto CompareSource = [&](Expression Left, Expression Right) {
+          return compareVectorSourceElements(std::move(Left), std::move(Right),
+                                             MemberComparison, FreeComparison,
+                                             L);
+        };
+        if (Equality) {
+          branch(CompareSource(json::Object(LeftCurrent),
+                               json::Object(RightCurrent)),
+                 Next, Greater, L);
+        } else {
+          const auto CheckGreater = labelName();
+          branch(CompareSource(json::Object(LeftCurrent),
+                               json::Object(RightCurrent)),
+                 Less, CheckGreater, L);
+          label(CheckGreater, L);
+          branch(CompareSource(json::Object(RightCurrent),
+                               json::Object(LeftCurrent)),
+                 Greater, Next, L);
+        }
       }
     }
     label(Next, L);

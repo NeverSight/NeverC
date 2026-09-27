@@ -29640,6 +29640,12 @@ struct NestedBox {
     }
     return *this;
   }
+  bool operator==(const NestedBox &other) const {
+    return *value == *other.value;
+  }
+  bool operator<(const NestedBox &other) const {
+    return *value < *other.value;
+  }
   ~NestedBox() { delete value; }
 };
 void nested_source_owned_copies() {
@@ -29649,6 +29655,67 @@ void nested_source_owned_copies() {
   rows.emplace_back(static_cast<std::vector<NestedBox>&&>(leaf));
   std::vector<std::vector<NestedBox>> copied(rows);
   rows = copied;
+}
+bool compare_nested_owned(const std::vector<std::vector<NestedBox>>& left,
+                          const std::vector<std::vector<NestedBox>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_owned_cube(
+    const std::vector<std::vector<std::vector<NestedBox>>>& left,
+    const std::vector<std::vector<std::vector<NestedBox>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+struct NestedFriendBox {
+  int *value;
+  explicit NestedFriendBox(int n) : value(new int(n)) {}
+  NestedFriendBox(const NestedFriendBox &) = delete;
+  NestedFriendBox(NestedFriendBox &&other) noexcept : value(other.value) {
+    other.value = nullptr;
+  }
+  NestedFriendBox &operator=(NestedFriendBox &&other) noexcept {
+    delete value; value = other.value; other.value = nullptr; return *this;
+  }
+  friend bool operator==(const NestedFriendBox &left,
+                         const NestedFriendBox &right) {
+    return *left.value == *right.value;
+  }
+  friend bool operator<(const NestedFriendBox &left,
+                        const NestedFriendBox &right) {
+    return *left.value < *right.value;
+  }
+  ~NestedFriendBox() { delete value; }
+};
+bool compare_nested_friend(
+    const std::vector<std::vector<NestedFriendBox>>& left,
+    const std::vector<std::vector<NestedFriendBox>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+namespace nested_sample {
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &) = delete;
+  Box(Box &&other) noexcept : value(other.value) { other.value = nullptr; }
+  Box &operator=(Box &&other) noexcept {
+    delete value; value = other.value; other.value = nullptr; return *this;
+  }
+  ~Box() { delete value; }
+};
+bool operator==(const Box &left, const Box &right) {
+  return *left.value == *right.value;
+}
+bool operator<(const Box &left, const Box &right) {
+  return *left.value < *right.value;
+}
+}
+bool compare_nested_free(
+    const std::vector<std::vector<nested_sample::Box>>& left,
+    const std::vector<std::vector<nested_sample::Box>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
 }
 """
     for target in sdk_targets:
