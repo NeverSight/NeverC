@@ -55622,6 +55622,64 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorStringListEmplaceRun) {
+  const auto Source = tmpFile("vector-string-list-emplace.cpp");
+  const auto Output = tmpFile("vector-string-list-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <initializer_list>
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(2);
+    auto storage = values.data();
+    auto &binary = values.emplace_back(std::initializer_list<char>{'a', 0, 'b'});
+    auto &empty = values.emplace_back(std::initializer_list<char>{});
+    if (&binary != &values[0] || &empty != &values[1] ||
+        values.data() != storage || values[0].size() != 3 ||
+        values[0][1] != 0 || !values[1].empty()) return 1;
+    auto &long_text = values.emplace_back(std::initializer_list<char>{
+        'a','b','c','d','e','f','g','h','i','j','k','l','m',
+        'n','o','p','q','r','s','t','u','v','w','x','y','z'});
+    if (&long_text != &values[2] || values.data() == storage ||
+        values[2] != "abcdefghijklmnopqrstuvwxyz" ||
+        values[0].size() != 3 || values[0][1] != 0) return 2;
+    auto inserted = values.emplace(values.cbegin() + 1,
+        std::initializer_list<char>{'x', 0, 'y'});
+    if (inserted != values.begin() + 1 || values[1].size() != 3 ||
+        values[1][1] != 0 || values[3] != "abcdefghijklmnopqrstuvwxyz")
+      return 3;
+    auto front = values.emplace(values.cbegin(), std::initializer_list<char>{});
+    if (front != values.begin() || !values[0].empty() ||
+        values[2].size() != 3 || values[2][1] != 0 ||
+        values[4] != "abcdefghijklmnopqrstuvwxyz") return 4;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-string-list-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
   const auto Source = tmpFile("vector-owning-pointers.cpp");
   const auto Output = tmpFile("vector-owning-pointers.nc");

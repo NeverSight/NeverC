@@ -2676,6 +2676,9 @@ Back and positional `emplace` also accept matching raw character pointers or
 authenticated mutable or const wrapped string iterators as a range. They copy
 the full ordered range, including embedded NUL bytes, before vector storage
 changes; an empty range constructs an empty string.
+An exact pinned `std::initializer_list<char>` also supplies back and positional
+emplacement. It copies all listed bytes, including embedded NUL characters,
+before vector storage changes; an empty list constructs an empty string.
 All six vector/vector comparisons use element-wise byte content and lexicographic
 ordering for pinned string elements, including embedded zero and high-bit bytes.
 They also compare admitted `std::unique_ptr` elements with the pinned default

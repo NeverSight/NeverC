@@ -19120,6 +19120,22 @@ class FunctionLowering {
                            std::move(Character), L);
       return;
     }
+    if (Kind == UtilityVectorStringEmplace::InitializerList) {
+      auto List = approvedUtilityInitializerListRecord(
+          A.S, A.Sources,
+          Call->getArg(FirstArgument)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!List)
+        reject(L, "vector string emplacement",
+               "The selected initializer-list layout is unavailable.");
+      auto Source = snapshot(expression(Call->getArg(FirstArgument)), L);
+      auto Input =
+          snapshot(fieldStorage(json::Object(Source), List->Begin, L), L);
+      auto Length = snapshot(fieldStorage(std::move(Source), List->Size, L), L);
+      constructStringBytes(std::move(Place), T, String, std::move(Input),
+                           std::move(Length), std::nullopt, L);
+      return;
+    }
     if (Kind == UtilityVectorStringEmplace::View ||
         Kind == UtilityVectorStringEmplace::ViewSubstring ||
         Kind == UtilityVectorStringEmplace::StringSubstring) {

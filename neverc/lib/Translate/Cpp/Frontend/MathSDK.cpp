@@ -5978,6 +5978,10 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
     if (approvedUtilityStringViewRecord(
             S, SM, FirstType->getAsCXXRecordDecl(), Context))
       return UtilityVectorStringEmplace::View;
+    if (const auto List = approvedUtilityInitializerListRecord(
+            S, SM, FirstType->getAsCXXRecordDecl(), Context);
+        List && Context.hasSameType(List->ElementType, Context.CharTy))
+      return UtilityVectorStringEmplace::InitializerList;
     return std::nullopt;
   }
   const auto SecondType = Call->getArg(FirstArgument + 1)->getType();
