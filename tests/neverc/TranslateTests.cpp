@@ -54407,6 +54407,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordAdjacentFindRun) {
+  const auto Source = tmpFile("source-record-adjacent-find.cpp");
+  const auto Output = tmpFile("source-record-adjacent-find.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point;
+const Point *expected_left, *expected_right;
+int comparisons, bad_identity;
+struct Point {
+  int value;
+  bool operator==(const Point &other) const {
+    ++comparisons;
+    if (this != expected_left || &other != expected_right) ++bad_identity;
+    ++expected_left;
+    ++expected_right;
+    return value == other.value;
+  }
+};
+struct Friend {
+  int value;
+  friend bool operator==(const Friend &a, const Friend &b) {
+    return a.value == b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator==(const Free &a, const Free &b) {
+  return a.value == b.value;
+}
+}
+int main() {
+  Point raw[4]{{1}, {2}, {2}, {3}};
+  expected_left = raw;
+  expected_right = raw + 1;
+  if (std::adjacent_find(raw, raw + 4) != raw + 1 ||
+      comparisons != 2 || bad_identity) return 1;
+  comparisons = 0;
+  if (std::adjacent_find(raw, raw) != raw ||
+      std::adjacent_find(raw, raw + 1) != raw + 1 || comparisons)
+    return 2;
+  std::vector<Point> values;
+  values.push_back(Point{4});
+  values.push_back(Point{5});
+  values.push_back(Point{5});
+  const std::vector<Point> &view = values;
+  expected_left = &values[0];
+  expected_right = &values[1];
+  comparisons = 0;
+  auto found = std::adjacent_find(view.cbegin(), view.cend());
+  auto second = view.cbegin();
+  ++second;
+  if (found != second || comparisons != 2 || bad_identity) return 3;
+  std::vector<int> numbers{1, 3, 3};
+  auto number = std::adjacent_find(numbers.begin(), numbers.end());
+  auto expected_number = numbers.begin();
+  ++expected_number;
+  if (number != expected_number) return 4;
+  Friend friends[3]{{1}, {2}, {2}};
+  if (std::adjacent_find(friends, friends + 3) != friends + 1) return 5;
+  owned::Free free_values[3]{{1}, {2}, {2}};
+  if (std::adjacent_find(free_values, free_values + 3) !=
+      free_values + 1) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-adjacent-find" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");

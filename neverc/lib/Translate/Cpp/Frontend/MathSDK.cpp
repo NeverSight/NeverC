@@ -23536,15 +23536,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "adjacent_find" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (Call->getNumArgs() == 2 && AlgorithmEqualityPointerParameter(0) &&
-        AlgorithmEqualityPointerParameter(1))
-      return UtilityOperation::AlgorithmAdjacentFind;
-    if (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))
+    if (Call->getNumArgs() == 2) {
+      const auto First = AlgorithmRangePointerParameter(0);
+      const auto Last = AlgorithmRangePointerParameter(1);
+      const bool Builtin =
+          First && Last && utilityAlgorithmEqualityPointer(Context, *First) &&
+          !utilityEnumHasSourceOperator(
+              S, SM, Context, (*First)->getPointeeType(), OO_EqualEqual);
+      const bool Record = AlgorithmRecordEqualityRangeParameter(0) &&
+                          AlgorithmRecordEqualityRangeParameter(1);
+      if (Builtin || Record)
+        return UtilityOperation::AlgorithmAdjacentFind;
+    }
+    if (Call->getNumArgs() == 3 && AlgorithmPointerParameter(0) &&
+        AlgorithmPointerParameter(1) &&
+        AlgorithmBinaryPredicateParameter(2, 0, 0))
       return UtilityOperation::AlgorithmAdjacentFind;
   }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&

@@ -1708,6 +1708,13 @@ source-owned trivial record type with a uniquely selected Boolean `operator==`.
 They compare original elements without copies, stop at the first mismatch or
 bounded end, and return both positions in that same authenticated pair.
 Record predicate forms remain rejected.
+
+Default `std::adjacent_find` accepts raw or authenticated wrapped scalar
+ranges, and exact source-owned trivial record ranges under the same selected
+Boolean `operator==` check. It compares original adjacent objects, skips empty
+and single-element ranges, and returns the first matching iterator in its
+original raw or wrapped form. Predicate overloads retain their existing raw
+scalar boundary.
 `std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
 mutable vector and string iterators, while preserving the existing value
 conversion, single evaluation, and empty-range behavior. Const iterators and

@@ -5023,14 +5023,21 @@ class FunctionLowering {
                     : AlgorithmIteratorResult(std::move(Current), 0);
     }
     case UtilityOperation::AlgorithmAdjacentFind: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 3)
         Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto SourceComparison =
+          !Predicate ? approvedUtilityTrivialSourceComparison(
+                           A.S, A.Sources, FirstRange.second->getPointeeType(),
+                           OO_EqualEqual, A.Context)
+                     : std::nullopt;
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Next = labelName();
       const auto Exhausted = labelName(), End = labelName();
@@ -5048,6 +5055,13 @@ class FunctionLowering {
                                        Call->getArg(2)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Current), L), L)
+             : SourceComparison
+                 ? compareVectorSourceElements(
+                       json::Object(First), json::Object(Current),
+                       SourceComparison->Member,
+                       SourceComparison->Friend ? SourceComparison->Friend
+                                                : SourceComparison->Namespace,
+                       L)
                  : binary("==", dereference(First, L), dereference(Current, L),
                           "bool", L),
              End, Next, L);
@@ -5062,7 +5076,7 @@ class FunctionLowering {
       assign(First, Current, L);
       jump(End, L);
       label(End, L);
-      return First;
+      return AlgorithmIteratorResult(std::move(First), 0);
     }
     case UtilityOperation::AlgorithmRemove:
     case UtilityOperation::AlgorithmRemoveCopy: {
