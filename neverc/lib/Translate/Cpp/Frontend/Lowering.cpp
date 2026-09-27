@@ -13658,7 +13658,7 @@ class FunctionLowering {
       transferVectorElement(dereference(json::Object(NewEnd), L),
                             dereference(json::Object(OldCurrent), L), *Vector,
                             L);
-      if (Vector->OwningElement)
+      if (Vector->OwningElement && !Vector->MoveElementConstructor)
         destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
                 L);
       assign(OldCurrent,
@@ -13671,6 +13671,9 @@ class FunctionLowering {
              L);
       jump(CopyCheck, L);
       label(Copied, L);
+      if (Vector->MoveElementConstructor)
+        destroyVectorElementsForward(json::Object(Begin), json::Object(End),
+                                     *Vector, L);
       jump(Release, L);
       label(Release, L);
       const auto FreeOld = labelName(), Commit = labelName();

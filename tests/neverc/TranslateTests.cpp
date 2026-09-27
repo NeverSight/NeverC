@@ -56011,7 +56011,20 @@ int main() {
     if (sequence != 11 || values.size() != 2 ||
         *values[0].value != 0 || *values[1].value != 0) return 6;
   }
-  return live == 0 && allocations == releases ? 0 : 7;
+  {
+    std::vector<Box> values;
+    values.reserve(4);
+    values.push_back(Box(8));
+    values.push_back(Box(9));
+    auto storage = values.data();
+    sequence = 0; tracing = 1;
+    values.shrink_to_fit();
+    tracing = 0;
+    if (sequence != 3344 || values.data() == storage ||
+        values.size() != 2 || values.capacity() != 2 ||
+        *values[0].value != 8 || *values[1].value != 9) return 7;
+  }
+  return live == 0 && allocations == releases ? 0 : 8;
 }
 )cpp");
   auto Result =

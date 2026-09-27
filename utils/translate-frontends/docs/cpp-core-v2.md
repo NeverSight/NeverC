@@ -2701,9 +2701,9 @@ and balanced release.
 the removed tail; growth within capacity constructs new elements in place.
 Growth beyond capacity constructs the new tail before moving old elements, then
 destroys the old objects from first to last after all moves. The same deferred
-destruction applies to `reserve`. Host O0/O2 fixtures check default and copy
-construction order, aliased fill values, capacity reuse, growth, shrinking,
-and balanced release.
+destruction applies to `reserve` and `shrink_to_fit`. Host O0/O2 fixtures check
+default and copy construction order, aliased fill values, capacity reuse,
+growth, shrinking, and balanced release.
 Checked constant-count `vector(count)` constructs each source-owned element
 through its supported default constructor. `vector(count, const T&)` constructs
 each through its supported copy constructor, preserving independent ownership.
