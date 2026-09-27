@@ -1349,6 +1349,10 @@ const clang::CXXMethodDecl *approvedUtilityVectorElementComparison(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, clang::OverloadedOperatorKind Operator,
     const clang::ASTContext &Context);
+const clang::FunctionDecl *approvedUtilityVectorFriendComparison(
+    const State &S, const clang::SourceManager &SM,
+    const UtilityVectorRecord &Vector, clang::OverloadedOperatorKind Operator,
+    const clang::ASTContext &Context);
 enum class UtilityVectorConstruction {
   Default,
   Count,

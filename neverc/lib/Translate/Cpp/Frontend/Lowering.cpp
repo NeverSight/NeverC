@@ -13694,9 +13694,13 @@ class FunctionLowering {
           A.Context);
       const bool Equality = Operator->getOperator() == OO_EqualEqual ||
                             Operator->getOperator() == OO_ExclaimEqual;
-      const auto *SourceComparison = approvedUtilityVectorElementComparison(
-          A.S, A.Sources, *LeftVector, Equality ? OO_EqualEqual : OO_Less,
-          A.Context);
+      const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
+      const auto *MemberComparison = approvedUtilityVectorElementComparison(
+          A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
+      const auto *FriendComparison = approvedUtilityVectorFriendComparison(
+          A.S, A.Sources, *LeftVector, ComparisonOperator, A.Context);
+      const bool SourceComparison = (MemberComparison || FriendComparison) &&
+                                    !(MemberComparison && FriendComparison);
       if (LeftVector->OwningElement && !String && !Unique && !SourceComparison)
         reject(L, "vector comparison",
                "The selected owning element comparison is unavailable.");
@@ -13739,20 +13743,36 @@ class FunctionLowering {
       };
       auto CompareSource = [&](Expression Left, Expression Right) {
         json::Array Args;
-        Args.push_back(snapshot(
-            cast(std::move(Left), type(SourceComparison->getThisType(), L), L),
-            L));
-        Args.push_back(snapshot(
-            cast(std::move(Right),
-                 type(SourceComparison->getParamDecl(0)->getType(), L), L),
-            L));
+        if (MemberComparison) {
+          Args.push_back(
+              snapshot(cast(std::move(Left),
+                            type(MemberComparison->getThisType(), L), L),
+                       L));
+          Args.push_back(snapshot(
+              cast(std::move(Right),
+                   type(MemberComparison->getParamDecl(0)->getType(), L), L),
+              L));
+        } else {
+          Args.push_back(snapshot(
+              cast(std::move(Left),
+                   type(FriendComparison->getParamDecl(0)->getType(), L), L),
+              L));
+          Args.push_back(snapshot(
+              cast(std::move(Right),
+                   type(FriendComparison->getParamDecl(1)->getType(), L), L),
+              L));
+        }
         chargeCall(Args, L);
         auto Compared = temporary("bool", L);
-        Body.push_back(json::Object{{"op", "call"},
-                                    {"callee", A.name(SourceComparison)},
-                                    {"args", std::move(Args)},
-                                    {"target", json::Object(Compared)},
-                                    {"loc", A.loc(L)}});
+        Body.push_back(json::Object{
+            {"op", "call"},
+            {"callee",
+             A.name(MemberComparison
+                        ? static_cast<const FunctionDecl *>(MemberComparison)
+                        : FriendComparison)},
+            {"args", std::move(Args)},
+            {"target", json::Object(Compared)},
+            {"loc", A.loc(L)}});
         return Compared;
       };
       auto CompareStrings = [&]() -> Expression {

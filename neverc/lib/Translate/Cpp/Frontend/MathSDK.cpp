@@ -1,6 +1,7 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
 #include "clang/AST/Attr.h"
+#include "clang/AST/DeclFriend.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecordLayout.h"
@@ -5976,6 +5977,39 @@ const CXXMethodDecl *approvedUtilityVectorElementComparison(
     if (Selected)
       return nullptr;
     Selected = Method;
+  }
+  return Selected;
+}
+
+const FunctionDecl *approvedUtilityVectorFriendComparison(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    OverloadedOperatorKind Operator, const ASTContext &Context) {
+  const auto *Record = Vector.ElementType->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record || !Vector.MoveElementConstructor ||
+      (Operator != OO_EqualEqual && Operator != OO_Less) ||
+      !utilityPairSourceOwnedValue(S, SM, Context, Vector.ElementType))
+    return nullptr;
+  const auto ConstReference =
+      Context.getLValueReferenceType(Vector.ElementType.withConst());
+  const FunctionDecl *Selected = nullptr;
+  for (const auto *Friend : Record->friends()) {
+    const auto *Function =
+        dyn_cast_or_null<FunctionDecl>(Friend->getFriendDecl());
+    if (!Function || !Function->isOverloadedOperator() ||
+        Function->getOverloadedOperator() != Operator ||
+        Function->getNumParams() != 2 || Function->isDeleted() ||
+        !ordinaryOperator(Function) || !Function->hasBody() ||
+        !S.owns(SM, Function->getLocation()) ||
+        !Function->getReturnType()->isBooleanType() ||
+        !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             ConstReference) ||
+        !Context.hasSameType(Function->getParamDecl(1)->getType(),
+                             ConstReference))
+      continue;
+    if (Selected)
+      return nullptr;
+    Selected = Function;
   }
   return Selected;
 }
@@ -20925,8 +20959,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Left->ElementType->isObjectPointerType() &&
           (Equality ||
            !Left->ElementType->getPointeeType()->isIncompleteType());
-      const bool SourceComparison = approvedUtilityVectorElementComparison(
-          S, SM, *Left, Equality ? OO_EqualEqual : OO_Less, Context);
+      const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
+      const auto *MemberComparison = approvedUtilityVectorElementComparison(
+          S, SM, *Left, ComparisonOperator, Context);
+      const auto *FriendComparison = approvedUtilityVectorFriendComparison(
+          S, SM, *Left, ComparisonOperator, Context);
+      const bool SourceComparison = (MemberComparison || FriendComparison) &&
+                                    !(MemberComparison && FriendComparison);
       if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
                        PointerElement || SourceComparison))
         switch (Operator->getOperator()) {
