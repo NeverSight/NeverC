@@ -5975,6 +5975,9 @@ std::optional<UtilityVectorStringEmplace> approvedUtilityVectorStringEmplace(
   if (Count == 1) {
     if (CharacterPointer)
       return UtilityVectorStringEmplace::CString;
+    if (approvedUtilityStringViewRecord(
+            S, SM, FirstType->getAsCXXRecordDecl(), Context))
+      return UtilityVectorStringEmplace::View;
     return std::nullopt;
   }
   const auto SecondType = Call->getArg(FirstArgument + 1)->getType();

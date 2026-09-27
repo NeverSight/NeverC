@@ -19120,6 +19120,22 @@ class FunctionLowering {
                            std::move(Character), L);
       return;
     }
+    if (Kind == UtilityVectorStringEmplace::View) {
+      auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources,
+          Call->getArg(FirstArgument)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!View)
+        reject(L, "vector string emplacement",
+               "The selected std::string_view layout is unavailable.");
+      auto Source = snapshot(expression(Call->getArg(FirstArgument)), L);
+      auto Input =
+          snapshot(fieldStorage(json::Object(Source), View->Data, L), L);
+      auto Length = snapshot(fieldStorage(std::move(Source), View->Size, L), L);
+      constructStringBytes(std::move(Place), T, String, std::move(Input),
+                           std::move(Length), std::nullopt, L);
+      return;
+    }
     const auto *Argument = Call->getArg(FirstArgument);
     auto Input = snapshot(Argument->getType()->isArrayType()
                               ? decay(lvalue(Argument), PointerType, L)

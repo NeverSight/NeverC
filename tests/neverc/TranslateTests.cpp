@@ -55438,6 +55438,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorStringViewEmplaceRun) {
+  const auto Source = tmpFile("vector-string-view-emplace.cpp");
+  const auto Output = tmpFile("vector-string-view-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(2);
+    auto storage = values.data();
+    std::string_view short_view("short");
+    auto &first = values.emplace_back(short_view);
+    std::string_view binary("a\0b", Size(3));
+    auto &second = values.emplace_back(binary);
+    if (&first != &values[0] || &second != &values[1] ||
+        values.data() != storage || values[0] != "short" ||
+        values[1].size() != 3 || values[1][1] != 0 ||
+        values[1][2] != 'b') return 1;
+    std::string_view aliased(values[0].data(), values[0].size());
+    auto &grown = values.emplace_back(aliased);
+    if (&grown != &values[2] || values.data() == storage ||
+        values[0] != "short" || values[2] != "short") return 2;
+    std::string_view long_view(
+        "a long view that needs separately allocated storage");
+    auto inserted = values.emplace(values.cbegin() + 1, long_view);
+    if (inserted != values.begin() + 1 ||
+        values[1] != "a long view that needs separately allocated storage" ||
+        values[2].size() != 3 || values[2][1] != 0) return 3;
+    std::string_view alias_again(values[0].data(), values[0].size());
+    auto middle = values.emplace(values.cbegin() + 2, alias_again);
+    if (middle != values.begin() + 2 || values[2] != "short" ||
+        values[0] != "short" || values[3].size() != 3) return 4;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-string-view-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
   const auto Source = tmpFile("vector-owning-pointers.cpp");
   const auto Output = tmpFile("vector-owning-pointers.nc");
