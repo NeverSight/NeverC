@@ -56276,6 +56276,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedVectorBulkCopyRun) {
+  const auto Source = tmpFile("nested-vector-bulk-copy.cpp");
+  const auto Output = tmpFile("nested-vector-bulk-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<int> seed;
+    seed.push_back(4);
+    seed.push_back(5);
+    std::vector<std::vector<int>> filled(3, seed);
+    if (filled.size() != 3 || filled[0][1] != 5 ||
+        filled[0].data() == seed.data() ||
+        filled[0].data() == filled[1].data() ||
+        filled[1].data() == filled[2].data())
+      return 1;
+    filled[0][0] = 13;
+    if (seed[0] != 4 || filled[1][0] != 4) return 2;
+    std::vector<std::vector<int>> rows;
+    rows.reserve(5);
+    rows.push_back(seed);
+    auto storage = rows.data();
+    rows.resize(3, rows[0]);
+    if (rows.data() != storage || rows.size() != 3 ||
+        rows[0].data() == rows[1].data() || rows[1][1] != 5)
+      return 3;
+    rows.resize(7, rows[1]);
+    if (rows.data() == storage || rows.size() != 7 ||
+        rows[0].data() == rows[6].data() || rows[6][0] != 4)
+      return 4;
+    storage = rows.data();
+    rows.assign(2, rows[0]);
+    if (rows.data() != storage || rows.size() != 2 ||
+        rows[0].data() == rows[1].data() || rows[1][1] != 5)
+      return 5;
+    auto inserted = rows.insert(rows.cbegin() + 1, Size(2), rows[0]);
+    if (inserted != rows.begin() + 1 || rows.size() != 4 ||
+        rows[1].data() == rows[0].data() ||
+        rows[1].data() == rows[2].data() || rows[2][1] != 5)
+      return 6;
+    rows.assign(8, seed);
+    if (rows.size() != 8 || rows[7][0] != 4 ||
+        rows[0].data() == rows[7].data())
+      return 7;
+  }
+  {
+    std::vector<std::string> words;
+    words.emplace_back("a long string stored beyond the short buffer");
+    std::vector<std::vector<std::string>> rows(2, words);
+    if (rows.size() != 2 || rows[0].data() == words.data() ||
+        rows[0][0].data() == rows[1][0].data())
+      return 8;
+    rows[0][0][0] = 'z';
+    if (rows[1][0][0] != 'a' || words[0][0] != 'a') return 9;
+  }
+  return allocations == releases ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-vector-bulk-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

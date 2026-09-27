@@ -6211,6 +6211,11 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   const bool CopyableString = approvedUtilityStringRecord(
       S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context).has_value();
+  const auto NestedElement = approvedUtilityVectorRecord(
+      S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context);
+  const bool CopyableNestedVector =
+      NestedElement &&
+      utilityVectorCopyableElements(S, SM, *NestedElement, Context);
   if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
     return UtilityVectorConstruction::Default;
   if (Construction->getNumArgs() == 1 &&
@@ -6291,7 +6296,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
       return std::nullopt;
     return UtilityVectorConstruction::Count;
   }
-  if (Vector->OwningElement && !CopyableString &&
+  if (Vector->OwningElement && !CopyableString && !CopyableNestedVector &&
       !Vector->CopyElementConstructor)
     return std::nullopt;
   const auto FillType = Constructor->getParamDecl(1)->getType();
@@ -20315,12 +20320,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getType(), VectorType))
         return UtilityOperation::VectorAssignList;
     }
-    if ((!Vector->OwningElement || CopyableString ||
-         (Vector->CopyElementConstructor &&
-          Vector->CopyElementAssignment)) &&
-        !Operator &&
-        Name == "assign" &&
-        !Method->isConst() && !Object->getType().isConstQualified() &&
+    if ((!Vector->OwningElement || CopyableString || CopyableNestedVector ||
+         (Vector->CopyElementConstructor && Vector->CopyElementAssignment)) &&
+        !Operator && Name == "assign" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType()) {
       const auto Element = Vector->ElementType;
@@ -20446,7 +20449,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         } else {
           const auto Parameter = Method->getParamDecl(1)->getType();
           if ((!Vector->OwningElement || CopyableString ||
-               Vector->CopyElementConstructor) &&
+               CopyableNestedVector || Vector->CopyElementConstructor) &&
               Parameter->isLValueReferenceType() &&
               Context.hasSameType(Parameter->getPointeeType(),
                                   Vector->ElementType.withConst()) &&

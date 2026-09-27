@@ -29545,12 +29545,17 @@ void nested_vectors() {
   copied_rows.emplace_back(copied_rows[0]);
   copied_rows.insert(copied_rows.cbegin(), copied_rows[0]);
   copied_rows.emplace(copied_rows.cbegin(), copied_rows[0]);
+  std::vector<std::vector<int>> filled_rows(Size(2), copied_rows[0]);
+  copied_rows.resize(Size(8), copied_rows[0]);
+  copied_rows.assign(Size(2), copied_rows[0]);
+  copied_rows.insert(copied_rows.cbegin(), Size(2), copied_rows[0]);
   std::vector<std::vector<std::string>> text_rows;
   text_rows.emplace_back();
   text_rows[0].emplace_back("a long string stored beyond the short buffer");
   std::vector<std::vector<std::string>> copied_text(text_rows);
   copied_text = text_rows;
   copied_text.push_back(copied_text[0]);
+  std::vector<std::vector<std::string>> filled_text(Size(2), copied_text[0]);
 }
 struct NestedBox {
   int *value;
@@ -29636,6 +29641,12 @@ int f(const std::vector<std::vector<std::unique_ptr<int>>>& source) {
 void f(std::vector<std::vector<std::unique_ptr<int>>>& target,
        const std::vector<std::unique_ptr<int>>& source) {
   target.push_back(source);
+}
+""",
+        "unique-pointer-nested-fill": """\
+#include <memory>
+void f(const std::vector<std::unique_ptr<int>>& source) {
+  std::vector<std::vector<std::unique_ptr<int>>> target(2, source);
 }
 """,
         "unique-pointer-copy-assignment": """\

@@ -2668,7 +2668,10 @@ self-assignment. Lvalue `push_back`, `emplace_back`, `insert`, and positional
 `emplace` clone an inner vector before outer storage can move; this includes
 sources held by the destination vector. Host O0/O2 fixtures cover aliases
 during growth, positional insertion, deep copies, and three nested levels.
-Other nested vector copy operations remain outside this boundary.
+Bounded fill construction, `resize(count, value)`, `assign(count, value)`, and
+counted `insert` likewise clone each inner vector, including when the value
+comes from the destination vector. Other nested vector copy operations remain
+outside this boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
