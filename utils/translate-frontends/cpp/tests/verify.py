@@ -30076,6 +30076,36 @@ bool compare_deep(const std::vector<std::optional<Outer>>& left,
         check("v2-vector-nested-optional-" + target,
               vector_nested_optional_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    vector_optional_record_emplace_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <array>
+#include <optional>
+#include <vector>
+using Inner = std::optional<int>;
+using Outer = std::optional<Inner>;
+void values() {
+  std::vector<Outer> nested;
+  nested.emplace_back(std::in_place);
+  nested.emplace_back(Inner(3));
+  nested.emplace(nested.begin(), *nested[1]);
+  nested.emplace(nested.end(), std::in_place, Inner(4));
+  using Array = std::array<int, 2>;
+  std::vector<std::optional<Array>> arrays;
+  Array value{{5, 6}};
+  arrays.emplace_back(value);
+  arrays.emplace(arrays.begin(), std::in_place, Array{{7, 8}});
+  std::vector<std::optional<std::array<int, 0>>> empty;
+  empty.emplace_back(std::in_place);
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-optional-record-emplace-" + target,
+              vector_optional_record_emplace_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -30151,6 +30181,13 @@ struct IntLike { operator int() const { return 1; } };
 void f() {
   std::vector<std::optional<int>> values;
   values.emplace_back(IntLike{});
+}
+""",
+        "optional-nested-conversion-emplace": """\
+#include <optional>
+void f() {
+  std::vector<std::optional<std::optional<int>>> values;
+  values.emplace_back(std::optional<long>(3));
 }
 """,
         "array-void-pointer-order": """\

@@ -2674,6 +2674,12 @@ disengaged value sorts before an engaged outer value whose inner layer is
 disengaged. The pinned libc++ layout may place nested optional SFINAE bases
 in the main base's tail padding; that exact layout is authenticated on each
 target before lowering.
+For a vector of scalar, nested optional, or assignable fixed-array optionals,
+back and positional emplacement accept a directly convertible scalar or an
+exact stored record value, `nullopt`, or `in_place` with zero or one value
+argument. Record arguments are
+captured before vector growth or shifting, including references into the same
+vector.
 For an admitted pair with scalar fields, `emplace_back(first, second)`
 converts and captures both values before vector growth and initializes the
 corresponding fields directly. The returned reference names the inserted pair.

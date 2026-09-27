@@ -19102,9 +19102,10 @@ class FunctionLowering {
       const unsigned ValueIndex = Call->getNumArgs() == FirstArgument + 2
                                       ? FirstArgument + 1
                                       : FirstArgument;
-      Captured = snapshot(cast(expression(Call->getArg(ValueIndex)),
-                               type(Optional.Value->getType(), L), L),
-                          L);
+      auto Value = expression(Call->getArg(ValueIndex));
+      if (!recordValue(Optional.Value->getType()))
+        Value = cast(std::move(Value), type(Optional.Value->getType(), L), L);
+      Captured = snapshot(std::move(Value), L);
     }
     initializeZero(json::Object(Place),
                    A.Context.getRecordType(Optional.Record), L);

@@ -6213,23 +6213,26 @@ approvedUtilityVectorOptionalEmplace(const State &S, const SourceManager &SM,
   const auto Optional = approvedUtilityOptionalRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
   if (!Optional || Optional->ElementType.isConstQualified() ||
-      !utilityScalar(Context, Optional->ElementType))
+      !utilityVectorOptionalValue(S, SM, Context, Optional->ElementType))
     return std::nullopt;
+  auto ValueArgument = [&](QualType Argument) {
+    if (utilityScalar(Context, Optional->ElementType))
+      return utilityScalarDirectConversion(Context, Argument,
+                                           Optional->ElementType);
+    return Context.hasSameUnqualifiedType(Argument, Optional->ElementType);
+  };
   const auto *First = Call->getArg(FirstArgument);
   if (Call->getNumArgs() == FirstArgument + 1) {
     if (approvedUtilityNulloptExpression(S, SM, First, Context))
       return UtilityVectorOptionalEmplace::Empty;
     if (approvedUtilityInPlaceExpression(S, SM, First, Context))
       return UtilityVectorOptionalEmplace::InPlaceDefault;
-    if (utilityScalarDirectConversion(Context, First->getType(),
-                                      Optional->ElementType))
+    if (ValueArgument(First->getType()))
       return UtilityVectorOptionalEmplace::Value;
     return std::nullopt;
   }
   if (approvedUtilityInPlaceExpression(S, SM, First, Context) &&
-      utilityScalarDirectConversion(Context,
-                                    Call->getArg(FirstArgument + 1)->getType(),
-                                    Optional->ElementType))
+      ValueArgument(Call->getArg(FirstArgument + 1)->getType()))
     return UtilityVectorOptionalEmplace::Value;
   return std::nullopt;
 }
