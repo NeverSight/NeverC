@@ -5924,6 +5924,11 @@ static bool utilityNestedVectorComparable(const State &S,
   if (approvedUtilityStringRecord(
           S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context))
     return true;
+  const auto Unique = approvedUtilityUniquePtrRecord(
+      S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
+  if (Unique && !Unique->CustomDeleter &&
+      Context.getBaseElementType(Unique->ElementType)->isBuiltinType())
+    return true;
   const auto Nested = approvedUtilityVectorRecord(
       S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
   if (Nested)

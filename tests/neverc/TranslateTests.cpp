@@ -56988,6 +56988,83 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedUniquePtrVectorRelationsRun) {
+  const auto Source = tmpFile("nested-unique-ptr-vector-relations.cpp");
+  const auto Output = tmpFile("nested-unique-ptr-vector-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void *operator new[](Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { ++releases; free(p); }
+void operator delete[](void *p) noexcept { ++releases; free(p); }
+void operator delete[](void *p, Size) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+using Owner = std::unique_ptr<int>;
+using Rows = std::vector<std::vector<Owner>>;
+int main() {
+  {
+    Rows empty;
+    Rows left;
+    Rows right;
+    left.emplace_back();
+    right.emplace_back();
+    if (!(left == right) || left != right || left < right || left > right ||
+        !(left <= right) || !(left >= right) || !(empty < left))
+      return 1;
+    left[0].emplace_back();
+    right[0].emplace_back();
+    left[0][0].reset(new int(7));
+    right[0][0].reset(new int(11));
+    bool less = left[0][0] < right[0][0];
+    bool greater = right[0][0] < left[0][0];
+    if (left == right || !(left != right) || (left < right) != less ||
+        (left > right) != greater || (left <= right) != less ||
+        (left >= right) != greater)
+      return 2;
+    std::vector<Rows> cube_left;
+    std::vector<Rows> cube_right;
+    cube_left.push_back(static_cast<Rows&&>(left));
+    cube_right.push_back(static_cast<Rows&&>(right));
+    if (cube_left == cube_right || !(cube_left != cube_right) ||
+        (cube_left < cube_right) != less ||
+        (cube_left > cube_right) != greater)
+      return 3;
+    std::vector<std::vector<std::unique_ptr<int[]>>> arrays_left;
+    std::vector<std::vector<std::unique_ptr<int[]>>> arrays_right;
+    arrays_left.emplace_back();
+    arrays_right.emplace_back();
+    arrays_left[0].emplace_back(new int[1]{1});
+    arrays_right[0].emplace_back(new int[1]{2});
+    bool array_less = arrays_left[0][0] < arrays_right[0][0];
+    bool array_greater = arrays_right[0][0] < arrays_left[0][0];
+    if (arrays_left == arrays_right || !(arrays_left != arrays_right) ||
+        (arrays_left < arrays_right) != array_less ||
+        (arrays_left > arrays_right) != array_greater)
+      return 4;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-unique-ptr-vector-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorSourceOwnedElementsRun) {
   const auto Source = tmpFile("vector-source-owned-elements.cpp");
   const auto Output = tmpFile("vector-source-owned-elements.nc");

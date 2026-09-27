@@ -19428,13 +19428,27 @@ class FunctionLowering {
                   "bool", L),
            Compare, Greater, L);
     label(Compare, L);
+    const auto Unique = approvedUtilityUniquePtrRecord(
+        A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
     if (Vector.ElementType->isIntegerType() ||
         Vector.ElementType->isFloatingType() ||
         Vector.ElementType->isObjectPointerType() ||
-        Vector.ElementType->isVoidPointerType()) {
-      auto LeftElement = snapshot(dereference(json::Object(LeftCurrent), L), L);
-      auto RightElement =
-          snapshot(dereference(json::Object(RightCurrent), L), L);
+        Vector.ElementType->isVoidPointerType() ||
+        (Unique && !Unique->CustomDeleter &&
+         A.Context.getBaseElementType(Unique->ElementType)->isBuiltinType())) {
+      auto ComparableElement = [&](Expression Current) {
+        auto Value = dereference(std::move(Current), L);
+        if (!Unique)
+          return snapshot(std::move(Value), L);
+        return snapshot(Expression{{"kind", "member"},
+                                   {"type", type(Unique->PointerType, L)},
+                                   {"name", "nct_unique_ptr_pointer"},
+                                   {"args", json::Array{std::move(Value)}},
+                                   {"loc", A.loc(L)}},
+                        L);
+      };
+      auto LeftElement = ComparableElement(json::Object(LeftCurrent));
+      auto RightElement = ComparableElement(json::Object(RightCurrent));
       if (Equality) {
         branch(binary("==", std::move(LeftElement), std::move(RightElement),
                       "bool", L),

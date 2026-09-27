@@ -29621,6 +29621,29 @@ bool compare_nested_opaque(const std::vector<std::vector<void*>>& left,
                            const std::vector<std::vector<void*>>& right) {
   return left == right || left != right;
 }
+bool compare_nested_owners(
+    const std::vector<std::vector<std::unique_ptr<int>>>& left,
+    const std::vector<std::vector<std::unique_ptr<int>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_owner_cube(
+    const std::vector<std::vector<std::vector<std::unique_ptr<int>>>>& left,
+    const std::vector<std::vector<std::vector<std::unique_ptr<int>>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_nested_owner_arrays(
+    const std::vector<std::vector<std::unique_ptr<int[]>>>& left,
+    const std::vector<std::vector<std::unique_ptr<int[]>>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+void construct_nested_owner_arrays() {
+  std::vector<std::vector<std::unique_ptr<int[]>>> values;
+  values.emplace_back();
+  values[0].emplace_back(new int[1]{7});
+}
 struct NestedBox {
   int *value;
   explicit NestedBox(int n) : value(new int(n)) {}
@@ -29750,6 +29773,18 @@ int main() { std::vector<Entry> left, right; return left == right; }
 bool f(const std::vector<std::vector<void*>>& left,
        const std::vector<std::vector<void*>>& right) {
   return left < right;
+}
+""",
+        "nested-custom-owner-comparison": """\
+#include <memory>
+namespace custom {
+struct Deleter { void operator()(int *) noexcept {} };
+using Owner = std::unique_ptr<int, Deleter>;
+bool operator==(const Owner &, const Owner &) { return false; }
+}
+bool f(const std::vector<std::vector<custom::Owner>>& left,
+       const std::vector<std::vector<custom::Owner>>& right) {
+  return left == right;
 }
 """,
         "owning-pointer-comparison": """\

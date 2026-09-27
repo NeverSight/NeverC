@@ -2682,6 +2682,9 @@ pointer vectors support equality and inequality. Floating equality and ordering
 remain separate so unordered values follow libc++'s vector comparison rules.
 Nested source-owned resource elements also use the unique admitted const member,
 hidden-friend, or enclosing-namespace equality and less-than operators.
+Nested default-deleter `std::unique_ptr` elements with built-in scalar or array
+pointees compare by their stored pointer values, under the same boundary as
+direct unique-pointer vector comparisons.
 Other nested vector copy operations and comparisons remain outside this boundary.
 Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
