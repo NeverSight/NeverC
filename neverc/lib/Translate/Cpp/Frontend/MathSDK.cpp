@@ -23816,39 +23816,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/unique.h" && Name == "unique" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, *AlgorithmRangePointerParameter(0)) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto Input = AlgorithmRangePointerParameter(0);
-    if (Call->getNumArgs() == 2 &&
+    if (Call->getNumArgs() == 2 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmRecordEqualityRangeParameter(0) &&
+        AlgorithmRecordEqualityRangeParameter(1))
+      return UtilityOperation::AlgorithmUnique;
+    if (Input && AlgorithmRangePointerParameter(1) &&
+        utilityAlgorithmWritableScalarPointer(Context, *Input) &&
+        Call->getNumArgs() == 2 &&
         utilityAlgorithmEqualityPointer(Context, *Input) &&
         !utilityEnumHasSourceOperator(
             S, SM, Context, (*Input)->getPointeeType(), OO_EqualEqual))
       return UtilityOperation::AlgorithmUnique;
-    if (Call->getNumArgs() == 3 &&
+    if (Input && AlgorithmRangePointerParameter(1) &&
+        utilityAlgorithmWritableScalarPointer(Context, *Input) &&
+        Call->getNumArgs() == 3 &&
         AlgorithmRangeBinaryPredicateParameter(2, 0, 0))
       return UtilityOperation::AlgorithmUnique;
   }
   if (Origin->Path == "__algorithm/unique_copy.h" && Name == "unique_copy" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
-      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto Input = AlgorithmRangePointerParameter(0);
-    if (Call->getNumArgs() == 3 &&
+    if (Call->getNumArgs() == 3 && AlgorithmRecordEqualityRangeParameter(0) &&
+        AlgorithmRecordEqualityRangeParameter(1) &&
+        AlgorithmTransferRecordRangeParameters(0, 2))
+      return UtilityOperation::AlgorithmUniqueCopy;
+    if (Input && AlgorithmRangePointerParameter(1) &&
+        AlgorithmTransferRangeParameters(0, 2) && Call->getNumArgs() == 3 &&
         utilityAlgorithmEqualityPointer(Context, *Input) &&
         !utilityEnumHasSourceOperator(
             S, SM, Context, (*Input)->getPointeeType(), OO_EqualEqual))
       return UtilityOperation::AlgorithmUniqueCopy;
-    if (Call->getNumArgs() == 4 &&
+    if (Input && AlgorithmRangePointerParameter(1) &&
+        AlgorithmTransferRangeParameters(0, 2) && Call->getNumArgs() == 4 &&
         AlgorithmRangeBinaryPredicateParameter(3, 0, 0))
       return UtilityOperation::AlgorithmUniqueCopy;
   }

@@ -1737,6 +1737,12 @@ mutable raw or wrapped inputs as C++ permits, require a writable destination
 of the same record type, and return its original iterator form.
 `copy_n` uses the same record transfer boundary with an admitted integral
 count; a zero count returns its unadvanced output without touching the input.
+Default `unique` and `unique_copy` additionally accept exact trivial source
+records in raw or authenticated wrapped ranges when one supported Boolean
+`operator==` is uniquely selected. `unique` requires writable input;
+`unique_copy` writes complete values into a writable output of the same record
+type. Comparisons read range lvalues without making extra record copies,
+and both algorithms return the original raw or wrapped iterator form.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

@@ -57321,6 +57321,65 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordUniqueAndUniqueCopyRun) {
+  const auto Source = tmpFile("wrapped-record-unique-copy.cpp");
+  const auto Output = tmpFile("wrapped-record-unique-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item {
+  int key;
+  int tag;
+  bool operator==(const Item &other) const { return key == other.key; }
+};
+int main() {
+  std::vector<Item> values{{1, 10}, {1, 11}, {2, 20}, {2, 21}, {3, 30}};
+  auto end = std::unique(values.begin(), values.end());
+  if (end != values.begin() + 3 || values[0].tag != 10 ||
+      values[1].tag != 20 || values[2].tag != 30) return 1;
+  const std::vector<Item> source{{1, 10}, {1, 11}, {2, 20},
+                                 {2, 21}, {3, 30}};
+  std::vector<Item> output(5);
+  if (std::unique_copy(source.cbegin(), source.cend(), output.begin()) !=
+          output.begin() + 3 || output[0].tag != 10 ||
+      output[1].tag != 20 || output[2].tag != 30) return 2;
+  Item raw_output[5]{};
+  if (std::unique_copy(source.cbegin(), source.cend(), raw_output) !=
+          raw_output + 3 || raw_output[1].tag != 20) return 3;
+  Item raw_input[4]{{4, 40}, {4, 41}, {5, 50}, {5, 51}};
+  if (std::unique_copy(raw_input, raw_input + 4, output.begin()) !=
+          output.begin() + 2 || output[0].tag != 40 ||
+      output[1].tag != 50) return 4;
+  std::vector<Item> empty;
+  if (std::unique(empty.begin(), empty.end()) != empty.end() ||
+      std::unique_copy(empty.begin(), empty.end(), output.begin()) !=
+          output.begin()) return 5;
+  std::vector<Item> one{{9, 90}};
+  if (std::unique(one.begin(), one.end()) != one.end() ||
+      std::unique_copy(one.begin(), one.end(), output.begin()) !=
+          output.begin() + 1 || output[0].tag != 90) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-record-unique-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedPredicateTransferRun) {
   const auto Source = tmpFile("wrapped-predicate-transfer.cpp");
   const auto Output = tmpFile("wrapped-predicate-transfer.nc");

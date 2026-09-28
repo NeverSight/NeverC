@@ -32806,6 +32806,38 @@ Item *copy_mixed(const std::vector<Item> &source, Item *output) {
           'v.begin(),2,o.begin());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_unique_source = """\
+#include <algorithm>
+#include <vector>
+struct Item {
+  int key;
+  int tag;
+  bool operator==(const Item &other) const { return key == other.key; }
+};
+std::vector<Item>::iterator unique_records(std::vector<Item> &values) {
+  return std::unique(values.begin(), values.end());
+}
+std::vector<Item>::iterator unique_copy_records(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::unique_copy(source.cbegin(), source.cend(), output.begin());
+}
+Item *unique_copy_mixed(const std::vector<Item> &source, Item *output) {
+  return std::unique_copy(source.cbegin(), source.cend(), output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-unique-" + target,
+              wrapped_record_unique_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-unique-nontrivial",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;bool operator==(const Record&other)const{'
+          'return value==other.value;}Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
+          'std::vector<Record>::iterator f(std::vector<Record>&v){'
+          'return std::unique(v.begin(),v.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

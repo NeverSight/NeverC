@@ -501,6 +501,10 @@ forms also transfer complete values of that trivial record type across raw or
 wrapped ranges, with a matching writable output and retained iterator result.
 `copy_n` accepts the same record ranges and returns the unchanged output for
 zero count.
+Default `unique` and `unique_copy` also accept raw or wrapped ranges of exact
+trivial source records with one selected Boolean `operator==`. `unique` requires
+a writable input; `unique_copy` requires a writable output of the same record
+type and accepts mixed raw and wrapped iterators.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and

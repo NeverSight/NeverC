@@ -5340,6 +5340,11 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 3)
         Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto SourceComparison =
+          !Predicate ? approvedUtilityTrivialSourceComparison(
+                           A.S, A.Sources, FirstRange.second->getPointeeType(),
+                           OO_EqualEqual, A.Context)
+                     : std::nullopt;
       auto Output = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -5362,6 +5367,13 @@ class FunctionLowering {
                                        Call->getArg(2)->getType(),
                                        dereference(json::Object(Output), L),
                                        dereference(json::Object(Current), L), L)
+             : SourceComparison
+                 ? compareVectorSourceElements(
+                       json::Object(Output), json::Object(Current),
+                       SourceComparison->Member,
+                       SourceComparison->Friend ? SourceComparison->Friend
+                                                : SourceComparison->Namespace,
+                       L)
                  : binary("==", dereference(Output, L), dereference(Current, L),
                           "bool", L),
              Next, Select, L);
@@ -5396,6 +5408,13 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 4)
         Predicate = snapshot(expression(Call->getArg(3)), L);
+      const auto SourceComparison =
+          !Predicate
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, CurrentRange.second->getPointeeType(),
+                    OO_EqualEqual, A.Context)
+              : std::nullopt;
+      const bool Record = CurrentRange.second->getPointeeType()->isRecordType();
       auto Previous = snapshot(json::Object(Current), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(CurrentRange.second, L);
@@ -5408,7 +5427,9 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Initialize, End, L);
       label(Initialize, L);
       assign(dereference(Output, L),
-             cast(dereference(Current, L), OutputElementType, L), L);
+             Record ? dereference(Current, L)
+                    : cast(dereference(Current, L), OutputElementType, L),
+             L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -5424,12 +5445,21 @@ class FunctionLowering {
                                        Call->getArg(3)->getType(),
                                        dereference(json::Object(Previous), L),
                                        dereference(json::Object(Current), L), L)
+             : SourceComparison
+                 ? compareVectorSourceElements(
+                       json::Object(Previous), json::Object(Current),
+                       SourceComparison->Member,
+                       SourceComparison->Friend ? SourceComparison->Friend
+                                                : SourceComparison->Namespace,
+                       L)
                  : binary("==", dereference(Previous, L),
                           dereference(Current, L), "bool", L),
              Next, Transfer, L);
       label(Transfer, L);
       assign(dereference(Output, L),
-             cast(dereference(Current, L), OutputElementType, L), L);
+             Record ? dereference(Current, L)
+                    : cast(dereference(Current, L), OutputElementType, L),
+             L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
