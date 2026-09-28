@@ -30856,6 +30856,66 @@ bool equal_free(owned::Free *first, owned::Free *last,
           'bool f(Entry*a,Entry*b,Entry*c){return std::equal(a,b,c);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    record_comparison_predicate_source = """\
+#include <algorithm>
+#include <utility>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { int key; int tag; };
+bool same(const Left &left, const Right &right) {
+  return left.key == right.key && left.tag == right.tag;
+}
+bool equal_unbounded(const std::vector<Left> &left,
+                     const std::vector<Right> &right) {
+  return std::equal(left.cbegin(), left.cend(), right.cbegin(), same);
+}
+bool equal_bounded(const std::vector<Left> &left,
+                   const std::vector<Right> &right) {
+  return std::equal(left.cbegin(), left.cend(), right.cbegin(),
+                    right.cend(), same);
+}
+std::pair<std::vector<Left>::const_iterator,
+          std::vector<Right>::const_iterator>
+mismatch_unbounded(const std::vector<Left> &left,
+                   const std::vector<Right> &right) {
+  return std::mismatch(left.cbegin(), left.cend(), right.cbegin(), same);
+}
+std::pair<std::vector<Left>::const_iterator,
+          std::vector<Right>::const_iterator>
+mismatch_bounded(const std::vector<Left> &left,
+                 const std::vector<Right> &right) {
+  return std::mismatch(left.cbegin(), left.cend(), right.cbegin(),
+                       right.cend(), same);
+}
+bool equal_raw(const Left *first, const Left *last,
+               const Right *second, const Right *second_last) {
+  return std::equal(first, last, second, second_last, same);
+}
+std::pair<const Left *, const Right *>
+mismatch_raw(const Left *first, const Left *last,
+             const Right *second, const Right *second_last) {
+  return std::mismatch(first, last, second, second_last, same);
+}
+"""
+    for target in sdk_targets:
+        check("v2-record-comparison-predicate-" + target,
+              record_comparison_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-record-comparison-predicate-left-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Left{int key;};struct Right{int key;};'
+          'bool same(Left left,const Right&right){return left.key==right.key;}'
+          'bool f(const std::vector<Left>&a,const std::vector<Right>&b){'
+          'return std::equal(a.cbegin(),a.cend(),b.cbegin(),same);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-record-comparison-predicate-right-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Left{int key;};struct Right{int key;};'
+          'bool same(const Left&left,Right right){return left.key==right.key;}'
+          'auto f(const std::vector<Left>&a,const std::vector<Right>&b){'
+          'return std::mismatch(a.cbegin(),a.cend(),b.cbegin(),same);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_equal_fill_reverse_source = """\
 #include <algorithm>
 #include <string>

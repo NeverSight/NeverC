@@ -23723,6 +23723,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
+    if ((Call->getNumArgs() == 4 &&
+         Call->getArg(3)->getType()->isFunctionPointerType()) ||
+        Call->getNumArgs() == 5) {
+      const unsigned PredicateIndex = Call->getNumArgs() == 4 ? 3 : 4;
+      const auto *Predicate = AlgorithmCallbackPrototype(PredicateIndex);
+      if (AlgorithmRecordRangeParameter(0) &&
+          AlgorithmRecordRangeParameter(1) &&
+          AlgorithmRecordRangeParameter(2) &&
+          (Call->getNumArgs() == 4 ||
+           (AlgorithmRecordRangeParameter(3) &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))) &&
+          Predicate && Predicate->getNumParams() == 2 &&
+          Predicate->getReturnType()->isBooleanType() &&
+          AlgorithmRecordRangeCallbackReferenceParameter(PredicateIndex, 0,
+                                                         0) &&
+          AlgorithmRecordRangeCallbackReferenceParameter(PredicateIndex, 1, 2))
+        return UtilityOperation::AlgorithmEqual;
+    }
     if (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) {
       const auto First = AlgorithmRecordEqualityRangeParameter(0);
       const auto Last = AlgorithmRecordEqualityRangeParameter(1);
@@ -24272,6 +24291,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Second = AlgorithmRangePointerParameter(2);
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(2)->getType()) &&
+        ((Call->getNumArgs() == 4 &&
+          Call->getArg(3)->getType()->isFunctionPointerType()) ||
+         Call->getNumArgs() == 5)) {
+      const unsigned PredicateIndex = Call->getNumArgs() == 4 ? 3 : 4;
+      const auto *Predicate = AlgorithmCallbackPrototype(PredicateIndex);
+      if (AlgorithmRecordRangeParameter(0) &&
+          AlgorithmRecordRangeParameter(1) &&
+          AlgorithmRecordRangeParameter(2) &&
+          (Call->getNumArgs() == 4 ||
+           (AlgorithmRecordRangeParameter(3) &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))) &&
+          Predicate && Predicate->getNumParams() == 2 &&
+          Predicate->getReturnType()->isBooleanType() &&
+          AlgorithmRecordRangeCallbackReferenceParameter(PredicateIndex, 0,
+                                                         0) &&
+          AlgorithmRecordRangeCallbackReferenceParameter(PredicateIndex, 1, 2))
+        return UtilityOperation::AlgorithmMismatch;
+    }
     if (Pair &&
         Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
         Same(Pair->Second->getType(), Function->getParamDecl(2)->getType()) &&

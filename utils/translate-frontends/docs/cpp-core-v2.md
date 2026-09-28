@@ -1805,7 +1805,12 @@ The three- and four-iterator default `std::equal` forms also admit two raw or
 wrapped ranges of the same exact source-owned trivial record type under that
 selected Boolean `operator==` check. They compare the original range objects
 without copying them, stop at the first unequal pair, and the four-iterator
-form also checks both range ends. Record predicate overloads remain rejected.
+form also checks both range ends. Its predicate forms additionally accept two
+independently typed exact trivial source-record ranges through a checked
+`bool(const Left&, const Right&)` function pointer. The callback sees the
+original element addresses in input order. Bounded forms check their two
+random-access lengths before invoking the callback, as the pinned libc++
+implementation does.
 
 The three- and four-iterator `std::equal` overloads also accept those wrapped
 ranges on either side, including a wrapped range compared with a raw scalar
@@ -1822,7 +1827,9 @@ The default comparison forms also accept two raw or wrapped ranges of the same
 source-owned trivial record type with a uniquely selected Boolean `operator==`.
 They compare original elements without copies, stop at the first mismatch or
 bounded end, and return both positions in that same authenticated pair.
-Record predicate forms remain rejected.
+The predicate forms also accept two independently typed exact trivial
+source-record ranges through the same checked const-reference callback and
+return each range's original raw or wrapped iterator position.
 
 Default `std::adjacent_find` accepts raw or authenticated wrapped scalar
 ranges, and exact source-owned trivial record ranges under the same selected

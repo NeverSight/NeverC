@@ -4636,7 +4636,15 @@ class FunctionLowering {
       const auto Compare = labelName(), Next = labelName();
       const auto False = labelName(), FirstDone = labelName();
       const auto End = labelName();
-      jump(Check, L);
+      if (SecondLast) {
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        branch(binary("==", binary("-", Last, First, DifferenceType, L),
+                      binary("-", *SecondLast, Second, DifferenceType, L),
+                      "bool", L),
+               Check, False, L);
+      } else {
+        jump(Check, L);
+      }
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L),
              SecondLast ? CheckSecond : Compare, FirstDone, L);

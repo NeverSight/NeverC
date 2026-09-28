@@ -45213,7 +45213,7 @@ int main() {
     return 5;
   calls = 0;
   if (std::equal(left, left + 3, good, good + 2, same_last_digit) ||
-      calls != 2)
+      calls != 0)
     return 6;
 
   calls = 0;
@@ -54625,6 +54625,91 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("wrapped-iterator-mismatch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordComparisonPredicatesRun) {
+  const auto Source = tmpFile("record-comparison-predicates.cpp");
+  const auto Output = tmpFile("record-comparison-predicates.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { int key; int tag; };
+const Left *left_base;
+const Right *right_base;
+int calls, bad_identity;
+bool same(const Left &left, const Right &right) {
+  if (&left != left_base + calls || &right != right_base + calls)
+    ++bad_identity;
+  ++calls;
+  return left.key == right.key && left.tag == right.tag;
+}
+int main() {
+  const std::vector<Left> left{{1, 10}, {2, 20}, {3, 30}};
+  std::vector<Right> right{{1, 10}, {2, 20}, {3, 30}};
+  left_base = &left[0]; right_base = &right[0];
+  calls = bad_identity = 0;
+  if (!std::equal(left.cbegin(), left.cend(), right.cbegin(), same) ||
+      calls != 3 || bad_identity) return 1;
+  calls = bad_identity = 0;
+  if (!std::equal(left.cbegin(), left.cend(), right.cbegin(),
+                  right.cend(), same) || calls != 3 || bad_identity) return 2;
+  calls = bad_identity = 0;
+  if (std::equal(left.cbegin(), left.cend(), right.cbegin(),
+                 right.cbegin() + 2, same) || calls || bad_identity)
+    return 3;
+  right[1].tag = 99;
+  calls = bad_identity = 0;
+  auto first = std::mismatch(left.cbegin(), left.cend(),
+                             right.cbegin(), same);
+  if (first.first != left.cbegin() + 1 ||
+      first.second != right.cbegin() + 1 || calls != 2 || bad_identity)
+    return 4;
+  calls = bad_identity = 0;
+  auto second = std::mismatch(left.cbegin(), left.cend(),
+                              right.cbegin(), right.cend(), same);
+  if (second.first != left.cbegin() + 1 ||
+      second.second != right.cbegin() + 1 || calls != 2 || bad_identity)
+    return 5;
+  calls = bad_identity = 0;
+  if (!std::equal(left.cbegin(), left.cbegin(), right.cbegin(), same) ||
+      calls || bad_identity) return 6;
+  calls = bad_identity = 0;
+  auto empty = std::mismatch(left.cbegin(), left.cbegin(),
+                              right.cbegin(), same);
+  if (empty.first != left.cbegin() || empty.second != right.cbegin() ||
+      calls || bad_identity) return 7;
+  const Left raw_left[2]{{1, 10}, {2, 20}};
+  const Right raw_right[2]{{1, 10}, {2, 20}};
+  left_base = raw_left; right_base = raw_right;
+  calls = bad_identity = 0;
+  if (!std::equal(raw_left, raw_left + 2, raw_right, raw_right + 2,
+                  same) || calls != 2 || bad_identity) return 8;
+  calls = bad_identity = 0;
+  auto raw = std::mismatch(raw_left, raw_left + 2, raw_right,
+                            raw_right + 2, same);
+  if (raw.first != raw_left + 2 || raw.second != raw_right + 2 ||
+      calls != 2 || bad_identity) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("record-comparison-predicates" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
