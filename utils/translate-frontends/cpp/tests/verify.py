@@ -31963,6 +31963,51 @@ std::pair<const Item &, const Item &> extrema(const Item &left,
           'return std::min(a,b,Less{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    scalar_direct_extrema_functor_source = """\
+#include <algorithm>
+struct Greater {
+  int *count;
+  bool operator()(int left, int right) const {
+    ++*count;
+    return left > right;
+  }
+};
+struct MutableGreater {
+  int calls;
+  bool operator()(int left, int right) {
+    ++calls;
+    return left > right;
+  }
+};
+const int &minimum(const int &left, const int &right, Greater greater) {
+  return std::min(left, right, greater);
+}
+const int &maximum(const int &left, const int &right,
+                   MutableGreater greater) {
+  return std::max(left, right, greater);
+}
+const int &bounded(const int &value, const int &low, const int &high,
+                   Greater greater) {
+  return std::clamp(value, low, high, greater);
+}
+std::pair<const int &, const int &> extrema(const int &left,
+                                             const int &right,
+                                             Greater greater) {
+  return std::minmax(left, right, greater);
+}
+"""
+    for target in sdk_targets:
+        check("v2-scalar-direct-extrema-functor-" + target,
+              scalar_direct_extrema_functor_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-scalar-direct-extrema-functor-reference-rejected",
+          '#include <algorithm>\n'
+          'struct Compare{bool operator()(const int&a,const int&b) const {'
+          'return a<b;}};'
+          'const int&f(const int&a,const int&b){'
+          'return std::min(a,b,Compare{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>

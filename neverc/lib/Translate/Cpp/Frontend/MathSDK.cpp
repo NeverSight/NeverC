@@ -18786,11 +18786,13 @@ const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   const auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+  const bool SourceRecord =
+      utilityComparableSourceElement(S, SM, Element, false, Context);
+  const bool Scalar = utilityScalar(Context, Element);
   if (!Record || !S.owns(SM, Record->getLocation()) || Record->isLambda() ||
       Record->isUnion() || !Record->isStandardLayout() ||
       !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
-      !Record->hasTrivialDestructor() ||
-      !utilityComparableSourceElement(S, SM, Element, false, Context))
+      !Record->hasTrivialDestructor() || (!SourceRecord && !Scalar))
     return nullptr;
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Invocations->First->getDirectCallee());
@@ -18819,10 +18821,14 @@ const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
       return nullptr;
   for (unsigned I = 0; I < 2; ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
-    if (!Parameter->isLValueReferenceType() ||
-        !Parameter->getPointeeType().isConstQualified() ||
-        Parameter->getPointeeType().isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Element))
+    if (SourceRecord
+            ? (!Parameter->isLValueReferenceType() ||
+               !Parameter->getPointeeType().isConstQualified() ||
+               Parameter->getPointeeType().isVolatileQualified() ||
+               !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                               Element))
+            : (Parameter->isReferenceType() ||
+               !utilityScalarDirectConversion(Context, Element, Parameter)))
       return nullptr;
   }
   return Method;

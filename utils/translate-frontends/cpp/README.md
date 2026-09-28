@@ -459,6 +459,10 @@ They also accept a source-owned, trivially copyable comparison object with an
 exact `bool operator()(const Record&, const Record&)` method. The selected
 libc++ call is authenticated, the object argument is evaluated once, and the
 method observes the original record references.
+The scalar-reference forms also accept a source-owned, trivially copyable
+comparison object with a Boolean `operator()` taking two directly convertible
+scalar values by value. It observes one by-value copy of the object per call
+to the algorithm while the selected result retains its original reference.
 Default `lower_bound`, `upper_bound`, `binary_search` and `equal_range` accept
 raw or authenticated wrapped source-record ranges and exact const record keys.
 Their checked comparator forms accept `bool(const Record&, const Record&)`

@@ -56145,6 +56145,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarDirectExtremaFunctorRun) {
+  const auto Source = tmpFile("scalar-direct-extrema-functor.cpp");
+  const auto Output = tmpFile("scalar-direct-extrema-functor.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int comparisons, evaluations;
+struct Greater {
+  int *count;
+  bool operator()(int left, int right) const {
+    ++*count;
+    return left > right;
+  }
+};
+struct MutableGreater {
+  int calls;
+  int *observed;
+  bool operator()(int left, int right) {
+    *observed += ++calls;
+    return left > right;
+  }
+};
+Greater next_greater() { ++evaluations; return Greater{&comparisons}; }
+int main() {
+  int low = 3, middle = 2, high = 1, below = 4, above = 0;
+  Greater greater{&comparisons};
+  if (&std::min(low, high, next_greater()) != &low ||
+      &std::max(low, high, greater) != &high ||
+      &std::clamp(middle, low, high, greater) != &middle ||
+      &std::clamp(below, low, high, greater) != &low ||
+      &std::clamp(above, low, high, greater) != &high ||
+      evaluations != 1 || comparisons != 7) return 1;
+  auto pair = std::minmax(low, high, greater);
+  if (&pair.first != &low || &pair.second != &high) return 2;
+  int equal_a = 2, equal_b = 2;
+  if (&std::min(equal_a, equal_b, greater) != &equal_a ||
+      &std::max(equal_a, equal_b, greater) != &equal_a) return 3;
+  auto equal_pair = std::minmax(equal_a, equal_b, greater);
+  if (&equal_pair.first != &equal_a ||
+      &equal_pair.second != &equal_b) return 4;
+  int observed = 0;
+  MutableGreater mutable_greater{0, &observed};
+  if (&std::min(low, high, mutable_greater) != &low ||
+      mutable_greater.calls != 0 || observed != 1) return 5;
+  if (&std::clamp(middle, low, high, mutable_greater) != &middle ||
+      mutable_greater.calls != 0 || observed != 4) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("scalar-direct-extrema-functor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("source-record-ordered-bounds.nc");
