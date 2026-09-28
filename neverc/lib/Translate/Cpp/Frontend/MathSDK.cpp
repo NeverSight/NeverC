@@ -22650,6 +22650,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityScalarDirectConversion(Context, Iterator->getPointeeType(),
                                          Parameter);
   };
+  auto AlgorithmRangeUnaryPredicateParameter = [&](unsigned PredicateIndex,
+                                                   unsigned IteratorIndex) {
+    const auto Iterator = AlgorithmRangePointerParameter(IteratorIndex);
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    return Iterator && Prototype && Prototype->getNumParams() == 1 &&
+           Prototype->getReturnType()->isBooleanType() &&
+           utilityScalarDirectConversion(Context, (*Iterator)->getPointeeType(),
+                                         Prototype->getParamType(0));
+  };
   auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
                                                unsigned LeftIteratorIndex,
                                                unsigned RightIteratorIndex) {
@@ -24581,10 +24590,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/none_of.h" && Name == "none_of");
   if (UnaryPredicateQuery && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmUnaryPredicateParameter(2, 0) &&
+      AlgorithmRangeUnaryPredicateParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Name == "find_if" &&
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))

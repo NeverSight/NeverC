@@ -56370,6 +56370,71 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedUnaryPredicateQueriesRun) {
+  const auto Source = tmpFile("wrapped-unary-predicate-queries.cpp");
+  const auto Output = tmpFile("wrapped-unary-predicate-queries.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+bool is_even(long value) {
+  ++calls;
+  return value % 2 == 0;
+}
+int main() {
+  std::vector<int> values{1, 2, 4, 5};
+  calls = 0;
+  if (std::find_if(values.cbegin(), values.cend(), is_even) !=
+          values.cbegin() + 1 || calls != 2) return 1;
+  calls = 0;
+  if (std::find_if_not(values.cbegin(), values.cend(), is_even) !=
+          values.cbegin() || calls != 1) return 2;
+  calls = 0;
+  if (std::count_if(values.cbegin(), values.cend(), is_even) != 2 ||
+      calls != 4) return 3;
+  calls = 0;
+  if (!std::all_of(values.cbegin() + 1, values.cbegin() + 3,
+                   is_even) || calls != 2) return 4;
+  calls = 0;
+  if (!std::any_of(values.cbegin(), values.cend(), is_even) ||
+      calls != 2) return 5;
+  calls = 0;
+  if (std::none_of(values.cbegin(), values.cend(), is_even) ||
+      calls != 2) return 6;
+  calls = 0;
+  if (std::find_if(values.begin(), values.end(), is_even) !=
+          values.begin() + 1 || calls != 2) return 7;
+  calls = 0;
+  if (std::find_if(values.cend(), values.cend(), is_even) != values.cend() ||
+      std::find_if_not(values.cend(), values.cend(), is_even) !=
+          values.cend() ||
+      std::count_if(values.cend(), values.cend(), is_even) != 0 ||
+      !std::all_of(values.cend(), values.cend(), is_even) ||
+      std::any_of(values.cend(), values.cend(), is_even) ||
+      !std::none_of(values.cend(), values.cend(), is_even) || calls != 0)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-unary-predicate-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

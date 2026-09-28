@@ -32034,6 +32034,40 @@ bool includes_object(const std::vector<long> &first, const int *second,
           'compare);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_unary_predicate_queries_source = """\
+#include <algorithm>
+#include <vector>
+bool is_even(long value) { return value % 2 == 0; }
+std::vector<int>::const_iterator find(const std::vector<int> &values) {
+  return std::find_if(values.cbegin(), values.cend(), is_even);
+}
+std::vector<int>::iterator find_not(std::vector<int> &values) {
+  return std::find_if_not(values.begin(), values.end(), is_even);
+}
+long count(const std::vector<int> &values) {
+  return std::count_if(values.cbegin(), values.cend(), is_even);
+}
+bool all(const std::vector<int> &values) {
+  return std::all_of(values.cbegin(), values.cend(), is_even);
+}
+bool any(const std::vector<int> &values) {
+  return std::any_of(values.cbegin(), values.cend(), is_even);
+}
+bool none(const std::vector<int> &values) {
+  return std::none_of(values.cbegin(), values.cend(), is_even);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-unary-predicate-queries-" + target,
+              wrapped_unary_predicate_queries_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-unary-predicate-queries-reference-callback",
+          '#include <algorithm>\n#include <vector>\n'
+          'bool pred(const int &value){return value>0;}'
+          'bool f(const std::vector<int>&v){'
+          'return std::all_of(v.cbegin(),v.cend(),pred);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

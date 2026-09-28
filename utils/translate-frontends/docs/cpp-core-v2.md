@@ -1777,15 +1777,17 @@ element. Reference parameters, variadic functions, non-boolean results and
 callable objects stay outside this boundary.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
-`std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
-scalar-pointer ranges plus a checked ordinary function-pointer predicate. The
+`std::all_of`, `std::any_of` and `std::none_of` templates accept raw scalar
+pointer ranges or authenticated mutable or const wrapped scalar ranges, plus a
+checked ordinary function-pointer predicate. The
 predicate must take one admitted by-value scalar parameter reachable through
 the checked direct conversion from the range element and return `bool` exactly.
 This admits integer and enum scalars, `float`, `double`, object pointers and
 `nullptr_t`. The function-pointer value is evaluated and retained once, then
 invoked once per inspected element. Find and boolean queries stop at their
 first decisive result; `count_if` visits the whole range and returns the target
-`ptrdiff_t`. Empty ranges preserve the standard `all_of`/`none_of` true and
+`ptrdiff_t`. The find results retain the original raw or wrapped iterator type.
+Empty ranges preserve the standard `all_of`/`none_of` true and
 `any_of` false identities without invoking the predicate. Reference parameters,
 non-boolean results and callable objects stay outside this boundary.
 
