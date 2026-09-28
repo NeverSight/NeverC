@@ -32461,6 +32461,29 @@ auto text_distance(const std::string &text) {
               wrapped_iterator_navigation_source,
               profile="cpp-core-v2", target=target, sdk=True)
 
+    wrapped_adjacent_find_predicate_source = """\
+#include <algorithm>
+#include <vector>
+bool neighbors(int left, int right) { return right - left == 1; }
+std::vector<int>::iterator find_mutable(std::vector<int> &values) {
+  return std::adjacent_find(values.begin(), values.end(), neighbors);
+}
+std::vector<int>::const_iterator find_constant(
+    const std::vector<int> &values) {
+  return std::adjacent_find(values.cbegin(), values.cend(), neighbors);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-adjacent-find-predicate-" + target,
+              wrapped_adjacent_find_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-adjacent-find-reference-predicate",
+          '#include <algorithm>\n#include <vector>\n'
+          'bool equal(const int &left,const int &right){return left==right;}'
+          'std::vector<int>::iterator f(std::vector<int>&v){'
+          'return std::adjacent_find(v.begin(),v.end(),equal);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

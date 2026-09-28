@@ -57136,6 +57136,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedAdjacentFindPredicateRun) {
+  const auto Source = tmpFile("wrapped-adjacent-find-predicate.cpp");
+  const auto Output = tmpFile("wrapped-adjacent-find-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+bool neighbors(int left, int right) {
+  ++calls;
+  return right - left == 1;
+}
+int main() {
+  std::vector<int> values{1, 3, 4, 8};
+  calls = 0;
+  if (std::adjacent_find(values.begin(), values.end(), neighbors) !=
+          values.begin() + 1 || calls != 2) return 1;
+  const std::vector<int> &constant = values;
+  calls = 0;
+  if (std::adjacent_find(constant.cbegin(), constant.cend(), neighbors) !=
+          constant.cbegin() + 1 || calls != 2) return 2;
+  const std::vector<int> missing{1, 3, 5};
+  calls = 0;
+  if (std::adjacent_find(missing.cbegin(), missing.cend(), neighbors) !=
+          missing.cend() || calls != 2) return 3;
+  const std::vector<int> one{1};
+  const std::vector<int> empty;
+  calls = 0;
+  if (std::adjacent_find(one.cbegin(), one.cend(), neighbors) != one.cend() ||
+      std::adjacent_find(empty.cbegin(), empty.cend(), neighbors) !=
+          empty.cend() || calls != 0) return 4;
+  int raw[3]{1, 3, 4};
+  if (std::adjacent_find(raw, raw + 3, neighbors) != raw + 1) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-adjacent-find-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

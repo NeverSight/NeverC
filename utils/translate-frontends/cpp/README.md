@@ -487,8 +487,11 @@ Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and
 four-iterator `is_permutation`, plus `unique`, `unique_copy`, `search`,
-`find_end`, `find_first_of` and `search_n`. Checked function-pointer comparators
-with directly convertible by-value scalar parameters additionally admit `min_element`, `max_element`,
+`find_end`, `find_first_of` and `search_n`. Predicate `adjacent_find` also
+accepts authenticated mutable or const wrapped scalar ranges and returns a
+wrapped matching position.
+Checked function-pointer comparators with directly convertible by-value scalar
+parameters additionally admit `min_element`, `max_element`,
 `lower_bound`, `upper_bound`, `equal_range`, `binary_search`, `is_sorted` and
 `is_sorted_until`, plus `min`, `max`, `clamp`, `minmax`, `minmax_element`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`,

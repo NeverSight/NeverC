@@ -1753,7 +1753,7 @@ ranges, and exact source-owned trivial record ranges under the same selected
 Boolean `operator==` check. It compares original adjacent objects, skips empty
 and single-element ranges, and returns the first matching iterator in its
 original raw or wrapped form. Predicate overloads retain their existing raw
-scalar boundary.
+or authenticated wrapped scalar boundary and checked by-value callback rules.
 
 Default `std::search_n` also accepts raw or authenticated wrapped scalar
 ranges and exact source-owned trivial record ranges under the selected Boolean

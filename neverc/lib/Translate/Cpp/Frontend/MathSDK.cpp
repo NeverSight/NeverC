@@ -22685,6 +22685,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Right->getPointeeType(),
                                          RightParameter);
   };
+  auto AlgorithmRangeBinaryPredicateParameter =
+      [&](unsigned PredicateIndex, unsigned LeftIteratorIndex,
+          unsigned RightIteratorIndex) {
+        const auto Left = AlgorithmRangePointerParameter(LeftIteratorIndex);
+        const auto Right = AlgorithmRangePointerParameter(RightIteratorIndex);
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        return Left && Right && Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityScalarDirectConversion(Context, (*Left)->getPointeeType(),
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context,
+                                             (*Right)->getPointeeType(),
+                                             Prototype->getParamType(1));
+      };
   auto AlgorithmBinaryComparisonParameter =
       [&](unsigned PredicateIndex, unsigned LeftIteratorIndex,
           unsigned RightIteratorIndex) {
@@ -23701,9 +23715,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Builtin || Record)
         return UtilityOperation::AlgorithmAdjacentFind;
     }
-    if (Call->getNumArgs() == 3 && AlgorithmPointerParameter(0) &&
-        AlgorithmPointerParameter(1) &&
-        AlgorithmBinaryPredicateParameter(2, 0, 0))
+    if (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangeBinaryPredicateParameter(2, 0, 0))
       return UtilityOperation::AlgorithmAdjacentFind;
   }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
