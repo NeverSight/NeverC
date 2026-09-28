@@ -1737,6 +1737,12 @@ mutable raw or wrapped inputs as C++ permits, require a writable destination
 of the same record type, and return its original iterator form.
 `copy_n` uses the same record transfer boundary with an admitted integral
 count; a zero count returns its unadvanced output without touching the input.
+`fill` and `fill_n` also accept authenticated writable wrapped ranges of exact
+trivial source records and an exact const record value. Each store reads that
+value reference when reached, preserving alias effects; `fill_n` returns the
+wrapped iterator after the admitted count and leaves it unchanged for zero or
+negative counts. Raw-pointer source-record fill keeps its existing separately
+authenticated assignment path.
 Default `unique` and `unique_copy` additionally accept exact trivial source
 records in raw or authenticated wrapped ranges when one supported Boolean
 `operator==` is uniquely selected. `unique` requires writable input;

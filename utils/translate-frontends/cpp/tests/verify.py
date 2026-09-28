@@ -32885,6 +32885,30 @@ Item *remove_copy_mixed(const std::vector<Item> &source, Item *output,
           'v.begin(),v.end(),old_value);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_fill_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+void fill_records(std::vector<Item> &values, const Item &value) {
+  std::fill(values.begin(), values.end(), value);
+}
+std::vector<Item>::iterator fill_n_records(std::vector<Item> &values,
+                                           const Item &value) {
+  return std::fill_n(values.begin(), 2, value);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-fill-" + target,
+              wrapped_record_fill_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-fill-nontrivial",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
+          'void f(std::vector<Record>&v,const Record&value){'
+          'std::fill(v.begin(),v.end(),value);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

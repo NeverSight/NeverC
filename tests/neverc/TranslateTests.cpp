@@ -57889,6 +57889,51 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordFillRun) {
+  const auto Source = tmpFile("wrapped-record-fill.cpp");
+  const auto Output = tmpFile("wrapped-record-fill.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+int main() {
+  std::vector<Item> values(4);
+  Item first{1, 10}, second{2, 20};
+  std::fill(values.begin(), values.end(), first);
+  if (values[0].key != 1 || values[0].tag != 10 ||
+      values[3].key != 1 || values[3].tag != 10) return 1;
+  if (std::fill_n(values.begin() + 1, 2, second) != values.begin() + 3 ||
+      values[0].tag != 10 || values[1].tag != 20 ||
+      values[2].key != 2 || values[3].tag != 10) return 2;
+  if (std::fill_n(values.begin(), 0, second) != values.begin() ||
+      std::fill_n(values.begin(), -1, second) != values.begin() ||
+      values[0].tag != 10) return 3;
+  std::fill(values.begin(), values.end(), values[1]);
+  if (values[0].tag != 20 || values[3].key != 2) return 4;
+  std::vector<Item> empty;
+  std::fill(empty.begin(), empty.end(), first);
+  if (std::fill_n(empty.begin(), 0, first) != empty.begin()) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-record-fill" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

@@ -23594,6 +23594,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Last = AlgorithmRangePointerParameter(1);
     if (First && Last && AlgorithmTransferRangeValueParameter(2, 0))
       return UtilityOperation::AlgorithmFill;
+    if (!Function->getParamDecl(0)->getType()->isPointerType() &&
+        AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmTransferRecordRangeValueParameter(2, 0))
+      return UtilityOperation::AlgorithmFill;
   }
   if (Origin->Path == "__algorithm/fill.h" && Name == "fill" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
@@ -23615,6 +23620,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
       AlgorithmCountParameter(1) &&
       AlgorithmTransferRangeValueParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmFillN;
+  if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmCountParameter(1) &&
+      !Function->getParamDecl(0)->getType()->isPointerType() &&
+      AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmTransferRecordRangeValueParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmFillN;

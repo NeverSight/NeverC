@@ -4811,6 +4811,10 @@ class FunctionLowering {
         assignMemorySource(dereference(Current, L),
                            PointerQualType->getPointeeType(), Assignment,
                            dereference(json::Object(ValueAddress), L), L);
+      else if ((Operation == UtilityOperation::AlgorithmFill ||
+                Operation == UtilityOperation::AlgorithmFillN) &&
+               PointerQualType->getPointeeType()->isRecordType())
+        assign(dereference(Current, L), dereference(ValueAddress, L), L);
       else
         assign(dereference(Current, L),
                cast(dereference(ValueAddress, L), OutputElementType, L), L);
