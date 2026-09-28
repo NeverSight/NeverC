@@ -2483,6 +2483,13 @@ Their checked comparator overloads also accept exact trivial source-record raw
 or authenticated wrapped ranges through `bool(const Record&, const Record&)`,
 without requiring `operator<`. They compare original adjacent elements and
 return the same Boolean or iterator result.
+The `is_sorted` and `is_sorted_until` comparator overloads additionally accept
+one source-owned, standard-layout, trivially copyable comparison object with a
+non-template Boolean `operator()`. The pinned public and internal calls must
+select that exact method. Exact trivial records use original `const Record&`
+elements; scalars permit checked by-value conversions or exact const
+references. The object is evaluated once even for an empty range, and wrapped
+iterators preserve the result type.
 
 Default `std::min_element`, `std::max_element` and `std::minmax_element` also
 accept those source-record raw or authenticated wrapped ranges. Comparisons

@@ -317,6 +317,9 @@ const clang::CXXMethodDecl *approvedMaxElementSourceComparator(
 const clang::CXXMethodDecl *approvedMinElementSourceComparator(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     clang::QualType Element, const clang::ASTContext &Context);
+const clang::CXXMethodDecl *approvedSortedSourceComparator(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    clang::QualType Element, const clang::ASTContext &Context);
 struct FunctionalInvokeObjectCall {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;

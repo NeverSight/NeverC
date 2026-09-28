@@ -5169,16 +5169,30 @@ class FunctionLowering {
       auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
+      std::optional<CapturedAlgorithmPredicate> SourceComparator;
       if (Call->getNumArgs() == 3) {
         const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
-        if (!SDKComparator)
-          Comparator = snapshot(expression(Call->getArg(2)), L);
+        if (!SDKComparator) {
+          if (const auto *Method = approvedSortedSourceComparator(
+                  A.S, A.Sources, Call, Element, A.Context)) {
+            const auto Object =
+                Call->getDirectCallee()->getParamDecl(2)->getType();
+            SourceComparator =
+                CapturedAlgorithmPredicate{argument(Call->getArg(2), Object),
+                                           Object, Method, std::nullopt};
+          }
+          if (!SourceComparator)
+            Comparator = snapshot(expression(Call->getArg(2)), L);
+        }
       }
       auto Less = [&](Expression Left, Expression Right) {
         if (SDKComparator)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
                                            *SDKComparator);
+        if (SourceComparator)
+          return emitBinaryCallable(*SourceComparator, std::move(Left),
+                                    std::move(Right), L);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
