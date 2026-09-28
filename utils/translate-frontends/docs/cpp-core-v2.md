@@ -1839,6 +1839,13 @@ The five predicate `copy_if`, `remove_copy_if`, `remove_if`, `replace_if` and
 They reread retained elements after the predicate, transfer complete values
 into exact writable record destinations, and preserve raw or wrapped output
 iterator forms. Replacement values remain live exact const record references.
+`for_each` and `for_each_n` also accept exact trivial source records in raw or
+authenticated wrapped ranges. Checked function pointers may take `Record&`
+from mutable input or `const Record&` from either mutable or const input, with
+void or admitted scalar return values. Each invocation receives the original
+element address. `for_each` returns the original function pointer and
+`for_each_n` returns the original iterator form, including for nonpositive
+counts. By-value record callbacks remain rejected.
 
 `std::rotate` accepts those writable trivial source-record ranges and writable
 authenticated wrapped scalar ranges. Its three range endpoints are evaluated

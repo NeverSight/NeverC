@@ -22701,6 +22701,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                Context.hasSameUnqualifiedType((*Iterator)->getPointeeType(),
                                               Parameter->getPointeeType());
       };
+  auto AlgorithmRecordRangeUnaryCallbackParameter =
+      [&](unsigned CallbackIndex, unsigned IteratorIndex) {
+        const auto Iterator = AlgorithmRecordRangeParameter(IteratorIndex);
+        const auto *Prototype = AlgorithmCallbackPrototype(CallbackIndex);
+        if (!Iterator || !Prototype || Prototype->getNumParams() != 1 ||
+            (!Prototype->getReturnType()->isVoidType() &&
+             !utilityScalar(Context, Prototype->getReturnType())))
+          return false;
+        const auto Parameter = Prototype->getParamType(0);
+        return Parameter->isLValueReferenceType() &&
+               !Parameter->getPointeeType().isVolatileQualified() &&
+               (!(*Iterator)->getPointeeType().isConstQualified() ||
+                Parameter->getPointeeType().isConstQualified()) &&
+               Context.hasSameUnqualifiedType((*Iterator)->getPointeeType(),
+                                              Parameter->getPointeeType());
+      };
   auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
                                                unsigned LeftIteratorIndex,
                                                unsigned RightIteratorIndex) {
@@ -24963,6 +24979,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/for_each.h" && Name == "for_each" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryCallbackParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmForEach;
+  if (Origin->Path == "__algorithm/for_each.h" && Name == "for_each" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
       AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -24978,6 +25004,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEach;
   }
+  if (Origin->Path == "__algorithm/for_each_n.h" && Name == "for_each_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      AlgorithmRecordRangeUnaryCallbackParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmForEachN;
   if (Origin->Path == "__algorithm/for_each_n.h" && Name == "for_each_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&

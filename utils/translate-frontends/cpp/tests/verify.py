@@ -32991,6 +32991,38 @@ Item *copy_selected_mixed(const std::vector<Item> &source, Item *output) {
           'source.cend(),output.begin(),selected);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_for_each_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+void modify(Item &item) { item.tag += item.key; }
+int observe(const Item &item) { return item.tag; }
+void for_each_record(std::vector<Item> &values) {
+  std::for_each(values.begin(), values.end(), modify);
+}
+void for_each_const_record(const std::vector<Item> &values) {
+  std::for_each(values.cbegin(), values.cend(), observe);
+}
+std::vector<Item>::iterator for_each_n_record(std::vector<Item> &values) {
+  return std::for_each_n(values.begin(), 2, modify);
+}
+std::vector<Item>::const_iterator for_each_n_const_record(
+    const std::vector<Item> &values) {
+  return std::for_each_n(values.cbegin(), 2, observe);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-for-each-" + target,
+              wrapped_record_for_each_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-for-each-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'void modify(Item item){item.tag+=item.key;}'
+          'void f(std::vector<Item>&values){'
+          'std::for_each(values.begin(),values.end(),modify);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

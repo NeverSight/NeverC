@@ -57618,6 +57618,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordForEachRun) {
+  const auto Source = tmpFile("wrapped-record-for-each.cpp");
+  const auto Output = tmpFile("wrapped-record-for-each.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base;
+int length, calls, bad_identity, sum;
+bool inside(const Item *item) {
+  for (int i = 0; i < length; ++i)
+    if (item == base + i) return true;
+  return false;
+}
+void modify(Item &item) {
+  ++calls;
+  if (!inside(&item)) ++bad_identity;
+  item.tag += item.key;
+}
+int observe(const Item &item) {
+  ++calls;
+  if (!inside(&item)) ++bad_identity;
+  sum += item.tag;
+  return item.key;
+}
+int main() {
+  std::vector<Item> values{{1, 10}, {2, 20}, {3, 30}};
+  base = &values[0]; length = 3; calls = 0;
+  if (std::for_each(values.begin(), values.end(), modify) != modify ||
+      calls != 3 || bad_identity || values[0].tag != 11 ||
+      values[1].tag != 22 || values[2].tag != 33) return 1;
+  const std::vector<Item> &view = values;
+  calls = 0; sum = 0;
+  if (std::for_each(view.cbegin(), view.cend(), observe) != observe ||
+      calls != 3 || sum != 66 || bad_identity) return 2;
+  calls = 0;
+  if (std::for_each_n(values.begin() + 1, 2, modify) !=
+          values.begin() + 3 || calls != 2 ||
+      values[0].tag != 11 || values[1].tag != 24 ||
+      values[2].tag != 36 || bad_identity) return 3;
+  calls = 0; sum = 0;
+  if (std::for_each_n(view.cbegin(), 2, observe) != view.cbegin() + 2 ||
+      calls != 2 || sum != 35 || bad_identity) return 4;
+  calls = 0;
+  if (std::for_each_n(values.begin(), 0, modify) != values.begin() ||
+      std::for_each_n(values.begin(), -1, modify) != values.begin() ||
+      calls != 0) return 5;
+  std::vector<Item> empty;
+  if (std::for_each(empty.begin(), empty.end(), modify) != modify ||
+      calls != 0) return 6;
+  Item raw[2]{{4, 40}, {5, 50}};
+  base = raw; length = 2; calls = 0;
+  if (std::for_each_n(raw, 2, modify) != raw + 2 ||
+      raw[0].tag != 44 || raw[1].tag != 55 ||
+      calls != 2 || bad_identity) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-record-for-each" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedValueReplacementRun) {
   const auto Source = tmpFile("wrapped-value-replacement.cpp");
   const auto Output = tmpFile("wrapped-value-replacement.nc");

@@ -489,6 +489,10 @@ The callback receives each original element by reference.
 The same record predicate boundary admits `copy_if`, `remove_copy_if`,
 `remove_if`, `replace_if` and `replace_copy_if`. Copy forms require a writable
 output of the same record type and retain mixed raw and wrapped iterator forms.
+`for_each` and `for_each_n` also admit exact trivial source records through a
+checked `Record&` callback on mutable ranges or `const Record&` callback on
+mutable or const ranges. The callback acts on original elements, and the
+counted form retains its raw or wrapped iterator result.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.
