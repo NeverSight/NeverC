@@ -499,6 +499,8 @@ iterator type after copying complete records in reverse order.
 The exact `copy`, three-iterator `move`, `copy_backward` and `move_backward`
 forms also transfer complete values of that trivial record type across raw or
 wrapped ranges, with a matching writable output and retained iterator result.
+`copy_n` accepts the same record ranges and returns the unchanged output for
+zero count.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and

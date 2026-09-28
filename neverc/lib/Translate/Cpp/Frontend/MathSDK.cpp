@@ -24009,12 +24009,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/copy_n.h" && Name == "copy_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
-      AlgorithmCountParameter(1) &&
-      AlgorithmTransferRangeParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmCountParameter(1) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmCopyN;
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Scalar = AlgorithmRangePointerParameter(0) &&
+                        AlgorithmTransferRangeParameters(0, 2);
+    const bool Record = AlgorithmRecordRangeParameter(0) &&
+                        AlgorithmTransferRecordRangeParameters(0, 2);
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmCopyN;
+  }
   if (Origin->Path == "__algorithm/iter_swap.h" && Name == "iter_swap" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
       Function->getReturnType()->isVoidType() &&

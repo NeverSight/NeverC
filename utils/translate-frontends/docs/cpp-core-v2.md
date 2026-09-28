@@ -1735,6 +1735,8 @@ output iterator form while traversing its input backward.
 that boundary for complete trivial source-record values. They accept const or
 mutable raw or wrapped inputs as C++ permits, require a writable destination
 of the same record type, and return its original iterator form.
+`copy_n` uses the same record transfer boundary with an admitted integral
+count; a zero count returns its unadvanced output without touching the input.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

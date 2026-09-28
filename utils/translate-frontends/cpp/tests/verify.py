@@ -32781,6 +32781,31 @@ Item *copy_mixed(const std::vector<Item> &source, Item *output) {
           'v.begin(),v.end(),o.begin());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_copy_n_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+std::vector<Item>::iterator copy_records(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::copy_n(source.cbegin(), 2, output.begin());
+}
+Item *copy_mixed(const std::vector<Item> &source, Item *output) {
+  return std::copy_n(source.cbegin(), 2, output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-copy-n-" + target,
+              wrapped_record_copy_n_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-copy-n-nontrivial",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
+          'std::vector<Record>::iterator f(std::vector<Record>&v,'
+          'std::vector<Record>&o){return std::copy_n('
+          'v.begin(),2,o.begin());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

@@ -5794,6 +5794,7 @@ class FunctionLowering {
           MemoryConstruction
               ? std::string()
               : type(OutputRange.second->getPointeeType(), L);
+      const bool Record = InputRange.second->getPointeeType()->isRecordType();
       const auto Check = labelName(), Transfer = labelName();
       const auto End = labelName();
       jump(Check, L);
@@ -5805,6 +5806,8 @@ class FunctionLowering {
         constructMemorySource(dereference(Output, L), ElementType, Constructor,
                               json::Object(Input), L);
       else if (MemoryConstruction)
+        assign(dereference(Output, L), dereference(Input, L), L);
+      else if (Record)
         assign(dereference(Output, L), dereference(Input, L), L);
       else
         assign(dereference(Output, L),

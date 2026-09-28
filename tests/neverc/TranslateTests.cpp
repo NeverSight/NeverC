@@ -57714,6 +57714,48 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordCopyNRun) {
+  const auto Source = tmpFile("wrapped-record-copy-n.cpp");
+  const auto Output = tmpFile("wrapped-record-copy-n.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+int main() {
+  const std::vector<Item> source{{1, 10}, {2, 20}, {3, 30}};
+  std::vector<Item> output(3);
+  if (std::copy_n(source.cbegin(), 2, output.begin()) !=
+          output.begin() + 2 || output[0].key != 1 ||
+      output[1].tag != 20) return 1;
+  Item raw_output[3]{};
+  if (std::copy_n(source.cbegin(), 3, raw_output) != raw_output + 3 ||
+      raw_output[2].key != 3 || raw_output[2].tag != 30) return 2;
+  Item raw_input[2]{{4, 40}, {5, 50}};
+  if (std::copy_n(raw_input, 2, output.begin()) != output.begin() + 2 ||
+      output[0].tag != 40 || output[1].key != 5) return 3;
+  if (std::copy_n(source.cbegin(), 0, output.begin()) != output.begin() ||
+      output[0].key != 4) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-record-copy-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");
