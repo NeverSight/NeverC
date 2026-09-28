@@ -454,6 +454,9 @@ Default direct `min`, `max`, `clamp` and `minmax` accept exact trivial source
 records with that selected ordering and preserve returned reference identity.
 Default `lower_bound`, `upper_bound`, `binary_search` and `equal_range` accept
 raw or authenticated wrapped source-record ranges and exact const record keys.
+Their checked comparator forms accept `bool(const Record&, const Record&)`
+function pointers without requiring `operator<`, preserving original element
+and key addresses and the raw or wrapped bound results.
 Default `sort` also accepts writable raw or authenticated wrapped ranges of
 those trivial source records, using the selected Boolean `operator<` on current
 range elements.

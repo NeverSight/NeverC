@@ -31943,6 +31943,54 @@ range_wrapped(std::vector<Member> &values, const Member &key) {
           'return std::equal_range(a.begin(),a.end(),key);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_ordered_bounds_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+Item *lower_raw(Item *first, Item *last, const Item &key) {
+  return std::lower_bound(first, last, key, less);
+}
+Item *upper_raw(Item *first, Item *last, const Item &key) {
+  return std::upper_bound(first, last, key, less);
+}
+bool search_raw(Item *first, Item *last, const Item &key) {
+  return std::binary_search(first, last, key, less);
+}
+std::pair<Item *, Item *> range_raw(Item *first, Item *last,
+                                    const Item &key) {
+  return std::equal_range(first, last, key, less);
+}
+std::vector<Item>::const_iterator lower_wrapped(
+    const std::vector<Item> &values, const Item &key) {
+  return std::lower_bound(values.cbegin(), values.cend(), key, less);
+}
+std::vector<Item>::const_iterator upper_wrapped(
+    const std::vector<Item> &values, const Item &key) {
+  return std::upper_bound(values.cbegin(), values.cend(), key, less);
+}
+bool search_wrapped(const std::vector<Item> &values, const Item &key) {
+  return std::binary_search(values.cbegin(), values.cend(), key, less);
+}
+std::pair<std::vector<Item>::iterator, std::vector<Item>::iterator>
+range_wrapped(std::vector<Item> &values, const Item &key) {
+  return std::equal_range(values.begin(), values.end(), key, less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-bounds-predicate-" + target,
+              source_record_ordered_bounds_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-ordered-bounds-predicate-by-value-rejected",
+          '#include <algorithm>\n'
+          'struct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'auto f(Item*a,Item*b,const Item&key){'
+          'return std::equal_range(a,b,key,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_sort_source = """\
 #include <algorithm>
 #include <vector>

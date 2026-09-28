@@ -2492,6 +2492,11 @@ or const wrapped iterators retain their original result form. Both comparison
 directions use the unique selected Boolean `operator<` and pass original range
 elements and the original key by reference. Empty ranges perform no comparison;
 equal bounds preserve duplicate runs and missing-key insertion positions.
+Their checked comparator overloads also accept an exact
+`bool(const Record&, const Record&)` function pointer without requiring
+`operator<`. Comparisons receive original range elements and the live key by
+reference in each required direction; raw or authenticated wrapped iterator
+results retain their original form.
 
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable

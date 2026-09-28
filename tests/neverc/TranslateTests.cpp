@@ -56084,6 +56084,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsPredicateRun) {
+  const auto Source = tmpFile("source-record-ordered-bounds-predicate.cpp");
+  const auto Output = tmpFile("source-record-ordered-bounds-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+const Item *base, *key_address;
+int size, forward_calls, reverse_calls, bad_identity, evaluations;
+const Item &next_key() { ++evaluations; return *key_address; }
+bool within(const Item *value) {
+  for (int i = 0; i < size; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool less(const Item &left, const Item &right) {
+  if (within(&left) && &right == key_address) ++forward_calls;
+  else if (&left == key_address && within(&right)) ++reverse_calls;
+  else if (!within(&left) || !within(&right)) ++bad_identity;
+  return left.rank < right.rank;
+}
+int main() {
+  Item values[5]{{1, 10}, {2, 20}, {2, 30}, {4, 40}, {6, 50}};
+  Item key{2, 99}, absent{3, 98};
+  base = values; size = 5; key_address = &key;
+  forward_calls = reverse_calls = bad_identity = evaluations = 0;
+  auto range = std::equal_range(values, values + 5, next_key(), less);
+  if (std::lower_bound(values, values + 5, key, less) != values + 1 ||
+      std::upper_bound(values, values + 5, key, less) != values + 3 ||
+      !std::binary_search(values, values + 5, key, less) ||
+      range.first != values + 1 || range.second != values + 3 ||
+      evaluations != 1 || !forward_calls || !reverse_calls ||
+      bad_identity) return 1;
+  key_address = &absent;
+  forward_calls = reverse_calls = bad_identity = 0;
+  auto missing = std::equal_range(values, values + 5, absent, less);
+  if (std::lower_bound(values, values + 5, absent, less) != values + 3 ||
+      std::upper_bound(values, values + 5, absent, less) != values + 3 ||
+      std::binary_search(values, values + 5, absent, less) ||
+      missing.first != values + 3 || missing.second != values + 3 ||
+      !forward_calls || !reverse_calls || bad_identity) return 2;
+  forward_calls = reverse_calls = bad_identity = 0;
+  auto empty = std::equal_range(values, values, absent, less);
+  if (std::lower_bound(values, values, absent, less) != values ||
+      std::upper_bound(values, values, absent, less) != values ||
+      std::binary_search(values, values, absent, less) ||
+      empty.first != values || empty.second != values ||
+      forward_calls || reverse_calls || bad_identity) return 3;
+  key_address = &values[1];
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (std::lower_bound(values, values + 5, values[1], less) != values + 1 ||
+      std::upper_bound(values, values + 5, values[1], less) != values + 3 ||
+      bad_identity) return 4;
+  const std::vector<Item> wrapped{{1, 1}, {2, 2}, {2, 3}, {4, 4}};
+  base = &wrapped[0]; size = 4; key_address = &key;
+  forward_calls = reverse_calls = bad_identity = 0;
+  auto wrapped_range =
+      std::equal_range(wrapped.cbegin(), wrapped.cend(), key, less);
+  if (std::lower_bound(wrapped.cbegin(), wrapped.cend(), key, less) !=
+          wrapped.cbegin() + 1 ||
+      std::upper_bound(wrapped.cbegin(), wrapped.cend(), key, less) !=
+          wrapped.cbegin() + 3 ||
+      !std::binary_search(wrapped.cbegin(), wrapped.cend(), key, less) ||
+      wrapped_range.first != wrapped.cbegin() + 1 ||
+      wrapped_range.second != wrapped.cbegin() + 3 ||
+      !forward_calls || !reverse_calls || bad_identity) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-bounds-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedSourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("wrapped-source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("wrapped-source-record-ordered-bounds.nc");
