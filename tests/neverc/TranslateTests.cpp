@@ -56435,6 +56435,56 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedForEachCallbacksRun) {
+  const auto Source = tmpFile("wrapped-for-each-callbacks.cpp");
+  const auto Output = tmpFile("wrapped-for-each-callbacks.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls, sum;
+void observe(long value) { ++calls; sum += value; }
+long project(long value) { ++calls; sum += value; return value * 2; }
+int main() {
+  std::vector<int> values{1, 2, 3, 4};
+  calls = sum = 0;
+  if (std::for_each(values.cbegin(), values.cend(), observe) != observe ||
+      calls != 4 || sum != 10) return 1;
+  calls = sum = 0;
+  if (std::for_each(values.begin(), values.end(), project) != project ||
+      calls != 4 || sum != 10) return 2;
+  calls = sum = 0;
+  auto end = std::for_each_n(values.cbegin(), 3, observe);
+  if (end != values.cbegin() + 3 || calls != 3 || sum != 6) return 3;
+  calls = sum = 0;
+  if (std::for_each_n(values.begin(), 2, project) != values.begin() + 2 ||
+      calls != 2 || sum != 3) return 4;
+  calls = sum = 0;
+  if (std::for_each(values.cend(), values.cend(), observe) != observe ||
+      std::for_each_n(values.cbegin(), 0, observe) != values.cbegin() ||
+      std::for_each_n(values.cbegin(), -2, observe) != values.cbegin() ||
+      calls != 0 || sum != 0) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-for-each-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

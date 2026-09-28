@@ -32068,6 +32068,39 @@ bool none(const std::vector<int> &values) {
           'return std::all_of(v.cbegin(),v.cend(),pred);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_for_each_callbacks_source = """\
+#include <algorithm>
+#include <vector>
+void observe(long value) { (void)value; }
+long project(long value) { return value * 2; }
+void each_const(const std::vector<int> &values) {
+  auto callback = std::for_each(values.cbegin(), values.cend(), observe);
+  callback(1);
+}
+void each_mutable(std::vector<int> &values) {
+  auto callback = std::for_each(values.begin(), values.end(), project);
+  (void)callback(1);
+}
+std::vector<int>::const_iterator each_n_const(
+    const std::vector<int> &values, int count) {
+  return std::for_each_n(values.cbegin(), count, observe);
+}
+std::vector<int>::iterator each_n_mutable(
+    std::vector<int> &values, int count) {
+  return std::for_each_n(values.begin(), count, project);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-for-each-callbacks-" + target,
+              wrapped_for_each_callbacks_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-for-each-callbacks-reference-callback",
+          '#include <algorithm>\n#include <vector>\n'
+          'void observe(const int &value){(void)value;}'
+          'void f(const std::vector<int>&v){'
+          'std::for_each(v.cbegin(),v.cend(),observe);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

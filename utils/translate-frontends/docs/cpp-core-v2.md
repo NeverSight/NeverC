@@ -1837,6 +1837,10 @@ Output ranges are writable, callback values are retained once, and each visited
 or generated element invokes its callback exactly once. The counted forms use
 the same promoted integral or non-scoped enum count boundary as `copy_n`; a
 non-positive signed count performs no calls and returns the original iterator.
+The function-pointer `for_each` and `for_each_n` forms also accept authenticated
+mutable or const wrapped scalar input iterators. `for_each` still returns the
+retained callback; `for_each_n` returns the advanced wrapped iterator, including
+the original position for a non-positive count.
 `for_each_n` additionally accepts the same standard-layout, trivially copied
 source function objects described for unary predicates below. Its exact pinned
 count conversion and loop are authenticated, the selected non-template call

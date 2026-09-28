@@ -498,6 +498,8 @@ with directly convertible by-value scalar parameters additionally admit `min_ele
 Other checked callbacks with directly convertible by-value scalar parameters
 admit `for_each`, `for_each_n`, unary and binary `transform`; transform results
 and zero-parameter generator results may directly convert to the output scalar.
+Function-pointer `for_each` and `for_each_n` also accept authenticated mutable
+or const wrapped scalar inputs, with `for_each_n` returning the wrapped position.
 Predicate mutation algorithms require writable destinations; ordered output
 algorithms accept directly convertible writable scalar destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts

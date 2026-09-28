@@ -24724,32 +24724,32 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/for_each.h" && Name == "for_each" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Callback = AlgorithmCallbackPrototype(2);
-    if (Callback && Callback->getNumParams() == 1 &&
-        utilityScalarDirectConversion(
-            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
-            Callback->getParamType(0)) &&
+    const auto Range = AlgorithmRangePointerParameter(0);
+    if (Callback && Callback->getNumParams() == 1 && Range &&
+        utilityScalarDirectConversion(Context, (*Range)->getPointeeType(),
+                                      Callback->getParamType(0)) &&
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEach;
   }
   if (Origin->Path == "__algorithm/for_each_n.h" && Name == "for_each_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
       AlgorithmCountParameter(1) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Callback = AlgorithmCallbackPrototype(2);
-    if (Callback && Callback->getNumParams() == 1 &&
-        utilityScalarDirectConversion(
-            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
-            Callback->getParamType(0)) &&
+    const auto Range = AlgorithmRangePointerParameter(0);
+    if (Callback && Callback->getNumParams() == 1 && Range &&
+        utilityScalarDirectConversion(Context, (*Range)->getPointeeType(),
+                                      Callback->getParamType(0)) &&
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEachN;

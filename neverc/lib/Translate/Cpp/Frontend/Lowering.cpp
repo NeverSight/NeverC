@@ -8234,11 +8234,12 @@ class FunctionLowering {
       return First;
     }
     case UtilityOperation::AlgorithmForEach: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(CurrentRange.second, L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
@@ -8261,7 +8262,8 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::AlgorithmForEachN: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
       auto CountType = Call->getArg(1)->getType();
       if (const auto *Enumeration = CountType->getAs<EnumType>())
         CountType = Enumeration->getDecl()->getPromotionType();
@@ -8272,7 +8274,7 @@ class FunctionLowering {
           snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
       auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(CurrentRange.second, L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
@@ -8290,7 +8292,7 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Current;
+      return AlgorithmIteratorResult(std::move(Current), 0);
     }
     case UtilityOperation::AlgorithmTransformUnary:
     case UtilityOperation::AlgorithmTransformBinary: {
