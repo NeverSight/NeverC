@@ -920,6 +920,14 @@ authenticated wrapped arithmetic inputs and writable wrapped arithmetic
 outputs, independently mixed with raw pointers. Their initial-value, callback
 and output conversions remain checked, and their result retains the output
 iterator type.
+Initialized function-pointer `transform_inclusive_scan` and
+`transform_exclusive_scan` additionally accept raw or authenticated wrapped
+ranges of exact trivial source records. Their unary callback receives each
+original element as `const Record&` and returns a scalar directly convertible
+to the arithmetic accumulator. The checked by-value binary callback combines
+that term with the accumulator, which converts directly to the writable scalar
+output. The no-init inclusive form keeps its input-element accumulator boundary
+in the pinned libc++ header and does not accept record input.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is

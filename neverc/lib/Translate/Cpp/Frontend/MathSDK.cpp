@@ -23581,6 +23581,37 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
   }
   if (((Origin->Path == "__numeric/transform_inclusive_scan.h" &&
+        Name == "transform_inclusive_scan" && Call->getNumArgs() == 6) ||
+       (Origin->Path == "__numeric/transform_exclusive_scan.h" &&
+        Name == "transform_exclusive_scan" && Call->getNumArgs() == 6)) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      NumericRangeParameter(2, true, true) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Inclusive = Name == "transform_inclusive_scan";
+    const unsigned UnaryIndex = Inclusive ? 4 : 5;
+    const auto *Unary = AlgorithmCallbackPrototype(UnaryIndex);
+    const auto Output = AlgorithmRangePointerParameter(2);
+    if (Unary && Unary->getNumParams() == 1 && Output &&
+        AlgorithmRecordRangeCallbackReferenceParameter(UnaryIndex, 0, 0)) {
+      const unsigned InitialIndex = Inclusive ? 5 : 3;
+      const unsigned BinaryIndex = Inclusive ? 3 : 4;
+      const auto Initial = Function->getParamDecl(InitialIndex)->getType();
+      if (NumericArithmetic(Initial, true) &&
+          Same(Call->getArg(InitialIndex)->getType(), Initial) &&
+          NumericValueOutputParameter(InitialIndex, 2, true) &&
+          NumericBinaryTransformCallback(BinaryIndex, Initial, Initial, Initial,
+                                         true) &&
+          utilityScalarDirectConversion(Context, Unary->getReturnType(),
+                                        Initial))
+        return Inclusive ? UtilityOperation::NumericTransformInclusiveScan
+                         : UtilityOperation::NumericTransformExclusiveScan;
+    }
+  }
+  if (((Origin->Path == "__numeric/transform_inclusive_scan.h" &&
         Name == "transform_inclusive_scan" &&
         (Call->getNumArgs() == 5 || Call->getNumArgs() == 6)) ||
        (Origin->Path == "__numeric/transform_exclusive_scan.h" &&

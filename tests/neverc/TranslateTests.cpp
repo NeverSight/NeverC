@@ -57543,6 +57543,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordTransformScansRun) {
+  const auto Source = tmpFile("record-transform-scans.cpp");
+  const auto Output = tmpFile("record-transform-scans.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *input_base;
+int reductions, transforms, bad_identity;
+long add(long total, long term) {
+  ++reductions;
+  return total + term;
+}
+long encode(const Item &item) {
+  if (&item != input_base + transforms) ++bad_identity;
+  ++transforms;
+  return item.key * 10L + item.tag;
+}
+int main() {
+  const std::vector<Item> input{{1, 2}, {3, 4}, {5, 6}};
+  std::vector<long> output(3);
+  input_base = &input[0];
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_inclusive_scan(input.cbegin(), input.cend(),
+                                    output.begin(), add, encode, 10L) != output.end() ||
+      output[0] != 22 || output[1] != 56 || output[2] != 112 ||
+      reductions != 3 || transforms != 3 || bad_identity) return 1;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_exclusive_scan(input.cbegin(), input.cend(),
+                                    output.begin(), 10L, add, encode) != output.end() ||
+      output[0] != 10 || output[1] != 22 || output[2] != 56 ||
+      reductions != 3 || transforms != 3 || bad_identity) return 2;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_inclusive_scan(input.cend(), input.cend(),
+                                    output.begin(), add, encode, 7L) != output.begin() ||
+      reductions || transforms || bad_identity) return 3;
+  const Item raw[2]{{7, 8}, {9, 10}};
+  long result[2]{};
+  input_base = raw;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_inclusive_scan(raw, raw + 2, result,
+                                    add, encode, -5L) != result + 2 ||
+      result[0] != 73 || result[1] != 173 ||
+      reductions != 2 || transforms != 2 || bad_identity) return 4;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_exclusive_scan(raw, raw + 2, result,
+                                    -5L, add, encode) != result + 2 ||
+      result[0] != -5 || result[1] != 73 ||
+      reductions != 2 || transforms != 2 || bad_identity) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-transform-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedNumericReduceRun) {
   const auto Source = tmpFile("wrapped-numeric-reduce.cpp");
   const auto Output = tmpFile("wrapped-numeric-reduce.nc");

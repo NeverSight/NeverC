@@ -632,7 +632,12 @@ matching output iterator.
 Default and checked function-pointer inclusive, exclusive and transformed scans
 accept the same authenticated wrapped input and writable output ranges under
 their existing initial-value and callback conversion rules.
-Output ranges must be writable; callable objects, heterogeneous element types
+The initialized function-pointer `transform_inclusive_scan` and
+`transform_exclusive_scan` forms additionally accept exact trivial source-record
+raw or wrapped inputs. Their unary callback takes each original element as
+`const Record&` and produces a scalar term for the checked arithmetic
+accumulator and writable scalar output.
+Output ranges must be writable; other callable objects and element types
 and custom iterators remain rejected. New contributes an exact, platform-free
 37-file C++17 header closure. The standard allocation tag types and
 interference-size values remain compile-time or scalar metadata, and exact

@@ -4291,7 +4291,12 @@ class FunctionLowering {
       }
       const auto FirstType = type(FirstRange.second, L);
       const auto OutputType = type(OutputRange.second, L);
-      const auto ElementType = type(FirstRange.second->getPointeeType(), L);
+      const bool RecordInput =
+          FirstRange.second->getPointeeType()->isRecordType();
+      auto ElementQualType = FirstRange.second->getPointeeType();
+      if (RecordInput)
+        ElementQualType = Call->getArg(Inclusive ? 5 : 3)->getType();
+      const auto ElementType = type(ElementQualType, L);
       const auto AccumulatorType =
           Accumulator ? type(Call->getArg(Inclusive ? 5 : 3)->getType(), L)
                       : ElementType;
@@ -4300,12 +4305,15 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       if (!Accumulator)
         Accumulator = temporary(ElementType, L);
-      auto InputValue = temporary(ElementType, L);
+      std::optional<Expression> InputValue;
+      if (!RecordInput)
+        InputValue = temporary(ElementType, L);
       auto Transformed = temporary(ElementType, L);
       auto Next = temporary(AccumulatorType, L);
       auto ApplyUnary = [&] {
         json::Array Arguments;
-        Arguments.push_back(json::Object(InputValue));
+        Arguments.push_back(RecordInput ? dereference(First, L)
+                                        : json::Object(*InputValue));
         return cast(emitAlgorithmCallback(json::Object(*UnaryCallback),
                                           *UnaryCallbackType,
                                           std::move(Arguments), L),
@@ -4337,7 +4345,8 @@ class FunctionLowering {
         label(FirstCheck, L);
         branch(binary("!=", First, Last, "bool", L), FirstBody, End, L);
         label(FirstBody, L);
-        assign(InputValue, dereference(First, L), L);
+        if (InputValue)
+          assign(*InputValue, dereference(First, L), L);
         assign(*Accumulator, ApplyUnary(), L);
         assign(dereference(Output, L),
                cast(json::Object(*Accumulator), OutputElementType, L), L);
@@ -4349,7 +4358,8 @@ class FunctionLowering {
       label(LoopCheck, L);
       branch(binary("!=", First, Last, "bool", L), LoopBody, End, L);
       label(LoopBody, L);
-      assign(InputValue, dereference(First, L), L);
+      if (InputValue)
+        assign(*InputValue, dereference(First, L), L);
       assign(Transformed, ApplyUnary(), L);
       assign(Next, ApplyBinary(), L);
       if (Inclusive) {

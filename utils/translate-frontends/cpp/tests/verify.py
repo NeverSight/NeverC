@@ -32723,6 +32723,45 @@ long *mixed(const std::vector<int> &input, long *output) {
           'v.cbegin(),v.cend(),o.begin(),0L,add);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    record_transform_scans_source = """\
+#include <numeric>
+#include <vector>
+struct Item { int key; int tag; };
+long add(long total, long term) { return total + term; }
+long encode(const Item &item) { return item.key * 10L + item.tag; }
+std::vector<long>::iterator inclusive(const std::vector<Item> &input,
+                                      std::vector<long> &output) {
+  return std::transform_inclusive_scan(input.cbegin(), input.cend(),
+                                       output.begin(), add, encode, 10L);
+}
+std::vector<long>::iterator exclusive(const std::vector<Item> &input,
+                                      std::vector<long> &output) {
+  return std::transform_exclusive_scan(input.cbegin(), input.cend(),
+                                       output.begin(), 10L, add, encode);
+}
+long *raw_inclusive(const Item *first, const Item *last, long *output) {
+  return std::transform_inclusive_scan(first, last, output,
+                                       add, encode, -5L);
+}
+long *raw_exclusive(const Item *first, const Item *last, long *output) {
+  return std::transform_exclusive_scan(first, last, output,
+                                       -5L, add, encode);
+}
+"""
+    for target in sdk_targets:
+        check("v2-record-transform-scans-" + target,
+              record_transform_scans_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-record-transform-scans-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Item{int key;};'
+          'long add(long a,long b){return a+b;}'
+          'long transform(Item item){return item.key;}'
+          'std::vector<long>::iterator f(const std::vector<Item>&v,'
+          'std::vector<long>&o){return std::transform_inclusive_scan('
+          'v.cbegin(),v.cend(),o.begin(),add,transform,0L);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_numeric_functional_pairs_source = """\
 #include <functional>
 #include <numeric>
