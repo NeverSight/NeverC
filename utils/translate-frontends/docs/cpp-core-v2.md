@@ -2517,6 +2517,11 @@ convertible by-value parameters or exact const references. The object is
 evaluated once and copied into the algorithm parameter even for an empty
 range, while no comparison runs for empty or single-element ranges. Raw and
 authenticated wrapped iterators retain their result type and first-tie rule.
+`std::minmax_element` accepts the same source-owned object forms after
+authenticating its pinned `_MinmaxElementLessFunc` adapter, reference fields,
+`std::__invoke` and identity projections. Its pair contains the original
+iterator type, with the first tied minimum and last tied maximum. The object
+is evaluated once; empty and single-element ranges perform no comparisons.
 
 Default `std::is_heap` and `std::is_heap_until` accept the same exact
 source-record raw or authenticated wrapped ranges with a selected Boolean

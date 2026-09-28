@@ -32226,6 +32226,58 @@ int *find_scalar_ref(int *first, int *last) {
           'Item*f(Item*a,Item*b){return std::adjacent_find(a,b,Equal{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_minmax_element_functor_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    return left.rank < right.rank;
+  }
+};
+struct ScalarLess {
+  bool operator()(int left, int right) const { return left < right; }
+};
+struct ScalarRefLess {
+  bool operator()(const int &left, const int &right) const {
+    return left < right;
+  }
+};
+std::pair<Item *, Item *> extrema_record(Item *first, Item *last, Less less) {
+  return std::minmax_element(first, last, less);
+}
+std::pair<std::vector<Item>::const_iterator,
+          std::vector<Item>::const_iterator>
+extrema_wrapped(const std::vector<Item> &values, Less less) {
+  return std::minmax_element(values.cbegin(), values.cend(), less);
+}
+std::pair<int *, int *> extrema_scalar(int *first, int *last) {
+  return std::minmax_element(first, last, ScalarLess{});
+}
+std::pair<int *, int *> extrema_scalar_ref(int *first, int *last) {
+  return std::minmax_element(first, last, ScalarRefLess{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-minmax-element-functor-" + target,
+              source_minmax_element_functor_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-minmax-element-functor-record-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(Item a,Item b) const {'
+          'return a.rank<b.rank;}};'
+          'auto f(Item*a,Item*b){return std::minmax_element(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-minmax-element-functor-overload-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(const Item&a,const Item&b)const{'
+          'return a.rank<b.rank;}'
+          'bool operator()(int a,int b)const{return a<b;}};'
+          'auto f(Item*a,Item*b){return std::minmax_element(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>
