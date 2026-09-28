@@ -56545,6 +56545,55 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedScalarGenerateCallbacksRun) {
+  const auto Source = tmpFile("wrapped-scalar-generate-callbacks.cpp");
+  const auto Output = tmpFile("wrapped-scalar-generate-callbacks.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+long next_value() { ++calls; return calls * 10; }
+int main() {
+  std::vector<int> values(4);
+  calls = 0;
+  std::generate(values.begin(), values.end(), next_value);
+  if (calls != 4 || values[0] != 10 || values[1] != 20 ||
+      values[2] != 30 || values[3] != 40) return 1;
+  calls = 0;
+  if (std::generate_n(values.begin() + 1, 2, next_value) !=
+          values.begin() + 3 || calls != 2 || values[0] != 10 ||
+      values[1] != 10 || values[2] != 20 || values[3] != 40) return 2;
+  calls = 0;
+  std::generate(values.end(), values.end(), next_value);
+  if (std::generate_n(values.begin(), 0, next_value) != values.begin() ||
+      std::generate_n(values.begin(), -3, next_value) != values.begin() ||
+      calls != 0) return 3;
+  std::vector<long> wider(2);
+  calls = 0;
+  if (std::generate_n(wider.begin(), 2, next_value) != wider.end() ||
+      calls != 2 || wider[0] != 10 || wider[1] != 20) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-scalar-generate-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

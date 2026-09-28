@@ -24791,13 +24791,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (((Origin->Path == "__algorithm/generate.h" && Name == "generate") ||
        (Origin->Path == "__algorithm/generate_n.h" && Name == "generate_n")) &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      AlgorithmPointerParameter(0) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType())) {
+      AlgorithmRangePointerParameter(0)) {
+    const auto Output = AlgorithmRangePointerParameter(0);
+    if (!utilityAlgorithmWritableScalarPointer(Context, *Output))
+      return std::nullopt;
     const bool Counted = Name == "generate_n";
     const auto *Callback = AlgorithmCallbackPrototype(2);
     const bool Bound = Counted ? AlgorithmCountParameter(1)
-                               : (AlgorithmPointerParameter(1) &&
+                               : (AlgorithmRangePointerParameter(1) &&
                                   Same(Function->getParamDecl(0)->getType(),
                                        Function->getParamDecl(1)->getType()));
     const bool Result = Counted ? (Call->isPRValue() &&
@@ -24806,9 +24807,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 : Function->getReturnType()->isVoidType();
     if (Bound && Result && Same(Call->getType(), Function->getReturnType()) &&
         Callback && Callback->getNumParams() == 0 &&
-        utilityScalarDirectConversion(
-            Context, Callback->getReturnType(),
-            Function->getParamDecl(0)->getType()->getPointeeType()))
+        utilityScalarDirectConversion(Context, Callback->getReturnType(),
+                                      (*Output)->getPointeeType()))
       return Counted ? UtilityOperation::AlgorithmGenerateN
                      : UtilityOperation::AlgorithmGenerate;
   }

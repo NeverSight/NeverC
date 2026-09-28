@@ -32137,6 +32137,33 @@ std::vector<long>::iterator mixed_second(
           'std::transform(v.cbegin(),v.cend(),o.begin(),twice);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_scalar_generate_callbacks_source = """\
+#include <algorithm>
+#include <vector>
+long next_value() { return 42; }
+void generate_wrapped(std::vector<int> &values) {
+  std::generate(values.begin(), values.end(), next_value);
+}
+std::vector<int>::iterator generate_n_wrapped(std::vector<int> &values,
+                                               int count) {
+  return std::generate_n(values.begin(), count, next_value);
+}
+std::vector<long>::iterator generate_n_wide(std::vector<long> &values,
+                                             int count) {
+  return std::generate_n(values.begin(), count, next_value);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-scalar-generate-callbacks-" + target,
+              wrapped_scalar_generate_callbacks_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-scalar-generate-callbacks-record-generator",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int value;}; Item next(){return Item{1};}'
+          'void f(std::vector<Item>&v){'
+          'std::generate(v.begin(),v.end(),next);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

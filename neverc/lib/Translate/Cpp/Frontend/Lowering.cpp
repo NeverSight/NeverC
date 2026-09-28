@@ -8354,7 +8354,8 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmGenerate:
     case UtilityOperation::AlgorithmGenerateN: {
       const bool Counted = Operation == UtilityOperation::AlgorithmGenerateN;
-      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
       std::optional<Expression> Last;
       std::optional<Expression> Remaining;
       std::string CountTypeName;
@@ -8368,11 +8369,11 @@ class FunctionLowering {
         Remaining =
             snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
       } else {
-        Last = snapshot(expression(Call->getArg(1)), L);
+        Last = std::move(AlgorithmRangeValue(1).first);
       }
       auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(CurrentRange.second, L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
@@ -8383,8 +8384,7 @@ class FunctionLowering {
       label(Invoke, L);
       {
         auto Value = emitNullaryCallable(Callback, L);
-        const auto ElementType =
-            type(Call->getArg(0)->getType()->getPointeeType(), L);
+        const auto ElementType = type(CurrentRange.second->getPointeeType(), L);
         assign(dereference(Current, L), cast(std::move(Value), ElementType, L),
                L);
       }
@@ -8399,7 +8399,9 @@ class FunctionLowering {
                L);
       jump(Check, L);
       label(End, L);
-      return Counted ? Current : Expression{};
+      if (Counted)
+        return AlgorithmIteratorResult(std::move(Current), 0);
+      return Expression{};
     }
     case UtilityOperation::MakeOptional: {
       auto Optional = OptionalFor(Call->getType());

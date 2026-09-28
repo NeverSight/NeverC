@@ -503,6 +503,8 @@ or const wrapped scalar inputs, with `for_each_n` returning the wrapped position
 Function-pointer unary and binary `transform` accept independent raw or
 authenticated wrapped scalar inputs and writable outputs, returning the output
 iterator type after checked callback and destination conversions.
+Function-pointer `generate` and `generate_n` also accept writable wrapped
+scalar outputs, with `generate_n` returning the wrapped output position.
 Predicate mutation algorithms require writable destinations; ordered output
 algorithms accept directly convertible writable scalar destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts

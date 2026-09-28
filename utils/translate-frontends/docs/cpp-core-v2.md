@@ -1846,6 +1846,10 @@ independent raw or authenticated wrapped scalar input ranges and a writable raw
 or wrapped scalar output. Each callback argument and result uses its checked
 direct conversion; the returned position retains the output iterator type.
 The selected input values are read before an overlapping output write.
+The function-pointer `generate` and `generate_n` forms also accept writable
+authenticated wrapped scalar outputs. The generator result uses its checked
+direct conversion to the output element; `generate_n` returns the advanced
+wrapped iterator, or the original position for a non-positive count.
 `for_each_n` additionally accepts the same standard-layout, trivially copied
 source function objects described for unary predicates below. Its exact pinned
 count conversion and loop are authenticated, the selected non-template call
