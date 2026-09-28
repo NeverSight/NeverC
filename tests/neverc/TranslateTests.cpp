@@ -14840,6 +14840,46 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CMemoryFindRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cmemory-find.cpp");
+  const auto Output = tmpFile("cmemory-find.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  unsigned char bytes[6]{0x80, 0, 0x7f, 0x80, 0x42, 0};
+  int pointer_effects = 0, value_effects = 0, count_effects = 0;
+  void *first = std::memchr((++pointer_effects, bytes),
+                            (++value_effects, 0x180),
+                            (++count_effects, 6));
+  if (first != bytes || pointer_effects != 1 || value_effects != 1 ||
+      count_effects != 1)
+    return 1;
+  if (std::memchr(bytes, 0, 0) != nullptr ||
+      std::memchr(bytes, 0, 2) != bytes + 1 ||
+      std::memchr(bytes + 1, 0x180, 3) != bytes + 3 ||
+      std::memchr(bytes, 0xff, 6) != nullptr)
+    return 2;
+  const unsigned char fixed[4]{0x7f, 0, 0x80, 0};
+  const void *found = std::memchr(fixed, 0x180, 4);
+  if (found != fixed + 2 || std::memchr(fixed, 0, 1) != nullptr ||
+      std::memchr(fixed, 0, 4) != fixed + 1)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cmemory-find" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-writes.cpp");
   const auto Output = tmpFile("cmemory-writes.nc");
@@ -14940,6 +14980,9 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
        "TR0203"},
       {"global-memcmp",
        "#include <cstring>\nint main(){return ::memcmp(\"a\",\"b\",1);}",
+       "TR0203"},
+      {"global-memchr",
+       "#include <cstring>\nint main(){char a[2]{};return ::memchr(a,0,2)==a;}",
        "TR0203"},
       {"global-memcpy",
        "#include <cstring>\nint main(){char d[2]{};::memcpy(d,\"a\",2);return "

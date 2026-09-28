@@ -20115,9 +20115,12 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Call && Call->getCallee()
           ? dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts())
           : nullptr;
+  const bool MemoryFind =
+      Function && Function->getIdentifier() && Function->getName() == "memchr";
   if (!S.coreV2() || !Function || !Reference || !Function->getIdentifier() ||
-      Function->isImplicit() || Function->isVariadic() || Function->hasBody() ||
-      !Function->isExternC() ||
+      Function->isImplicit() || Function->isVariadic() ||
+      (Function->hasBody() && !MemoryFind) ||
+      (!Function->isExternC() && !MemoryFind) ||
       Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       !Function->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
       !Call->isPRValue() || Call->getNumArgs() != Function->getNumParams() ||
@@ -20143,8 +20146,11 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
     if (Redeclaration->isImplicit())
       continue;
     if (Redeclaration->getLocation().isMacroID() ||
-        !cstddefOrigin(S, SM, Redeclaration->getLocation(), "resource",
-                       "include/string.h"))
+        !(MemoryFind && !Redeclaration->isExternC()
+              ? cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                              "string.h")
+              : cstddefOrigin(S, SM, Redeclaration->getLocation(), "resource",
+                              "include/string.h")))
       return std::nullopt;
     SourceDeclaration = true;
   }
@@ -20181,6 +20187,39 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::CStringMemoryCompare;
   const auto MutableBytePointer = Context.getPointerType(Context.VoidTy);
+  if (MemoryFind && Function->getNumParams() == 3 &&
+      (Same(Function->getParamDecl(0)->getType(), BytePointer) ||
+       Same(Function->getParamDecl(0)->getType(), MutableBytePointer)) &&
+      Same(Function->getParamDecl(1)->getType(), Context.IntTy) &&
+      Same(Function->getParamDecl(2)->getType(), Context.getSizeType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      !Function->isExternC() && Function->isInlined()) {
+    // The pinned C++ const-preserving overloads are small builtin adapters.
+    // Authenticate their selected body before replacing the builtin with a
+    // direct byte scan; the C declaration's different return type is excluded.
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+    const auto *Return = Body && Body->size() == 1
+                             ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                             : nullptr;
+    const auto *BuiltinCall =
+        Return && Return->getRetValue()
+            ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+            : nullptr;
+    const auto *Builtin =
+        BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
+    if (!BuiltinCall || BuiltinCall->getNumArgs() != 3 || !Builtin ||
+        !Builtin->isImplicit() || !Builtin->getBuiltinID() ||
+        Builtin->getName() != "__builtin_memchr")
+      return std::nullopt;
+    for (unsigned I = 0; I != 3; ++I) {
+      const auto *Argument =
+          dyn_cast<DeclRefExpr>(BuiltinCall->getArg(I)->IgnoreParenImpCasts());
+      if (!Argument || Argument->getDecl() != Function->getParamDecl(I))
+        return std::nullopt;
+    }
+    return UtilityOperation::CStringMemoryFind;
+  }
   if ((Name == "memcpy" || Name == "memmove" || Name == "memset") &&
       Function->getNumParams() == 3 &&
       Context.hasSameUnqualifiedType(Function->getParamDecl(0)->getType(),
