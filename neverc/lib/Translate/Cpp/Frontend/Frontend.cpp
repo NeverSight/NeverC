@@ -14643,6 +14643,9 @@ public:
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
                   .has_value() ||
+              approvedUtilityWrapIteratorAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context) ||
               approvedUtilityReverseIteratorAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
@@ -15083,6 +15086,9 @@ public:
           A.S.coreV2() &&
           approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
               .has_value();
+      const bool UtilityWrapIteratorAssignment =
+          A.S.coreV2() && approvedUtilityWrapIteratorAssignment(
+                              A.S, A.Sources, Operator, A.Context);
       const bool UtilityReverseIteratorAssignment =
           A.S.coreV2() && approvedUtilityReverseIteratorAssignment(
                               A.S, A.Sources, Operator, A.Context)
@@ -15115,10 +15121,9 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
             !UtilityStringAssignment && !UtilityVectorAssignment &&
-            !UtilityOptionalAssignment &&
-            !UtilityReverseIteratorAssignment &&
-            !UtilityAllocatorAssignment && !UtilityDefaultDelete &&
-            !UtilityUniquePtr && !Ordinary &&
+            !UtilityOptionalAssignment && !UtilityWrapIteratorAssignment &&
+            !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
+            !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -15376,6 +15381,8 @@ public:
       if (A.S.coreV2() && UtilityVectorAssignment)
         return true;
       if (A.S.coreV2() && UtilityOptionalAssignment)
+        return true;
+      if (A.S.coreV2() && UtilityWrapIteratorAssignment)
         return true;
       if (A.S.coreV2() && UtilityReverseIteratorAssignment)
         return true;

@@ -56219,6 +56219,59 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
+  const auto Source = tmpFile("wrap-iterator-assignment.cpp");
+  const auto Output = tmpFile("wrap-iterator-assignment.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int main() {
+  std::vector<int> values{4, 5, 6};
+  auto cursor = values.begin();
+  if (&(cursor = values.end()) != &cursor || cursor != values.end())
+    return 1;
+  cursor = values.begin() + 1;
+  if (*cursor != 5) return 2;
+  cursor = cursor;
+  if (cursor != values.begin() + 1) return 3;
+  std::vector<int>::const_iterator const_cursor = values.cbegin();
+  const_cursor = values.begin() + 2;
+  if (*const_cursor != 6) return 4;
+
+  const std::vector<int> first{1, 1, 2};
+  const std::vector<int> second{1, 3};
+  std::vector<long> output(5);
+  auto end = output.begin();
+  end = std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                   second.cend(), output.begin());
+  if (end != output.end() || output[0] != 1 || output[1] != 1 ||
+      output[2] != 1 || output[3] != 2 || output[4] != 3)
+    return 5;
+  end = std::set_intersection(first.cbegin(), first.cend(),
+                               second.cbegin(), second.cend(),
+                               output.begin());
+  if (end != output.begin() + 1 || output[0] != 1) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrap-iterator-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedScalarOrderedOutputAndPartialSortCopyRun) {
   const auto Source = tmpFile("wrapped-scalar-ordered-output-copy.cpp");
   const auto Output = tmpFile("wrapped-scalar-ordered-output-copy.nc");

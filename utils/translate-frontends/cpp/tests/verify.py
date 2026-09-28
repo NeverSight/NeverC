@@ -31939,6 +31939,30 @@ void scalar_wrapped(std::vector<int> &values) {
           'std::inplace_merge(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrap_iterator_assignment_source = """\
+#include <algorithm>
+#include <vector>
+void assign_iterators(std::vector<int> &values) {
+  auto current = values.begin();
+  current = values.end();
+  current = current;
+  std::vector<int>::const_iterator constant = values.cbegin();
+  constant = values.begin();
+}
+std::vector<long>::iterator assign_algorithm_result(
+    const std::vector<int> &first, const std::vector<int> &second,
+    std::vector<long> &output) {
+  auto end = output.begin();
+  end = std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                   second.cend(), output.begin());
+  return end;
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrap-iterator-assignment-" + target,
+              wrap_iterator_assignment_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     wrapped_scalar_ordered_output_copy_source = """\
 #include <algorithm>
 #include <vector>

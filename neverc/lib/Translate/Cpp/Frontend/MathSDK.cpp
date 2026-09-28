@@ -8376,6 +8376,41 @@ approvedUtilityWrapIteratorConstruction(const State &S,
   return std::nullopt;
 }
 
+bool approvedUtilityWrapIteratorAssignment(
+    const State &S, const SourceManager &SM,
+    const CXXOperatorCallExpr *Assignment, const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return false;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Iterator = approvedUtilityWrapIteratorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !Iterator || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->isImplicit() ||
+      !Method->isTrivial() ||
+      (!Method->isCopyAssignmentOperator() &&
+       !Method->isMoveAssignmentOperator()))
+    return false;
+  const auto RecordType = Context.getRecordType(Iterator->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  return Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                        RecordType) &&
+         Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                        RecordType) &&
+         Context.hasSameUnqualifiedType(Assignment->getType(), RecordType) &&
+         Parameter->isReferenceType() &&
+         Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        RecordType) &&
+         Method->getReturnType()->isLValueReferenceType() &&
+         Context.hasSameUnqualifiedType(
+             Method->getReturnType()->getPointeeType(), RecordType);
+}
+
 bool approvedUtilityReverseIteratorMetadata(const State &S,
                                             const SourceManager &SM,
                                             const CXXRecordDecl *Record) {

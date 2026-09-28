@@ -402,6 +402,8 @@ Iterator exposes the pinned public header and pointer `iterator_traits` metadata
 through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled
 until their C runtime character-state ABI is available on every target.
+Authenticated string/vector forward wrappers also admit trivial copy/move
+assignment, including assignment from a returned algorithm iterator.
 Algorithm directly lowers scalar-pointer `copy`, `move`, `copy_backward`,
 `move_backward`, `copy_n`, `fill`, `fill_n`, `iter_swap`, `swap_ranges`,
 `reverse`, `reverse_copy`, `rotate` and `rotate_copy` calls from its

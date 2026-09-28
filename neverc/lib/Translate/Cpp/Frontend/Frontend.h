@@ -1521,6 +1521,10 @@ approvedUtilityWrapIteratorConstruction(const State &S,
                                         const clang::SourceManager &SM,
                                         const clang::CXXConstructExpr *Construction,
                                         const clang::ASTContext &Context);
+bool approvedUtilityWrapIteratorAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context);
 bool approvedUtilityReverseIteratorMetadata(const State &S,
                                             const clang::SourceManager &SM,
                                             const clang::CXXRecordDecl *Record);

@@ -821,6 +821,10 @@ The authenticated forward wrappers directly lower arrow, subscript, prefix and
 postfix increment/decrement, member and left-hand offsets, and compound offset
 assignment. The result of postfix movement retains the old pointer, while
 compound assignment returns the mutated iterator by reference.
+The same authenticated forward wrappers also admit their implicit trivial
+copy/move assignment. The right iterator is captured once before writing the
+single checked pointer field, so self-assignment and assignment from a
+temporary retain the returned destination reference.
 
 The four stream-iterator component headers remain authenticated in the VFS but
 their declarations are disabled until the I/O header closure and runtime

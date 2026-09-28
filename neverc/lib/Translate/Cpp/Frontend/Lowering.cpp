@@ -18309,6 +18309,19 @@ class FunctionLowering {
         reject(L, "utility optional assignment",
                "Unknown approved std::optional assignment.");
       }
+      if (approvedUtilityWrapIteratorAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "wrap iterator assignment",
+                 "std::__wrap_iter assignment cannot initialize a record "
+                 "result.");
+        auto Right = snapshot(expression(Call->getArg(1)), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(json::Object(Left), std::move(Right), L);
+        return Left;
+      }
       if (auto Assignment = approvedUtilityReverseIteratorAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
         if (Destination)
