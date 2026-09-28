@@ -32838,6 +32838,53 @@ Item *unique_copy_mixed(const std::vector<Item> &source, Item *output) {
           'return std::unique(v.begin(),v.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_value_replacement_source = """\
+#include <algorithm>
+#include <vector>
+struct Item {
+  int key;
+  int tag;
+  bool operator==(const Item &other) const { return key == other.key; }
+};
+std::vector<Item>::iterator remove_records(std::vector<Item> &values,
+                                            const Item &old_value) {
+  return std::remove(values.begin(), values.end(), old_value);
+}
+std::vector<Item>::iterator remove_copy_records(
+    const std::vector<Item> &source, std::vector<Item> &output,
+    const Item &old_value) {
+  return std::remove_copy(source.cbegin(), source.cend(), output.begin(),
+                          old_value);
+}
+void replace_records(std::vector<Item> &values, const Item &old_value,
+                     const Item &new_value) {
+  std::replace(values.begin(), values.end(), old_value, new_value);
+}
+std::vector<Item>::iterator replace_copy_records(
+    const std::vector<Item> &source, std::vector<Item> &output,
+    const Item &old_value, const Item &new_value) {
+  return std::replace_copy(source.cbegin(), source.cend(), output.begin(),
+                           old_value, new_value);
+}
+Item *remove_copy_mixed(const std::vector<Item> &source, Item *output,
+                        const Item &old_value) {
+  return std::remove_copy(source.cbegin(), source.cend(), output, old_value);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-value-replacement-" + target,
+              wrapped_record_value_replacement_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-value-replacement-nontrivial",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;bool operator==(const Record&other)const{'
+          'return value==other.value;}Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
+          'std::vector<Record>::iterator f(std::vector<Record>&v,'
+          'const Record&old_value){return std::remove('
+          'v.begin(),v.end(),old_value);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

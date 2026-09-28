@@ -22256,6 +22256,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                           Value->getPointeeType());
   };
+  auto AlgorithmRecordEqualityValueParameter = [&](unsigned ValueIndex,
+                                                   unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Pointer = AlgorithmRecordEqualityRangeParameter(IteratorIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Pointer && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           Context.hasSameUnqualifiedType((*Pointer)->getPointeeType(),
+                                          Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
+  };
   auto AlgorithmTransferRangeParameters = [&](unsigned InputIndex,
                                               unsigned OutputIndex) {
     const auto Input = AlgorithmRangePointerParameter(InputIndex);
@@ -22272,6 +22287,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return Input && Output &&
            Context.hasSameUnqualifiedType((*Input)->getPointeeType(),
                                           (*Output)->getPointeeType());
+  };
+  auto AlgorithmTransferRecordRangeValueParameter = [&](unsigned ValueIndex,
+                                                        unsigned OutputIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Output = AlgorithmWritableRecordRangeParameter(OutputIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Output && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           Context.hasSameUnqualifiedType((*Output)->getPointeeType(),
+                                          Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
   };
   auto AlgorithmTransferRangeValueParameter = [&](unsigned ValueIndex,
                                                   unsigned OutputIndex) {
@@ -23768,6 +23798,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmRecordEqualityRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordEqualityValueParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemove;
+  if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
       AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -23778,6 +23818,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemove;
+  if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmRecordEqualityRangeParameter(0) &&
+      AlgorithmRecordEqualityRangeParameter(1) &&
+      AlgorithmTransferRecordRangeParameters(0, 2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordEqualityValueParameter(3, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemoveCopy;
   if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
@@ -23791,6 +23842,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmRemoveCopy;
   if (Origin->Path == "__algorithm/replace.h" && Name == "replace" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmRecordEqualityRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordEqualityValueParameter(2, 0) &&
+      AlgorithmTransferRecordRangeValueParameter(3, 0) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplace;
+  if (Origin->Path == "__algorithm/replace.h" && Name == "replace" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -23801,6 +23863,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplace;
+  if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
+      Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
+      Call->isPRValue() && AlgorithmRecordEqualityRangeParameter(0) &&
+      AlgorithmRecordEqualityRangeParameter(1) &&
+      AlgorithmTransferRecordRangeParameters(0, 2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordEqualityValueParameter(3, 0) &&
+      AlgorithmTransferRecordRangeValueParameter(4, 2) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplaceCopy;
   if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
       Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&

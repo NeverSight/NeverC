@@ -5225,13 +5225,19 @@ class FunctionLowering {
           snapshot(address(lvalue(Call->getArg(ValueIndex)),
                            Call->getArg(ValueIndex)->getType(), L),
                    L);
+      const bool Record = CurrentRange.second->getPointeeType()->isRecordType();
+      const auto SourceComparison =
+          Record ? approvedUtilityTrivialSourceComparison(
+                       A.S, A.Sources, CurrentRange.second->getPointeeType(),
+                       OO_EqualEqual, A.Context)
+                 : std::nullopt;
       auto Common = utilityScalarComparisonType(
           A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(ValueIndex)->getType(), false);
-      if (!Common)
+      if (!Common && !SourceComparison)
         reject(L, "algorithm remove",
                "The range element and value have no equality common type.");
-      const auto ComparisonType = type(*Common, L);
+      const auto ComparisonType = Common ? type(*Common, L) : std::string();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(CurrentRange.second, L);
       const auto OutputType = type(OutputRange.second, L);
@@ -5245,14 +5251,23 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", cast(dereference(Current, L), ComparisonType, L),
-                    cast(dereference(ValueAddress, L), ComparisonType, L),
-                    "bool", L),
-             Next, Transfer, L);
+      branch(
+          SourceComparison
+              ? compareVectorSourceElements(
+                    json::Object(Current), json::Object(ValueAddress),
+                    SourceComparison->Member,
+                    SourceComparison->Friend ? SourceComparison->Friend
+                                             : SourceComparison->Namespace,
+                    L)
+              : binary("==", cast(dereference(Current, L), ComparisonType, L),
+                       cast(dereference(ValueAddress, L), ComparisonType, L),
+                       "bool", L),
+          Next, Transfer, L);
       label(Transfer, L);
       assign(dereference(Output, L),
-             Copying ? cast(dereference(Current, L), OutputElementType, L)
-                     : dereference(Current, L),
+             Copying && !Record
+                 ? cast(dereference(Current, L), OutputElementType, L)
+                 : dereference(Current, L),
              L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
@@ -5287,13 +5302,19 @@ class FunctionLowering {
       auto NewAddress = snapshot(address(lvalue(Call->getArg(NewIndex)),
                                          Call->getArg(NewIndex)->getType(), L),
                                  L);
+      const bool Record = CurrentRange.second->getPointeeType()->isRecordType();
+      const auto SourceComparison =
+          Record ? approvedUtilityTrivialSourceComparison(
+                       A.S, A.Sources, CurrentRange.second->getPointeeType(),
+                       OO_EqualEqual, A.Context)
+                 : std::nullopt;
       auto Common = utilityScalarComparisonType(
           A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(OldIndex)->getType(), false);
-      if (!Common)
+      if (!Common && !SourceComparison)
         reject(L, "algorithm replace",
                "The range element and old value have no equality common type.");
-      const auto ComparisonType = type(*Common, L);
+      const auto ComparisonType = Common ? type(*Common, L) : std::string();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(CurrentRange.second, L);
       const auto OutputType = type(OutputPointerType, L);
@@ -5306,18 +5327,30 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", cast(dereference(Current, L), ComparisonType, L),
-                    cast(dereference(OldAddress, L), ComparisonType, L), "bool",
-                    L),
-             Match, Mismatch, L);
+      branch(
+          SourceComparison
+              ? compareVectorSourceElements(
+                    json::Object(Current), json::Object(OldAddress),
+                    SourceComparison->Member,
+                    SourceComparison->Friend ? SourceComparison->Friend
+                                             : SourceComparison->Namespace,
+                    L)
+              : binary("==", cast(dereference(Current, L), ComparisonType, L),
+                       cast(dereference(OldAddress, L), ComparisonType, L),
+                       "bool", L),
+          Match, Mismatch, L);
       label(Match, L);
       assign(dereference(Output ? *Output : Current, L),
-             cast(dereference(NewAddress, L), OutputElementType, L), L);
+             Record ? dereference(NewAddress, L)
+                    : cast(dereference(NewAddress, L), OutputElementType, L),
+             L);
       jump(Next, L);
       label(Mismatch, L);
       if (Output)
         assign(dereference(*Output, L),
-               cast(dereference(Current, L), OutputElementType, L), L);
+               Record ? dereference(Current, L)
+                      : cast(dereference(Current, L), OutputElementType, L),
+               L);
       jump(Next, L);
       label(Next, L);
       assign(Current,

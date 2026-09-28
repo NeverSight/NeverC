@@ -1743,6 +1743,12 @@ records in raw or authenticated wrapped ranges when one supported Boolean
 `unique_copy` writes complete values into a writable output of the same record
 type. Comparisons read range lvalues without making extra record copies,
 and both algorithms return the original raw or wrapped iterator form.
+Value-based `remove`, `remove_copy`, `replace` and `replace_copy` likewise
+accept exact trivial source records when the range has a uniquely selected
+Boolean `operator==`. Old and new values use exact const record references;
+the algorithms reread them through the loop so aliases observe earlier writes.
+In-place forms require writable input, and copy forms require a writable
+same-type output, including mixed raw and authenticated wrapped iterators.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

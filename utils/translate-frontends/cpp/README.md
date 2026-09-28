@@ -505,6 +505,10 @@ Default `unique` and `unique_copy` also accept raw or wrapped ranges of exact
 trivial source records with one selected Boolean `operator==`. `unique` requires
 a writable input; `unique_copy` requires a writable output of the same record
 type and accepts mixed raw and wrapped iterators.
+Value-based `remove`, `remove_copy`, `replace` and `replace_copy` accept those
+record ranges with an exact const record value, including mixed raw and wrapped
+copy destinations. Comparison and replacement value references remain live
+through the loop.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and

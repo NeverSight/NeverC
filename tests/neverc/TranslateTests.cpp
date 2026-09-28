@@ -57505,6 +57505,80 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordValueReplacementRun) {
+  const auto Source = tmpFile("wrapped-record-value-replacement.cpp");
+  const auto Output = tmpFile("wrapped-record-value-replacement.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item {
+  int key;
+  int tag;
+  bool operator==(const Item &other) const { return key == other.key; }
+};
+int main() {
+  Item old_value{2, 0}, new_value{9, 90};
+  std::vector<Item> values{{1, 10}, {2, 20}, {1, 11},
+                           {3, 30}, {2, 21}};
+  auto end = std::remove(values.begin(), values.end(), old_value);
+  if (end != values.begin() + 3 || values[0].tag != 10 ||
+      values[1].tag != 11 || values[2].tag != 30) return 1;
+  const std::vector<Item> source{{1, 10}, {2, 20}, {1, 11},
+                                 {3, 30}, {2, 21}};
+  std::vector<Item> output(5);
+  if (std::remove_copy(source.cbegin(), source.cend(), output.begin(),
+                       old_value) != output.begin() + 3 ||
+      output[0].tag != 10 || output[1].tag != 11 ||
+      output[2].tag != 30) return 2;
+  Item raw_output[5]{};
+  if (std::remove_copy(source.cbegin(), source.cend(), raw_output,
+                       old_value) != raw_output + 3 ||
+      raw_output[2].tag != 30) return 3;
+  std::vector<Item> replaced{{1, 10}, {2, 20}, {1, 11},
+                             {3, 30}, {2, 21}};
+  std::replace(replaced.begin(), replaced.end(), old_value, new_value);
+  if (replaced[0].tag != 10 || replaced[1].tag != 90 ||
+      replaced[2].tag != 11 || replaced[3].tag != 30 ||
+      replaced[4].tag != 90) return 4;
+  if (std::replace_copy(source.cbegin(), source.cend(), output.begin(),
+                        old_value, new_value) != output.end() ||
+      output[0].tag != 10 || output[1].tag != 90 ||
+      output[2].tag != 11 || output[3].tag != 30 ||
+      output[4].tag != 90) return 5;
+  Item raw_input[3]{{1, 10}, {2, 20}, {3, 30}};
+  if (std::replace_copy(raw_input, raw_input + 3, output.begin(),
+                        old_value, new_value) != output.begin() + 3 ||
+      output[1].tag != 90 || output[2].tag != 30) return 6;
+  std::vector<Item> aliased{{1, 10}, {2, 20}, {1, 11}, {2, 21}};
+  if (std::remove(aliased.begin(), aliased.end(), aliased[0]) !=
+          aliased.begin() + 2 || aliased[0].tag != 20 ||
+      aliased[1].tag != 11) return 7;
+  std::vector<Item> empty;
+  if (std::remove(empty.begin(), empty.end(), old_value) != empty.end() ||
+      std::remove_copy(empty.begin(), empty.end(), output.begin(),
+                       old_value) != output.begin()) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-record-value-replacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedPartitionAlgorithmsRun) {
   const auto Source = tmpFile("wrapped-partition-algorithms.cpp");
   const auto Output = tmpFile("wrapped-partition-algorithms.nc");
