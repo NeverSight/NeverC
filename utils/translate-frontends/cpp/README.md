@@ -490,6 +490,9 @@ four-iterator `is_permutation`, plus `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of` and `search_n`. Predicate `adjacent_find` also
 accepts authenticated mutable or const wrapped scalar ranges and returns a
 wrapped matching position.
+Default and checked function-pointer `unique` and `unique_copy` also accept
+authenticated wrapped scalar ranges, including writable wrapped outputs and
+mixed raw-pointer inputs or outputs for `unique_copy`.
 Checked predicate `search`, `find_end`, `find_first_of`, `search_n` and both
 `is_permutation` forms accept authenticated wrapped scalar ranges with the
 existing by-value callback conversion rules.

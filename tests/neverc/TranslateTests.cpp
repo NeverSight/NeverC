@@ -57254,6 +57254,73 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedUniqueAndUniqueCopyRun) {
+  const auto Source = tmpFile("wrapped-unique-copy.cpp");
+  const auto Output = tmpFile("wrapped-unique-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+bool same_tens(int left, int right) {
+  ++calls;
+  return left / 10 == right / 10;
+}
+int main() {
+  std::vector<int> values{1, 1, 2, 2, 3, 3};
+  auto end = std::unique(values.begin(), values.end());
+  if (end != values.begin() + 3 || values[0] != 1 ||
+      values[1] != 2 || values[2] != 3) return 1;
+  const std::vector<int> source{1, 1, 2, 2, 3, 3};
+  std::vector<long> output(6);
+  if (std::unique_copy(source.cbegin(), source.cend(), output.begin()) !=
+          output.begin() + 3 || output[0] != 1 || output[1] != 2 ||
+      output[2] != 3) return 2;
+  std::vector<int> tens{10, 11, 20, 21, 22, 30};
+  calls = 0;
+  if (std::unique(tens.begin(), tens.end(), same_tens) !=
+          tens.begin() + 3 || tens[0] != 10 || tens[1] != 20 ||
+      tens[2] != 30 || calls != 5) return 3;
+  const std::vector<int> tens_source{10, 11, 20, 21, 22, 30};
+  calls = 0;
+  if (std::unique_copy(tens_source.cbegin(), tens_source.cend(),
+                       output.begin(), same_tens) != output.begin() + 3 ||
+      output[0] != 10 || output[1] != 20 || output[2] != 30 ||
+      calls != 5) return 4;
+  long raw_output[6]{};
+  if (std::unique_copy(source.cbegin(), source.cend(), raw_output) !=
+          raw_output + 3 || raw_output[2] != 3) return 5;
+  int raw_input[4]{1, 1, 2, 2};
+  if (std::unique_copy(raw_input, raw_input + 4, output.begin()) !=
+          output.begin() + 2 || output[1] != 2) return 6;
+  std::vector<int> empty;
+  calls = 0;
+  if (std::unique(empty.begin(), empty.end(), same_tens) != empty.end() ||
+      std::unique_copy(empty.begin(), empty.end(), output.begin(),
+                       same_tens) != output.begin() || calls != 0)
+    return 7;
+  std::vector<int> one{7};
+  if (std::unique(one.begin(), one.end()) != one.end()) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-unique-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

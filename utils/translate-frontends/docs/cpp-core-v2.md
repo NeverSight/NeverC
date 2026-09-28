@@ -1713,6 +1713,11 @@ Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements use built-in equality
 only when no source `operator==` accepts that enum; such overloads remain
 rejected instead of being silently bypassed.
+Default and checked function-pointer `unique` and `unique_copy` also accept
+authenticated writable wrapped scalar ranges, with `unique_copy` accepting
+independent raw or wrapped inputs and writable outputs. Both return the
+matching iterator type, preserve empty and single-element behavior, and apply
+their existing checked equality, predicate and output conversion rules.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

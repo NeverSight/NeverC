@@ -5316,15 +5316,16 @@ class FunctionLowering {
       return Output ? std::move(*Output) : Expression();
     }
     case UtilityOperation::AlgorithmUnique: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 3)
         Predicate = snapshot(expression(Call->getArg(2)), L);
       auto Output = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Select = labelName();
       const auto Next = labelName(), Finish = labelName();
@@ -5366,21 +5367,23 @@ class FunctionLowering {
           L);
       jump(End, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 0);
     }
     case UtilityOperation::AlgorithmUniqueCopy: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto Output = std::move(OutputRange.first);
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 4)
         Predicate = snapshot(expression(Call->getArg(3)), L);
       auto Previous = snapshot(json::Object(Current), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto InputType = type(CurrentRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Transfer = labelName();
       const auto Next = labelName(), End = labelName();
@@ -5420,7 +5423,7 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmSearch:
     case UtilityOperation::AlgorithmFindEnd: {

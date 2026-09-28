@@ -32523,6 +32523,40 @@ bool permutation(const std::vector<int> &source,
           'return std::search(v.begin(),v.end(),v.begin(),v.end(),equal);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_unique_copy_source = """\
+#include <algorithm>
+#include <vector>
+bool same_tens(int left, int right) { return left / 10 == right / 10; }
+std::vector<int>::iterator unique_default(std::vector<int> &values) {
+  return std::unique(values.begin(), values.end());
+}
+std::vector<int>::iterator unique_predicate(std::vector<int> &values) {
+  return std::unique(values.begin(), values.end(), same_tens);
+}
+std::vector<long>::iterator copy_default(const std::vector<int> &values,
+                                          std::vector<long> &output) {
+  return std::unique_copy(values.cbegin(), values.cend(), output.begin());
+}
+std::vector<long>::iterator copy_predicate(const std::vector<int> &values,
+                                            std::vector<long> &output) {
+  return std::unique_copy(values.cbegin(), values.cend(), output.begin(),
+                           same_tens);
+}
+long *copy_mixed(const std::vector<int> &values, long *output) {
+  return std::unique_copy(values.cbegin(), values.cend(), output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-unique-copy-" + target,
+              wrapped_unique_copy_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-unique-reference-predicate",
+          '#include <algorithm>\n#include <vector>\n'
+          'bool equal(const int &left,const int &right){return left==right;}'
+          'std::vector<int>::iterator f(std::vector<int>&v){'
+          'return std::unique(v.begin(),v.end(),equal);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>
