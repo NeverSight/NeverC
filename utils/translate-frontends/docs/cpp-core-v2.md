@@ -2265,8 +2265,10 @@ ranges of exact trivial source records with one uniquely selected const member,
 hidden-friend, or enclosing-namespace free Boolean `operator<`. Heap and scan
 comparisons receive the current elements by reference; swaps retain complete
 record values. Writable authenticated wrapped scalar ranges retain the default
-and checked comparator forms. Record comparator overloads and nontrivial
-records remain rejected.
+and checked comparator forms. Their checked comparator overloads also accept
+those writable trivial records through `bool(const Record&, const Record&)`,
+moving complete values without requiring `operator<`. Nontrivial records
+remain rejected.
 
 Default `std::partial_sort_copy` also accepts raw or authenticated wrapped
 input and writable output ranges of the same exact trivial source-record type.
@@ -2287,6 +2289,9 @@ record pivot by const reference and swaps complete values. Equivalent values
 terminate without an artificial ordering; the requested element has its sorted
 rank, with no full-order promise for either side. Writable wrapped scalar
 ranges retain their default and checked comparator forms.
+Its checked comparator overload also accepts those writable trivial records
+through `bool(const Record&, const Record&)`, including comparisons with the
+retained pivot, without requiring `operator<`.
 
 `std::sort` also accepts authenticated `std::__wrap_iter<T*>` ranges for the
 same writable scalar element and comparison boundary. This includes mutable
@@ -2311,8 +2316,7 @@ writable directly convertible output. A greater-than callback therefore sorts or
 selects in descending order. All callback and iterator arguments are retained
 once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
-values. Unsupported callbacks and record comparator overloads for the partial
-sort and selection algorithms remain rejected.
+values. Unsupported callbacks remain rejected.
 
 The three-argument `std::sort` overload also accepts the same authenticated
 standard comparison objects as the heap algorithms, including comparison
@@ -2340,8 +2344,10 @@ and object-pointer elements. The comparator overload also admits authenticated
 typed or transparent empty standard `<functional>` comparison objects on
 arithmetic scalars. The selected instantiated operator body is proved and
 lowered directly, and the object argument is evaluated once. Writable wrapped
-scalar ranges retain the default and checked comparator forms. Record
-comparators and other unsupported callables remain rejected.
+scalar ranges retain the default and checked comparator forms. The checked
+`bool(const Record&, const Record&)` comparator also accepts those writable
+trivial records, preserving stable ordering without requiring `operator<`.
+Other unsupported callables remain rejected.
 
 The exact `std::inplace_merge` overloads reuse the same stable in-place merge
 for two adjacent, already ordered writable ranges. Default ordering also
@@ -2355,8 +2361,10 @@ ordering; the comparator overload
 also admits enum and object-pointer elements through the checked callback
 boundary. Authenticated typed or transparent empty standard comparison objects
 also lower directly on arithmetic scalars, with one-time argument evaluation.
-Writable wrapped scalar ranges retain the default and checked comparator forms;
-record comparator overloads remain outside this boundary.
+Writable wrapped scalar ranges retain the default and checked comparator forms.
+The checked `bool(const Record&, const Record&)` comparator also accepts those
+writable trivial records, preserving stable ordering without requiring
+`operator<`.
 
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic, enum or complete

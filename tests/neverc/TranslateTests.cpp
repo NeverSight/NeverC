@@ -57016,6 +57016,164 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSelectionComparatorRun) {
+  const auto Source = tmpFile("source-record-selection-comparator.cpp");
+  const auto Output = tmpFile("source-record-selection-comparator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+int calls;
+bool less(const Item &left, const Item &right) {
+  ++calls;
+  return left.rank < right.rank;
+}
+int main() {
+  Item partial[8]{{7, 70}, {1, 10}, {5, 50}, {2, 20},
+                  {9, 90}, {3, 30}, {4, 40}, {8, 80}};
+  int first_effects = 0, middle_effects = 0, last_effects = 0;
+  std::partial_sort((++first_effects, partial),
+                    (++middle_effects, partial + 4),
+                    (++last_effects, partial + 8), less);
+  if (first_effects != 1 || middle_effects != 1 || last_effects != 1 ||
+      !calls) return 1;
+  int sum = 0;
+  for (int i = 0; i < 8; ++i) {
+    if (i < 4 && (partial[i].rank != i + 1 ||
+                  partial[i].tag != (i + 1) * 10)) return 2;
+    sum += partial[i].tag;
+  }
+  if (sum != 390) return 3;
+  int before = calls;
+  std::partial_sort(partial, partial, partial + 8, less);
+  if (calls != before) return 4;
+  std::vector<Item> wrapped{{5, 50}, {1, 10}, {4, 40},
+                             {2, 20}, {3, 30}};
+  std::partial_sort(wrapped.begin(), wrapped.begin() + 3,
+                    wrapped.end(), less);
+  for (int i = 0; i < 3; ++i)
+    if (wrapped[i].rank != i + 1 ||
+        wrapped[i].tag != (i + 1) * 10) return 5;
+  Item selected[7]{{6, 60}, {1, 10}, {5, 50}, {2, 20},
+                   {7, 70}, {3, 30}, {4, 40}};
+  int nth_effects = 0;
+  std::nth_element(selected, (++nth_effects, selected + 3),
+                   selected + 7, less);
+  if (nth_effects != 1 || selected[3].rank != 4 ||
+      selected[3].tag != 40) return 6;
+  for (int i = 0; i < 7; ++i)
+    if ((i < 3 && selected[i].rank > 4) ||
+        (i > 3 && selected[i].rank < 4) ||
+        selected[i].tag != selected[i].rank * 10) return 7;
+  std::vector<Item> wrapped_nth{{4, 40}, {1, 10}, {5, 50},
+                                {2, 20}, {3, 30}};
+  std::nth_element(wrapped_nth.begin(), wrapped_nth.begin() + 2,
+                   wrapped_nth.end(), less);
+  if (wrapped_nth[2].rank != 3 || wrapped_nth[2].tag != 30) return 8;
+  Item equal[4]{{2, 0}, {2, 1}, {2, 2}, {2, 3}};
+  std::nth_element(equal, equal + 2, equal + 4, less);
+  int tag_sum = 0;
+  for (int i = 0; i < 4; ++i) {
+    if (equal[i].rank != 2) return 9;
+    tag_sum += equal[i].tag;
+  }
+  if (tag_sum != 6) return 10;
+  std::vector<Item> empty;
+  before = calls;
+  std::partial_sort(empty.begin(), empty.begin(), empty.end(), less);
+  std::nth_element(empty.begin(), empty.end(), empty.end(), less);
+  return calls == before ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-selection-comparator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordStableMergeComparatorRun) {
+  const auto Source = tmpFile("source-record-stable-merge-comparator.cpp");
+  const auto Output = tmpFile("source-record-stable-merge-comparator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+int calls;
+bool less(const Item &left, const Item &right) {
+  ++calls;
+  return left.rank < right.rank;
+}
+int main() {
+  Item raw[6]{{2, 20}, {1, 10}, {2, 21},
+              {1, 11}, {3, 30}, {2, 22}};
+  int first_effects = 0, last_effects = 0;
+  std::stable_sort((++first_effects, raw),
+                   (++last_effects, raw + 6), less);
+  const int stable_tags[6]{10, 11, 20, 21, 22, 30};
+  if (first_effects != 1 || last_effects != 1 || !calls) return 1;
+  for (int i = 0; i < 6; ++i)
+    if (raw[i].tag != stable_tags[i]) return 2;
+  std::vector<Item> wrapped{{2, 20}, {1, 10}, {2, 21},
+                             {1, 11}, {3, 30}, {2, 22}};
+  std::stable_sort(wrapped.begin(), wrapped.end(), less);
+  for (int i = 0; i < 6; ++i)
+    if (wrapped[i].tag != stable_tags[i]) return 3;
+  Item merged[6]{{1, 10}, {2, 20}, {2, 21},
+                 {1, 11}, {2, 22}, {3, 30}};
+  int middle_effects = 0;
+  std::inplace_merge(merged, (++middle_effects, merged + 3),
+                     merged + 6, less);
+  if (middle_effects != 1) return 4;
+  for (int i = 0; i < 6; ++i)
+    if (merged[i].tag != stable_tags[i]) return 5;
+  std::vector<Item> wrapped_merge{{1, 10}, {2, 20}, {2, 21},
+                                   {1, 11}, {2, 22}, {3, 30}};
+  std::inplace_merge(wrapped_merge.begin(), wrapped_merge.begin() + 3,
+                     wrapped_merge.end(), less);
+  for (int i = 0; i < 6; ++i)
+    if (wrapped_merge[i].tag != stable_tags[i]) return 6;
+  std::vector<Item> empty;
+  Item one[1]{{4, 40}};
+  int before = calls;
+  std::stable_sort(empty.begin(), empty.end(), less);
+  std::inplace_merge(empty.begin(), empty.end(), empty.end(), less);
+  std::stable_sort(one, one + 1, less);
+  std::inplace_merge(one, one, one + 1, less);
+  return calls == before && one[0].tag == 40 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-stable-merge-comparator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedScalarOrderedComparatorsRun) {
   const auto Source = tmpFile("wrapped-scalar-ordered-comparators.cpp");
   const auto Output = tmpFile("wrapped-scalar-ordered-comparators.nc");

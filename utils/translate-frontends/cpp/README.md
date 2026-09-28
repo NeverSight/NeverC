@@ -479,6 +479,8 @@ Their checked comparator forms also accept those records through
 `bool(const Record&, const Record&)`, preserving complete values on swaps.
 Default `partial_sort` admits writable raw or authenticated wrapped trivial
 source-record ranges; wrapped scalar ranges retain their comparator forms.
+Its checked comparator form also accepts those records through
+`bool(const Record&, const Record&)` and moves complete values.
 Default `partial_sort_copy` admits raw or authenticated wrapped input and
 writable output ranges of the same trivial source-record type, returning the
 original output iterator form.
@@ -489,10 +491,14 @@ Their scalar comparator forms admit those ranges with checked Boolean function
 pointers or standard comparison objects, proving every comparison direction.
 Default `nth_element` admits the same record ranges through its retained pivot
 and three-way partition, while wrapped scalars retain comparator forms.
+Its checked comparator form also accepts those records through that exact
+const-reference function pointer.
 Default `stable_sort` and `inplace_merge` admit writable raw or authenticated
 wrapped trivial source-record ranges with that selected ordering, preserving
 the order of equivalent elements. Wrapped scalars retain their default and
-checked comparator forms; record comparator overloads remain unsupported.
+checked comparator forms. Their checked comparator forms also accept those
+records through that exact const-reference function pointer and retain stable
+ordering.
 Default `merge` and the four ordered `set_*` algorithms accept independent raw
 or authenticated wrapped ranges of the same trivial source-record type and a
 writable output of that type, preserving complete values and the output

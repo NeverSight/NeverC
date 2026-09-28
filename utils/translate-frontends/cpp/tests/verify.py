@@ -32343,6 +32343,57 @@ void scalar_wrapped(std::vector<int> &values) {
           'std::inplace_merge(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_selection_stable_comparator_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+void partial_raw(Item *first, Item *middle, Item *last) {
+  std::partial_sort(first, middle, last, less);
+}
+void nth_raw(Item *first, Item *nth, Item *last) {
+  std::nth_element(first, nth, last, less);
+}
+void stable_raw(Item *first, Item *last) {
+  std::stable_sort(first, last, less);
+}
+void merge_raw(Item *first, Item *middle, Item *last) {
+  std::inplace_merge(first, middle, last, less);
+}
+void partial_wrapped(std::vector<Item> &items) {
+  std::partial_sort(items.begin(), items.begin() + 2,
+                    items.end(), less);
+}
+void nth_wrapped(std::vector<Item> &items) {
+  std::nth_element(items.begin(), items.begin() + 2,
+                   items.end(), less);
+}
+void stable_wrapped(std::vector<Item> &items) {
+  std::stable_sort(items.begin(), items.end(), less);
+}
+void merge_wrapped(std::vector<Item> &items) {
+  std::inplace_merge(items.begin(), items.begin() + 2,
+                     items.end(), less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-selection-stable-comparator-" + target,
+              source_record_selection_stable_comparator_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-selection-comparator-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'void f(Item*a,Item*b,Item*c){'
+          'std::partial_sort(a,b,c,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-record-stable-comparator-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'void f(Item*a,Item*b){std::stable_sort(a,b,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_scalar_ordered_comparators_source = """\
 #include <algorithm>
 #include <functional>

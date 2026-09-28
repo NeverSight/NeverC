@@ -24932,12 +24932,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
         ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
          (Call->getNumArgs() == 3 && AlgorithmRangeComparisonParameter(2, 0)));
-    const bool Record = Call->getNumArgs() == 2 &&
-                        AlgorithmRecordOrderedRangeParameter(0) &&
-                        AlgorithmRecordOrderedRangeParameter(1) &&
-                        AlgorithmWritableRecordRangeParameter(0) &&
-                        AlgorithmWritableRecordRangeParameter(1);
-    if (Scalar || Record)
+    const bool RecordDefault = Call->getNumArgs() == 2 &&
+                               AlgorithmRecordOrderedRangeParameter(0) &&
+                               AlgorithmRecordOrderedRangeParameter(1) &&
+                               AlgorithmWritableRecordRangeParameter(0) &&
+                               AlgorithmWritableRecordRangeParameter(1);
+    const bool RecordComparator =
+        Call->getNumArgs() == 3 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator)
       return UtilityOperation::AlgorithmStableSort;
   }
   if (Origin->Path == "__algorithm/inplace_merge.h" &&
@@ -24958,14 +24962,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
         ((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0)) ||
          (Call->getNumArgs() == 4 && AlgorithmRangeComparisonParameter(3, 0)));
-    const bool Record = Call->getNumArgs() == 3 &&
-                        AlgorithmRecordOrderedRangeParameter(0) &&
-                        AlgorithmRecordOrderedRangeParameter(1) &&
-                        AlgorithmRecordOrderedRangeParameter(2) &&
-                        AlgorithmWritableRecordRangeParameter(0) &&
-                        AlgorithmWritableRecordRangeParameter(1) &&
-                        AlgorithmWritableRecordRangeParameter(2);
-    if (Scalar || Record)
+    const bool RecordDefault = Call->getNumArgs() == 3 &&
+                               AlgorithmRecordOrderedRangeParameter(0) &&
+                               AlgorithmRecordOrderedRangeParameter(1) &&
+                               AlgorithmRecordOrderedRangeParameter(2) &&
+                               AlgorithmWritableRecordRangeParameter(0) &&
+                               AlgorithmWritableRecordRangeParameter(1) &&
+                               AlgorithmWritableRecordRangeParameter(2);
+    const bool RecordComparator =
+        Call->getNumArgs() == 4 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmWritableRecordRangeParameter(2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator)
       return UtilityOperation::AlgorithmInplaceMerge;
   }
   if (Origin->Path == "__algorithm/partial_sort.h" && Name == "partial_sort" &&
@@ -24985,14 +24994,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
         ((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0)) ||
          (Call->getNumArgs() == 4 && AlgorithmRangeComparisonParameter(3, 0)));
-    const bool Record = Call->getNumArgs() == 3 &&
-                        AlgorithmRecordOrderedRangeParameter(0) &&
-                        AlgorithmRecordOrderedRangeParameter(1) &&
-                        AlgorithmRecordOrderedRangeParameter(2) &&
-                        AlgorithmWritableRecordRangeParameter(0) &&
-                        AlgorithmWritableRecordRangeParameter(1) &&
-                        AlgorithmWritableRecordRangeParameter(2);
-    if (Scalar || Record)
+    const bool RecordDefault = Call->getNumArgs() == 3 &&
+                               AlgorithmRecordOrderedRangeParameter(0) &&
+                               AlgorithmRecordOrderedRangeParameter(1) &&
+                               AlgorithmRecordOrderedRangeParameter(2) &&
+                               AlgorithmWritableRecordRangeParameter(0) &&
+                               AlgorithmWritableRecordRangeParameter(1) &&
+                               AlgorithmWritableRecordRangeParameter(2);
+    const bool RecordComparator =
+        Call->getNumArgs() == 4 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmWritableRecordRangeParameter(2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator)
       return UtilityOperation::AlgorithmPartialSort;
   }
   if (Origin->Path == "__algorithm/partial_sort_copy.h" &&
@@ -25060,14 +25074,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
         ((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0)) ||
          (Call->getNumArgs() == 4 && AlgorithmRangeComparisonParameter(3, 0)));
-    const bool Record = Call->getNumArgs() == 3 &&
-                        AlgorithmRecordOrderedRangeParameter(0) &&
-                        AlgorithmRecordOrderedRangeParameter(1) &&
-                        AlgorithmRecordOrderedRangeParameter(2) &&
-                        AlgorithmWritableRecordRangeParameter(0) &&
-                        AlgorithmWritableRecordRangeParameter(1) &&
-                        AlgorithmWritableRecordRangeParameter(2);
-    if (Scalar || Record)
+    const bool RecordDefault = Call->getNumArgs() == 3 &&
+                               AlgorithmRecordOrderedRangeParameter(0) &&
+                               AlgorithmRecordOrderedRangeParameter(1) &&
+                               AlgorithmRecordOrderedRangeParameter(2) &&
+                               AlgorithmWritableRecordRangeParameter(0) &&
+                               AlgorithmWritableRecordRangeParameter(1) &&
+                               AlgorithmWritableRecordRangeParameter(2);
+    const bool RecordComparator =
+        Call->getNumArgs() == 4 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmWritableRecordRangeParameter(2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator)
       return UtilityOperation::AlgorithmNthElement;
   }
   const bool PermutationMutation =
