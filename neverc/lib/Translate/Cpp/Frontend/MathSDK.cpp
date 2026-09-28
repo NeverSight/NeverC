@@ -19850,6 +19850,182 @@ approvedMinmaxElementSourceComparator(const State &S, const SourceManager &SM,
   return SourceMethod;
 }
 
+const CXXMethodDecl *
+approvedHeapQuerySourceComparator(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, QualType Element,
+                                  const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  if (!S.coreV2() || !Function || !Primary || !Definition ||
+      (Function->getName() != "is_heap" &&
+       Function->getName() != "is_heap_until") ||
+      Call->getNumArgs() != 3 || Function->getNumParams() != 3 ||
+      !Call->isPRValue() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function))
+    return nullptr;
+  const bool Boolean = Function->getName() == "is_heap";
+  auto SDK = [&](const Decl *D, llvm::StringRef Path) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  const auto PublicPath =
+      Boolean ? "__algorithm/is_heap.h" : "__algorithm/is_heap_until.h";
+  if (!SDK(Function, PublicPath) || !SDK(Primary, PublicPath) ||
+      !SDK(Definition, PublicPath))
+    return nullptr;
+  const auto Iterator = Function->getParamDecl(0)->getType();
+  const auto Object = Function->getParamDecl(2)->getType();
+  const auto *Method =
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+  if (!Method ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Iterator) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Object) ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      (Boolean ? !Function->getReturnType()->isBooleanType()
+               : !Context.hasSameType(Function->getReturnType(), Iterator)))
+    return nullptr;
+  const auto *Body = dyn_cast<CompoundStmt>(Definition->getBody());
+  const auto *Return = Body && !Body->body_empty()
+                           ? dyn_cast<ReturnStmt>(Body->body_back())
+                           : nullptr;
+  if (!Return)
+    return nullptr;
+  const CallExpr *Nested = nullptr;
+  unsigned Calls = 0;
+  auto Find = [&](auto &&Self, const Stmt *Node) -> void {
+    if (!Node)
+      return;
+    if (const auto *Candidate = dyn_cast<CallExpr>(Node)) {
+      const auto *F = Candidate->getDirectCallee();
+      if (F && F->getIdentifier() && F->getName() == "__is_heap_until" &&
+          SDK(F, "__algorithm/is_heap_until.h")) {
+        ++Calls;
+        Nested = Candidate;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child);
+  };
+  Find(Find, Return->getRetValue());
+  const auto *Internal = Nested ? Nested->getDirectCallee() : nullptr;
+  const auto *InternalPrimary =
+      Internal ? Internal->getPrimaryTemplate() : nullptr;
+  const auto *InternalDefinition =
+      Internal ? Internal->getDefinition() : nullptr;
+  if (Calls != 1 || !Nested || Nested->getNumArgs() != 3 || !Internal ||
+      !InternalPrimary || !InternalDefinition ||
+      Internal->getNumParams() != 3 ||
+      Internal->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !SDK(InternalPrimary, "__algorithm/is_heap_until.h") ||
+      !SDK(InternalDefinition, "__algorithm/is_heap_until.h") ||
+      !Context.hasSameType(Internal->getReturnType(), Iterator) ||
+      !Context.hasSameType(Internal->getParamDecl(0)->getType(), Iterator) ||
+      !Context.hasSameType(Internal->getParamDecl(1)->getType(), Iterator) ||
+      !Context.hasSameType(Internal->getParamDecl(2)->getType(),
+                           Context.getLValueReferenceType(Object)))
+    return nullptr;
+  for (unsigned I = 0; I < 2; ++I) {
+    const Expr *Argument = Nested->getArg(I)->IgnoreParenImpCasts();
+    if (const auto *Copy = dyn_cast<CXXConstructExpr>(Argument)) {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+      if (!Wrapped || Copy->getNumArgs() != 1 ||
+          !Copy->getConstructor()->isCopyConstructor() ||
+          !Context.hasSameType(Copy->getType(), Iterator))
+        return nullptr;
+      Argument = Copy->getArg(0);
+    }
+    if (!utilityAlgorithmReference(Argument, Definition->getParamDecl(I),
+                                   Context))
+      return nullptr;
+  }
+  if (!utilityAlgorithmReference(Nested->getArg(2), Definition->getParamDecl(2),
+                                 Context, true))
+    return nullptr;
+  unsigned Comparisons = 0;
+  const VarDecl *Parent = nullptr;
+  const VarDecl *Child = nullptr;
+  bool InvalidComparison = false;
+  auto Read = [&](const Expr *E) -> const VarDecl * {
+    E = E ? E->IgnoreParenImpCasts() : nullptr;
+    if (const auto *PointerRead = dyn_cast_or_null<UnaryOperator>(E)) {
+      if (PointerRead->getOpcode() != UO_Deref || !PointerRead->isLValue() ||
+          !Context.hasSameType(PointerRead->getType(), Element))
+        return nullptr;
+      const auto *Ref = dyn_cast<DeclRefExpr>(
+          PointerRead->getSubExpr()->IgnoreParenImpCasts());
+      return Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+    }
+    const auto *WrappedRead = dyn_cast_or_null<CXXOperatorCallExpr>(E);
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, Iterator->getAsCXXRecordDecl(), Context);
+    const auto *Dereference =
+        WrappedRead
+            ? dyn_cast_or_null<CXXMethodDecl>(WrappedRead->getDirectCallee())
+            : nullptr;
+    if (!Wrapped || !WrappedRead || WrappedRead->getOperator() != OO_Star ||
+        WrappedRead->getNumArgs() != 1 || !WrappedRead->isLValue() ||
+        !Context.hasSameType(WrappedRead->getType(), Element) || !Dereference ||
+        !Dereference->isConst() ||
+        Dereference->getParent()->getCanonicalDecl() !=
+            Wrapped->Record->getCanonicalDecl() ||
+        !SDK(Dereference, "__iterator/wrap_iter.h"))
+      return nullptr;
+    const auto *Ref =
+        dyn_cast<DeclRefExpr>(WrappedRead->getArg(0)->IgnoreParenImpCasts());
+    return Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+  };
+  auto Visit = [&](auto &&Self, const Stmt *Node) -> void {
+    if (!Node)
+      return;
+    if (const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Node)) {
+      if (Invocation->getOperator() == OO_Call) {
+        ++Comparisons;
+        const auto *P = Invocation->getNumArgs() == 3
+                            ? Read(Invocation->getArg(1))
+                            : nullptr;
+        const auto *C = Invocation->getNumArgs() == 3
+                            ? Read(Invocation->getArg(2))
+                            : nullptr;
+        if (!Invocation->getDirectCallee() ||
+            Invocation->getDirectCallee()->getCanonicalDecl() !=
+                Method->getCanonicalDecl() ||
+            !utilityAlgorithmReference(Invocation->getArg(0),
+                                       InternalDefinition->getParamDecl(2),
+                                       Context) ||
+            !P || !C || (Parent && Parent != P) || (Child && Child != C))
+          InvalidComparison = true;
+        Parent = P;
+        Child = C;
+      }
+    }
+    for (const auto *ChildNode : Node->children())
+      Self(Self, ChildNode);
+  };
+  Visit(Visit, InternalDefinition->getBody());
+  if (Comparisons != 2 || InvalidComparison || !Parent || !Child ||
+      Parent == Child || Parent->getDeclContext() != InternalDefinition ||
+      Child->getDeclContext() != InternalDefinition ||
+      !Context.hasSameType(Parent->getType(), Iterator) ||
+      !Context.hasSameType(Child->getType(), Iterator))
+    return nullptr;
+  const Expr *ParentInit = Parent->getInit();
+  if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(ParentInit)) {
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+    if (!Wrapped || Copy->getNumArgs() != 1 ||
+        !Copy->getConstructor()->isCopyConstructor())
+      return nullptr;
+    ParentInit = Copy->getArg(0);
+  }
+  if (!utilityAlgorithmReference(ParentInit,
+                                 InternalDefinition->getParamDecl(0), Context))
+    return nullptr;
+  return Method;
+}
+
 std::optional<FunctionalOperationInfo>
 approvedRangeAlgorithmComparator(const State &S, const SourceManager &SM,
                                  const CallExpr *Call, unsigned ComparatorIndex,
@@ -26015,7 +26191,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
         AlgorithmRecordRangeParameter(1) &&
         AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
-    if (!Default && !ScalarComparator && !RecordComparator)
+    const auto ScalarRange = AlgorithmRangePointerParameter(0);
+    const auto RecordRange = AlgorithmRecordRangeParameter(0);
+    const auto Range = ScalarRange ? ScalarRange : RecordRange;
+    const bool SourceObject =
+        Call->getNumArgs() == 3 && Range &&
+        (ScalarRange ? AlgorithmRangePointerParameter(1).has_value()
+                     : AlgorithmRecordRangeParameter(1).has_value()) &&
+        approvedHeapQuerySourceComparator(S, SM, Call,
+                                          (*Range)->getPointeeType(), Context);
+    if (!Default && !ScalarComparator && !RecordComparator && !SourceObject)
       return std::nullopt;
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;

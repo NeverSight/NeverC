@@ -32278,6 +32278,63 @@ std::pair<int *, int *> extrema_scalar_ref(int *first, int *last) {
           'auto f(Item*a,Item*b){return std::minmax_element(a,b,Less{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_heap_query_functor_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    return left.rank < right.rank;
+  }
+};
+struct ScalarLess {
+  bool operator()(int left, int right) const { return left < right; }
+};
+struct ScalarRefLess {
+  bool operator()(const int &left, const int &right) const {
+    return left < right;
+  }
+};
+Item *until_record(Item *first, Item *last, Less less) {
+  return std::is_heap_until(first, last, less);
+}
+bool heap_record(Item *first, Item *last, Less less) {
+  return std::is_heap(first, last, less);
+}
+std::vector<Item>::const_iterator until_wrapped(
+    const std::vector<Item> &values, Less less) {
+  return std::is_heap_until(values.cbegin(), values.cend(), less);
+}
+bool heap_wrapped(const std::vector<Item> &values, Less less) {
+  return std::is_heap(values.cbegin(), values.cend(), less);
+}
+bool heap_scalar(int *first, int *last) {
+  return std::is_heap(first, last, ScalarLess{});
+}
+int *until_scalar_ref(int *first, int *last) {
+  return std::is_heap_until(first, last, ScalarRefLess{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-heap-query-functor-" + target,
+              source_heap_query_functor_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-heap-query-functor-record-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(Item a,Item b) const {'
+          'return a.rank<b.rank;}};'
+          'bool f(Item*a,Item*b){return std::is_heap(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-heap-query-functor-overload-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(const Item&a,const Item&b)const{'
+          'return a.rank<b.rank;}'
+          'bool operator()(int a,int b)const{return a<b;}};'
+          'Item*f(Item*a,Item*b){return std::is_heap_until(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>

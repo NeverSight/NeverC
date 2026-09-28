@@ -326,6 +326,9 @@ const clang::CXXMethodDecl *approvedAdjacentFindSourcePredicate(
 const clang::CXXMethodDecl *approvedMinmaxElementSourceComparator(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     clang::QualType Element, const clang::ASTContext &Context);
+const clang::CXXMethodDecl *approvedHeapQuerySourceComparator(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    clang::QualType Element, const clang::ASTContext &Context);
 struct FunctionalInvokeObjectCall {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;

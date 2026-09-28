@@ -56587,6 +56587,71 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceHeapQueryFunctorRun) {
+  const auto Source = tmpFile("source-heap-query-functor.cpp");
+  const auto Output = tmpFile("source-heap-query-functor.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Item { int rank, tag; };
+const Item *base;
+int length, comparisons, bad_identity, evaluations;
+bool within(const Item *value) {
+  for (int i = 0; i < length; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    if (!within(&left) || !within(&right)) ++bad_identity;
+    return left.rank < right.rank;
+  }
+};
+struct ScalarLess {
+  bool operator()(int left, int right) const { return left < right; }
+};
+struct ScalarRefLess {
+  bool operator()(const int &left, const int &right) const {
+    return left < right;
+  }
+};
+Less next_less() { ++evaluations; return Less{&comparisons}; }
+int main() {
+  Item values[5]{{9, 0}, {7, 10}, {8, 11}, {6, 20}, {10, 30}};
+  base = values; length = 5;
+  if (std::is_heap_until(values, values + 5, next_less()) != values + 4 ||
+      evaluations != 1 || comparisons != 4 || bad_identity) return 1;
+  comparisons = 0;
+  if (std::is_heap(values, values + 4, next_less()) != true ||
+      evaluations != 2 || comparisons != 3 || bad_identity) return 2;
+  comparisons = 0;
+  if (std::is_heap(values, values + 5, next_less()) != false ||
+      evaluations != 3 || comparisons != 4 || bad_identity) return 3;
+  comparisons = 0;
+  if (std::is_heap_until(values, values, next_less()) != values ||
+      !std::is_heap(values, values + 1, next_less()) ||
+      evaluations != 5 || comparisons || bad_identity) return 4;
+  int scalar[5]{9, 7, 8, 6, 10};
+  if (std::is_heap_until(scalar, scalar + 5, ScalarLess{}) != scalar + 4 ||
+      std::is_heap(scalar, scalar + 4, ScalarRefLess{}) != true)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-heap-query-functor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("source-record-ordered-bounds.nc");

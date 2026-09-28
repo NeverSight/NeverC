@@ -2531,6 +2531,13 @@ form, or the end for a heap.
 Their checked comparator overloads also accept those exact source-record
 ranges through `bool(const Record&, const Record&)`, preserving original parent
 and child addresses and the first violation position.
+Both query overloads additionally accept a source-owned, standard-layout,
+trivially copyable comparison object with one non-template Boolean
+`operator()`. The pinned public wrapper and two internal parent-child calls
+must select that method. Exact trivial records retain original const
+references; scalar elements admit checked by-value parameters or exact const
+references. The object is evaluated once even for empty and single-element
+ranges, and wrapped iterator results retain their form.
 
 Default two-value `std::min`, `std::max`, three-value `std::clamp` and
 two-value `std::minmax` also accept exact trivial source records with one
