@@ -14996,6 +14996,86 @@ utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
              : nullptr;
 }
 
+static const CXXOperatorCallExpr *
+utilityAlgorithmBinaryDispatch(const State &S, const SourceManager &SM,
+                               const CallExpr *Call, QualType Object,
+                               QualType Element, const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  const auto *D = F ? F->getDefinition() : nullptr;
+  const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
+  const auto ObjectRef = Context.getLValueReferenceType(Object);
+  const auto ElementRef = Context.getLValueReferenceType(Element);
+  if (!Call || Call->getNumArgs() != 3 || !D ||
+      !utilitySwapSDKFunction(S, SM, F, "__invoke", "__type_traits/invoke.h") ||
+      !utilityAlgorithmSDKReference(S, SM, Call, F) || !F->isConstexpr() ||
+      F->getNumParams() != 3 || !Args || Args->size() != 2 ||
+      Args->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args->get(0).getAsType(), ObjectRef) ||
+      Args->get(1).getKind() != TemplateArgument::Pack ||
+      Args->get(1).pack_size() != 2 ||
+      Args->get(1).pack_begin()[0].getKind() != TemplateArgument::Type ||
+      Args->get(1).pack_begin()[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args->get(1).pack_begin()[0].getAsType(),
+                           ElementRef) ||
+      !Context.hasSameType(Args->get(1).pack_begin()[1].getAsType(),
+                           ElementRef) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), ObjectRef) ||
+      !Context.hasSameType(F->getParamDecl(1)->getType(), ElementRef) ||
+      !Context.hasSameType(F->getParamDecl(2)->getType(), ElementRef) ||
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !Call->isPRValue() || !Call->getArg(0)->isLValue() ||
+      !Call->getArg(1)->isLValue() || !Call->getArg(2)->isLValue() ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Object) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Element) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Element))
+    return nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(D->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const Expr *Result = Return ? Return->getRetValue() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Result)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Result = Cleanup->getSubExpr();
+  }
+  const auto *Invocation = dyn_cast_or_null<CXXOperatorCallExpr>(Result);
+  if (!Invocation || Invocation->getOperator() != OO_Call ||
+      Invocation->getNumArgs() != 3 ||
+      !Context.hasSameType(Invocation->getType(), Context.BoolTy) ||
+      !Invocation->isPRValue() ||
+      !utilityAlgorithmReference(Invocation->getArg(0), D->getParamDecl(0),
+                                 Context, true))
+    return nullptr;
+  for (unsigned I = 1; I < 3; ++I) {
+    const Expr *Argument = Invocation->getArg(I);
+    while (Argument) {
+      if (const auto *Temporary =
+              dyn_cast<MaterializeTemporaryExpr>(Argument)) {
+        if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+            !utilityScalar(Context, Temporary->getType()))
+          return nullptr;
+        Argument = Temporary->getSubExpr();
+        continue;
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+      if (!Cast)
+        break;
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()) &&
+          !(Cast->getCastKind() == CK_NoOp &&
+            Context.hasSameUnqualifiedType(Cast->getSubExpr()->getType(),
+                                           Cast->getType())))
+        return nullptr;
+      Argument = Cast->getSubExpr();
+    }
+    if (!utilityAlgorithmReference(Argument, D->getParamDecl(I), Context, true))
+      return nullptr;
+  }
+  return Invocation;
+}
+
 static bool utilityAlgorithmIdentity(const State &S, const SourceManager &SM,
                                      const CXXOperatorCallExpr *Call,
                                      QualType Object, QualType Element,
@@ -18967,6 +19047,226 @@ approvedMaxElementSourceComparator(const State &S, const SourceManager &SM,
       !functionalMemberReceiverValueCategory(Method, Selected->getArg(0),
                                              false))
     return nullptr;
+  return Method;
+}
+
+const CXXMethodDecl *
+approvedMinElementSourceComparator(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call, QualType Element,
+                                   const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  auto SDK = [&](const Decl *Declaration) {
+    return Declaration && approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                         "__algorithm/min_element.h");
+  };
+  if (!S.coreV2() || !Function || !Primary || !Definition ||
+      Function->getName() != "min_element" || Call->getNumArgs() != 3 ||
+      Function->getNumParams() != 3 || !Call->isPRValue() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Function->isInlined() ||
+      !approvedUtilityReference(S, SM, Call, Function) || !SDK(Function) ||
+      !SDK(Primary) || !SDK(Definition) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(1)->getType()) ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !Context.hasSameType(Function->getReturnType(),
+                           Function->getParamDecl(0)->getType()))
+    return nullptr;
+  const auto Object = Function->getParamDecl(2)->getType();
+  if (!Context.hasSameType(Call->getArg(2)->getType(), Object))
+    return nullptr;
+  const auto *Method =
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+  if (!Method)
+    return nullptr;
+
+  auto NestedReturn = [](const FunctionDecl *F) -> const CallExpr * {
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
+    const auto *Return = Body && !Body->body_empty()
+                             ? dyn_cast<ReturnStmt>(Body->body_back())
+                             : nullptr;
+    return Return && Return->getRetValue()
+               ? dyn_cast<CallExpr>(
+                     Return->getRetValue()->IgnoreParenImpCasts())
+               : nullptr;
+  };
+  auto InternalCall = [&](const CallExpr *Nested, unsigned Arity,
+                          QualType ReturnType) -> const FunctionDecl * {
+    const auto *F = Nested ? Nested->getDirectCallee() : nullptr;
+    const auto *P = F ? F->getPrimaryTemplate() : nullptr;
+    const auto *D = F ? F->getDefinition() : nullptr;
+    return Nested && F && P && D && F->getName() == "__min_element" &&
+                   Nested->getNumArgs() == Arity &&
+                   F->getNumParams() == Arity &&
+                   F->getTemplateSpecializationKind() ==
+                       TSK_ImplicitInstantiation &&
+                   SDK(F) && SDK(P) && SDK(D) &&
+                   Context.hasSameType(F->getReturnType(), ReturnType)
+               ? D
+               : nullptr;
+  };
+  auto IteratorMove = [&](const Expr *E, const ValueDecl *Source,
+                          QualType Iterator) {
+    E = E ? E->IgnoreParenImpCasts() : nullptr;
+    if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(E)) {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+      const auto *Constructor = Copy->getConstructor();
+      if (!Wrapped || !Constructor ||
+          (!Constructor->isCopyConstructor() &&
+           !Constructor->isMoveConstructor()) ||
+          Copy->getNumArgs() != 1 ||
+          !Context.hasSameType(Copy->getType(), Iterator) ||
+          Constructor->getParent()->getCanonicalDecl() !=
+              Wrapped->Record->getCanonicalDecl())
+        return false;
+      E = Copy->getArg(0)->IgnoreParenImpCasts();
+    }
+    return utilityAlgorithmScalarForward(S, SM, dyn_cast_or_null<CallExpr>(E),
+                                         Source, Iterator, true, Context);
+  };
+
+  const auto *FirstCall = NestedReturn(Definition);
+  const auto *First = InternalCall(FirstCall, 3, Call->getType());
+  const auto Iterator = Function->getParamDecl(0)->getType();
+  const auto ObjectRef = Context.getLValueReferenceType(Object);
+  if (!First ||
+      !Context.hasSameType(First->getParamDecl(0)->getType(), Iterator) ||
+      !Context.hasSameType(First->getParamDecl(1)->getType(), Iterator) ||
+      !Context.hasSameType(First->getParamDecl(2)->getType(), ObjectRef) ||
+      !IteratorMove(FirstCall->getArg(0), Definition->getParamDecl(0),
+                    Iterator) ||
+      !IteratorMove(FirstCall->getArg(1), Definition->getParamDecl(1),
+                    Iterator) ||
+      !utilityAlgorithmReference(FirstCall->getArg(2),
+                                 Definition->getParamDecl(2), Context))
+    return nullptr;
+
+  const auto *FirstBody = dyn_cast<CompoundStmt>(First->getBody());
+  const auto *Local = FirstBody && FirstBody->size() == 2
+                          ? dyn_cast<DeclStmt>(*FirstBody->body_begin())
+                          : nullptr;
+  const auto *Projection = Local && Local->isSingleDecl()
+                               ? dyn_cast<VarDecl>(Local->getSingleDecl())
+                               : nullptr;
+  const auto *Construction =
+      Projection ? dyn_cast_or_null<CXXConstructExpr>(Projection->getInit())
+                 : nullptr;
+  const auto *SecondCall = FirstBody ? NestedReturn(First) : nullptr;
+  const auto *Second = InternalCall(SecondCall, 4, Call->getType());
+  if (!Projection || !Projection->hasLocalStorage() ||
+      Projection->getDeclContext() != First || !Construction ||
+      Construction->getNumArgs() != 0 || !Second ||
+      !Context.hasSameType(Second->getParamDecl(0)->getType(), Iterator) ||
+      !Context.hasSameType(Second->getParamDecl(1)->getType(), Iterator) ||
+      !Context.hasSameType(Second->getParamDecl(2)->getType(), ObjectRef) ||
+      !Context.hasSameType(
+          Second->getParamDecl(3)->getType(),
+          Context.getLValueReferenceType(Projection->getType())) ||
+      !IteratorMove(SecondCall->getArg(0), First->getParamDecl(0), Iterator) ||
+      !IteratorMove(SecondCall->getArg(1), First->getParamDecl(1), Iterator) ||
+      !utilityAlgorithmReference(SecondCall->getArg(2), First->getParamDecl(2),
+                                 Context) ||
+      !utilityAlgorithmReference(SecondCall->getArg(3), Projection, Context))
+    return nullptr;
+
+  const auto *SecondBody = dyn_cast<CompoundStmt>(Second->getBody());
+  const auto *CurrentStmt =
+      SecondBody && SecondBody->size() == 4
+          ? dyn_cast<DeclStmt>(SecondBody->body_begin()[1])
+          : nullptr;
+  const auto *Current = CurrentStmt && CurrentStmt->isSingleDecl()
+                            ? dyn_cast<VarDecl>(CurrentStmt->getSingleDecl())
+                            : nullptr;
+  if (!Current || !Context.hasSameType(Current->getType(), Iterator))
+    return nullptr;
+  const Expr *CurrentInit = Current->getInit();
+  if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(CurrentInit)) {
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+    const auto *Constructor = Copy->getConstructor();
+    if (!Wrapped || !Constructor || !Constructor->isCopyConstructor() ||
+        Copy->getNumArgs() != 1 ||
+        Constructor->getParent()->getCanonicalDecl() !=
+            Wrapped->Record->getCanonicalDecl())
+      return nullptr;
+    CurrentInit = Copy->getArg(0);
+  }
+  if (!utilityAlgorithmReference(CurrentInit, Second->getParamDecl(0), Context))
+    return nullptr;
+  const CallExpr *Compare = nullptr;
+  unsigned Comparisons = 0;
+  auto Visit = [&](auto &&Self, const Stmt *Node) -> void {
+    if (!Node)
+      return;
+    if (const auto *Invocation = dyn_cast<CallExpr>(Node)) {
+      const auto *F = Invocation->getDirectCallee();
+      if (Invocation->getNumArgs() == 3 &&
+          utilitySwapSDKFunction(S, SM, F, "__invoke",
+                                 "__type_traits/invoke.h")) {
+        ++Comparisons;
+        Compare = Invocation;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child);
+  };
+  Visit(Visit, SecondBody);
+  const auto *Selected =
+      utilityAlgorithmBinaryDispatch(S, SM, Compare, Object, Element, Context);
+  if (Comparisons != 1 || !Selected || !Selected->getDirectCallee() ||
+      Selected->getDirectCallee()->getCanonicalDecl() !=
+          Method->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(Method, Selected->getArg(0),
+                                             false) ||
+      !utilityAlgorithmReference(Compare->getArg(0), Second->getParamDecl(2),
+                                 Context))
+    return nullptr;
+  for (unsigned I = 1; I < 3; ++I) {
+    const auto *Project = dyn_cast<CallExpr>(Compare->getArg(I));
+    const auto *Identity = utilityAlgorithmUnaryDispatch(
+        S, SM, Project, Projection->getType(), Element, true, Context);
+    if (!Identity ||
+        !utilityAlgorithmIdentity(S, SM, Identity, Projection->getType(),
+                                  Element, Context) ||
+        !utilityAlgorithmReference(Project->getArg(0), Second->getParamDecl(3),
+                                   Context))
+      return nullptr;
+    const auto *Source = I == 1 ? static_cast<const ValueDecl *>(Current)
+                                : Second->getParamDecl(0);
+    const auto *Read =
+        Project ? dyn_cast<UnaryOperator>(Project->getArg(1)) : nullptr;
+    if (Read) {
+      if (Read->getOpcode() != UO_Deref || !Read->isLValue() ||
+          !Context.hasSameType(Read->getType(), Element) ||
+          !utilityAlgorithmReference(Read->getSubExpr(), Source, Context))
+        return nullptr;
+    } else {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Iterator->getAsCXXRecordDecl(), Context);
+      const auto *WrappedRead =
+          Project ? dyn_cast<CXXOperatorCallExpr>(Project->getArg(1)) : nullptr;
+      const auto *Dereference =
+          WrappedRead
+              ? dyn_cast_or_null<CXXMethodDecl>(WrappedRead->getDirectCallee())
+              : nullptr;
+      if (!Wrapped || !WrappedRead || WrappedRead->getOperator() != OO_Star ||
+          WrappedRead->getNumArgs() != 1 || !WrappedRead->isLValue() ||
+          !Context.hasSameType(WrappedRead->getType(), Element) ||
+          !Dereference || !Dereference->isConst() ||
+          Dereference->getNumParams() != 0 ||
+          Dereference->getParent()->getCanonicalDecl() !=
+              Wrapped->Record->getCanonicalDecl() ||
+          !approvedStandardSDKDeclaration(S, SM, Dereference) ||
+          !cstddefOrigin(S, SM, Dereference->getLocation(), "libcxx",
+                         "__iterator/wrap_iter.h") ||
+          !utilityAlgorithmReference(WrappedRead->getArg(0), Source, Context))
+        return nullptr;
+    }
+  }
   return Method;
 }
 
@@ -24241,11 +24541,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto RecordRange = AlgorithmRecordRangeParameter(0);
     const auto Range = ScalarRange ? ScalarRange : RecordRange;
     const bool SourceObject =
-        Name == "max_element" && Call->getNumArgs() == 3 && Range &&
+        Call->getNumArgs() == 3 && Range &&
         (ScalarRange ? AlgorithmRangePointerParameter(1).has_value()
                      : AlgorithmRecordRangeParameter(1).has_value()) &&
-        approvedMaxElementSourceComparator(S, SM, Call,
-                                           (*Range)->getPointeeType(), Context);
+        (Name == "max_element"
+             ? approvedMaxElementSourceComparator(
+                   S, SM, Call, (*Range)->getPointeeType(), Context)
+             : approvedMinElementSourceComparator(
+                   S, SM, Call, (*Range)->getPointeeType(), Context));
     if (!((Call->getNumArgs() == 2 &&
            ((AlgorithmRangePointerParameter(0) &&
              AlgorithmRangePointerParameter(1) &&

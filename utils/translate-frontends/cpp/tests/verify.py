@@ -32067,6 +32067,57 @@ int *max_scalar(int *first, int *last) {
           'Item*f(Item*a,Item*b){return std::max_element(a,b,Less{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_min_element_functor_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    return left.rank < right.rank;
+  }
+};
+struct ScalarLess {
+  bool operator()(int left, int right) const { return left < right; }
+};
+struct ScalarRefLess {
+  bool operator()(const int &left, const int &right) const {
+    return left < right;
+  }
+};
+Item *min_record(Item *first, Item *last, Less less) {
+  return std::min_element(first, last, less);
+}
+std::vector<Item>::const_iterator min_wrapped(const std::vector<Item> &values,
+                                               Less less) {
+  return std::min_element(values.cbegin(), values.cend(), less);
+}
+int *min_scalar(int *first, int *last) {
+  return std::min_element(first, last, ScalarLess{});
+}
+int *min_scalar_ref(int *first, int *last) {
+  return std::min_element(first, last, ScalarRefLess{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-min-element-functor-" + target,
+              source_min_element_functor_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-min-element-functor-record-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(Item a,Item b) const {'
+          'return a.rank<b.rank;}};'
+          'Item*f(Item*a,Item*b){return std::min_element(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-min-element-functor-overload-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(const Item&a,const Item&b)const{'
+          'return a.rank<b.rank;}'
+          'bool operator()(int a,int b)const{return a<b;}};'
+          'Item*f(Item*a,Item*b){return std::min_element(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>

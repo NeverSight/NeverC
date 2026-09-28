@@ -4990,15 +4990,17 @@ class FunctionLowering {
         const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator) {
-          if (!Minimum) {
-            if (const auto *Method = approvedMaxElementSourceComparator(
-                    A.S, A.Sources, Call, Element, A.Context)) {
-              const auto Object =
-                  Call->getDirectCallee()->getParamDecl(2)->getType();
-              SourceComparator =
-                  CapturedAlgorithmPredicate{argument(Call->getArg(2), Object),
-                                             Object, Method, std::nullopt};
-            }
+          const auto *Method =
+              Minimum ? approvedMinElementSourceComparator(A.S, A.Sources, Call,
+                                                           Element, A.Context)
+                      : approvedMaxElementSourceComparator(A.S, A.Sources, Call,
+                                                           Element, A.Context);
+          if (Method) {
+            const auto Object =
+                Call->getDirectCallee()->getParamDecl(2)->getType();
+            SourceComparator =
+                CapturedAlgorithmPredicate{argument(Call->getArg(2), Object),
+                                           Object, Method, std::nullopt};
           }
           if (!SourceComparator)
             Comparator = snapshot(expression(Call->getArg(2)), L);
