@@ -32326,6 +32326,39 @@ unsigned char narrow_sum(const std::vector<unsigned char> &values) {
           'return std::accumulate(v.cbegin(),v.cend(),0L,add);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    record_accumulate_source = """\
+#include <numeric>
+#include <vector>
+struct Item { int key; int tag; };
+long fold(long total, const Item &item) {
+  return total + item.key * 10L + item.tag;
+}
+unsigned char fold_byte(unsigned char total, const Item &item) {
+  return (unsigned char)(total + item.key);
+}
+long fold_wrapped(const std::vector<Item> &values) {
+  return std::accumulate(values.cbegin(), values.cend(), 10L, fold);
+}
+unsigned char fold_narrow(const std::vector<Item> &values) {
+  return std::accumulate(values.cbegin(), values.cend(),
+                         (unsigned char)250, fold_byte);
+}
+long fold_raw(const Item *first, const Item *last) {
+  return std::accumulate(first, last, -5L, fold);
+}
+"""
+    for target in sdk_targets:
+        check("v2-record-accumulate-" + target,
+              record_accumulate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-record-accumulate-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'long fold(long total,Item item){return total+item.key;}'
+          'long f(const std::vector<Item>&values){'
+          'return std::accumulate(values.cbegin(),values.cend(),0L,fold);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_numeric_inner_product_source = """\
 #include <numeric>
 #include <vector>

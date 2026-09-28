@@ -599,6 +599,10 @@ including vector iterators, with its checked initial-value conversion.
 Default and checked function-pointer `accumulate` also accept authenticated
 mutable or const wrapped arithmetic ranges with their existing accumulator
 conversion and callback rules.
+Four-argument `accumulate` additionally accepts exact trivial source-record
+raw or wrapped inputs with an arithmetic accumulator and a checked callback
+taking the accumulator by value and each original record as `const Record&`.
+The scalar callback result converts to the accumulator after every element.
 Default and checked function-pointer `inner_product` accept independent raw or
 authenticated wrapped arithmetic inputs; directly value-initialized standard
 function-object pairs accept the same ranges.

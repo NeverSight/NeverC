@@ -57151,6 +57151,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordAccumulateRun) {
+  const auto Source = tmpFile("record-accumulate.cpp");
+  const auto Output = tmpFile("record-accumulate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base;
+int calls, bad_identity;
+long fold(long total, const Item &item) {
+  if (&item != base + calls) ++bad_identity;
+  ++calls;
+  return total + item.key * 10L + item.tag;
+}
+unsigned char fold_byte(unsigned char total, const Item &item) {
+  if (&item != base + calls) ++bad_identity;
+  ++calls;
+  return (unsigned char)(total + item.key);
+}
+int main() {
+  const std::vector<Item> values{{1, 2}, {3, 4}, {5, 6}};
+  base = &values[0]; calls = bad_identity = 0;
+  if (std::accumulate(values.cbegin(), values.cend(), 10L, fold) != 112 ||
+      calls != 3 || bad_identity) return 1;
+  calls = bad_identity = 0;
+  if (std::accumulate(values.cbegin(), values.cend(),
+                      (unsigned char)250, fold_byte) != 3 ||
+      calls != 3 || bad_identity) return 2;
+  calls = bad_identity = 0;
+  if (std::accumulate(values.cend(), values.cend(), 7L, fold) != 7 ||
+      calls != 0 || bad_identity) return 3;
+  const Item raw[2]{{7, 8}, {9, 10}};
+  base = raw; calls = bad_identity = 0;
+  if (std::accumulate(raw, raw + 2, -5L, fold) != 173 ||
+      calls != 2 || bad_identity) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-accumulate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedNumericInnerProductRun) {
   const auto Source = tmpFile("wrapped-numeric-inner-product.cpp");
   const auto Output = tmpFile("wrapped-numeric-inner-product.nc");

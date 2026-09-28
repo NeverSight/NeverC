@@ -23278,6 +23278,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::NumericIota;
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType())) {
+    const auto Initial = Function->getParamDecl(2)->getType();
+    const auto *Callback = AlgorithmCallbackPrototype(3);
+    if (NumericArithmetic(Initial, true) &&
+        Same(Call->getArg(2)->getType(), Initial) &&
+        Same(Function->getReturnType(), Initial) &&
+        Same(Call->getType(), Initial) && Callback &&
+        Callback->getNumParams() == 2 &&
+        !Callback->getParamType(0)->isReferenceType() &&
+        utilityScalarDirectConversion(Context, Initial,
+                                      Callback->getParamType(0)) &&
+        AlgorithmRecordRangeCallbackReferenceParameter(3, 1, 0) &&
+        utilityScalarDirectConversion(Context, Callback->getReturnType(),
+                                      Initial))
+      return UtilityOperation::NumericAccumulate;
+  }
+  if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       NumericRangeParameter(0, false, true) &&

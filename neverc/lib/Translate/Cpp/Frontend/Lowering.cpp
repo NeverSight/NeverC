@@ -3884,8 +3884,13 @@ class FunctionLowering {
         TransformCallback =
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
+      const bool RecordAccumulate =
+          Operation == UtilityOperation::NumericAccumulate &&
+          FirstRange.second->getPointeeType()->isRecordType();
       auto DefaultTermQualType =
-          FirstRange.second->getPointeeType().getUnqualifiedType();
+          RecordAccumulate
+              ? ResultQualType
+              : FirstRange.second->getPointeeType().getUnqualifiedType();
       if (Second && !TransformCallback) {
         auto Common = utilityScalarComparisonType(
             A.Context, DefaultTermQualType, SecondRangeType->getPointeeType(),

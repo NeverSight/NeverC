@@ -869,6 +869,12 @@ increment rules.
 Default and checked function-pointer `accumulate` also accept authenticated
 mutable or const wrapped arithmetic ranges. They retain the independent
 accumulator type, arithmetic conversions and callback by-value restrictions.
+The four-argument form additionally accepts raw or authenticated wrapped
+ranges of exact trivial source records when a checked function pointer takes
+the arithmetic accumulator by value and the original input as `const Record&`.
+Its scalar result converts directly back to the accumulator after each call;
+empty ranges return the initial value without invoking the callback. A
+by-value record callback parameter remains rejected.
 Default and checked function-pointer `inner_product` also accept independent
 raw or authenticated wrapped arithmetic input ranges. Both operand types and
 the independent accumulator retain their checked arithmetic conversions;
