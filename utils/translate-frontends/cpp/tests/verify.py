@@ -32398,6 +32398,42 @@ long *mixed(const std::vector<int> &input, long *output) {
           'v.cbegin(),v.cend(),o.begin(),0L,add);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_functional_pairs_source = """\
+#include <functional>
+#include <numeric>
+#include <vector>
+long product(const std::vector<int> &first,
+             const std::vector<long> &second) {
+  return std::inner_product(first.cbegin(), first.cend(), second.cbegin(),
+                            10L, std::plus<>{}, std::multiplies<>{});
+}
+long transformed_product(const std::vector<int> &first,
+                          const std::vector<long> &second) {
+  return std::transform_reduce(first.cbegin(), first.cend(),
+                                second.cbegin(), 10L, std::plus<long>{},
+                                std::multiplies<long>{});
+}
+long transformed_unary(const std::vector<int> &first) {
+  return std::transform_reduce(first.cbegin(), first.cend(), 10L,
+                                std::plus<>{}, std::negate<>{});
+}
+int bitwise(const std::vector<int> &first, const std::vector<int> &second) {
+  return std::transform_reduce(first.cbegin(), first.cend(),
+                                second.cbegin(), 0, std::bit_or<>{},
+                                std::bit_and<>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-functional-pairs-" + target,
+              wrapped_numeric_functional_pairs_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-functional-pairs-lvalue",
+          '#include <functional>\n#include <numeric>\n#include <vector>\n'
+          'long f(const std::vector<int>&v){auto plus=std::plus<>{};'
+          'return std::transform_reduce(v.cbegin(),v.cend(),v.cbegin(),'
+          '0L,plus,std::multiplies<>{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

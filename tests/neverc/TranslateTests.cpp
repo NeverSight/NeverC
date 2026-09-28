@@ -57024,6 +57024,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericFunctionalPairsRun) {
+  const auto Source = tmpFile("wrapped-numeric-functional-pairs.cpp");
+  const auto Output = tmpFile("wrapped-numeric-functional-pairs.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <functional>
+#include <numeric>
+#include <vector>
+int main() {
+  const std::vector<int> first{1, 2, 3};
+  const std::vector<long> second{4, 5, 6};
+  if (std::inner_product(first.cbegin(), first.cend(), second.cbegin(),
+                         10L, std::plus<>{}, std::multiplies<>{}) != 42)
+    return 1;
+  if (std::inner_product(first.cbegin(), first.cend(), second.cbegin(),
+                         10L, std::plus<long>{},
+                         std::multiplies<long>{}) != 42)
+    return 2;
+  long raw_second[3]{4, 5, 6};
+  if (std::inner_product(first.cbegin(), first.cend(), raw_second, 10L,
+                         std::plus<>{}, std::multiplies<>{}) != 42)
+    return 3;
+  if (std::transform_reduce(first.cbegin(), first.cend(), second.cbegin(),
+                            10L, std::plus<>{},
+                            std::multiplies<>{}) != 42)
+    return 4;
+  if (std::transform_reduce(first.cbegin(), first.cend(), 10L,
+                            std::plus<>{}, std::negate<>{}) != 4)
+    return 5;
+  const std::vector<int> bits{4, 5, 6};
+  if (std::transform_reduce(first.cbegin(), first.cend(), bits.cbegin(),
+                            0, std::bit_or<>{}, std::bit_and<>{}) != 2)
+    return 6;
+  const std::vector<int> empty;
+  if (std::inner_product(empty.cbegin(), empty.cend(), second.cbegin(), 7L,
+                         std::plus<>{}, std::multiplies<>{}) != 7 ||
+      std::transform_reduce(empty.cbegin(), empty.cend(), 7L,
+                             std::plus<>{}, std::negate<>{}) != 7)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-numeric-functional-pairs" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

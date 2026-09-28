@@ -868,14 +868,16 @@ accumulator type, arithmetic conversions and callback by-value restrictions.
 Default and checked function-pointer `inner_product` also accept independent
 raw or authenticated wrapped arithmetic input ranges. Both operand types and
 the independent accumulator retain their checked arithmetic conversions;
-standard function-object pairs continue to require raw pointer ranges.
+directly value-initialized standard function-object pairs accept the same
+authenticated ranges under their existing arithmetic conversion rules.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges. Empty ranges retain
 their zero or explicit initial result, and callbacks remain by-value.
 Default two-range and checked function-pointer unary or two-range
 `transform_reduce` also accept independent raw or authenticated wrapped
 arithmetic inputs. The checked accumulator and operand conversions remain in
-force; standard function-object pairs still require raw pointer ranges.
+force; directly value-initialized standard function-object pairs accept those
+ranges for unary and two-range reductions.
 Default and checked function-pointer `partial_sum` and
 `adjacent_difference` accept authenticated mutable or const wrapped arithmetic
 inputs and authenticated writable wrapped arithmetic outputs, independently

@@ -22925,18 +22925,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            (!Writable ||
             utilityAlgorithmWritableScalarPointer(Context, *Pointer));
   };
-  auto NumericCommonElements = [&](unsigned LeftIndex, unsigned RightIndex,
-                                   bool IncludeNarrow = false) {
-    if (!NumericPointerParameter(LeftIndex, false, IncludeNarrow) ||
-        !NumericPointerParameter(RightIndex, false, IncludeNarrow))
-      return false;
-    return utilityScalarComparisonType(
-               Context,
-               Function->getParamDecl(LeftIndex)->getType()->getPointeeType(),
-               Function->getParamDecl(RightIndex)->getType()->getPointeeType(),
-               false)
-        .has_value();
-  };
   auto NumericRangeCommonElements = [&](unsigned LeftIndex, unsigned RightIndex,
                                         bool IncludeNarrow = false) {
     if (!NumericRangeParameter(LeftIndex, false, IncludeNarrow) ||
@@ -23068,6 +23056,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   auto NumericArithmeticFunctionalPair = [&](bool Unary) {
     if (Call->getNumArgs() != (Unary ? 5u : 6u))
       return false;
+    const auto FirstRange = AlgorithmRangePointerParameter(0);
+    const auto SecondRange =
+        Unary ? std::optional<QualType>{} : AlgorithmRangePointerParameter(2);
+    if (!FirstRange || (!Unary && !SecondRange))
+      return false;
     for (unsigned Offset = 0; Offset != 2; ++Offset) {
       const unsigned Index = (Unary ? 3u : 4u) + Offset;
       const bool UnaryTransform = Unary && Offset;
@@ -23126,14 +23119,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             !Function->getParamDecl(Unary ? 2 : 3)
                  ->getType()
                  ->isIntegerType() ||
-            !Function->getParamDecl(0)
-                 ->getType()
-                 ->getPointeeType()
-                 ->isIntegerType() ||
-            (!Unary && !Function->getParamDecl(2)
-                            ->getType()
-                            ->getPointeeType()
-                            ->isIntegerType()))) ||
+            !(*FirstRange)->getPointeeType()->isIntegerType() ||
+            (!Unary && !(*SecondRange)->getPointeeType()->isIntegerType()))) ||
           ValueType.isNull() ||
           (!ValueType->isVoidType() &&
            (!(NumericArithmetic(ValueType, true) ||
@@ -23144,13 +23131,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                 Context, Function->getParamDecl(Unary ? 2 : 3)->getType(),
                 ValueType) ||
             !utilityScalarDirectConversion(
-                Context, Function->getParamDecl(0)->getType()->getPointeeType(),
-                ValueType) ||
+                Context, (*FirstRange)->getPointeeType(), ValueType) ||
             (!Unary &&
              !utilityScalarDirectConversion(
-                 Context,
-                 Function->getParamDecl(2)->getType()->getPointeeType(),
-                 ValueType)))) ||
+                 Context, (*SecondRange)->getPointeeType(), ValueType)))) ||
           !Same(Call->getArg(Index)->getType(), Object) || !Cast || !List ||
           (List->getNumInits() != 0 &&
            (!EmptyBase || EmptyBase->getNumInits() != 0)))
@@ -23197,10 +23181,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
         NumericRangeCommonElements(0, 2, true)) ||
        (Call->getNumArgs() == 6 && NumericReductionValueParameter(3, 0, true) &&
-        ((NumericPointerParameter(0, false, true) &&
-          NumericPointerParameter(2, false, true) &&
-          NumericArithmeticFunctionalPair(false) &&
-          NumericCommonElements(0, 2, true)) ||
+        ((NumericArithmeticFunctionalPair(false) &&
+          NumericRangeCommonElements(0, 2, true)) ||
          (NumericBinaryTransformCallback(
               4, Function->getParamDecl(3)->getType(),
               Function->getParamDecl(3)->getType(),
@@ -23267,10 +23249,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
         ((Call->getNumArgs() == 4 && NumericRangeCommonElements(0, 2, true)) ||
          (Call->getNumArgs() == 6 &&
-          ((NumericPointerParameter(0, false, true) &&
-            NumericPointerParameter(2, false, true) &&
-            NumericArithmeticFunctionalPair(false) &&
-            NumericCommonElements(0, 2, true)) ||
+          ((NumericArithmeticFunctionalPair(false) &&
+            NumericRangeCommonElements(0, 2, true)) ||
            (NumericBinaryTransformCallback(
                 4, Function->getParamDecl(3)->getType(),
                 Function->getParamDecl(3)->getType(),
@@ -23282,8 +23262,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        ((NumericPointerParameter(0, false, true) &&
-          NumericArithmeticFunctionalPair(true) &&
+        ((NumericArithmeticFunctionalPair(true) &&
           NumericArithmetic(Element, true)) ||
          (NumericBinaryTransformCallback(
               3, Function->getParamDecl(2)->getType(),

@@ -526,13 +526,14 @@ Default and checked function-pointer `accumulate` also accept authenticated
 mutable or const wrapped arithmetic ranges with their existing accumulator
 conversion and callback rules.
 Default and checked function-pointer `inner_product` accept independent raw or
-authenticated wrapped arithmetic inputs; standard function-object pairs retain
-their raw-pointer range boundary.
+authenticated wrapped arithmetic inputs; directly value-initialized standard
+function-object pairs accept the same ranges.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges.
 Default two-range and checked function-pointer unary or two-range
 `transform_reduce` accept raw or authenticated wrapped arithmetic inputs;
-standard function-object pairs retain their raw-pointer boundary.
+directly value-initialized standard function-object pairs accept the same
+ranges.
 Default and checked function-pointer `partial_sum` and
 `adjacent_difference` accept authenticated wrapped arithmetic inputs and
 writable wrapped outputs, including mixed raw-pointer ranges, and return the
