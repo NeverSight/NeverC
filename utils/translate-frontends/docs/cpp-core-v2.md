@@ -2042,6 +2042,13 @@ record values. Writable authenticated wrapped scalar ranges retain the default
 and checked comparator forms. Record comparator overloads and nontrivial
 records remain rejected.
 
+Default `std::nth_element` accepts the same writable source-record ranges.
+Its three-way partition compares current elements with a retained trivial
+record pivot by const reference and swaps complete values. Equivalent values
+terminate without an artificial ordering; the requested element has its sorted
+rank, with no full-order promise for either side. Writable wrapped scalar
+ranges retain their default and checked comparator forms.
+
 `std::sort` also accepts authenticated `std::__wrap_iter<T*>` ranges for the
 same writable scalar element and comparison boundary. This includes mutable
 `std::vector<T>` iterators. The iterator arguments are evaluated once, then

@@ -56047,6 +56047,87 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordNthElementRun) {
+  const auto Source = tmpFile("source-record-nth-element.cpp");
+  const auto Output = tmpFile("source-record-nth-element.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Point {
+  int value, id;
+  bool operator<(const Point &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point raw[8]{{7, 0}, {1, 1}, {5, 2}, {2, 3},
+               {9, 4}, {3, 5}, {4, 6}, {8, 7}};
+  int first_effects = 0, nth_effects = 0, last_effects = 0;
+  std::nth_element((++first_effects, raw), (++nth_effects, raw + 3),
+                   (++last_effects, raw + 8));
+  if (first_effects != 1 || nth_effects != 1 || last_effects != 1 ||
+      raw[3].value != 4) return 1;
+  int id_sum = 0;
+  for (int i = 0; i < 8; ++i) {
+    if ((i < 3 && raw[i].value > 4) ||
+        (i > 3 && raw[i].value < 4)) return 2;
+    id_sum += raw[i].id;
+  }
+  if (id_sum != 28) return 3;
+  std::vector<Friend> friends{Friend{5}, Friend{1}, Friend{4},
+                              Friend{2}, Friend{3}};
+  std::nth_element(friends.begin(), friends.begin() + 2, friends.end());
+  if (friends[2].value != 3) return 4;
+  for (int i = 0; i < 5; ++i)
+    if ((i < 2 && friends[i].value > 3) ||
+        (i > 2 && friends[i].value < 3)) return 5;
+  owned::Free frees[3]{{3}, {1}, {2}};
+  std::nth_element(frees, frees + 1, frees + 3);
+  if (frees[1].value != 2) return 6;
+  Point duplicate[4]{{2, 0}, {2, 1}, {2, 2}, {2, 3}};
+  std::nth_element(duplicate, duplicate + 2, duplicate + 4);
+  if (duplicate[2].value != 2) return 7;
+  std::vector<int> numbers{1, 5, 3, 4, 2};
+  std::nth_element(numbers.begin(), numbers.begin() + 2, numbers.end(),
+                   std::greater<int>{});
+  if (numbers[2] != 3) return 8;
+  for (int i = 0; i < 5; ++i)
+    if ((i < 2 && numbers[i] < 3) ||
+        (i > 2 && numbers[i] > 3)) return 9;
+  std::vector<Friend> empty;
+  std::nth_element(empty.begin(), empty.end(), empty.end());
+  return empty.empty() ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("source-record-nth-element" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

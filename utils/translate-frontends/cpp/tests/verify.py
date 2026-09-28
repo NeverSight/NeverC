@@ -31839,6 +31839,52 @@ void partial_scalar_wrapped(std::vector<int> &values) {
           'std::partial_sort(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_nth_element_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+void select_raw(Member *first, Member *nth, Member *last) {
+  std::nth_element(first, nth, last);
+}
+void select_wrapped(std::vector<Friend> &values) {
+  std::nth_element(values.begin(), values.begin() + 2, values.end());
+}
+void select_free(owned::Free *first, owned::Free *nth,
+                 owned::Free *last) {
+  std::nth_element(first, nth, last);
+}
+void select_scalar_wrapped(std::vector<int> &values) {
+  std::nth_element(values.begin(), values.begin() + 2, values.end(),
+                   std::greater<int>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-nth-element-" + target,
+              source_record_nth_element_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-nth-element-nontrivial",
+          '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'void f(Entry*first,Entry*nth,Entry*last){'
+          'std::nth_element(first,nth,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_swap_reverse_source = """\
 #include <algorithm>
 #include <vector>
