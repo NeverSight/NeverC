@@ -631,6 +631,7 @@ bool approvedUtilityAllocatorAssignment(
     const clang::ASTContext &Context);
 enum class UtilityOperation {
   CStringLength,
+  CStringSpan,
   CStringCompare,
   CStringCompareN,
   CStringMemoryCompare,

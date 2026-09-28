@@ -29280,6 +29280,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     cstring_source = """\
 #include <cstring>
 std::size_t length(const char *text) { return std::strlen(text); }
+std::size_t span(const char *text, const char *accepted) {
+  return std::strspn(text, accepted);
+}
 int compare(const char *left, const char *right) {
   return std::strcmp(left, right);
 }
@@ -29329,7 +29332,7 @@ void *fill_bytes(void *destination, int value, std::size_t count) {
             cstring_dependencies = dependencies
         else:
             assert dependencies == cstring_dependencies, target
-        assert len(cstring_ir["functions"]) == 13, target
+        assert len(cstring_ir["functions"]) == 14, target
         length_function = cstring_ir["functions"][0]
         character_type = length_function["params"][0]["type"].split(":", 1)[1]
         length_check = next(node for node in length_function["body"]
@@ -29341,6 +29344,8 @@ void *fill_bytes(void *destination, int value, std::size_t count) {
                     if node.get("op") in ("call", "mapped_call", "indirect_call",
                                           "native_heap_call")], target
     check("v2-cstring-global-call", '#include <cstring>\nint f(){return ::strcmp("a","b");}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-global-strspn", '#include <cstring>\nstd::size_t f(){return ::strspn("abc","ab");}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-global-memcmp", '#include <cstring>\nint f(){return ::memcmp("a","b",1);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
