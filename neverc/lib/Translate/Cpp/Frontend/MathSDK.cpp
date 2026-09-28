@@ -20117,10 +20117,13 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
           : nullptr;
   const bool MemoryFind =
       Function && Function->getIdentifier() && Function->getName() == "memchr";
+  const bool CharacterFind =
+      Function && Function->getIdentifier() && Function->getName() == "strchr";
+  const bool InlineFind = MemoryFind || CharacterFind;
   if (!S.coreV2() || !Function || !Reference || !Function->getIdentifier() ||
       Function->isImplicit() || Function->isVariadic() ||
-      (Function->hasBody() && !MemoryFind) ||
-      (!Function->isExternC() && !MemoryFind) ||
+      (Function->hasBody() && !InlineFind) ||
+      (!Function->isExternC() && !InlineFind) ||
       Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       !Function->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
       !Call->isPRValue() || Call->getNumArgs() != Function->getNumParams() ||
@@ -20146,7 +20149,7 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
     if (Redeclaration->isImplicit())
       continue;
     if (Redeclaration->getLocation().isMacroID() ||
-        !(MemoryFind && !Redeclaration->isExternC()
+        !(InlineFind && !Redeclaration->isExternC()
               ? cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
                               "string.h")
               : cstddefOrigin(S, SM, Redeclaration->getLocation(), "resource",
@@ -20187,11 +20190,15 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::CStringMemoryCompare;
   const auto MutableBytePointer = Context.getPointerType(Context.VoidTy);
-  if (MemoryFind && Function->getNumParams() == 3 &&
-      (Same(Function->getParamDecl(0)->getType(), BytePointer) ||
-       Same(Function->getParamDecl(0)->getType(), MutableBytePointer)) &&
+  const auto MutableCharacter = Context.getPointerType(Context.CharTy);
+  if (InlineFind && Function->getNumParams() == (MemoryFind ? 3u : 2u) &&
+      (Same(Function->getParamDecl(0)->getType(),
+            MemoryFind ? BytePointer : Character) ||
+       Same(Function->getParamDecl(0)->getType(),
+            MemoryFind ? MutableBytePointer : MutableCharacter)) &&
       Same(Function->getParamDecl(1)->getType(), Context.IntTy) &&
-      Same(Function->getParamDecl(2)->getType(), Context.getSizeType()) &&
+      (!MemoryFind ||
+       Same(Function->getParamDecl(2)->getType(), Context.getSizeType())) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       !Function->isExternC() && Function->isInlined()) {
@@ -20208,17 +20215,19 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
             : nullptr;
     const auto *Builtin =
         BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
-    if (!BuiltinCall || BuiltinCall->getNumArgs() != 3 || !Builtin ||
-        !Builtin->isImplicit() || !Builtin->getBuiltinID() ||
-        Builtin->getName() != "__builtin_memchr")
+    if (!BuiltinCall || BuiltinCall->getNumArgs() != Function->getNumParams() ||
+        !Builtin || !Builtin->isImplicit() || !Builtin->getBuiltinID() ||
+        Builtin->getName() !=
+            (MemoryFind ? "__builtin_memchr" : "__builtin_strchr"))
       return std::nullopt;
-    for (unsigned I = 0; I != 3; ++I) {
+    for (unsigned I = 0; I != Function->getNumParams(); ++I) {
       const auto *Argument =
           dyn_cast<DeclRefExpr>(BuiltinCall->getArg(I)->IgnoreParenImpCasts());
       if (!Argument || Argument->getDecl() != Function->getParamDecl(I))
         return std::nullopt;
     }
-    return UtilityOperation::CStringMemoryFind;
+    return MemoryFind ? UtilityOperation::CStringMemoryFind
+                      : UtilityOperation::CStringCharacterFind;
   }
   if ((Name == "memcpy" || Name == "memmove" || Name == "memset") &&
       Function->getNumParams() == 3 &&

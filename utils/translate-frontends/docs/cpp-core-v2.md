@@ -2850,6 +2850,12 @@ pointer's constness, or null if none matches. The search value is converted to
 an unsigned byte. A zero count reads no bytes. The pinned C++ overload body and
 its builtin arguments are authenticated before direct lowering.
 
+The exact `std::strchr(char *, int)` and `std::strchr(const char *, int)`
+overloads return the first matching character, the terminating NUL when
+searching for zero, or null if no match occurs before the terminator. The
+search value is converted to an unsigned byte. The selected pointer's
+constness and the pinned C++ builtin wrapper are preserved and authenticated.
+
 The exact `std::memcpy(void *, const void *, std::size_t)`,
 `std::memmove(void *, const void *, std::size_t)` and
 `std::memset(void *, int, std::size_t)` calls write bytes directly and return
@@ -2861,10 +2867,10 @@ filling. A zero count writes nothing. The caller supplies readable and writable
 ranges and, for `memcpy`, nonoverlapping ranges. No runtime libc memory call is emitted.
 
 Only the `std::` names introduced by the pinned header are admitted. Global
-`::strlen`, `::strcmp` and `::memchr`, other `<cstring>` functions, quoted or
-shadow headers, and function addresses remain outside this boundary. The caller
-still supplies zero-terminated strings to `strlen` and `strcmp`, and readable
-character arrays through the bytes examined by `strncmp`. String object
+`::strlen`, `::strcmp`, `::memchr` and `::strchr`, other `<cstring>` functions,
+quoted or shadow headers, and function addresses remain outside this boundary.
+The caller still supplies zero-terminated strings to `strlen` and `strcmp`,
+and readable character arrays through the bytes examined by `strncmp`. String object
 operations have their own contract below.
 
 Eight-target protocol checks and O0/O2 execution cover the direct lowering,
