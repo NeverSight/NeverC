@@ -57391,6 +57391,61 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedValueReplacementRun) {
+  const auto Source = tmpFile("wrapped-value-replacement.cpp");
+  const auto Output = tmpFile("wrapped-value-replacement.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int main() {
+  std::vector<int> values{1, 2, 1, 3, 2};
+  if (std::remove(values.begin(), values.end(), 2L) != values.begin() + 3 ||
+      values[0] != 1 || values[1] != 1 || values[2] != 3) return 1;
+  const std::vector<int> source{1, 2, 1, 3, 2};
+  std::vector<long> output(5);
+  if (std::remove_copy(source.cbegin(), source.cend(), output.begin(), 2L) !=
+          output.begin() + 3 || output[0] != 1 || output[1] != 1 ||
+      output[2] != 3) return 2;
+  std::vector<int> replaced{1, 2, 1, 3, 2};
+  std::replace(replaced.begin(), replaced.end(), 2L, 9L);
+  if (replaced[0] != 1 || replaced[1] != 9 || replaced[2] != 1 ||
+      replaced[3] != 3 || replaced[4] != 9) return 3;
+  if (std::replace_copy(source.cbegin(), source.cend(), output.begin(), 2L,
+                        9L) != output.end() || output[0] != 1 ||
+      output[1] != 9 || output[2] != 1 || output[3] != 3 ||
+      output[4] != 9) return 4;
+  long raw_output[5]{};
+  if (std::remove_copy(source.cbegin(), source.cend(), raw_output, 2L) !=
+          raw_output + 3 || raw_output[2] != 3) return 5;
+  int raw_input[4]{1, 2, 3, 2};
+  if (std::replace_copy(raw_input, raw_input + 4, output.begin(), 2L,
+                        8L) != output.begin() + 4 || output[0] != 1 ||
+      output[1] != 8 || output[2] != 3 || output[3] != 8) return 6;
+  std::vector<int> empty;
+  if (std::remove(empty.begin(), empty.end(), 2L) != empty.end() ||
+      std::remove_copy(empty.begin(), empty.end(), output.begin(), 2L) !=
+          output.begin()) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-value-replacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

@@ -32596,6 +32596,41 @@ long *copy_if_mixed(const std::vector<int> &source, long *output) {
           'return std::remove_if(v.begin(),v.end(),even);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_value_replacement_source = """\
+#include <algorithm>
+#include <vector>
+std::vector<int>::iterator remove_wrapped(std::vector<int> &values) {
+  return std::remove(values.begin(), values.end(), 2L);
+}
+std::vector<long>::iterator remove_copy_wrapped(
+    const std::vector<int> &source, std::vector<long> &output) {
+  return std::remove_copy(source.cbegin(), source.cend(), output.begin(), 2L);
+}
+void replace_wrapped(std::vector<int> &values) {
+  std::replace(values.begin(), values.end(), 2L, 9L);
+}
+std::vector<long>::iterator replace_copy_wrapped(
+    const std::vector<int> &source, std::vector<long> &output) {
+  return std::replace_copy(source.cbegin(), source.cend(), output.begin(),
+                           2L, 9L);
+}
+long *remove_copy_mixed(const std::vector<int> &source, long *output) {
+  return std::remove_copy(source.cbegin(), source.cend(), output, 2L);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-value-replacement-" + target,
+              wrapped_value_replacement_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-value-replacement-custom-equality",
+          '#include <algorithm>\n#include <vector>\n'
+          'enum Item { one, two };'
+          'bool operator==(Item left, Item right){'
+          'return static_cast<int>(left)==static_cast<int>(right);}'
+          'std::vector<Item>::iterator f(std::vector<Item>&v){'
+          'return std::remove(v.begin(),v.end(),one);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

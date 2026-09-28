@@ -496,6 +496,9 @@ wrapped matching position.
 Default and checked function-pointer `unique` and `unique_copy` also accept
 authenticated wrapped scalar ranges, including writable wrapped outputs and
 mixed raw-pointer inputs or outputs for `unique_copy`.
+`remove`, `remove_copy`, `replace` and `replace_copy` accept those wrapped
+ranges with their checked equality, writable destination and value conversion
+rules; copying forms also admit mixed raw and wrapped ranges.
 Checked predicate `search`, `find_end`, `find_first_of`, `search_n` and both
 `is_permutation` forms accept authenticated wrapped scalar ranges with the
 existing by-value callback conversion rules.

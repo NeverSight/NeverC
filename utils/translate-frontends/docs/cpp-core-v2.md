@@ -1718,6 +1718,11 @@ authenticated writable wrapped scalar ranges, with `unique_copy` accepting
 independent raw or wrapped inputs and writable outputs. Both return the
 matching iterator type, preserve empty and single-element behavior, and apply
 their existing checked equality, predicate and output conversion rules.
+The value-based `remove`, `remove_copy`, `replace` and `replace_copy` forms
+also admit authenticated wrapped scalar ranges. Copying forms accept mixed raw
+and wrapped inputs or writable outputs, and returned positions keep the public
+iterator type. Their heterogeneous equality common type and direct output or
+replacement conversion rules remain in force.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

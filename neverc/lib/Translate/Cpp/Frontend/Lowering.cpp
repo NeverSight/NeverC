@@ -5204,27 +5204,31 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmRemove:
     case UtilityOperation::AlgorithmRemoveCopy: {
       const bool Copying = Operation == UtilityOperation::AlgorithmRemoveCopy;
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = Copying ? snapshot(expression(Call->getArg(2)), L)
-                            : snapshot(json::Object(Current), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      auto OutputRange = Copying ? AlgorithmRangeValue(2)
+                                 : std::pair<Expression, QualType>(
+                                       snapshot(json::Object(Current), L),
+                                       CurrentRange.second);
+      auto Output = std::move(OutputRange.first);
       const unsigned ValueIndex = Copying ? 3 : 2;
       auto ValueAddress =
           snapshot(address(lvalue(Call->getArg(ValueIndex)),
                            Call->getArg(ValueIndex)->getType(), L),
                    L);
       auto Common = utilityScalarComparisonType(
-          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(ValueIndex)->getType(), false);
       if (!Common)
         reject(L, "algorithm remove",
                "The range element and value have no equality common type.");
       const auto ComparisonType = type(*Common, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
+      const auto InputType = type(CurrentRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
-          Copying ? type(Call->getArg(2)->getType()->getPointeeType(), L)
+          Copying ? type(OutputRange.second->getPointeeType(), L)
                   : std::string();
       const auto Check = labelName(), Compare = labelName();
       const auto Transfer = labelName(), Next = labelName();
@@ -5252,16 +5256,21 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), Copying ? 2 : 0);
     }
     case UtilityOperation::AlgorithmReplace:
     case UtilityOperation::AlgorithmReplaceCopy: {
       const bool Copying = Operation == UtilityOperation::AlgorithmReplaceCopy;
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       std::optional<Expression> Output;
-      if (Copying)
-        Output = snapshot(expression(Call->getArg(2)), L);
+      QualType OutputPointerType = CurrentRange.second;
+      if (Copying) {
+        auto OutputRange = AlgorithmRangeValue(2);
+        Output = std::move(OutputRange.first);
+        OutputPointerType = OutputRange.second;
+      }
       const unsigned OldIndex = Copying ? 3 : 2;
       const unsigned NewIndex = OldIndex + 1;
       auto OldAddress = snapshot(address(lvalue(Call->getArg(OldIndex)),
@@ -5271,17 +5280,17 @@ class FunctionLowering {
                                          Call->getArg(NewIndex)->getType(), L),
                                  L);
       auto Common = utilityScalarComparisonType(
-          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(OldIndex)->getType(), false);
       if (!Common)
         reject(L, "algorithm replace",
                "The range element and old value have no equality common type.");
       const auto ComparisonType = type(*Common, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
+      const auto InputType = type(CurrentRange.second, L);
+      const auto OutputType = type(OutputPointerType, L);
       const auto OutputElementType =
-          type(Call->getArg(Copying ? 2 : 0)->getType()->getPointeeType(), L);
+          type(OutputPointerType->getPointeeType(), L);
       const auto Check = labelName(), Compare = labelName();
       const auto Match = labelName(), Mismatch = labelName();
       const auto Next = labelName(), End = labelName();
@@ -5313,7 +5322,8 @@ class FunctionLowering {
             L);
       jump(Check, L);
       label(End, L);
-      return Output ? std::move(*Output) : Expression();
+      return Output ? AlgorithmIteratorResult(std::move(*Output), 2)
+                    : Expression();
     }
     case UtilityOperation::AlgorithmUnique: {
       auto FirstRange = AlgorithmRangeValue(0);
