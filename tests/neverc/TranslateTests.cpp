@@ -56707,6 +56707,80 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordProjectionTransformRun) {
+  const auto Source = tmpFile("record-projection-transform.cpp");
+  const auto Output = tmpFile("record-projection-transform.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Input { int key; int tag; };
+struct Factor { int amount; int bias; };
+const Input *input_base;
+const Factor *factor_base;
+int calls, bad_identity;
+long project(const Input &value) {
+  if (&value != input_base + calls) ++bad_identity;
+  ++calls;
+  return value.key * 10L + value.tag;
+}
+long combine(const Input &value, const Factor &factor) {
+  if (&value != input_base + calls || &factor != factor_base + calls)
+    ++bad_identity;
+  ++calls;
+  return value.key * factor.amount + value.tag + factor.bias;
+}
+int main() {
+  const std::vector<Input> input{{1, 2}, {3, 4}, {5, 6}};
+  const std::vector<Factor> factors{{2, 10}, {3, 20}, {4, 30}};
+  std::vector<long> output(3);
+  input_base = &input[0]; calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), output.begin(), project) !=
+          output.end() || calls != 3 || bad_identity ||
+      output[0] != 12 || output[1] != 34 || output[2] != 56) return 1;
+  input_base = &input[0]; factor_base = &factors[0];
+  calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), factors.cbegin(),
+                     output.begin(), combine) != output.end() ||
+      calls != 3 || bad_identity ||
+      output[0] != 14 || output[1] != 33 || output[2] != 56) return 2;
+  int raw_output[3]{};
+  input_base = &input[0]; calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), raw_output, project) !=
+          raw_output + 3 || calls != 3 || bad_identity ||
+      raw_output[0] != 12 || raw_output[1] != 34 ||
+      raw_output[2] != 56) return 3;
+  const Input raw_input[2]{{7, 8}, {9, 10}};
+  input_base = raw_input; factor_base = &factors[0];
+  calls = bad_identity = 0;
+  if (std::transform(raw_input, raw_input + 2, factors.cbegin(),
+                     raw_output, combine) != raw_output + 2 ||
+      calls != 2 || bad_identity ||
+      raw_output[0] != 32 || raw_output[1] != 57) return 4;
+  calls = bad_identity = 0;
+  if (std::transform(input.cend(), input.cend(), output.begin(), project) !=
+          output.begin() || calls != 0 || bad_identity) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("record-projection-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedScalarGenerateCallbacksRun) {
   const auto Source = tmpFile("wrapped-scalar-generate-callbacks.cpp");
   const auto Output = tmpFile("wrapped-scalar-generate-callbacks.nc");

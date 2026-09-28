@@ -1971,6 +1971,10 @@ output record type by value; all three record types may differ. A writable raw
 or wrapped output receives each complete result, and the returned position keeps
 the output iterator type. Callback references address the original input
 elements; by-value record parameters remain rejected.
+The same one- or two-record input boundary also accepts a writable raw or
+wrapped scalar output when the checked callback result directly converts to
+the output element. Different record input types remain independent, and the
+returned position retains the output iterator form.
 The function-pointer `generate` and `generate_n` forms also accept writable
 authenticated wrapped scalar outputs. The generator result uses its checked
 direct conversion to the output element; `generate_n` returns the advanced

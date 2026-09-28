@@ -502,6 +502,9 @@ source records. Checked function-pointer arguments take each input as its own
 `const Record&` and return the exact writable output record by value. Inputs
 and output may independently be raw or wrapped; the callback sees the original
 input elements and the result retains the output iterator form.
+Record inputs may also project to a writable scalar output when the callback's
+scalar result directly converts to that element. Both overloads retain the
+const-reference input and output iterator rules.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.

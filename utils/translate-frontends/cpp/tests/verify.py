@@ -33164,6 +33164,46 @@ Result *mixed_transform(const Input *input, const std::vector<Scale> &scales,
               heterogeneous_record_transform_source,
               profile="cpp-core-v2", target=target, sdk=True)
 
+    record_projection_transform_source = """\
+#include <algorithm>
+#include <vector>
+struct Input { int key; int tag; };
+struct Factor { int amount; int bias; };
+long project(const Input &value) { return value.key * 10L + value.tag; }
+long combine(const Input &value, const Factor &factor) {
+  return value.key * factor.amount + value.tag + factor.bias;
+}
+std::vector<long>::iterator project_records(
+    const std::vector<Input> &input, std::vector<long> &output) {
+  return std::transform(input.cbegin(), input.cend(), output.begin(), project);
+}
+std::vector<long>::iterator combine_records(
+    const std::vector<Input> &input, const std::vector<Factor> &factors,
+    std::vector<long> &output) {
+  return std::transform(input.cbegin(), input.cend(), factors.cbegin(),
+                        output.begin(), combine);
+}
+int *project_raw(const std::vector<Input> &input, int *output) {
+  return std::transform(input.cbegin(), input.cend(), output, project);
+}
+int *combine_raw(const Input *input, const std::vector<Factor> &factors,
+                 int *output) {
+  return std::transform(input, input + 2, factors.cbegin(), output, combine);
+}
+"""
+    for target in sdk_targets:
+        check("v2-record-projection-transform-" + target,
+              record_projection_transform_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-record-projection-transform-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'long project(Item item){return item.key+item.tag;}'
+          'std::vector<long>::iterator f(const std::vector<Item>&source,'
+          'std::vector<long>&output){return std::transform(source.cbegin(),'
+          'source.cend(),output.begin(),project);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>
