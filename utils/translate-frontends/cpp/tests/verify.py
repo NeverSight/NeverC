@@ -32244,6 +32244,34 @@ long mixed_product(const std::vector<int> &first, const long *second) {
           'std::plus<>{},std::multiplies<>{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_reduce_source = """\
+#include <numeric>
+#include <vector>
+long add(long left, long right) { return left + right; }
+int default_reduce(const std::vector<int> &values) {
+  return std::reduce(values.cbegin(), values.cend());
+}
+long initialized_reduce(const std::vector<int> &values) {
+  return std::reduce(values.cbegin(), values.cend(), 10L);
+}
+long callback_reduce(const std::vector<int> &values) {
+  return std::reduce(values.cbegin(), values.cend(), 10L, add);
+}
+unsigned char narrow_reduce(const std::vector<unsigned char> &values) {
+  return std::reduce(values.cbegin(), values.cend(), (unsigned char)0);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-reduce-" + target,
+              wrapped_numeric_reduce_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-reduce-reference-callback",
+          '#include <numeric>\n#include <vector>\n'
+          'long add(const long &left,long right){return left+right;}'
+          'long f(const std::vector<int>&v){'
+          'return std::reduce(v.cbegin(),v.cend(),0L,add);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

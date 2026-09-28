@@ -23232,14 +23232,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3 ||
        Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, true) &&
-      NumericPointerParameter(1, false, true) &&
+      NumericRangeParameter(0, false, true) &&
+      NumericRangeParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Call->getNumArgs() == 2 &&
-        Same(Function->getReturnType(), Function->getParamDecl(0)
-                                            ->getType()
+        Same(Function->getReturnType(), (*AlgorithmRangePointerParameter(0))
                                             ->getPointeeType()
                                             .getUnqualifiedType()))
       return UtilityOperation::NumericReduce;
@@ -23249,7 +23248,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           NumericBinaryTransformCallback(
               3, Function->getParamDecl(2)->getType(),
               Function->getParamDecl(2)->getType(),
-              Function->getParamDecl(0)->getType()->getPointeeType(), true))
+              (*AlgorithmRangePointerParameter(0))->getPointeeType(), true))
         return UtilityOperation::NumericReduce;
     }
   }

@@ -56744,6 +56744,51 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericReduceRun) {
+  const auto Source = tmpFile("wrapped-numeric-reduce.cpp");
+  const auto Output = tmpFile("wrapped-numeric-reduce.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+int calls;
+long add(long left, long right) { ++calls; return left + right; }
+int main() {
+  const std::vector<int> values{1, 2, 3};
+  if (std::reduce(values.cbegin(), values.cend()) != 6 ||
+      std::reduce(values.cbegin(), values.cend(), 10L) != 16)
+    return 1;
+  calls = 0;
+  if (std::reduce(values.cbegin(), values.cend(), 10L, add) != 16 ||
+      calls != 3) return 2;
+  const std::vector<unsigned char> narrow{250, 10};
+  if (std::reduce(narrow.cbegin(), narrow.cend(),
+                   (unsigned char)0) != 4) return 3;
+  const std::vector<int> empty;
+  calls = 0;
+  if (std::reduce(empty.cbegin(), empty.cend()) != 0 ||
+      std::reduce(empty.cbegin(), empty.cend(), 7L, add) != 7 ||
+      calls != 0) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-numeric-reduce" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

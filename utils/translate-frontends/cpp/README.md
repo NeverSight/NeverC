@@ -528,6 +528,8 @@ conversion and callback rules.
 Default and checked function-pointer `inner_product` accept independent raw or
 authenticated wrapped arithmetic inputs; standard function-object pairs retain
 their raw-pointer range boundary.
+Default, initialized and checked function-pointer `reduce` also accept
+authenticated mutable or const wrapped arithmetic ranges.
 Output ranges must be writable; callable objects, heterogeneous element types
 and custom iterators remain rejected. New contributes an exact, platform-free
 37-file C++17 header closure. The standard allocation tag types and
