@@ -32631,6 +32631,45 @@ long *remove_copy_mixed(const std::vector<int> &source, long *output) {
           'return std::remove(v.begin(),v.end(),one);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_partition_source = """\
+#include <algorithm>
+#include <vector>
+bool even(int value) { return value % 2 == 0; }
+bool query(const std::vector<int> &values) {
+  return std::is_partitioned(values.cbegin(), values.cend(), even);
+}
+std::vector<int>::const_iterator point(const std::vector<int> &values) {
+  return std::partition_point(values.cbegin(), values.cend(), even);
+}
+std::vector<int>::iterator partition(std::vector<int> &values) {
+  return std::partition(values.begin(), values.end(), even);
+}
+std::vector<int>::iterator stable(std::vector<int> &values) {
+  return std::stable_partition(values.begin(), values.end(), even);
+}
+std::pair<std::vector<long>::iterator, std::vector<long>::iterator> copy(
+    const std::vector<int> &values, std::vector<long> &yes,
+    std::vector<long> &no) {
+  return std::partition_copy(values.cbegin(), values.cend(), yes.begin(),
+                             no.begin(), even);
+}
+std::pair<std::vector<long>::iterator, long *> mixed_copy(
+    const std::vector<int> &values, std::vector<long> &yes, long *no) {
+  return std::partition_copy(values.cbegin(), values.cend(), yes.begin(), no,
+                             even);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-partition-" + target,
+              wrapped_partition_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-partition-reference-predicate",
+          '#include <algorithm>\n#include <vector>\n'
+          'bool even(const int &value){return value%2==0;}'
+          'std::vector<int>::iterator f(std::vector<int>&v){'
+          'return std::partition(v.begin(),v.end(),even);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

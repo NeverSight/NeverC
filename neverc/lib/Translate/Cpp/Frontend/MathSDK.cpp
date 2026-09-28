@@ -24713,10 +24713,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "partition_point");
   if (PointerPartitionQuery && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmUnaryPredicateParameter(2, 0) &&
+      AlgorithmRangeUnaryPredicateParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Name == "is_partitioned" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsPartitioned;
@@ -24726,36 +24726,37 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/partition.h" && Name == "partition" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmUnaryPredicateParameter(2, 0) &&
+          Context, *AlgorithmRangePointerParameter(0)) &&
+      AlgorithmRangeUnaryPredicateParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmPartition;
   if (Origin->Path == "__algorithm/stable_partition.h" &&
       Name == "stable_partition" && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmUnaryPredicateParameter(2, 0) &&
+          Context, *AlgorithmRangePointerParameter(0)) &&
+      AlgorithmRangeUnaryPredicateParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmStablePartition;
   if (Origin->Path == "__algorithm/partition_copy.h" &&
       Name == "partition_copy" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmTransferParameters(0, 2) && AlgorithmTransferParameters(0, 3) &&
+      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
+      AlgorithmTransferRangeParameters(0, 3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmUnaryPredicateParameter(4, 0) &&
+      AlgorithmRangeUnaryPredicateParameter(4, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);

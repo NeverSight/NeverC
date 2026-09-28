@@ -1865,6 +1865,10 @@ predicate.
 The exact `std::is_partitioned`, `std::partition`, `std::stable_partition`,
 `std::partition_copy` and `std::partition_point` templates use that predicate
 boundary too.
+They accept authenticated raw or wrapped scalar ranges under the same callback
+and writable-output rules. Returned partition points retain their iterator
+type, and `partition_copy` stores each raw or wrapped output position in the
+matching field of its authenticated pair.
 `is_partitioned` accepts a read-only range and stops when it finds a selected
 element after the first rejected element. `partition` requires a writable range,
 performs at most one predicate call per element, and returns the boundary between

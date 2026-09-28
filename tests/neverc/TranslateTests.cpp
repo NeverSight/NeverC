@@ -57446,6 +57446,73 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedPartitionAlgorithmsRun) {
+  const auto Source = tmpFile("wrapped-partition-algorithms.cpp");
+  const auto Output = tmpFile("wrapped-partition-algorithms.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+bool even(int value) { ++calls; return value % 2 == 0; }
+int main() {
+  const std::vector<int> partitioned{2, 4, 6, 1, 3, 5};
+  if (!std::is_partitioned(partitioned.cbegin(), partitioned.cend(), even) ||
+      std::partition_point(partitioned.cbegin(), partitioned.cend(), even) !=
+          partitioned.cbegin() + 3) return 1;
+  const std::vector<int> mixed{2, 1, 4, 3};
+  if (std::is_partitioned(mixed.cbegin(), mixed.cend(), even)) return 2;
+  std::vector<int> values{1, 2, 3, 4, 5, 6};
+  auto boundary = std::partition(values.begin(), values.end(), even);
+  if (boundary != values.begin() + 3) return 3;
+  for (auto it = values.begin(); it != boundary; ++it)
+    if (*it % 2 != 0) return 4;
+  for (auto it = boundary; it != values.end(); ++it)
+    if (*it % 2 == 0) return 5;
+  std::vector<int> stable{1, 2, 3, 4, 5, 6};
+  if (std::stable_partition(stable.begin(), stable.end(), even) !=
+          stable.begin() + 3 || stable[0] != 2 || stable[1] != 4 ||
+      stable[2] != 6 || stable[3] != 1 || stable[4] != 3 ||
+      stable[5] != 5) return 6;
+  std::vector<long> yes(6), no(6);
+  auto ends = std::partition_copy(partitioned.cbegin(), partitioned.cend(),
+                                  yes.begin(), no.begin(), even);
+  if (ends.first != yes.begin() + 3 || ends.second != no.begin() + 3 ||
+      yes[0] != 2 || yes[1] != 4 || yes[2] != 6 ||
+      no[0] != 1 || no[1] != 3 || no[2] != 5) return 7;
+  long raw_no[6]{};
+  auto mixed_ends = std::partition_copy(partitioned.cbegin(),
+      partitioned.cend(), yes.begin(), raw_no, even);
+  if (mixed_ends.first != yes.begin() + 3 ||
+      mixed_ends.second != raw_no + 3 || raw_no[2] != 5) return 8;
+  std::vector<int> empty;
+  calls = 0;
+  if (!std::is_partitioned(empty.begin(), empty.end(), even) ||
+      std::partition_point(empty.begin(), empty.end(), even) != empty.end() ||
+      std::partition(empty.begin(), empty.end(), even) != empty.end() ||
+      std::stable_partition(empty.begin(), empty.end(), even) != empty.end() ||
+      calls != 0) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-partition-algorithms" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

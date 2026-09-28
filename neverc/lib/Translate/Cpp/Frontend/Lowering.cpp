@@ -7965,11 +7965,12 @@ class FunctionLowering {
       return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmIsPartitioned: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(CurrentRange.second, L);
       auto Result = temporary("bool", L);
       const auto LeadingCheck = labelName(), LeadingTest = labelName();
       const auto LeadingAdvance = labelName(), BeginTail = labelName();
@@ -8021,12 +8022,13 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::AlgorithmPartition: {
-      auto Boundary = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto BoundaryRange = AlgorithmRangeValue(0);
+      auto Boundary = std::move(BoundaryRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       auto Predicate = snapshot(expression(Call->getArg(2)), L);
       auto Scan = snapshot(json::Object(Boundary), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(BoundaryRange.second, L);
       const auto FindCheck = labelName(), FindTest = labelName();
       const auto AdvanceBoundary = labelName(), BeginScan = labelName();
       const auto ScanCheck = labelName(), ScanTest = labelName();
@@ -8082,17 +8084,17 @@ class FunctionLowering {
              L);
       jump(ScanCheck, L);
       label(End, L);
-      return Boundary;
+      return AlgorithmIteratorResult(std::move(Boundary), 0);
     }
     case UtilityOperation::AlgorithmStablePartition: {
-      auto Boundary = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto BoundaryRange = AlgorithmRangeValue(0);
+      auto Boundary = std::move(BoundaryRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       auto Predicate = snapshot(expression(Call->getArg(2)), L);
       auto Current = snapshot(json::Object(Boundary), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
-      const auto ElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto PointerType = type(BoundaryRange.second, L);
+      const auto ElementType = type(BoundaryRange.second->getPointeeType(), L);
       auto Shift = temporary(PointerType, L);
       auto Previous = temporary(PointerType, L);
       auto Value = temporary(ElementType, L);
@@ -8147,22 +8149,25 @@ class FunctionLowering {
           L);
       jump(Check, L);
       label(End, L);
-      return Boundary;
+      return AlgorithmIteratorResult(std::move(Boundary), 0);
     }
     case UtilityOperation::AlgorithmPartitionCopy: {
-      auto Input = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto TrueOutput = snapshot(expression(Call->getArg(2)), L);
-      auto FalseOutput = snapshot(expression(Call->getArg(3)), L);
+      auto InputRange = AlgorithmRangeValue(0);
+      auto Input = std::move(InputRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      auto TrueOutputRange = AlgorithmRangeValue(2);
+      auto TrueOutput = std::move(TrueOutputRange.first);
+      auto FalseOutputRange = AlgorithmRangeValue(3);
+      auto FalseOutput = std::move(FalseOutputRange.first);
       auto Predicate = captureUnaryPredicate(Call, Operation, 4);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto TrueOutputType = type(Call->getArg(2)->getType(), L);
-      const auto FalseOutputType = type(Call->getArg(3)->getType(), L);
+      const auto InputType = type(InputRange.second, L);
+      const auto TrueOutputType = type(TrueOutputRange.second, L);
+      const auto FalseOutputType = type(FalseOutputRange.second, L);
       const auto TrueOutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+          type(TrueOutputRange.second->getPointeeType(), L);
       const auto FalseOutputElementType =
-          type(Call->getArg(3)->getType()->getPointeeType(), L);
+          type(FalseOutputRange.second->getPointeeType(), L);
       const auto Check = labelName(), Test = labelName();
       const auto CopyTrue = labelName(), CopyFalse = labelName();
       const auto Advance = labelName(), End = labelName();
@@ -8209,17 +8214,19 @@ class FunctionLowering {
         reject(L, "algorithm partition_copy",
                "The std::partition_copy destination type differs from its "
                "result.");
-      assign(fieldStorage(json::Object(Place), Pair->First, L), TrueOutput, L);
-      assign(fieldStorage(json::Object(Place), Pair->Second, L), FalseOutput,
-             L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 2),
+             TrueOutput, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 3),
+             FalseOutput, L);
       return Place;
     }
     case UtilityOperation::AlgorithmPartitionPoint: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       auto Length = temporary(DifferenceType, L);
       auto Half = temporary(DifferenceType, L);
       auto Middle = temporary(PointerType, L);
@@ -8256,7 +8263,7 @@ class FunctionLowering {
       assign(Length, Half, L);
       jump(Check, L);
       label(End, L);
-      return First;
+      return AlgorithmIteratorResult(std::move(First), 0);
     }
     case UtilityOperation::AlgorithmForEach: {
       auto CurrentRange = AlgorithmRangeValue(0);

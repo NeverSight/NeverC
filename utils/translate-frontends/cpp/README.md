@@ -486,6 +486,9 @@ iterators are also accepted, and find results retain their iterator type.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.
+`is_partitioned`, `partition_point`, `partition`, `stable_partition` and
+`partition_copy` accept the same checked wrapped scalar ranges; partition
+results keep their wrapped iterator type, including both copy outputs.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and
