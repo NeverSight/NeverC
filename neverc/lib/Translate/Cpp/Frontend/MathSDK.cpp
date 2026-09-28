@@ -24244,35 +24244,53 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/stable_sort.h" && Name == "stable_sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0))))
-    return UtilityOperation::AlgorithmStableSort;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarLast = AlgorithmRangePointerParameter(1);
+    const bool Scalar =
+        ScalarFirst && ScalarLast &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
+        ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
+         (Call->getNumArgs() == 3 && AlgorithmRangeComparisonParameter(2, 0)));
+    const bool Record = Call->getNumArgs() == 2 &&
+                        AlgorithmRecordOrderedRangeParameter(0) &&
+                        AlgorithmRecordOrderedRangeParameter(1) &&
+                        AlgorithmWritableRecordRangeParameter(0) &&
+                        AlgorithmWritableRecordRangeParameter(1);
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmStableSort;
+  }
   if (Origin->Path == "__algorithm/inplace_merge.h" &&
       Name == "inplace_merge" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 4 &&
-        AlgorithmBinaryComparisonParameter(3, 0, 0))))
-    return UtilityOperation::AlgorithmInplaceMerge;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarMiddle = AlgorithmRangePointerParameter(1);
+    const auto ScalarLast = AlgorithmRangePointerParameter(2);
+    const bool Scalar =
+        ScalarFirst && ScalarMiddle && ScalarLast &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
+        ((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0)) ||
+         (Call->getNumArgs() == 4 && AlgorithmRangeComparisonParameter(3, 0)));
+    const bool Record = Call->getNumArgs() == 3 &&
+                        AlgorithmRecordOrderedRangeParameter(0) &&
+                        AlgorithmRecordOrderedRangeParameter(1) &&
+                        AlgorithmRecordOrderedRangeParameter(2) &&
+                        AlgorithmWritableRecordRangeParameter(0) &&
+                        AlgorithmWritableRecordRangeParameter(1) &&
+                        AlgorithmWritableRecordRangeParameter(2);
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmInplaceMerge;
+  }
   if (Origin->Path == "__algorithm/partial_sort.h" && Name == "partial_sort" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() &&

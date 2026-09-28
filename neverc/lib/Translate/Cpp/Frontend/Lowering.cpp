@@ -1520,14 +1520,32 @@ class FunctionLowering {
                    const std::optional<Expression> &Comparator = std::nullopt,
                    QualType ComparatorType = {},
                    const std::optional<FunctionalOperationInfo> &SDKComparator =
-                       std::nullopt) {
+                       std::nullopt,
+                   QualType SourceElement = {}) {
     auto Left = snapshot(std::move(First), L);
     auto Right = snapshot(std::move(Middle), L);
     auto End = snapshot(std::move(Last), L);
     auto Shift = temporary(PointerType, L);
     auto Previous = temporary(PointerType, L);
     auto Value = temporary(ElementType, L);
+    const auto SourceComparison =
+        SourceElement.isNull()
+            ? std::nullopt
+            : approvedUtilityTrivialSourceComparison(
+                  A.S, A.Sources, SourceElement, OO_Less, A.Context);
     auto Less = [&](Expression LeftValue, Expression RightValue) {
+      if (SourceComparison) {
+        auto LeftAddress = snapshot(
+            address(std::move(LeftValue), SourceElement.withConst(), L), L);
+        auto RightAddress = snapshot(
+            address(std::move(RightValue), SourceElement.withConst(), L), L);
+        return compareVectorSourceElements(
+            std::move(LeftAddress), std::move(RightAddress),
+            SourceComparison->Member,
+            SourceComparison->Friend ? SourceComparison->Friend
+                                     : SourceComparison->Namespace,
+            L);
+      }
       if (SDKComparator)
         return functionalOperationValues(L, std::move(LeftValue),
                                          std::move(RightValue), *SDKComparator);
@@ -6855,12 +6873,14 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmStableSort: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(2)), L);
@@ -6868,9 +6888,15 @@ class FunctionLowering {
       const auto ComparatorType =
           Comparator ? Call->getArg(2)->getType() : QualType{};
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
-      const auto ElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto PointerType = type(FirstRange.second, L);
+      const auto Element = FirstRange.second->getPointeeType();
+      const auto ElementType = type(Element, L);
+      const auto SourceElement =
+          Call->getNumArgs() == 2 &&
+                  approvedUtilityTrivialSourceComparison(
+                      A.S, A.Sources, Element, OO_Less, A.Context)
+              ? Element
+              : QualType{};
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
       auto Width = temporary(DifferenceType, L);
       auto Remaining = temporary(DifferenceType, L);
@@ -6914,7 +6940,8 @@ class FunctionLowering {
       label(Merge, L);
       stableMerge(json::Object(RunFirst), json::Object(Middle),
                   json::Object(RunLast), PointerType, ElementType,
-                  DifferenceType, L, Comparator, ComparatorType, SDKComparator);
+                  DifferenceType, L, Comparator, ComparatorType, SDKComparator,
+                  SourceElement);
       jump(AdvanceRun, L);
       label(AdvanceRun, L);
       assign(RunFirst, RunLast, L);
@@ -6933,25 +6960,34 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmInplaceMerge: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Middle = snapshot(expression(Call->getArg(1)), L);
-      auto Last = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto MiddleRange = AlgorithmRangeValue(1);
+      auto LastRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Middle = std::move(MiddleRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 4) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 3, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(3)), L);
       }
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
-      const auto ElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto PointerType = type(FirstRange.second, L);
+      const auto Element = FirstRange.second->getPointeeType();
+      const auto ElementType = type(Element, L);
+      const auto SourceElement =
+          Call->getNumArgs() == 3 &&
+                  approvedUtilityTrivialSourceComparison(
+                      A.S, A.Sources, Element, OO_Less, A.Context)
+              ? Element
+              : QualType{};
       stableMerge(std::move(First), std::move(Middle), std::move(Last),
                   PointerType, ElementType, DifferenceType, L, Comparator,
                   Comparator ? Call->getArg(3)->getType() : QualType{},
-                  SDKComparator);
+                  SDKComparator, SourceElement);
       return {};
     }
     case UtilityOperation::AlgorithmPartialSort: {

@@ -56128,6 +56128,97 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordStableSortAndMergeRun) {
+  const auto Source = tmpFile("source-record-stable-sort-merge.cpp");
+  const auto Output = tmpFile("source-record-stable-sort-merge.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Point {
+  int key, id;
+  bool operator<(const Point &other) const { return key < other.key; }
+};
+struct Friend {
+  int key, id;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.key < b.key;
+  }
+};
+namespace owned {
+struct Free { int key, id; };
+bool operator<(const Free &a, const Free &b) {
+  return a.key < b.key;
+}
+}
+int main() {
+  Point raw[7]{{2, 0}, {1, 1}, {2, 2}, {1, 3},
+               {2, 4}, {0, 5}, {1, 6}};
+  int first_effects = 0, last_effects = 0;
+  std::stable_sort((++first_effects, raw), (++last_effects, raw + 7));
+  const int raw_ids[7]{5, 1, 3, 6, 0, 2, 4};
+  if (first_effects != 1 || last_effects != 1) return 1;
+  for (int i = 0; i < 7; ++i)
+    if (raw[i].id != raw_ids[i]) return 2;
+
+  std::vector<Friend> friends{Friend{3, 0}, Friend{1, 1}, Friend{3, 2},
+                              Friend{2, 3}, Friend{1, 4}};
+  std::stable_sort(friends.begin(), friends.end());
+  const int friend_ids[5]{1, 4, 3, 0, 2};
+  for (int i = 0; i < 5; ++i)
+    if (friends[i].id != friend_ids[i]) return 3;
+
+  owned::Free free_values[6]{{1, 0}, {2, 1}, {2, 2},
+                              {1, 3}, {2, 4}, {3, 5}};
+  std::inplace_merge(free_values, free_values + 3, free_values + 6);
+  const int free_ids[6]{0, 3, 1, 2, 4, 5};
+  for (int i = 0; i < 6; ++i)
+    if (free_values[i].id != free_ids[i]) return 4;
+
+  std::vector<Point> merged{Point{1, 0}, Point{2, 1}, Point{2, 2},
+                            Point{1, 3}, Point{2, 4}, Point{3, 5}};
+  std::inplace_merge(merged.begin(), merged.begin() + 3, merged.end());
+  for (int i = 0; i < 6; ++i)
+    if (merged[i].id != free_ids[i]) return 5;
+
+  std::vector<int> numbers{2, 4, 1, 3, 5};
+  std::stable_sort(numbers.begin(), numbers.end(), std::greater<int>{});
+  for (int i = 0; i < 5; ++i)
+    if (numbers[i] != 5 - i) return 6;
+  std::vector<int> halves{7, 5, 3, 6, 4, 2};
+  std::inplace_merge(halves.begin(), halves.begin() + 3, halves.end(),
+                     std::greater<int>{});
+  for (int i = 0; i < 6; ++i)
+    if (halves[i] != 7 - i) return 7;
+
+  std::vector<Friend> empty;
+  std::stable_sort(empty.begin(), empty.end());
+  std::inplace_merge(empty.begin(), empty.end(), empty.end());
+  Friend one[1]{{4, 8}};
+  std::stable_sort(one, one + 1);
+  std::inplace_merge(one, one, one + 1);
+  return empty.empty() && one[0].id == 8 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-stable-sort-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

@@ -2087,8 +2087,10 @@ output-heap comparison, including different input and output element types.
 Each object argument is evaluated once, and comparisons lower directly.
 
 The exact `std::stable_sort` overloads use the same default arithmetic, enum or
-complete object-pointer ordering and
-checked function-pointer comparator boundaries on writable scalar ranges. An in-place
+complete object-pointer ordering and checked function-pointer comparator
+boundaries on writable scalar ranges. Default ordering also accepts writable
+raw or authenticated wrapped ranges of exact trivial source records with a
+uniquely selected Boolean `operator<`. An in-place
 bottom-up merge retains the relative order of equivalent elements without a
 heap or libc++ runtime dependency and performs `O(N log N)` comparisons. The
 iterators and optional callback are retained once; empty and single-element
@@ -2096,11 +2098,15 @@ ranges make no callback calls. Comparator overloads additionally admit enum
 and object-pointer elements. The comparator overload also admits authenticated
 typed or transparent empty standard `<functional>` comparison objects on
 arithmetic scalars. The selected instantiated operator body is proved and
-lowered directly, and the object argument is evaluated once. Other callable
-objects, unsupported callbacks and record elements remain rejected.
+lowered directly, and the object argument is evaluated once. Writable wrapped
+scalar ranges retain the default and checked comparator forms. Record
+comparators and other unsupported callables remain rejected.
 
 The exact `std::inplace_merge` overloads reuse the same stable in-place merge
-for two adjacent, already ordered writable scalar ranges. Equivalent elements
+for two adjacent, already ordered writable ranges. Default ordering also
+accepts raw or authenticated wrapped ranges of those exact trivial source
+records, comparing original record lvalues and moving complete values.
+Equivalent elements
 from the first half remain before equivalent elements from the second half,
 and at most `N - 1` comparisons are made. An empty half performs no comparison.
 The default overload uses built-in arithmetic, enum or complete object-pointer
@@ -2108,6 +2114,8 @@ ordering; the comparator overload
 also admits enum and object-pointer elements through the checked callback
 boundary. Authenticated typed or transparent empty standard comparison objects
 also lower directly on arithmetic scalars, with one-time argument evaluation.
+Writable wrapped scalar ranges retain the default and checked comparator forms;
+record comparator overloads remain outside this boundary.
 
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic, enum or complete

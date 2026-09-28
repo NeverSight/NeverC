@@ -453,6 +453,10 @@ Default `partial_sort` admits writable raw or authenticated wrapped trivial
 source-record ranges; wrapped scalar ranges retain their comparator forms.
 Default `nth_element` admits the same record ranges through its retained pivot
 and three-way partition, while wrapped scalars retain comparator forms.
+Default `stable_sort` and `inplace_merge` admit writable raw or authenticated
+wrapped trivial source-record ranges with that selected ordering, preserving
+the order of equivalent elements. Wrapped scalars retain their default and
+checked comparator forms; record comparator overloads remain unsupported.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

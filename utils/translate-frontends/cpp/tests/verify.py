@@ -31885,6 +31885,60 @@ void select_scalar_wrapped(std::vector<int> &values) {
           'std::nth_element(first,nth,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_stable_sort_merge_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Member {
+  int key, id;
+  bool operator<(const Member &other) const { return key < other.key; }
+};
+struct Friend {
+  int key, id;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.key < b.key;
+  }
+};
+namespace owned {
+struct Free { int key, id; };
+bool operator<(const Free &a, const Free &b) {
+  return a.key < b.key;
+}
+}
+void stable_raw(Member *first, Member *last) {
+  std::stable_sort(first, last);
+}
+void stable_wrapped(std::vector<Friend> &values) {
+  std::stable_sort(values.begin(), values.end());
+}
+void merge_raw(owned::Free *first, owned::Free *middle, owned::Free *last) {
+  std::inplace_merge(first, middle, last);
+}
+void merge_wrapped(std::vector<Member> &values) {
+  std::inplace_merge(values.begin(), values.begin() + 2, values.end());
+}
+void scalar_wrapped(std::vector<int> &values) {
+  std::stable_sort(values.begin(), values.end(), std::greater<int>{});
+  std::inplace_merge(values.begin(), values.begin() + 2, values.end(),
+                     std::greater<int>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-stable-sort-merge-" + target,
+              source_record_stable_sort_merge_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-stable-sort-nontrivial",
+          '#include <algorithm>\nstruct Entry{int key;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'void f(Entry*first,Entry*last){std::stable_sort(first,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-record-inplace-merge-nontrivial",
+          '#include <algorithm>\nstruct Entry{int key;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'void f(Entry*first,Entry*middle,Entry*last){'
+          'std::inplace_merge(first,middle,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_swap_reverse_source = """\
 #include <algorithm>
 #include <vector>
