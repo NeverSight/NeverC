@@ -32164,6 +32164,30 @@ std::vector<long>::iterator generate_n_wide(std::vector<long> &values,
           'std::generate(v.begin(),v.end(),next);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_iota_source = """\
+#include <numeric>
+#include <vector>
+void iota_int(std::vector<int> &values) {
+  std::iota(values.begin(), values.end(), 7);
+}
+void iota_narrow(std::vector<unsigned char> &values) {
+  std::iota(values.begin(), values.end(), (unsigned char)254);
+}
+void iota_wide(std::vector<long> &values) {
+  std::iota(values.begin(), values.end(), 4);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-iota-" + target,
+              wrapped_numeric_iota_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-iota-record",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Counter{int value;Counter&operator++(){++value;return *this;}};'
+          'void f(std::vector<Counter>&v){'
+          'std::iota(v.begin(),v.end(),Counter{0});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

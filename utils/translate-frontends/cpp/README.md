@@ -519,11 +519,14 @@ Matching non-promoted integer, `float` and `double` pointer ranges admit the
 default `iota`, `accumulate`, `inner_product`, `partial_sum` and
 `adjacent_difference` overloads, C++17 reductions and scans, transformed scans,
 and exact same-type by-value function-pointer operations. Integer `gcd` and
-`lcm` accept the documented built-in integer combinations. Output ranges must
-be writable; callable objects, heterogeneous element types and custom iterators
-remain rejected. New contributes an exact, platform-free 37-file C++17 header
-closure. The standard allocation tag types and interference-size values remain
-compile-time or scalar metadata, and exact `std::launder` calls on admitted
+`lcm` accept the documented built-in integer combinations.
+Default `iota` also accepts authenticated writable wrapped scalar ranges,
+including vector iterators, with its checked initial-value conversion.
+Output ranges must be writable; callable objects, heterogeneous element types
+and custom iterators remain rejected. New contributes an exact, platform-free
+37-file C++17 header closure. The standard allocation tag types and
+interference-size values remain compile-time or scalar metadata, and exact
+`std::launder` calls on admitted
 non-volatile object pointers lower to their retained pointer value without a
 libc++ call. Exact standard placement new and constant-bound placement new[]
 reuse a captured storage pointer without a runtime call. Runtime tag objects,

@@ -22917,6 +22917,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            (!Writable ||
             utilityAlgorithmWritableScalarPointer(Context, Pointer));
   };
+  auto NumericRangeParameter = [&](unsigned Index, bool Writable,
+                                   bool IncludeNarrow = false) {
+    const auto Pointer = AlgorithmRangePointerParameter(Index);
+    return Pointer &&
+           NumericArithmetic((*Pointer)->getPointeeType(), IncludeNarrow) &&
+           (!Writable ||
+            utilityAlgorithmWritableScalarPointer(Context, *Pointer));
+  };
   auto NumericCommonElements = [&](unsigned LeftIndex, unsigned RightIndex,
                                    bool IncludeNarrow = false) {
     if (!NumericPointerParameter(LeftIndex, false, IncludeNarrow) ||
@@ -22966,13 +22974,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ValueIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
       return false;
-    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    const auto Iterator = AlgorithmRangePointerParameter(IteratorIndex);
     auto Value = Function->getParamDecl(ValueIndex)->getType();
-    return utilityAlgorithmWritableScalarPointer(Context, Iterator) &&
+    return Iterator &&
+           utilityAlgorithmWritableScalarPointer(Context, *Iterator) &&
            NumericArithmetic(Value, true) &&
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            utilityScalarDirectConversion(Context, Value,
-                                         Iterator->getPointeeType());
+                                         (*Iterator)->getPointeeType());
   };
   auto NumericValueOutputParameter = [&](unsigned ValueIndex,
                                          unsigned OutputIndex,
@@ -23140,8 +23149,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   };
   if (Origin->Path == "__numeric/iota.h" && Name == "iota" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      NumericPointerParameter(0, true, true) &&
-      NumericPointerParameter(1, true, true) &&
+      NumericRangeParameter(0, true, true) &&
+      NumericRangeParameter(1, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       NumericIotaValueParameter(2, 0) &&

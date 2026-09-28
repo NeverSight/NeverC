@@ -859,6 +859,9 @@ element to which that accumulator converts directly.
 `iota` likewise accepts an independent initial arithmetic type, including
 non-boolean narrow integers, when its values convert directly to the output
 element (which may also be narrow), and increments in that initial type.
+`iota` additionally accepts authenticated writable wrapped scalar ranges,
+including `std::vector` iterators, under the same initial-value conversion and
+increment rules.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is

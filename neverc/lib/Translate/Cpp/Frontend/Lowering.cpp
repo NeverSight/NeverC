@@ -3708,10 +3708,11 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::NumericIota: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       auto Value = snapshot(expression(Call->getArg(2)), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(CurrentRange.second, L);
       const auto ValueType = type(Call->getArg(2)->getType(), L);
       auto IncrementType =
           utilityScalarComparisonType(A.Context, Call->getArg(2)->getType(),
@@ -3720,8 +3721,7 @@ class FunctionLowering {
         reject(L, "numeric iota",
                "The initial value has no arithmetic promotion type.");
       const auto PromotedValueType = type(*IncrementType, L);
-      const auto ElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto ElementType = type(CurrentRange.second->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Store = labelName(), End = labelName();
       jump(Check, L);

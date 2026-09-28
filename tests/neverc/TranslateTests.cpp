@@ -56594,6 +56594,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericIotaRun) {
+  const auto Source = tmpFile("wrapped-numeric-iota.cpp");
+  const auto Output = tmpFile("wrapped-numeric-iota.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+int main() {
+  std::vector<int> numbers(4);
+  int first_effects = 0, last_effects = 0;
+  std::iota((++first_effects, numbers.begin()),
+            (++last_effects, numbers.end()), 7);
+  if (first_effects != 1 || last_effects != 1 || numbers[0] != 7 ||
+      numbers[1] != 8 ||
+      numbers[2] != 9 || numbers[3] != 10) return 1;
+  std::vector<unsigned char> narrow(4);
+  std::iota(narrow.begin(), narrow.end(), (unsigned char)254);
+  if (narrow[0] != 254 || narrow[1] != 255 || narrow[2] != 0 ||
+      narrow[3] != 1) return 2;
+  std::vector<long> wide(3);
+  std::iota(wide.begin(), wide.end(), 4);
+  if (wide[0] != 4 || wide[1] != 5 || wide[2] != 6) return 3;
+  std::iota(numbers.begin() + 1, numbers.begin() + 1, 100);
+  if (numbers[0] != 7 || numbers[1] != 8) return 4;
+  std::vector<int> empty;
+  std::iota(empty.begin(), empty.end(), 9);
+  return empty.empty() ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-numeric-iota" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");
