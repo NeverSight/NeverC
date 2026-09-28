@@ -8470,9 +8470,14 @@ class FunctionLowering {
           Value = emitUnaryCallable(Callback,
                                     dereference(json::Object(First), L), L);
         }
-        const auto ElementType = type(OutputRange.second->getPointeeType(), L);
-        assign(dereference(Output, L), cast(std::move(Value), ElementType, L),
-               L);
+        if (OutputRange.second->getPointeeType()->isRecordType())
+          assign(dereference(Output, L), std::move(Value), L);
+        else {
+          const auto ElementType =
+              type(OutputRange.second->getPointeeType(), L);
+          assign(dereference(Output, L), cast(std::move(Value), ElementType, L),
+                 L);
+        }
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),

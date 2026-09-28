@@ -1964,6 +1964,12 @@ independent raw or authenticated wrapped scalar input ranges and a writable raw
 or wrapped scalar output. Each callback argument and result uses its checked
 direct conversion; the returned position retains the output iterator type.
 The selected input values are read before an overlapping output write.
+Both forms also accept exact trivial source records in raw or authenticated
+wrapped input ranges, with a checked callback taking one or two exact
+`const Record&` parameters and returning the same record by value. A writable
+raw or wrapped output receives each complete result, and the returned position
+keeps the output iterator type. Callback references address the original input
+elements; by-value record parameters remain rejected.
 The function-pointer `generate` and `generate_n` forms also accept writable
 authenticated wrapped scalar outputs. The generator result uses its checked
 direct conversion to the output element; `generate_n` returns the advanced

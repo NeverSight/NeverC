@@ -56545,6 +56545,88 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordTransformRun) {
+  const auto Source = tmpFile("wrapped-record-transform.cpp");
+  const auto Output = tmpFile("wrapped-record-transform.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *first_base, *second_base;
+int calls, bad_identity;
+Item raise(const Item &item) {
+  if (&item != first_base + calls) ++bad_identity;
+  ++calls;
+  return {item.key + 1, item.tag + 7};
+}
+Item combine(const Item &first, const Item &second) {
+  if (&first != first_base + calls || &second != second_base + calls)
+    ++bad_identity;
+  ++calls;
+  return {first.key + second.key, first.tag + second.tag};
+}
+int main() {
+  const std::vector<Item> input{{1, 10}, {2, 20}, {3, 30}};
+  const std::vector<Item> weights{{4, 40}, {5, 50}, {6, 60}};
+  std::vector<Item> output(3);
+  first_base = &input[0]; calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), output.begin(), raise) !=
+          output.end() || calls != 3 || bad_identity ||
+      output[0].key != 2 || output[0].tag != 17 ||
+      output[1].key != 3 || output[1].tag != 27 ||
+      output[2].key != 4 || output[2].tag != 37) return 1;
+  first_base = &input[0]; second_base = &weights[0];
+  calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), weights.cbegin(),
+                     output.begin(), combine) != output.end() ||
+      calls != 3 || bad_identity ||
+      output[0].key != 5 || output[0].tag != 50 ||
+      output[1].key != 7 || output[1].tag != 70 ||
+      output[2].key != 9 || output[2].tag != 90) return 2;
+  Item raw_output[3]{};
+  first_base = &input[0]; calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), raw_output, raise) !=
+          raw_output + 3 || calls != 3 || bad_identity ||
+      raw_output[0].key != 2 || raw_output[0].tag != 17 ||
+      raw_output[2].key != 4 || raw_output[2].tag != 37) return 3;
+  const Item raw_input[2]{{7, 70}, {8, 80}};
+  first_base = raw_input; second_base = &weights[0];
+  calls = bad_identity = 0;
+  if (std::transform(raw_input, raw_input + 2, weights.cbegin(),
+                     output.begin(), combine) != output.begin() + 2 ||
+      calls != 2 || bad_identity ||
+      output[0].key != 11 || output[0].tag != 110 ||
+      output[1].key != 13 || output[1].tag != 130) return 4;
+  std::vector<Item> inplace{{1, 4}, {2, 5}};
+  first_base = &inplace[0]; calls = bad_identity = 0;
+  if (std::transform(inplace.begin(), inplace.end(), inplace.begin(), raise) !=
+          inplace.end() || calls != 2 || bad_identity ||
+      inplace[0].key != 2 || inplace[0].tag != 11 ||
+      inplace[1].key != 3 || inplace[1].tag != 12) return 5;
+  calls = bad_identity = 0;
+  if (std::transform(input.cend(), input.cend(), output.begin(), raise) !=
+          output.begin() || calls != 0 || bad_identity) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-record-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedScalarGenerateCallbacksRun) {
   const auto Source = tmpFile("wrapped-scalar-generate-callbacks.cpp");
   const auto Output = tmpFile("wrapped-scalar-generate-callbacks.nc");

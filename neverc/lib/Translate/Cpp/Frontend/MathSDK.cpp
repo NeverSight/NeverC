@@ -22717,6 +22717,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                Context.hasSameUnqualifiedType((*Iterator)->getPointeeType(),
                                               Parameter->getPointeeType());
       };
+  auto AlgorithmRecordRangeCallbackReferenceParameter =
+      [&](unsigned CallbackIndex, unsigned ParameterIndex,
+          unsigned IteratorIndex) {
+        const auto Iterator = AlgorithmRecordRangeParameter(IteratorIndex);
+        const auto *Prototype = AlgorithmCallbackPrototype(CallbackIndex);
+        if (!Iterator || !Prototype ||
+            ParameterIndex >= Prototype->getNumParams())
+          return false;
+        const auto Parameter = Prototype->getParamType(ParameterIndex);
+        return Parameter->isLValueReferenceType() &&
+               Parameter->getPointeeType().isConstQualified() &&
+               !Parameter->getPointeeType().isVolatileQualified() &&
+               Context.hasSameUnqualifiedType((*Iterator)->getPointeeType(),
+                                              Parameter->getPointeeType());
+      };
   auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
                                                unsigned LeftIteratorIndex,
                                                unsigned RightIteratorIndex) {
@@ -25077,6 +25092,33 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEachN;
+  }
+  if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType())) {
+    const bool Binary = Call->getNumArgs() == 5;
+    const unsigned OutputIndex = Binary ? 3 : 2;
+    const unsigned CallbackIndex = Binary ? 4 : 3;
+    const auto *Callback = AlgorithmCallbackPrototype(CallbackIndex);
+    const auto Output = AlgorithmWritableRecordRangeParameter(OutputIndex);
+    const bool Valid =
+        Callback && Callback->getNumParams() == (Binary ? 2u : 1u) && Output &&
+        AlgorithmTransferRecordRangeParameters(0, OutputIndex) &&
+        AlgorithmRecordRangeCallbackReferenceParameter(CallbackIndex, 0, 0) &&
+        Context.hasSameUnqualifiedType(Callback->getReturnType(),
+                                       (*Output)->getPointeeType()) &&
+        Same(Function->getReturnType(),
+             Function->getParamDecl(OutputIndex)->getType()) &&
+        Same(Call->getType(), Function->getReturnType());
+    if (Valid &&
+        (!Binary ||
+         (AlgorithmTransferRecordRangeParameters(2, OutputIndex) &&
+          AlgorithmRecordRangeCallbackReferenceParameter(CallbackIndex, 1, 2))))
+      return Binary ? UtilityOperation::AlgorithmTransformBinary
+                    : UtilityOperation::AlgorithmTransformUnary;
   }
   if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&

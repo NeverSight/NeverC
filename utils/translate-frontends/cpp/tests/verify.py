@@ -33068,6 +33068,48 @@ partition_copy_mixed(const std::vector<Item> &source,
           'return std::partition(values.begin(),values.end(),selected);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_transform_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+Item raise(const Item &item) { return {item.key + 1, item.tag + 7}; }
+Item combine(const Item &first, const Item &second) {
+  return {first.key + second.key, first.tag + second.tag};
+}
+std::vector<Item>::iterator transform_record(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::transform(source.cbegin(), source.cend(), output.begin(), raise);
+}
+Item *transform_record_raw_output(const std::vector<Item> &source,
+                                  Item *output) {
+  return std::transform(source.cbegin(), source.cend(), output, raise);
+}
+std::vector<Item>::iterator transform_record_binary(
+    const std::vector<Item> &first, const std::vector<Item> &second,
+    std::vector<Item> &output) {
+  return std::transform(first.cbegin(), first.cend(), second.cbegin(),
+                        output.begin(), combine);
+}
+std::vector<Item>::iterator transform_record_raw_input(
+    const Item *first, const std::vector<Item> &second,
+    std::vector<Item> &output) {
+  return std::transform(first, first + 2, second.cbegin(),
+                        output.begin(), combine);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-transform-" + target,
+              wrapped_record_transform_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-transform-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'Item raise(Item item){return {item.key+1,item.tag+7};}'
+          'std::vector<Item>::iterator f(const std::vector<Item>&source,'
+          'std::vector<Item>&output){return std::transform(source.cbegin(),'
+          'source.cend(),output.begin(),raise);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

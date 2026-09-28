@@ -497,6 +497,11 @@ counted form retains its raw or wrapped iterator result.
 `partition_copy` accept the same trivial record ranges with a checked
 `bool(const Record&)` predicate. Copying requires writable same-type outputs,
 including independent wrapped or raw result positions.
+Unary and binary `transform` also accept those exact trivial records through
+checked `const Record&` function-pointer arguments returning the same record by
+value. Input and writable output ranges may independently be raw or wrapped;
+the callback sees the original input elements and the result retains the
+output iterator form.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.
