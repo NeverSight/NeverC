@@ -25157,6 +25157,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (((Origin->Path == "__algorithm/generate.h" && Name == "generate") ||
        (Origin->Path == "__algorithm/generate_n.h" && Name == "generate_n")) &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      AlgorithmWritableRecordRangeParameter(0)) {
+    const bool Counted = Name == "generate_n";
+    const auto Output = AlgorithmWritableRecordRangeParameter(0);
+    const auto *Callback = AlgorithmCallbackPrototype(2);
+    const bool Bound = Counted ? AlgorithmCountParameter(1)
+                               : (AlgorithmRecordRangeParameter(1) &&
+                                  Same(Function->getParamDecl(0)->getType(),
+                                       Function->getParamDecl(1)->getType()));
+    const bool Result = Counted ? (Call->isPRValue() &&
+                                   Same(Function->getReturnType(),
+                                        Function->getParamDecl(0)->getType()))
+                                : Function->getReturnType()->isVoidType();
+    if (Bound && Result && Same(Call->getType(), Function->getReturnType()) &&
+        Callback && Callback->getNumParams() == 0 &&
+        Context.hasSameUnqualifiedType(Callback->getReturnType(),
+                                       (*Output)->getPointeeType()))
+      return Counted ? UtilityOperation::AlgorithmGenerateN
+                     : UtilityOperation::AlgorithmGenerate;
+  }
+  if (((Origin->Path == "__algorithm/generate.h" && Name == "generate") ||
+       (Origin->Path == "__algorithm/generate_n.h" && Name == "generate_n")) &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       AlgorithmRangePointerParameter(0)) {
     const auto Output = AlgorithmRangePointerParameter(0);
     if (!utilityAlgorithmWritableScalarPointer(Context, *Output))

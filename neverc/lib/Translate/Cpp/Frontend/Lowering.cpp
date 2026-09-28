@@ -8527,9 +8527,14 @@ class FunctionLowering {
       label(Invoke, L);
       {
         auto Value = emitNullaryCallable(Callback, L);
-        const auto ElementType = type(CurrentRange.second->getPointeeType(), L);
-        assign(dereference(Current, L), cast(std::move(Value), ElementType, L),
-               L);
+        if (CurrentRange.second->getPointeeType()->isRecordType())
+          assign(dereference(Current, L), std::move(Value), L);
+        else {
+          const auto ElementType =
+              type(CurrentRange.second->getPointeeType(), L);
+          assign(dereference(Current, L),
+                 cast(std::move(Value), ElementType, L), L);
+        }
       }
       assign(
           Current,

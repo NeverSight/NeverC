@@ -566,6 +566,10 @@ authenticated wrapped scalar inputs and writable outputs, returning the output
 iterator type after checked callback and destination conversions.
 Function-pointer `generate` and `generate_n` also accept writable wrapped
 scalar outputs, with `generate_n` returning the wrapped output position.
+They additionally accept writable raw or wrapped exact trivial source-record
+ranges when a checked nullary function pointer returns that record by value.
+Each result is stored as a complete record; `generate_n` keeps the original
+output iterator form.
 Predicate mutation algorithms require writable destinations; ordered output
 algorithms accept directly convertible writable scalar destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts

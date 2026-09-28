@@ -56676,6 +56676,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordGenerateRun) {
+  const auto Source = tmpFile("wrapped-record-generate.cpp");
+  const auto Output = tmpFile("wrapped-record-generate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+int calls;
+Item next_item() { ++calls; return {calls, calls * 10}; }
+int main() {
+  std::vector<Item> values(4);
+  calls = 0;
+  std::generate(values.begin(), values.end(), next_item);
+  if (calls != 4 || values[0].key != 1 || values[0].tag != 10 ||
+      values[1].key != 2 || values[1].tag != 20 ||
+      values[2].key != 3 || values[2].tag != 30 ||
+      values[3].key != 4 || values[3].tag != 40) return 1;
+  calls = 0;
+  if (std::generate_n(values.begin() + 1, 2, next_item) !=
+          values.begin() + 3 || calls != 2 ||
+      values[0].key != 1 || values[0].tag != 10 ||
+      values[1].key != 1 || values[1].tag != 10 ||
+      values[2].key != 2 || values[2].tag != 20 ||
+      values[3].key != 4 || values[3].tag != 40) return 2;
+  Item raw[3]{};
+  calls = 0;
+  if (std::generate_n(raw, 3, next_item) != raw + 3 || calls != 3 ||
+      raw[0].key != 1 || raw[0].tag != 10 ||
+      raw[2].key != 3 || raw[2].tag != 30) return 3;
+  calls = 0;
+  std::generate(raw, raw + 2, next_item);
+  if (calls != 2 || raw[0].key != 1 || raw[0].tag != 10 ||
+      raw[1].key != 2 || raw[1].tag != 20 ||
+      raw[2].key != 3 || raw[2].tag != 30) return 4;
+  calls = 0;
+  std::generate(values.end(), values.end(), next_item);
+  if (std::generate_n(values.begin(), 0, next_item) != values.begin() ||
+      std::generate_n(values.begin(), -2, next_item) != values.begin() ||
+      calls != 0) return 5;
+  std::vector<Item> empty;
+  std::generate(empty.begin(), empty.end(), next_item);
+  return calls == 0 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-record-generate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedNumericIotaRun) {
   const auto Source = tmpFile("wrapped-numeric-iota.cpp");
   const auto Output = tmpFile("wrapped-numeric-iota.nc");

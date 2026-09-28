@@ -32157,12 +32157,34 @@ std::vector<long>::iterator generate_n_wide(std::vector<long> &values,
         check("v2-wrapped-scalar-generate-callbacks-" + target,
               wrapped_scalar_generate_callbacks_source,
               profile="cpp-core-v2", target=target, sdk=True)
-    check("v2-wrapped-scalar-generate-callbacks-record-generator",
+    check("v2-wrapped-scalar-generate-callbacks-reference-generator",
           '#include <algorithm>\n#include <vector>\n'
-          'struct Item{int value;}; Item next(){return Item{1};}'
+          'struct Item{int value;}; Item current{1};'
+          'const Item& next(){return current;}'
           'void f(std::vector<Item>&v){'
           'std::generate(v.begin(),v.end(),next);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+
+    wrapped_record_generate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+Item next_item() { return {1, 10}; }
+void generate_record(std::vector<Item> &values) {
+  std::generate(values.begin(), values.end(), next_item);
+}
+std::vector<Item>::iterator generate_n_record(std::vector<Item> &values,
+                                              int count) {
+  return std::generate_n(values.begin(), count, next_item);
+}
+Item *generate_record_raw(Item *values, int count) {
+  return std::generate_n(values, count, next_item);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-generate-" + target,
+              wrapped_record_generate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
 
     wrapped_numeric_iota_source = """\
 #include <numeric>

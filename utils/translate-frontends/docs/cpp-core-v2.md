@@ -1974,6 +1974,11 @@ The function-pointer `generate` and `generate_n` forms also accept writable
 authenticated wrapped scalar outputs. The generator result uses its checked
 direct conversion to the output element; `generate_n` returns the advanced
 wrapped iterator, or the original position for a non-positive count.
+Both forms also accept exact trivial source records in writable raw or wrapped
+ranges when a checked nullary function pointer returns the same record by
+value. Each call writes the complete result. Empty ranges and non-positive
+counts make no generator calls; `generate_n` retains the raw or wrapped result
+iterator form.
 `for_each_n` additionally accepts the same standard-layout, trivially copied
 source function objects described for unary predicates below. Its exact pinned
 count conversion and loop are authenticated, the selected non-template call
