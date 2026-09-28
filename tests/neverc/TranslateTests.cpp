@@ -57450,6 +57450,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordPredicateQueriesRun) {
+  const auto Source = tmpFile("wrapped-record-predicate-queries.cpp");
+  const auto Output = tmpFile("wrapped-record-predicate-queries.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base;
+int length, calls, bad_identity;
+bool selected(const Item &item) {
+  ++calls;
+  bool found = false;
+  for (int i = 0; i < length; ++i)
+    if (&item == base + i) found = true;
+  if (!found) ++bad_identity;
+  return item.key == 2;
+}
+int main() {
+  const std::vector<Item> values{{1, 10}, {2, 20}, {2, 21}, {3, 30}};
+  base = &values[0]; length = 4;
+  calls = 0;
+  if (std::find_if(values.cbegin(), values.cend(), selected) !=
+          values.cbegin() + 1 || calls != 2 || bad_identity) return 1;
+  calls = 0;
+  if (std::find_if_not(values.cbegin(), values.cend(), selected) !=
+          values.cbegin() || calls != 1 || bad_identity) return 2;
+  calls = 0;
+  if (std::count_if(values.cbegin(), values.cend(), selected) != 2 ||
+      calls != 4 || bad_identity) return 3;
+  calls = 0;
+  if (!std::any_of(values.cbegin(), values.cend(), selected) ||
+      calls != 2 || bad_identity) return 4;
+  calls = 0;
+  if (std::all_of(values.cbegin(), values.cend(), selected) ||
+      calls != 1 || bad_identity) return 5;
+  calls = 0;
+  if (std::none_of(values.cbegin(), values.cend(), selected) ||
+      calls != 2 || bad_identity) return 6;
+  const std::vector<Item> other{{3, 30}, {4, 40}};
+  base = &other[0]; length = 2; calls = 0;
+  if (!std::none_of(other.cbegin(), other.cend(), selected) ||
+      calls != 2 || bad_identity) return 7;
+  const std::vector<Item> empty;
+  calls = 0;
+  if (std::find_if(empty.cbegin(), empty.cend(), selected) != empty.cend() ||
+      std::count_if(empty.cbegin(), empty.cend(), selected) != 0 ||
+      !std::all_of(empty.cbegin(), empty.cend(), selected) ||
+      std::any_of(empty.cbegin(), empty.cend(), selected) ||
+      !std::none_of(empty.cbegin(), empty.cend(), selected) || calls != 0)
+    return 8;
+  Item raw[3]{{1, 10}, {2, 20}, {3, 30}};
+  base = raw; length = 3; calls = 0;
+  if (std::find_if(raw, raw + 3, selected) != raw + 1 ||
+      calls != 2 || bad_identity) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-record-predicate-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedValueReplacementRun) {
   const auto Source = tmpFile("wrapped-value-replacement.cpp");
   const auto Output = tmpFile("wrapped-value-replacement.nc");

@@ -483,6 +483,9 @@ convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `partition_point`.
 For the six predicate queries, authenticated mutable or const wrapped scalar
 iterators are also accepted, and find results retain their iterator type.
+Those six queries also accept raw or authenticated wrapped ranges of exact
+trivial source records with a checked `bool(const Record&)` function pointer.
+The callback receives each original element by reference.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.

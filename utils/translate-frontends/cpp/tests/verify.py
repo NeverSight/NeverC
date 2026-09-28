@@ -32909,6 +32909,45 @@ std::vector<Item>::iterator fill_n_records(std::vector<Item> &values,
           'std::fill(v.begin(),v.end(),value);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_predicate_query_source = """\
+#include <algorithm>
+#include <cstddef>
+#include <vector>
+struct Item { int key; int tag; };
+bool selected(const Item &item) { return item.key == 2; }
+std::vector<Item>::const_iterator find_record(
+    const std::vector<Item> &values) {
+  return std::find_if(values.cbegin(), values.cend(), selected);
+}
+std::vector<Item>::const_iterator find_record_not(
+    const std::vector<Item> &values) {
+  return std::find_if_not(values.cbegin(), values.cend(), selected);
+}
+std::ptrdiff_t count_records(const std::vector<Item> &values) {
+  return std::count_if(values.cbegin(), values.cend(), selected);
+}
+bool all_records(const std::vector<Item> &values) {
+  return std::all_of(values.cbegin(), values.cend(), selected);
+}
+bool any_records(const std::vector<Item> &values) {
+  return std::any_of(values.cbegin(), values.cend(), selected);
+}
+bool no_records(const std::vector<Item> &values) {
+  return std::none_of(values.cbegin(), values.cend(), selected);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-predicate-queries-" + target,
+              wrapped_record_predicate_query_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-predicate-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'bool selected(Item item){return item.key==2;}'
+          'std::vector<Item>::const_iterator f(const std::vector<Item>&v){'
+          'return std::find_if(v.cbegin(),v.cend(),selected);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

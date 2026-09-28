@@ -649,8 +649,15 @@ class FunctionLowering {
       if (!Argument)
         reject(L, "algorithm callback",
                "A checked callback argument expression is required.");
-      Converted.push_back(cast(json::Object(*Argument),
-                               type(Prototype->getParamType(I), L), L));
+      const auto Parameter = Prototype->getParamType(I);
+      if (Parameter->isLValueReferenceType() &&
+          recordValue(Parameter->getPointeeType()))
+        Converted.push_back(cast(
+            address(json::Object(*Argument), Parameter->getPointeeType(), L),
+            type(Parameter, L), L));
+      else
+        Converted.push_back(
+            cast(json::Object(*Argument), type(Parameter, L), L));
     }
     return emitIndirectCall(std::move(Callable), std::move(Converted),
                             Prototype->getReturnType(), L);

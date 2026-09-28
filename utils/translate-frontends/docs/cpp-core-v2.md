@@ -1828,6 +1828,13 @@ complete record values during swaps, retain the returned second-range iterator
 form for `swap_ranges`, and evaluate each iterator argument once. Empty ranges
 perform no writes. Const iterators and nontrivial records remain rejected.
 
+The six unary predicate queries `find_if`, `find_if_not`, `count_if`, `all_of`,
+`any_of` and `none_of` additionally accept raw or authenticated wrapped ranges
+of exact trivial source records with a checked function pointer taking one
+`const Record&` and returning `bool`. The callback receives the original
+element address, is evaluated once as an argument, and runs only until the
+query's normal stopping point. By-value record callbacks remain rejected.
+
 `std::rotate` accepts those writable trivial source-record ranges and writable
 authenticated wrapped scalar ranges. Its three range endpoints are evaluated
 once, and the three-reversal lowering moves complete values. The returned
