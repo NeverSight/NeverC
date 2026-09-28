@@ -882,6 +882,12 @@ inputs and authenticated writable wrapped arithmetic outputs, independently
 mixed with raw pointers. They return the matching output iterator and preserve
 empty-range and in-place behavior, narrow-input promotion, and checked output
 and callback conversions.
+Default and checked function-pointer `inclusive_scan`, `exclusive_scan`,
+`transform_inclusive_scan` and `transform_exclusive_scan` also accept
+authenticated wrapped arithmetic inputs and writable wrapped arithmetic
+outputs, independently mixed with raw pointers. Their initial-value, callback
+and output conversions remain checked, and their result retains the output
+iterator type.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is

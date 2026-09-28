@@ -56924,6 +56924,106 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericScansRun) {
+  const auto Source = tmpFile("wrapped-numeric-scans.cpp");
+  const auto Output = tmpFile("wrapped-numeric-scans.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+int binary_calls, unary_calls;
+int multiply(int left, int right) {
+  ++binary_calls;
+  return left * right;
+}
+long add(long left, long right) {
+  ++binary_calls;
+  return left + right;
+}
+int square(int value) { ++unary_calls; return value * value; }
+int main() {
+  const std::vector<int> input{1, 2, 3};
+  std::vector<long> output(3);
+  if (std::inclusive_scan(input.cbegin(), input.cend(), output.begin()) !=
+          output.end() || output[0] != 1 || output[1] != 3 ||
+      output[2] != 6) return 1;
+  binary_calls = 0;
+  if (std::inclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                          multiply) != output.end() ||
+      output[0] != 1 || output[1] != 2 || output[2] != 6 ||
+      binary_calls != 2) return 2;
+  binary_calls = 0;
+  if (std::inclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                          add, 10L) != output.end() ||
+      output[0] != 11 || output[1] != 13 || output[2] != 16 ||
+      binary_calls != 3) return 3;
+  if (std::exclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                          10L) != output.end() || output[0] != 10 ||
+      output[1] != 11 || output[2] != 13) return 4;
+  binary_calls = 0;
+  if (std::exclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                          10, multiply) != output.end() ||
+      output[0] != 10 || output[1] != 10 || output[2] != 20 ||
+      binary_calls != 3) return 5;
+  binary_calls = unary_calls = 0;
+  if (std::transform_inclusive_scan(input.cbegin(), input.cend(),
+                                    output.begin(), add, square) !=
+          output.end() || output[0] != 1 || output[1] != 5 ||
+      output[2] != 14 || binary_calls != 2 || unary_calls != 3)
+    return 6;
+  binary_calls = unary_calls = 0;
+  if (std::transform_inclusive_scan(input.cbegin(), input.cend(),
+                                    output.begin(), add, square, 10L) !=
+          output.end() || output[0] != 11 || output[1] != 15 ||
+      output[2] != 24 || binary_calls != 3 || unary_calls != 3)
+    return 7;
+  binary_calls = unary_calls = 0;
+  if (std::transform_exclusive_scan(input.cbegin(), input.cend(),
+                                    output.begin(), 10L, add, square) !=
+          output.end() || output[0] != 10 || output[1] != 11 ||
+      output[2] != 15 || binary_calls != 3 || unary_calls != 3)
+    return 8;
+  long raw_output[3]{};
+  if (std::inclusive_scan(input.cbegin(), input.cend(), raw_output) !=
+          raw_output + 3 || raw_output[2] != 6) return 9;
+  int raw_input[3]{1, 2, 3};
+  if (std::exclusive_scan(raw_input, raw_input + 3, output.begin(), 10L) !=
+          output.end() || output[2] != 13) return 10;
+  const std::vector<int> empty;
+  binary_calls = unary_calls = 0;
+  if (std::inclusive_scan(empty.cbegin(), empty.cend(), output.begin()) !=
+          output.begin() ||
+      std::transform_exclusive_scan(empty.cbegin(), empty.cend(),
+                                    output.begin(), 10L, add, square) !=
+          output.begin() || binary_calls != 0 || unary_calls != 0)
+    return 11;
+  const std::vector<unsigned char> narrow{250, 10};
+  if (std::inclusive_scan(narrow.cbegin(), narrow.cend(), output.begin()) !=
+          output.begin() + 2 || output[0] != 250 || output[1] != 4)
+    return 12;
+  if (std::exclusive_scan(narrow.cbegin(), narrow.cend(), output.begin(),
+                          10L) != output.begin() + 2 || output[0] != 10 ||
+      output[1] != 260) return 13;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-numeric-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

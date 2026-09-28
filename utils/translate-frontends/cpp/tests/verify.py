@@ -32347,6 +32347,57 @@ std::vector<int>::iterator in_place(std::vector<int> &input) {
           'return std::partial_sum(v.begin(),v.end(),v.begin(),add);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_scans_source = """\
+#include <numeric>
+#include <vector>
+int multiply(int left, int right) { return left * right; }
+long add(long left, long right) { return left + right; }
+int square(int value) { return value * value; }
+std::vector<long>::iterator inclusive(const std::vector<int> &input,
+                                       std::vector<long> &output) {
+  return std::inclusive_scan(input.cbegin(), input.cend(), output.begin());
+}
+std::vector<long>::iterator inclusive_callback(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::inclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                             multiply);
+}
+std::vector<long>::iterator inclusive_initialized(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::inclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                             add, 10L);
+}
+std::vector<long>::iterator exclusive(const std::vector<int> &input,
+                                       std::vector<long> &output) {
+  return std::exclusive_scan(input.cbegin(), input.cend(), output.begin(),
+                             10L, add);
+}
+std::vector<long>::iterator transformed_inclusive(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::transform_inclusive_scan(input.cbegin(), input.cend(),
+                                        output.begin(), add, square, 10L);
+}
+std::vector<long>::iterator transformed_exclusive(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::transform_exclusive_scan(input.cbegin(), input.cend(),
+                                        output.begin(), 10L, add, square);
+}
+long *mixed(const std::vector<int> &input, long *output) {
+  return std::inclusive_scan(input.cbegin(), input.cend(), output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-scans-" + target,
+              wrapped_numeric_scans_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-scans-reference-callback",
+          '#include <numeric>\n#include <vector>\n'
+          'long add(const long &left,long right){return left+right;}'
+          'std::vector<long>::iterator f(const std::vector<int>&v,'
+          'std::vector<long>&o){return std::exclusive_scan('
+          'v.cbegin(),v.cend(),o.begin(),0L,add);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

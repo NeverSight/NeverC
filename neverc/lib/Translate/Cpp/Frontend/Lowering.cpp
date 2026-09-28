@@ -4167,9 +4167,11 @@ class FunctionLowering {
       return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::NumericExclusiveScan: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto Output = std::move(OutputRange.first);
       auto Value = snapshot(expression(Call->getArg(3)), L);
       std::optional<Expression> Callback;
       std::optional<QualType> CallbackType;
@@ -4183,10 +4185,10 @@ class FunctionLowering {
           Callback = std::move(Captured.Storage);
         }
       }
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const auto ValueQualType = Call->getArg(3)->getType();
-      const auto ElementQualType = Call->getArg(0)->getType()->getPointeeType();
+      const auto ElementQualType = FirstRange.second->getPointeeType();
       const auto ValueType = type(ValueQualType, L);
       const auto ElementType = type(ElementQualType, L);
       auto Common = utilityScalarComparisonType(A.Context, ValueQualType,
@@ -4196,7 +4198,7 @@ class FunctionLowering {
                "The accumulator and input have no arithmetic common type.");
       const auto DefaultSumType = type(*Common, L);
       const auto OutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto InputValue = temporary(ElementType, L);
       auto Next = temporary(ValueType, L);
@@ -4241,15 +4243,17 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::NumericTransformInclusiveScan:
     case UtilityOperation::NumericTransformExclusiveScan: {
       const bool Inclusive =
           Operation == UtilityOperation::NumericTransformInclusiveScan;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto Output = std::move(OutputRange.first);
       std::optional<Expression> Accumulator;
       std::optional<Expression> BinaryCallback, UnaryCallback;
       std::optional<QualType> BinaryCallbackType, UnaryCallbackType;
@@ -4267,15 +4271,14 @@ class FunctionLowering {
         BinaryCallback = snapshot(expression(Call->getArg(4)), L);
         UnaryCallback = snapshot(expression(Call->getArg(5)), L);
       }
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
-      const auto ElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
+      const auto ElementType = type(FirstRange.second->getPointeeType(), L);
       const auto AccumulatorType =
           Accumulator ? type(Call->getArg(Inclusive ? 5 : 3)->getType(), L)
                       : ElementType;
       const auto OutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       if (!Accumulator)
         Accumulator = temporary(ElementType, L);
@@ -4343,7 +4346,7 @@ class FunctionLowering {
       Advance();
       jump(LoopCheck, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::NumericGcd:
     case UtilityOperation::NumericLcm: {

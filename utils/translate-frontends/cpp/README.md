@@ -537,6 +537,9 @@ Default and checked function-pointer `partial_sum` and
 `adjacent_difference` accept authenticated wrapped arithmetic inputs and
 writable wrapped outputs, including mixed raw-pointer ranges, and return the
 matching output iterator.
+Default and checked function-pointer inclusive, exclusive and transformed scans
+accept the same authenticated wrapped input and writable output ranges under
+their existing initial-value and callback conversion rules.
 Output ranges must be writable; callable objects, heterogeneous element types
 and custom iterators remain rejected. New contributes an exact, platform-free
 37-file C++17 header closure. The standard allocation tag types and

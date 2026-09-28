@@ -23001,11 +23001,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         OutputIndex >= Function->getNumParams())
       return false;
     auto Value = Function->getParamDecl(ValueIndex)->getType();
-    auto Output = Function->getParamDecl(OutputIndex)->getType();
-    return NumericArithmetic(Value, IncludeNarrow) &&
-           utilityAlgorithmWritableScalarPointer(Context, Output) &&
+    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
+    return NumericArithmetic(Value, IncludeNarrow) && Output &&
+           utilityAlgorithmWritableScalarPointer(Context, *Output) &&
            utilityScalarDirectConversion(Context, Value,
-                                         Output->getPointeeType());
+                                         (*Output)->getPointeeType());
   };
   auto NumericIntegerValueParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
@@ -23299,17 +23299,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "exclusive_scan" &&
         (Call->getNumArgs() == 4 || Call->getNumArgs() == 5))) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, true) &&
-      NumericPointerParameter(1, false, true) &&
-      NumericPointerParameter(2, true, true) &&
+      NumericRangeParameter(0, false, true) &&
+      NumericRangeParameter(1, false, true) &&
+      NumericRangeParameter(2, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+    auto Element = (*AlgorithmRangePointerParameter(0))->getPointeeType();
     if (Name == "inclusive_scan") {
       if (((Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
-           AlgorithmTransferParameters(0, 2) &&
+           AlgorithmTransferRangeParameters(0, 2) &&
            (Call->getNumArgs() == 3 ||
             NumericBinaryCallback(3, Element, true))) ||
           (Call->getNumArgs() == 5 &&
@@ -23334,17 +23334,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        (Origin->Path == "__numeric/transform_exclusive_scan.h" &&
         Name == "transform_exclusive_scan" && Call->getNumArgs() == 6)) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, true) &&
-      NumericPointerParameter(1, false, true) &&
-      NumericPointerParameter(2, true, true) &&
+      NumericRangeParameter(0, false, true) &&
+      NumericRangeParameter(1, false, true) &&
+      NumericRangeParameter(2, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+    auto Element = (*AlgorithmRangePointerParameter(0))->getPointeeType();
     if (Name == "transform_inclusive_scan") {
       if (NumericUnaryCallback(4, Element, true) &&
-          ((Call->getNumArgs() == 5 && AlgorithmTransferParameters(0, 2) &&
+          ((Call->getNumArgs() == 5 && AlgorithmTransferRangeParameters(0, 2) &&
             NumericBinaryCallback(3, Element, true)) ||
            (Call->getNumArgs() == 6 &&
             NumericReductionValueParameter(5, 0, true) &&
