@@ -639,6 +639,7 @@ enum class UtilityOperation {
   CStringMemoryFind,
   CStringCharacterFind,
   CStringCharacterFindLast,
+  CStringCharacterSetFind,
   CStringMemoryCopy,
   CStringMemoryMove,
   CStringMemorySet,

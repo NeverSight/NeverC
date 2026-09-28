@@ -2816,6 +2816,60 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::CStringCharacterSetFind: {
+      const auto ResultType = type(Call->getType(), L);
+      const auto SetType = type(Call->getArg(1)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto SetStart = snapshot(expression(Call->getArg(1)), L);
+      auto SetCursor = temporary(SetType, L);
+      auto Result = temporary(ResultType, L);
+      assign(
+          Result,
+          Expression{{"kind", "null"}, {"type", ResultType}, {"loc", A.loc(L)}},
+          L);
+      const auto CheckInput = labelName(), ResetSet = labelName();
+      const auto CheckSet = labelName(), CheckSetEnd = labelName();
+      const auto Match = labelName(), AdvanceSet = labelName();
+      const auto AdvanceInput = labelName(), End = labelName();
+      jump(CheckInput, L);
+      label(CheckInput, L);
+      auto InputByte =
+          snapshot(cast(dereference(json::Object(Input), L), "u8", L), L);
+      branch(binary("==", json::Object(InputByte), quantity(0, "u8", L), "bool",
+                    L),
+             End, ResetSet, L);
+      label(ResetSet, L);
+      assign(SetCursor, json::Object(SetStart), L);
+      jump(CheckSet, L);
+      label(CheckSet, L);
+      auto SetByte =
+          snapshot(cast(dereference(json::Object(SetCursor), L), "u8", L), L);
+      branch(binary("==", json::Object(SetByte), json::Object(InputByte),
+                    "bool", L),
+             Match, CheckSetEnd, L);
+      label(CheckSetEnd, L);
+      branch(
+          binary("==", json::Object(SetByte), quantity(0, "u8", L), "bool", L),
+          AdvanceInput, AdvanceSet, L);
+      label(Match, L);
+      assign(Result, json::Object(Input), L);
+      jump(End, L);
+      label(AdvanceSet, L);
+      assign(SetCursor,
+             binary("+", json::Object(SetCursor),
+                    quantity(1, DifferenceType, L), SetType, L),
+             L);
+      jump(CheckSet, L);
+      label(AdvanceInput, L);
+      assign(Input,
+             binary("+", json::Object(Input), quantity(1, DifferenceType, L),
+                    ResultType, L),
+             L);
+      jump(CheckInput, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::CStringMemoryCopy:
     case UtilityOperation::CStringMemoryMove:
     case UtilityOperation::CStringMemorySet: {

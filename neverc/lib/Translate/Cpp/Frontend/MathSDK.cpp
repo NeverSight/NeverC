@@ -20121,7 +20121,10 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Function && Function->getIdentifier() && Function->getName() == "strchr";
   const bool CharacterFindLast =
       Function && Function->getIdentifier() && Function->getName() == "strrchr";
-  const bool InlineFind = MemoryFind || CharacterFind || CharacterFindLast;
+  const bool CharacterSetFind =
+      Function && Function->getIdentifier() && Function->getName() == "strpbrk";
+  const bool InlineFind =
+      MemoryFind || CharacterFind || CharacterFindLast || CharacterSetFind;
   if (!S.coreV2() || !Function || !Reference || !Function->getIdentifier() ||
       Function->isImplicit() || Function->isVariadic() ||
       (Function->hasBody() && !InlineFind) ||
@@ -20206,7 +20209,8 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
             MemoryFind ? BytePointer : Character) ||
        Same(Function->getParamDecl(0)->getType(),
             MemoryFind ? MutableBytePointer : MutableCharacter)) &&
-      Same(Function->getParamDecl(1)->getType(), Context.IntTy) &&
+      Same(Function->getParamDecl(1)->getType(),
+           CharacterSetFind ? Character : Context.IntTy) &&
       (!MemoryFind ||
        Same(Function->getParamDecl(2)->getType(), Context.getSizeType())) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
@@ -20229,6 +20233,7 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
         !Builtin || !Builtin->isImplicit() || !Builtin->getBuiltinID() ||
         Builtin->getName() != (MemoryFind          ? "__builtin_memchr"
                                : CharacterFindLast ? "__builtin_strrchr"
+                               : CharacterSetFind  ? "__builtin_strpbrk"
                                                    : "__builtin_strchr"))
       return std::nullopt;
     for (unsigned I = 0; I != Function->getNumParams(); ++I) {
@@ -20239,6 +20244,7 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
     }
     return MemoryFind          ? UtilityOperation::CStringMemoryFind
            : CharacterFindLast ? UtilityOperation::CStringCharacterFindLast
+           : CharacterSetFind  ? UtilityOperation::CStringCharacterSetFind
                                : UtilityOperation::CStringCharacterFind;
   }
   if ((Name == "memcpy" || Name == "memmove" || Name == "memset") &&
