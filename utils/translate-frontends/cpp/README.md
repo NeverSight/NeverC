@@ -505,6 +505,9 @@ input elements and the result retains the output iterator form.
 Record inputs may also project to a writable scalar output when the callback's
 scalar result directly converts to that element. Both overloads retain the
 const-reference input and output iterator rules.
+The binary form may combine one checked scalar input and one exact trivial
+record input in either order, returning a checked scalar or exact record for
+a writable raw or wrapped output.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.

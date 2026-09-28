@@ -56611,6 +56611,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MixedScalarRecordTransformRun) {
+  const auto Source = tmpFile("mixed-scalar-record-transform.cpp");
+  const auto Output = tmpFile("mixed-scalar-record-transform.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Source { int key; int tag; };
+struct Product { long sum; int difference; };
+const Source *record_base;
+int calls, bad_identity;
+Product record_first(const Source &record, long scalar) {
+  if (&record != record_base + calls) ++bad_identity;
+  ++calls;
+  return {record.key + scalar, record.tag - int(scalar)};
+}
+Product record_second(long scalar, const Source &record) {
+  if (&record != record_base + calls) ++bad_identity;
+  ++calls;
+  return {scalar + record.key, record.tag - int(scalar)};
+}
+long scalar_from_record_first(const Source &record, long scalar) {
+  if (&record != record_base + calls) ++bad_identity;
+  ++calls;
+  return record.key * 10L + scalar + record.tag;
+}
+long scalar_from_record_second(long scalar, const Source &record) {
+  if (&record != record_base + calls) ++bad_identity;
+  ++calls;
+  return scalar * 10 + record.key + record.tag;
+}
+int main() {
+  const std::vector<Source> records{{1, 10}, {2, 20}, {3, 30}};
+  const std::vector<int> numbers{4, 5, 6};
+  std::vector<Product> products(3);
+  std::vector<long> values(3);
+  record_base = &records[0]; calls = bad_identity = 0;
+  if (std::transform(records.cbegin(), records.cend(), numbers.cbegin(),
+                     products.begin(), record_first) != products.end() ||
+      calls != 3 || bad_identity ||
+      products[0].sum != 5 || products[0].difference != 6 ||
+      products[1].sum != 7 || products[1].difference != 15 ||
+      products[2].sum != 9 || products[2].difference != 24) return 1;
+  calls = bad_identity = 0;
+  if (std::transform(numbers.cbegin(), numbers.cend(), records.cbegin(),
+                     products.begin(), record_second) != products.end() ||
+      calls != 3 || bad_identity ||
+      products[0].sum != 5 || products[0].difference != 6 ||
+      products[2].sum != 9 || products[2].difference != 24) return 2;
+  calls = bad_identity = 0;
+  if (std::transform(records.cbegin(), records.cend(), numbers.cbegin(),
+                     values.begin(), scalar_from_record_first) != values.end() ||
+      calls != 3 || bad_identity ||
+      values[0] != 24 || values[1] != 45 || values[2] != 66) return 3;
+  calls = bad_identity = 0;
+  if (std::transform(numbers.cbegin(), numbers.cend(), records.cbegin(),
+                     values.begin(), scalar_from_record_second) != values.end() ||
+      calls != 3 || bad_identity ||
+      values[0] != 51 || values[1] != 72 || values[2] != 93) return 4;
+  int raw_numbers[2]{7, 8};
+  Product raw_products[2]{};
+  calls = bad_identity = 0;
+  if (std::transform(records.cbegin(), records.cbegin() + 2, raw_numbers,
+                     raw_products, record_first) != raw_products + 2 ||
+      calls != 2 || bad_identity ||
+      raw_products[0].sum != 8 || raw_products[0].difference != 3 ||
+      raw_products[1].sum != 10 || raw_products[1].difference != 12) return 5;
+  const Source raw_records[2]{{4, 40}, {5, 50}};
+  long raw_values[2]{};
+  record_base = raw_records; calls = bad_identity = 0;
+  if (std::transform(raw_numbers, raw_numbers + 2, raw_records,
+                     raw_values, scalar_from_record_second) !=
+          raw_values + 2 || calls != 2 || bad_identity ||
+      raw_values[0] != 114 || raw_values[1] != 135) return 6;
+  calls = bad_identity = 0;
+  if (std::transform(records.cend(), records.cend(), numbers.cbegin(),
+                     products.begin(), record_first) != products.begin() ||
+      calls != 0 || bad_identity) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("mixed-scalar-record-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedRecordTransformRun) {
   const auto Source = tmpFile("wrapped-record-transform.cpp");
   const auto Output = tmpFile("wrapped-record-transform.nc");

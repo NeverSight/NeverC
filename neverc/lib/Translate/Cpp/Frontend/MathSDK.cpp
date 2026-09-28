@@ -25122,8 +25122,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(),
              Function->getParamDecl(OutputIndex)->getType()) &&
         Same(Call->getType(), Function->getReturnType());
-    if (Valid && (!Binary || AlgorithmRecordRangeCallbackReferenceParameter(
-                                 CallbackIndex, 1, 2)))
+    bool SecondValid =
+        !Binary ||
+        AlgorithmRecordRangeCallbackReferenceParameter(CallbackIndex, 1, 2);
+    if (Binary && !SecondValid) {
+      const auto Second = AlgorithmRangePointerParameter(2);
+      SecondValid =
+          Callback && Second &&
+          utilityScalarDirectConversion(Context, (*Second)->getPointeeType(),
+                                        Callback->getParamType(1));
+    }
+    if (Valid && SecondValid)
       return Binary ? UtilityOperation::AlgorithmTransformBinary
                     : UtilityOperation::AlgorithmTransformUnary;
   }
@@ -25161,9 +25170,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Binary) {
       const auto Second = AlgorithmRangePointerParameter(2);
       Valid =
-          Valid && Second &&
-          utilityScalarDirectConversion(Context, (*Second)->getPointeeType(),
-                                        Callback->getParamType(1));
+          Valid &&
+          ((Second &&
+            utilityScalarDirectConversion(Context, (*Second)->getPointeeType(),
+                                          Callback->getParamType(1))) ||
+           AlgorithmRecordRangeCallbackReferenceParameter(CallbackIndex, 1, 2));
     }
     if (Valid)
       return Binary ? UtilityOperation::AlgorithmTransformBinary

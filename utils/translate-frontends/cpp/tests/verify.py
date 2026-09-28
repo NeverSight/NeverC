@@ -32171,6 +32171,62 @@ Item *raw_record_result(const int *input, Item *output) {
           'source.cend(),output.begin(),make);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    mixed_scalar_record_transform_source = """\
+#include <algorithm>
+#include <vector>
+struct Source { int key; int tag; };
+struct Product { long sum; int difference; };
+Product record_first(const Source &record, long scalar) {
+  return {record.key + scalar, record.tag - int(scalar)};
+}
+Product record_second(long scalar, const Source &record) {
+  return {scalar + record.key, record.tag - int(scalar)};
+}
+long scalar_first(const Source &record, long scalar) {
+  return record.key * 10L + scalar + record.tag;
+}
+long scalar_second(long scalar, const Source &record) {
+  return scalar * 10 + record.key + record.tag;
+}
+std::vector<Product>::iterator record_then_scalar(
+    const std::vector<Source> &records, const std::vector<int> &numbers,
+    std::vector<Product> &output) {
+  return std::transform(records.cbegin(), records.cend(), numbers.cbegin(),
+                        output.begin(), record_first);
+}
+std::vector<Product>::iterator scalar_then_record(
+    const std::vector<int> &numbers, const std::vector<Source> &records,
+    std::vector<Product> &output) {
+  return std::transform(numbers.cbegin(), numbers.cend(), records.cbegin(),
+                        output.begin(), record_second);
+}
+std::vector<long>::iterator project_record_first(
+    const std::vector<Source> &records, const std::vector<int> &numbers,
+    std::vector<long> &output) {
+  return std::transform(records.cbegin(), records.cend(), numbers.cbegin(),
+                        output.begin(), scalar_first);
+}
+std::vector<long>::iterator project_record_second(
+    const std::vector<int> &numbers, const std::vector<Source> &records,
+    std::vector<long> &output) {
+  return std::transform(numbers.cbegin(), numbers.cend(), records.cbegin(),
+                        output.begin(), scalar_second);
+}
+"""
+    for target in sdk_targets:
+        check("v2-mixed-scalar-record-transform-" + target,
+              mixed_scalar_record_transform_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-mixed-scalar-record-transform-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'long project(int scalar,Item item){return scalar+item.key;}'
+          'std::vector<long>::iterator f(const std::vector<int>&numbers,'
+          'const std::vector<Item>&records,std::vector<long>&output){'
+          'return std::transform(numbers.cbegin(),numbers.cend(),'
+          'records.cbegin(),output.begin(),project);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_scalar_generate_callbacks_source = """\
 #include <algorithm>
 #include <vector>
