@@ -7902,6 +7902,7 @@ class FunctionLowering {
       const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
           type(OutputRange.second->getPointeeType(), L);
+      const bool Record = InputRange.second->getPointeeType()->isRecordType();
       const auto Check = labelName(), Test = labelName();
       const auto Copy = labelName(), Advance = labelName();
       const auto End = labelName();
@@ -7918,7 +7919,9 @@ class FunctionLowering {
       }
       label(Copy, L);
       assign(dereference(Output, L),
-             cast(dereference(Input, L), OutputElementType, L), L);
+             Record ? dereference(Input, L)
+                    : cast(dereference(Input, L), OutputElementType, L),
+             L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -7984,6 +7987,7 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(CurrentRange.second, L);
       const auto ElementType = type(CurrentRange.second->getPointeeType(), L);
+      const bool Record = CurrentRange.second->getPointeeType()->isRecordType();
       const auto Check = labelName(), Test = labelName();
       const auto Replace = labelName(), Advance = labelName();
       const auto End = labelName();
@@ -7998,7 +8002,9 @@ class FunctionLowering {
       }
       label(Replace, L);
       assign(dereference(Current, L),
-             cast(dereference(ValueAddress, L), ElementType, L), L);
+             Record ? dereference(ValueAddress, L)
+                    : cast(dereference(ValueAddress, L), ElementType, L),
+             L);
       jump(Advance, L);
       label(Advance, L);
       assign(
@@ -8023,6 +8029,7 @@ class FunctionLowering {
       const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
           type(OutputRange.second->getPointeeType(), L);
+      const bool Record = InputRange.second->getPointeeType()->isRecordType();
       const auto Check = labelName(), Test = labelName();
       const auto Replace = labelName(), Copy = labelName();
       const auto Advance = labelName(), End = labelName();
@@ -8037,11 +8044,15 @@ class FunctionLowering {
       }
       label(Replace, L);
       assign(dereference(Output, L),
-             cast(dereference(ValueAddress, L), OutputElementType, L), L);
+             Record ? dereference(ValueAddress, L)
+                    : cast(dereference(ValueAddress, L), OutputElementType, L),
+             L);
       jump(Advance, L);
       label(Copy, L);
       assign(dereference(Output, L),
-             cast(dereference(Input, L), OutputElementType, L), L);
+             Record ? dereference(Input, L)
+                    : cast(dereference(Input, L), OutputElementType, L),
+             L);
       jump(Advance, L);
       label(Advance, L);
       assign(Input,

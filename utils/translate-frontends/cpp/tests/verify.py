@@ -32948,6 +32948,49 @@ bool no_records(const std::vector<Item> &values) {
           'return std::find_if(v.cbegin(),v.cend(),selected);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_predicate_mutation_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+bool selected(const Item &item) { return item.key % 2 == 0; }
+std::vector<Item>::iterator copy_selected(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::copy_if(source.cbegin(), source.cend(), output.begin(), selected);
+}
+std::vector<Item>::iterator remove_copy_selected(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::remove_copy_if(source.cbegin(), source.cend(),
+                             output.begin(), selected);
+}
+std::vector<Item>::iterator remove_selected(std::vector<Item> &values) {
+  return std::remove_if(values.begin(), values.end(), selected);
+}
+void replace_selected(std::vector<Item> &values, const Item &replacement) {
+  std::replace_if(values.begin(), values.end(), selected, replacement);
+}
+std::vector<Item>::iterator replace_copy_selected(
+    const std::vector<Item> &source, std::vector<Item> &output,
+    const Item &replacement) {
+  return std::replace_copy_if(source.cbegin(), source.cend(), output.begin(),
+                              selected, replacement);
+}
+Item *copy_selected_mixed(const std::vector<Item> &source, Item *output) {
+  return std::copy_if(source.cbegin(), source.cend(), output, selected);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-predicate-mutations-" + target,
+              wrapped_record_predicate_mutation_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-predicate-mutation-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'bool selected(Item item){return item.key==2;}'
+          'std::vector<Item>::iterator f(const std::vector<Item>&source,'
+          'std::vector<Item>&output){return std::copy_if(source.cbegin(),'
+          'source.cend(),output.begin(),selected);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

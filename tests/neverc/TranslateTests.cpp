@@ -57526,6 +57526,98 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordPredicateMutationsRun) {
+  const auto Source = tmpFile("wrapped-record-predicate-mutations.cpp");
+  const auto Output = tmpFile("wrapped-record-predicate-mutations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base;
+int length, calls, bad_identity;
+bool even(const Item &item) {
+  ++calls;
+  bool found = false;
+  for (int i = 0; i < length; ++i)
+    if (&item == base + i) found = true;
+  if (!found) ++bad_identity;
+  return item.key % 2 == 0;
+}
+int main() {
+  const std::vector<Item> source{{1, 10}, {2, 20}, {3, 30},
+                                 {4, 40}, {5, 50}, {6, 60}};
+  std::vector<Item> output(6);
+  Item replacement{9, 90};
+  base = &source[0]; length = 6; calls = 0;
+  if (std::copy_if(source.cbegin(), source.cend(), output.begin(), even) !=
+          output.begin() + 3 || output[0].tag != 20 ||
+      output[1].tag != 40 || output[2].tag != 60 ||
+      calls != 6 || bad_identity) return 1;
+  calls = 0;
+  if (std::remove_copy_if(source.cbegin(), source.cend(), output.begin(),
+                          even) != output.begin() + 3 ||
+      output[0].tag != 10 || output[1].tag != 30 ||
+      output[2].tag != 50 || calls != 6 || bad_identity) return 2;
+  Item raw_output[6]{};
+  calls = 0;
+  if (std::copy_if(source.cbegin(), source.cend(), raw_output, even) !=
+          raw_output + 3 || raw_output[2].tag != 60 ||
+      calls != 6 || bad_identity) return 3;
+  std::vector<Item> values{{1, 10}, {2, 20}, {3, 30},
+                           {4, 40}, {5, 50}, {6, 60}};
+  base = &values[0]; calls = 0;
+  if (std::remove_if(values.begin(), values.end(), even) !=
+          values.begin() + 3 || values[0].tag != 10 ||
+      values[1].tag != 30 || values[2].tag != 50 ||
+      calls != 6 || bad_identity) return 4;
+  std::vector<Item> replaced{{1, 10}, {2, 20}, {3, 30},
+                             {4, 40}, {5, 50}, {6, 60}};
+  base = &replaced[0]; calls = 0;
+  std::replace_if(replaced.begin(), replaced.end(), even, replacement);
+  if (replaced[0].tag != 10 || replaced[1].tag != 90 ||
+      replaced[2].tag != 30 || replaced[3].tag != 90 ||
+      replaced[4].tag != 50 || replaced[5].tag != 90 ||
+      calls != 6 || bad_identity) return 5;
+  base = &source[0]; calls = 0;
+  if (std::replace_copy_if(source.cbegin(), source.cend(), output.begin(),
+                           even, replacement) != output.end() ||
+      output[0].tag != 10 || output[1].tag != 90 ||
+      output[2].tag != 30 || output[3].tag != 90 ||
+      output[4].tag != 50 || output[5].tag != 90 ||
+      calls != 6 || bad_identity) return 6;
+  Item raw_input[3]{{1, 10}, {2, 20}, {3, 30}};
+  base = raw_input; length = 3; calls = 0;
+  if (std::remove_copy_if(raw_input, raw_input + 3,
+                           output.begin(), even) != output.begin() + 2 ||
+      output[0].tag != 10 || output[1].tag != 30 ||
+      calls != 3 || bad_identity) return 7;
+  std::vector<Item> empty;
+  calls = 0;
+  if (std::remove_if(empty.begin(), empty.end(), even) != empty.end() ||
+      std::copy_if(empty.begin(), empty.end(), output.begin(), even) !=
+          output.begin() || calls != 0) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-record-predicate-mutations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedValueReplacementRun) {
   const auto Source = tmpFile("wrapped-value-replacement.cpp");
   const auto Output = tmpFile("wrapped-value-replacement.nc");

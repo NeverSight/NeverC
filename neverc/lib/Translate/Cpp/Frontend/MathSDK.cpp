@@ -24813,6 +24813,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "remove_copy_if");
   if (PredicateCopy && Call->getNumArgs() == 4 &&
       Function->getNumParams() == 4 && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      AlgorithmTransferRecordRangeParameters(0, 2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(3, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "copy_if" ? UtilityOperation::AlgorithmCopyIf
+                             : UtilityOperation::AlgorithmRemoveCopyIf;
+  if (PredicateCopy && Call->getNumArgs() == 4 &&
+      Function->getNumParams() == 4 && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -24822,6 +24833,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return Name == "copy_if" ? UtilityOperation::AlgorithmCopyIf
                              : UtilityOperation::AlgorithmRemoveCopyIf;
+  if (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemoveIf;
   if (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
@@ -24836,6 +24857,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmRemoveIf;
   if (Origin->Path == "__algorithm/replace_if.h" && Name == "replace_if" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(2, 0) &&
+      AlgorithmTransferRecordRangeValueParameter(3, 0) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplaceIf;
+  if (Origin->Path == "__algorithm/replace_if.h" && Name == "replace_if" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -24846,6 +24878,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceIf;
+  if (Origin->Path == "__algorithm/replace_copy_if.h" &&
+      Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      AlgorithmTransferRecordRangeParameters(0, 2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(3, 0) &&
+      AlgorithmTransferRecordRangeValueParameter(4, 2) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplaceCopyIf;
   if (Origin->Path == "__algorithm/replace_copy_if.h" &&
       Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&

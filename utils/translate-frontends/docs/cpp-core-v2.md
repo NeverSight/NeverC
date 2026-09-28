@@ -1834,6 +1834,11 @@ of exact trivial source records with a checked function pointer taking one
 `const Record&` and returning `bool`. The callback receives the original
 element address, is evaluated once as an argument, and runs only until the
 query's normal stopping point. By-value record callbacks remain rejected.
+The five predicate `copy_if`, `remove_copy_if`, `remove_if`, `replace_if` and
+`replace_copy_if` forms use the same checked const-reference record callback.
+They reread retained elements after the predicate, transfer complete values
+into exact writable record destinations, and preserve raw or wrapped output
+iterator forms. Replacement values remain live exact const record references.
 
 `std::rotate` accepts those writable trivial source-record ranges and writable
 authenticated wrapped scalar ranges. Its three range endpoints are evaluated
