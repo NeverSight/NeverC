@@ -1783,6 +1783,11 @@ records in raw or authenticated wrapped ranges when one supported Boolean
 `unique_copy` writes complete values into a writable output of the same record
 type. Comparisons read range lvalues without making extra record copies,
 and both algorithms return the original raw or wrapped iterator form.
+Their checked predicate forms also accept these exact record ranges without an
+equality operator through `bool(const Record&, const Record&)`. The callback
+receives the current range elements by reference, `unique` compacts a writable
+input, and `unique_copy` transfers complete first values to a writable
+same-type raw or wrapped output.
 Value-based `remove`, `remove_copy`, `replace` and `replace_copy` likewise
 accept exact trivial source records when the range has a uniquely selected
 Boolean `operator==`. Old and new values use exact const record references;
@@ -1837,6 +1842,9 @@ Boolean `operator==` check. It compares original adjacent objects, skips empty
 and single-element ranges, and returns the first matching iterator in its
 original raw or wrapped form. Predicate overloads retain their existing raw
 or authenticated wrapped scalar boundary and checked by-value callback rules.
+They also admit exact trivial source-record ranges with a checked
+`bool(const Record&, const Record&)` function pointer, comparing original
+adjacent element addresses and preserving the input iterator form.
 
 Default `std::search_n` also accepts raw or authenticated wrapped scalar
 ranges and exact source-owned trivial record ranges under the selected Boolean

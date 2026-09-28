@@ -22732,6 +22732,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                Context.hasSameUnqualifiedType((*Iterator)->getPointeeType(),
                                               Parameter->getPointeeType());
       };
+  auto AlgorithmRecordRangeBinaryPredicateParameter =
+      [&](unsigned CallbackIndex, unsigned LeftIteratorIndex,
+          unsigned RightIteratorIndex) {
+        const auto *Prototype = AlgorithmCallbackPrototype(CallbackIndex);
+        return Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               AlgorithmRecordRangeCallbackReferenceParameter(
+                   CallbackIndex, 0, LeftIteratorIndex) &&
+               AlgorithmRecordRangeCallbackReferenceParameter(
+                   CallbackIndex, 1, RightIteratorIndex);
+      };
   auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
                                                unsigned LeftIteratorIndex,
                                                unsigned RightIteratorIndex) {
@@ -24052,6 +24063,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeBinaryPredicateParameter(2, 0, 0))
       return UtilityOperation::AlgorithmAdjacentFind;
+    if (Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmAdjacentFind;
   }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
@@ -24168,6 +24183,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() == 3 &&
         AlgorithmRangeBinaryPredicateParameter(2, 0, 0))
       return UtilityOperation::AlgorithmUnique;
+    if (Call->getNumArgs() == 3 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmUnique;
   }
   if (Origin->Path == "__algorithm/unique_copy.h" && Name == "unique_copy" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
@@ -24190,6 +24209,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Input && AlgorithmRangePointerParameter(1) &&
         AlgorithmTransferRangeParameters(0, 2) && Call->getNumArgs() == 4 &&
         AlgorithmRangeBinaryPredicateParameter(3, 0, 0))
+      return UtilityOperation::AlgorithmUniqueCopy;
+    if (Call->getNumArgs() == 4 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmTransferRecordRangeParameters(0, 2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0))
       return UtilityOperation::AlgorithmUniqueCopy;
   }
   if (((Origin->Path == "__algorithm/search.h" && Name == "search") ||
@@ -25022,17 +25046,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmIsPermutation;
-      const auto *Predicate = AlgorithmCallbackPrototype(3);
       if (AlgorithmRecordRangeParameter(0) &&
           AlgorithmRecordRangeParameter(1) &&
           AlgorithmRecordRangeParameter(2) &&
           Context.hasSameUnqualifiedType(
               (*AlgorithmRecordRangeParameter(0))->getPointeeType(),
               (*AlgorithmRecordRangeParameter(2))->getPointeeType()) &&
-          Predicate && Predicate->getNumParams() == 2 &&
-          Predicate->getReturnType()->isBooleanType() &&
-          AlgorithmRecordRangeCallbackReferenceParameter(3, 0, 0) &&
-          AlgorithmRecordRangeCallbackReferenceParameter(3, 1, 2))
+          AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 2))
         return UtilityOperation::AlgorithmIsPermutation;
       if (ScalarFirst && ScalarLast && ScalarSecond &&
           AlgorithmRangeBinaryPredicateParameter(3, 0, 2))
@@ -25046,11 +25066,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(
             (*AlgorithmRecordRangeParameter(0))->getPointeeType(),
             (*AlgorithmRecordRangeParameter(2))->getPointeeType())) {
-      const auto *Predicate = AlgorithmCallbackPrototype(4);
-      if (Predicate && Predicate->getNumParams() == 2 &&
-          Predicate->getReturnType()->isBooleanType() &&
-          AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0) &&
-          AlgorithmRecordRangeCallbackReferenceParameter(4, 1, 2))
+      if (AlgorithmRecordRangeBinaryPredicateParameter(4, 0, 2))
         return UtilityOperation::AlgorithmIsPermutation;
     }
     if (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast && ScalarSecond &&

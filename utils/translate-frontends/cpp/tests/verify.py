@@ -33340,6 +33340,48 @@ Item *unique_copy_mixed(const std::vector<Item> &source, Item *output) {
           'return std::unique(v.begin(),v.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_adjacent_unique_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+bool same(const Item &left, const Item &right) {
+  return left.key == right.key;
+}
+Item *adjacent_raw(Item *first, Item *last) {
+  return std::adjacent_find(first, last, same);
+}
+std::vector<Item>::const_iterator adjacent_wrapped(
+    const std::vector<Item> &values) {
+  return std::adjacent_find(values.cbegin(), values.cend(), same);
+}
+Item *unique_raw(Item *first, Item *last) {
+  return std::unique(first, last, same);
+}
+std::vector<Item>::iterator unique_wrapped(std::vector<Item> &values) {
+  return std::unique(values.begin(), values.end(), same);
+}
+Item *unique_copy_raw(const Item *first, const Item *last, Item *output) {
+  return std::unique_copy(first, last, output, same);
+}
+std::vector<Item>::iterator unique_copy_wrapped(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::unique_copy(source.cbegin(), source.cend(), output.begin(), same);
+}
+Item *unique_copy_mixed(const std::vector<Item> &source, Item *output) {
+  return std::unique_copy(source.cbegin(), source.cend(), output, same);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-adjacent-unique-predicate-" + target,
+              source_record_adjacent_unique_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-unique-predicate-by-value-rejected",
+          '#include <algorithm>\n'
+          'struct Item{int key;};'
+          'bool same(Item left,Item right){return left.key==right.key;}'
+          'Item*f(Item*a,Item*b){return std::unique(a,b,same);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_record_value_replacement_source = """\
 #include <algorithm>
 #include <vector>

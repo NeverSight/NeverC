@@ -533,6 +533,11 @@ Default `unique` and `unique_copy` also accept raw or wrapped ranges of exact
 trivial source records with one selected Boolean `operator==`. `unique` requires
 a writable input; `unique_copy` requires a writable output of the same record
 type and accepts mixed raw and wrapped iterators.
+Checked predicate `adjacent_find`, `unique` and `unique_copy` also accept those
+exact record ranges through a `bool(const Record&, const Record&)` function
+pointer without requiring `operator==`. Comparisons retain original element
+addresses; `unique` needs writable input and `unique_copy` needs writable
+same-type output.
 Value-based `remove`, `remove_copy`, `replace` and `replace_copy` accept those
 record ranges with an exact const record value, including mixed raw and wrapped
 copy destinations. Comparison and replacement value references remain live

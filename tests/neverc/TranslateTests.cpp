@@ -54986,6 +54986,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordAdjacentUniquePredicateRun) {
+  const auto Source = tmpFile("source-record-adjacent-unique-predicate.cpp");
+  const auto Output = tmpFile("source-record-adjacent-unique-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *origin;
+int size, calls, bad_identity;
+bool same(const Item &left, const Item &right) {
+  bool left_found = false, right_found = false;
+  for (int i = 0; i < size; ++i) {
+    if (&left == origin + i) left_found = true;
+    if (&right == origin + i) right_found = true;
+  }
+  if (!left_found || !right_found) ++bad_identity;
+  ++calls;
+  return left.key == right.key;
+}
+int main() {
+  Item adjacent[5]{{1, 10}, {2, 20}, {2, 30}, {3, 40}, {3, 50}};
+  origin = adjacent; size = 5; calls = bad_identity = 0;
+  if (std::adjacent_find(adjacent, adjacent + 5, same) != adjacent + 1 ||
+      calls != 2 || bad_identity) return 1;
+  calls = 0;
+  if (std::adjacent_find(adjacent, adjacent, same) != adjacent ||
+      std::adjacent_find(adjacent, adjacent + 1, same) != adjacent + 1 ||
+      calls) return 2;
+  const std::vector<Item> wrapped{{4, 1}, {5, 2}, {5, 3}};
+  origin = &wrapped[0]; size = 3; calls = bad_identity = 0;
+  if (std::adjacent_find(wrapped.cbegin(), wrapped.cend(), same) !=
+          wrapped.cbegin() + 1 || calls != 2 || bad_identity) return 3;
+  Item unique_raw[6]{{1, 1}, {1, 2}, {2, 3}, {2, 4}, {3, 5}, {3, 6}};
+  origin = unique_raw; size = 6; calls = bad_identity = 0;
+  if (std::unique(unique_raw, unique_raw + 6, same) != unique_raw + 3 ||
+      calls == 0 || bad_identity || unique_raw[0].tag != 1 ||
+      unique_raw[1].tag != 3 || unique_raw[2].tag != 5) return 4;
+  std::vector<Item> unique_wrapped{{7, 1}, {7, 2}, {8, 3}, {8, 4}};
+  origin = &unique_wrapped[0]; size = 4; calls = bad_identity = 0;
+  if (std::unique(unique_wrapped.begin(), unique_wrapped.end(), same) !=
+          unique_wrapped.begin() + 2 || calls == 0 || bad_identity ||
+      unique_wrapped[0].tag != 1 || unique_wrapped[1].tag != 3) return 5;
+  const Item input[6]{{1, 1}, {1, 2}, {2, 3}, {2, 4}, {3, 5}, {3, 6}};
+  Item copied[6]{};
+  origin = input; size = 6; calls = bad_identity = 0;
+  if (std::unique_copy(input, input + 6, copied, same) != copied + 3 ||
+      calls == 0 || bad_identity || copied[0].tag != 1 ||
+      copied[1].tag != 3 || copied[2].tag != 5) return 6;
+  const std::vector<Item> source{{9, 1}, {9, 2}, {10, 3}, {10, 4}};
+  std::vector<Item> destination(4);
+  origin = &source[0]; size = 4; calls = bad_identity = 0;
+  if (std::unique_copy(source.cbegin(), source.cend(),
+                       destination.begin(), same) !=
+          destination.begin() + 2 || calls == 0 || bad_identity ||
+      destination[0].tag != 1 || destination[1].tag != 3) return 7;
+  calls = bad_identity = 0;
+  if (std::unique_copy(input, input, copied, same) != copied || calls ||
+      bad_identity) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-adjacent-unique-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSearchNRun) {
   const auto Source = tmpFile("source-record-search-n.cpp");
   const auto Output = tmpFile("source-record-search-n.nc");
