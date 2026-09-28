@@ -22749,6 +22749,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Value->getPointeeType(),
                                          RightParameter);
   };
+  auto AlgorithmRangeBinaryPredicateValueParameter =
+      [&](unsigned PredicateIndex, unsigned IteratorIndex,
+          unsigned ValueIndex) {
+        const auto Iterator = AlgorithmRangePointerParameter(IteratorIndex);
+        if (!Iterator || ValueIndex >= Function->getNumParams() ||
+            ValueIndex >= Call->getNumArgs())
+          return false;
+        const auto Value = Function->getParamDecl(ValueIndex)->getType();
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        return Value->isLValueReferenceType() &&
+               Value->getPointeeType().isConstQualified() &&
+               !Value->getPointeeType().isVolatileQualified() &&
+               utilityScalar(Context, Value->getPointeeType()) &&
+               Context.hasSameUnqualifiedType(
+                   Call->getArg(ValueIndex)->getType(),
+                   Value->getPointeeType()) &&
+               Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityScalarDirectConversion(Context,
+                                             (*Iterator)->getPointeeType(),
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                             Prototype->getParamType(1));
+      };
   auto AlgorithmBinaryPredicateReversedValueParameter =
       [&](unsigned PredicateIndex, unsigned IteratorIndex,
           unsigned ValueIndex) {
@@ -23811,9 +23835,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    const bool ScalarRanges =
-        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-        AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3);
     const auto ScalarFirst = AlgorithmRangePointerParameter(0);
     const auto ScalarLast = AlgorithmRangePointerParameter(1);
     const auto ScalarSecond = AlgorithmRangePointerParameter(2);
@@ -23838,8 +23859,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        (*RecordSecond)->getPointeeType());
     const bool DefaultElements = ScalarDefault || RecordRanges;
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
-          (Call->getNumArgs() == 5 && ScalarRanges &&
-           AlgorithmBinaryPredicateParameter(4, 0, 2))))
+          (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast &&
+           ScalarSecond && ScalarSecondLast &&
+           AlgorithmRangeBinaryPredicateParameter(4, 0, 2))))
       return std::nullopt;
     if (Name == "search")
       return UtilityOperation::AlgorithmSearch;
@@ -23884,9 +23906,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (ScalarValue || RecordValue)
         return UtilityOperation::AlgorithmSearchN;
     }
-    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
-        AlgorithmPointerParameter(1) &&
-        AlgorithmBinaryPredicateValueParameter(4, 0, 3))
+    if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(0) &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangeBinaryPredicateValueParameter(4, 0, 3))
       return UtilityOperation::AlgorithmSearchN;
   }
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
@@ -24587,17 +24609,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmIsPermutation;
-      if (AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-          AlgorithmPointerParameter(2) &&
-          AlgorithmBinaryPredicateParameter(3, 0, 2))
+      if (ScalarFirst && ScalarLast && ScalarSecond &&
+          AlgorithmRangeBinaryPredicateParameter(3, 0, 2))
         return UtilityOperation::AlgorithmIsPermutation;
     }
-    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
-        AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
-        AlgorithmPointerParameter(3) &&
+    if (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast && ScalarSecond &&
+        AlgorithmRangePointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()) &&
-        AlgorithmBinaryPredicateParameter(4, 0, 2))
+        AlgorithmRangeBinaryPredicateParameter(4, 0, 2))
       return UtilityOperation::AlgorithmIsPermutation;
   }
   const bool UnaryPredicateQuery =

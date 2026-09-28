@@ -57190,6 +57190,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedPatternPredicatesRun) {
+  const auto Source = tmpFile("wrapped-pattern-predicates.cpp");
+  const auto Output = tmpFile("wrapped-pattern-predicates.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+bool equalish(int left, long right) { ++calls; return left == right; }
+int main() {
+  const std::vector<int> source{1, 2, 3, 1, 2, 3, 4};
+  const std::vector<long> pattern{1, 2, 3};
+  if (std::search(source.cbegin(), source.cend(), pattern.cbegin(),
+                  pattern.cend(), equalish) != source.cbegin()) return 1;
+  if (std::find_end(source.cbegin(), source.cend(), pattern.cbegin(),
+                    pattern.cend(), equalish) != source.cbegin() + 3)
+    return 2;
+  const std::vector<long> choices{3, 9};
+  if (std::find_first_of(source.cbegin(), source.cend(), choices.cbegin(),
+                         choices.cend(), equalish) != source.cbegin() + 2)
+    return 3;
+  const std::vector<int> runs{1, 1, 2, 2, 2, 3};
+  if (std::search_n(runs.cbegin(), runs.cend(), 3, 2L, equalish) !=
+          runs.cbegin() + 2) return 4;
+  const std::vector<int> first{1, 2, 2};
+  const std::vector<long> second{2, 1, 2};
+  if (!std::is_permutation(first.cbegin(), first.cend(), second.cbegin(),
+                            equalish) ||
+      !std::is_permutation(first.cbegin(), first.cend(), second.cbegin(),
+                            second.cend(), equalish)) return 5;
+  const std::vector<int> empty;
+  calls = 0;
+  if (std::search(empty.cbegin(), empty.cend(), pattern.cbegin(),
+                  pattern.cend(), equalish) != empty.cend() ||
+      std::find_first_of(empty.cbegin(), empty.cend(), choices.cbegin(),
+                         choices.cend(), equalish) != empty.cend() ||
+      std::search_n(empty.cbegin(), empty.cend(), 1, 2L, equalish) !=
+          empty.cend() ||
+      !std::is_permutation(empty.cbegin(), empty.cend(), empty.cbegin(),
+                            equalish) || calls != 0) return 6;
+  int raw[3]{1, 2, 3};
+  if (std::search(raw, raw + 3, pattern.cbegin(), pattern.cend(),
+                  equalish) != raw) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-pattern-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

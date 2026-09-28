@@ -32484,6 +32484,45 @@ std::vector<int>::const_iterator find_constant(
           'return std::adjacent_find(v.begin(),v.end(),equal);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_pattern_predicates_source = """\
+#include <algorithm>
+#include <vector>
+bool equalish(int left, long right) { return left == right; }
+std::vector<int>::const_iterator search(
+    const std::vector<int> &source, const std::vector<long> &pattern) {
+  return std::search(source.cbegin(), source.cend(), pattern.cbegin(),
+                      pattern.cend(), equalish);
+}
+std::vector<int>::const_iterator find_end(
+    const std::vector<int> &source, const std::vector<long> &pattern) {
+  return std::find_end(source.cbegin(), source.cend(), pattern.cbegin(),
+                        pattern.cend(), equalish);
+}
+std::vector<int>::const_iterator find_first_of(
+    const std::vector<int> &source, const std::vector<long> &choices) {
+  return std::find_first_of(source.cbegin(), source.cend(), choices.cbegin(),
+                             choices.cend(), equalish);
+}
+std::vector<int>::const_iterator search_n(const std::vector<int> &source) {
+  return std::search_n(source.cbegin(), source.cend(), 3, 2L, equalish);
+}
+bool permutation(const std::vector<int> &source,
+                 const std::vector<long> &other) {
+  return std::is_permutation(source.cbegin(), source.cend(), other.cbegin(),
+                              other.cend(), equalish);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-pattern-predicates-" + target,
+              wrapped_pattern_predicates_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-pattern-reference-predicate",
+          '#include <algorithm>\n#include <vector>\n'
+          'bool equal(const int &left,const int &right){return left==right;}'
+          'std::vector<int>::iterator f(std::vector<int>&v){'
+          'return std::search(v.begin(),v.end(),v.begin(),v.end(),equal);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

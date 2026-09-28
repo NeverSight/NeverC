@@ -1760,7 +1760,9 @@ ranges and exact source-owned trivial record ranges under the selected Boolean
 `operator==` check. It retains the original value argument address across
 comparisons, returns the first run of the requested length, and wraps the
 result when the input is wrapped. Zero and non-positive count behavior keeps
-the existing fast path. Predicate overloads retain their raw scalar boundary.
+the existing fast path. Predicate overloads retain checked scalar callbacks.
+Checked function-pointer predicate overloads also accept authenticated
+wrapped scalar ranges and keep the wrapped result position.
 
 Default `std::search`, `std::find_end` and `std::find_first_of` also accept two
 raw-pointer or authenticated wrapped ranges of the same exact source-owned
@@ -1771,6 +1773,9 @@ also retain the checked common equality type. Element addresses are preserved,
 and their first-match, last-match and empty-pattern results follow the
 existing scalar loops. Returned wrapped iterators retain their original type.
 Record predicate overloads remain rejected.
+Checked function-pointer predicate overloads of `search`, `find_end` and
+`find_first_of` accept independent raw or authenticated wrapped scalar ranges,
+including different directly convertible element types.
 
 `std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
 mutable vector and string iterators, while preserving the existing value
@@ -1810,6 +1815,9 @@ first. Non-positive `search_n` counts return the first iterator without a call,
 and a positive unsuccessful run applies its predicate at most once per input
 element. Reference parameters, variadic functions, non-boolean results and
 callable objects stay outside this boundary.
+Both checked function-pointer forms of `is_permutation` accept independent raw
+or authenticated wrapped scalar ranges, preserving the existing length checks
+and by-value predicate conversions.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept raw scalar

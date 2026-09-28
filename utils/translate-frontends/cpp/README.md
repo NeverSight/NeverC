@@ -490,6 +490,9 @@ four-iterator `is_permutation`, plus `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of` and `search_n`. Predicate `adjacent_find` also
 accepts authenticated mutable or const wrapped scalar ranges and returns a
 wrapped matching position.
+Checked predicate `search`, `find_end`, `find_first_of`, `search_n` and both
+`is_permutation` forms accept authenticated wrapped scalar ranges with the
+existing by-value callback conversion rules.
 Checked function-pointer comparators with directly convertible by-value scalar
 parameters additionally admit `min_element`, `max_element`,
 `lower_bound`, `upper_bound`, `equal_range`, `binary_search`, `is_sorted` and
