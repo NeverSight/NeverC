@@ -2417,8 +2417,12 @@ wrapped ranges of the same exact trivial source-record type and a writable raw
 or wrapped destination of that type. One uniquely selected Boolean
 `operator<` compares original input lvalues in both directions; each output
 write copies the complete record. The returned position retains the output
-iterator type. Nontrivial records and record comparator overloads remain
-rejected.
+iterator type. Nontrivial records remain rejected.
+Their checked comparator overloads also accept these same-type record ranges
+through `bool(const Record&, const Record&)`, proving both input comparison
+directions without requiring a source `operator<`. They write complete records
+to an exact writable raw or wrapped output and return its original iterator
+form. By-value record callbacks and other comparator forms remain rejected.
 
 The default scalar ordered output forms also accept independent authenticated
 wrapped or raw input and output ranges under their existing checked common

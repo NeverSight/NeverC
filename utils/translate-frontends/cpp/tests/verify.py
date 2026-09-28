@@ -34067,9 +34067,50 @@ owned::Free *symmetric_raw(owned::Free *first, owned::Free *last,
           'void f(Entry*first,Entry*last,Entry*second,Entry*second_last,'
           'Entry*output){std::merge(first,last,second,second_last,output);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-source-record-ordered-output-comparator",
+    source_record_ordered_output_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int id; };
+bool less(const Item &left, const Item &right) {
+  return left.key < right.key;
+}
+Item *merge_raw(const Item *first, const Item *last,
+                const Item *second, const Item *second_last, Item *output) {
+  return std::merge(first, last, second, second_last, output, less);
+}
+std::vector<Item>::iterator merge_wrapped(
+    const std::vector<Item> &first, const std::vector<Item> &second,
+    std::vector<Item> &output) {
+  return std::merge(first.cbegin(), first.cend(),
+                    second.cbegin(), second.cend(), output.begin(), less);
+}
+Item *union_mixed(const std::vector<Item> &first,
+                  const Item *second, const Item *second_last,
+                  Item *output) {
+  return std::set_union(first.cbegin(), first.cend(),
+                        second, second_last, output, less);
+}
+Item *intersection_raw(Item *first, Item *last, Item *second,
+                       Item *second_last, Item *output) {
+  return std::set_intersection(first, last, second, second_last, output, less);
+}
+Item *difference_raw(Item *first, Item *last, Item *second,
+                     Item *second_last, Item *output) {
+  return std::set_difference(first, last, second, second_last, output, less);
+}
+Item *symmetric_raw(Item *first, Item *last, Item *second,
+                    Item *second_last, Item *output) {
+  return std::set_symmetric_difference(first, last, second, second_last,
+                                        output, less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-output-predicate-" + target,
+              source_record_ordered_output_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-ordered-output-predicate-by-value-rejected",
           '#include <algorithm>\nstruct Entry{int key;};'
-          'bool less(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'bool less(Entry a,Entry b){return a.key<b.key;}'
           'void f(Entry*first,Entry*last,Entry*second,Entry*second_last,'
           'Entry*output){'
           'std::set_union(first,last,second,second_last,output,less);}',

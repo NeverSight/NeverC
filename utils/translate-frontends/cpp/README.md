@@ -488,6 +488,10 @@ Default `merge` and the four ordered `set_*` algorithms accept independent raw
 or authenticated wrapped ranges of the same trivial source-record type and a
 writable output of that type, preserving complete values and the output
 iterator form.
+Their checked comparator forms also accept those ranges through
+`bool(const Record&, const Record&)`. Both input comparison directions use
+original element references, and complete records are written to same-type
+raw or wrapped outputs without requiring `operator<`.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

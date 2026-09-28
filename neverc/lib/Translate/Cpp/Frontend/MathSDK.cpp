@@ -24646,8 +24646,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        (*RecordSecond)->getPointeeType()) &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordOutput)->getPointeeType());
+    const auto PredicateFirst = AlgorithmRecordRangeParameter(0);
+    const auto PredicateSecond = AlgorithmRecordRangeParameter(2);
+    const bool RecordComparator =
+        Call->getNumArgs() == 6 && PredicateFirst && PredicateSecond &&
+        AlgorithmRecordRangeParameter(1) && AlgorithmRecordRangeParameter(3) &&
+        RecordOutput &&
+        Context.hasSameUnqualifiedType((*PredicateFirst)->getPointeeType(),
+                                       (*PredicateSecond)->getPointeeType()) &&
+        Context.hasSameUnqualifiedType((*PredicateFirst)->getPointeeType(),
+                                       (*RecordOutput)->getPointeeType()) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(5, 0, 2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(5, 2, 0);
     if (!RawScalar && !WrappedScalarDefault && !WrappedScalarComparator &&
-        !Record)
+        !Record && !RecordComparator)
       return std::nullopt;
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;

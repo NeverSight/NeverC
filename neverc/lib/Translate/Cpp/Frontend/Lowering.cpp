@@ -6328,6 +6328,7 @@ class FunctionLowering {
           Comparator = snapshot(expression(Call->getArg(5)), L);
       }
       const auto SourceElement = FirstRange.second->getPointeeType();
+      const bool RecordElement = SourceElement->isRecordType();
       const auto SourceComparison =
           Call->getNumArgs() == 5 &&
                   A.Context.hasSameUnqualifiedType(
@@ -6381,9 +6382,8 @@ class FunctionLowering {
         if (Write) {
           auto Value = dereference(Input, L);
           assign(dereference(Output, L),
-                 SourceComparison
-                     ? std::move(Value)
-                     : cast(std::move(Value), OutputElementType, L),
+                 RecordElement ? std::move(Value)
+                               : cast(std::move(Value), OutputElementType, L),
                  L);
           assign(Output,
                  binary("+", Output, quantity(1, DifferenceType, L), OutputType,

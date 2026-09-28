@@ -60024,6 +60024,119 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedOutputPredicateRun) {
+  const auto Source = tmpFile("source-record-ordered-output-predicate.cpp");
+  const auto Output = tmpFile("source-record-ordered-output-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int id; };
+const Item *first_base, *second_base;
+int first_size, second_size, calls, bad_identity, evaluations;
+bool within(const Item *value, const Item *base, int size) {
+  for (int i = 0; i < size; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool less(const Item &left, const Item &right) {
+  if (!((within(&left, first_base, first_size) &&
+         within(&right, second_base, second_size)) ||
+        (within(&left, second_base, second_size) &&
+         within(&right, first_base, first_size)))) ++bad_identity;
+  ++calls;
+  return left.key < right.key;
+}
+using Comparator = bool (*)(const Item &, const Item &);
+Comparator next_comparator() { ++evaluations; return less; }
+void ranges(const Item *first, int first_count,
+            const Item *second, int second_count) {
+  first_base = first; first_size = first_count;
+  second_base = second; second_size = second_count;
+  calls = bad_identity = 0;
+}
+int main() {
+  const Item first[3]{{1, 0}, {2, 1}, {2, 2}};
+  const Item second[3]{{1, 3}, {2, 4}, {3, 5}};
+  Item merged[6]{};
+  ranges(first, 3, second, 3); evaluations = 0;
+  if (std::merge(first, first + 3, second, second + 3,
+                 merged, next_comparator()) != merged + 6 ||
+      evaluations != 1 || calls == 0 || bad_identity) return 1;
+  const int merged_ids[6]{0, 3, 1, 2, 4, 5};
+  for (int i = 0; i < 6; ++i)
+    if (merged[i].id != merged_ids[i]) return 2;
+  const std::vector<Item> wrapped_first{{1, 0}, {2, 1}};
+  const std::vector<Item> wrapped_second{{1, 2}, {3, 3}};
+  std::vector<Item> wrapped_output(4);
+  ranges(&wrapped_first[0], 2, &wrapped_second[0], 2);
+  if (std::merge(wrapped_first.cbegin(), wrapped_first.cend(),
+                 wrapped_second.cbegin(), wrapped_second.cend(),
+                 wrapped_output.begin(), less) != wrapped_output.end() ||
+      calls == 0 || bad_identity || wrapped_output[0].id != 0 ||
+      wrapped_output[1].id != 2 || wrapped_output[2].id != 1 ||
+      wrapped_output[3].id != 3) return 3;
+  const Item union_first[4]{{1, 0}, {2, 1}, {2, 2}, {4, 3}};
+  const Item union_second[3]{{1, 4}, {2, 5}, {3, 6}};
+  Item united[7]{};
+  ranges(union_first, 4, union_second, 3);
+  if (std::set_union(union_first, union_first + 4, union_second,
+                     union_second + 3, united, less) != united + 5 ||
+      calls == 0 || bad_identity) return 4;
+  const int union_ids[5]{0, 1, 2, 6, 3};
+  for (int i = 0; i < 5; ++i)
+    if (united[i].id != union_ids[i]) return 5;
+  const Item intersection_first[4]{{1, 0}, {1, 1}, {2, 2}, {3, 3}};
+  const Item intersection_second[4]{{1, 4}, {2, 5}, {2, 6}, {4, 7}};
+  Item common[4]{};
+  ranges(intersection_first, 4, intersection_second, 4);
+  if (std::set_intersection(intersection_first, intersection_first + 4,
+                            intersection_second, intersection_second + 4,
+                            common, less) != common + 2 ||
+      calls == 0 || bad_identity || common[0].id != 0 ||
+      common[1].id != 2) return 6;
+  const Item difference_second[2]{{1, 4}, {2, 5}};
+  Item difference[4]{};
+  ranges(intersection_first, 4, difference_second, 2);
+  if (std::set_difference(intersection_first, intersection_first + 4,
+                          difference_second, difference_second + 2,
+                          difference, less) != difference + 2 ||
+      calls == 0 || bad_identity || difference[0].id != 1 ||
+      difference[1].id != 3) return 7;
+  const Item symmetric_first[4]{{1, 0}, {2, 1}, {2, 2}, {4, 3}};
+  const Item symmetric_second[4]{{1, 4}, {2, 5}, {3, 6}, {3, 7}};
+  Item symmetric[8]{};
+  ranges(symmetric_first, 4, symmetric_second, 4);
+  if (std::set_symmetric_difference(symmetric_first, symmetric_first + 4,
+                                    symmetric_second, symmetric_second + 4,
+                                    symmetric, less) != symmetric + 4 ||
+      calls == 0 || bad_identity || symmetric[0].id != 2 ||
+      symmetric[1].id != 6 || symmetric[2].id != 7 ||
+      symmetric[3].id != 3) return 8;
+  calls = bad_identity = 0;
+  if (std::merge(first, first, second, second, merged, less) != merged ||
+      calls || bad_identity) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-output-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangePredicatesRun) {
   const auto Source = tmpFile("record-subrange-predicates.cpp");
   const auto Output = tmpFile("record-subrange-predicates.nc");
