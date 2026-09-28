@@ -57321,6 +57321,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedPredicateTransferRun) {
+  const auto Source = tmpFile("wrapped-predicate-transfer.cpp");
+  const auto Output = tmpFile("wrapped-predicate-transfer.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+bool even(int value) { ++calls; return value % 2 == 0; }
+int main() {
+  const std::vector<int> source{1, 2, 3, 4, 5, 6};
+  std::vector<long> output(6);
+  calls = 0;
+  if (std::copy_if(source.cbegin(), source.cend(), output.begin(), even) !=
+          output.begin() + 3 || output[0] != 2 || output[1] != 4 ||
+      output[2] != 6 || calls != 6) return 1;
+  calls = 0;
+  if (std::remove_copy_if(source.cbegin(), source.cend(), output.begin(),
+                          even) != output.begin() + 3 ||
+      output[0] != 1 || output[1] != 3 || output[2] != 5 ||
+      calls != 6) return 2;
+  std::vector<int> values{1, 2, 3, 4, 5, 6};
+  calls = 0;
+  if (std::remove_if(values.begin(), values.end(), even) !=
+          values.begin() + 3 || values[0] != 1 || values[1] != 3 ||
+      values[2] != 5 || calls != 6) return 3;
+  std::vector<int> replaced{1, 2, 3, 4, 5, 6};
+  calls = 0;
+  std::replace_if(replaced.begin(), replaced.end(), even, 9L);
+  if (replaced[0] != 1 || replaced[1] != 9 || replaced[2] != 3 ||
+      replaced[3] != 9 || replaced[4] != 5 || replaced[5] != 9 ||
+      calls != 6) return 4;
+  calls = 0;
+  if (std::replace_copy_if(source.cbegin(), source.cend(), output.begin(),
+                           even, 9L) != output.end() ||
+      output[0] != 1 || output[1] != 9 || output[2] != 3 ||
+      output[3] != 9 || output[4] != 5 || output[5] != 9 ||
+      calls != 6) return 5;
+  long raw_output[6]{};
+  if (std::copy_if(source.cbegin(), source.cend(), raw_output, even) !=
+          raw_output + 3 || raw_output[2] != 6) return 6;
+  int raw_input[4]{1, 2, 3, 4};
+  if (std::remove_copy_if(raw_input, raw_input + 4, output.begin(), even) !=
+          output.begin() + 2 || output[0] != 1 || output[1] != 3) return 7;
+  std::vector<int> empty;
+  calls = 0;
+  if (std::remove_if(empty.begin(), empty.end(), even) != empty.end() ||
+      std::copy_if(empty.begin(), empty.end(), output.begin(), even) !=
+          output.begin() || calls != 0) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-predicate-transfer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

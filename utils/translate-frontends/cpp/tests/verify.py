@@ -32557,6 +32557,45 @@ long *copy_mixed(const std::vector<int> &values, long *output) {
           'return std::unique(v.begin(),v.end(),equal);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_predicate_transfer_source = """\
+#include <algorithm>
+#include <vector>
+bool even(int value) { return value % 2 == 0; }
+std::vector<long>::iterator copy_if_wrapped(
+    const std::vector<int> &source, std::vector<long> &output) {
+  return std::copy_if(source.cbegin(), source.cend(), output.begin(), even);
+}
+std::vector<long>::iterator remove_copy_if_wrapped(
+    const std::vector<int> &source, std::vector<long> &output) {
+  return std::remove_copy_if(source.cbegin(), source.cend(), output.begin(),
+                              even);
+}
+std::vector<int>::iterator remove_if_wrapped(std::vector<int> &values) {
+  return std::remove_if(values.begin(), values.end(), even);
+}
+void replace_if_wrapped(std::vector<int> &values) {
+  std::replace_if(values.begin(), values.end(), even, 9L);
+}
+std::vector<long>::iterator replace_copy_if_wrapped(
+    const std::vector<int> &source, std::vector<long> &output) {
+  return std::replace_copy_if(source.cbegin(), source.cend(), output.begin(),
+                               even, 9L);
+}
+long *copy_if_mixed(const std::vector<int> &source, long *output) {
+  return std::copy_if(source.cbegin(), source.cend(), output, even);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-predicate-transfer-" + target,
+              wrapped_predicate_transfer_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-predicate-transfer-reference",
+          '#include <algorithm>\n#include <vector>\n'
+          'bool even(const int &value){return value%2==0;}'
+          'std::vector<int>::iterator f(std::vector<int>&v){'
+          'return std::remove_if(v.begin(),v.end(),even);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

@@ -1849,6 +1849,9 @@ advanced output or new logical end. The replace forms accept a scalar `const`
 value reference with a checked direct conversion to the mutated input or copy
 output element, retain that reference through the loop, and therefore observe
 changes when a callback mutates an aliased replacement object.
+Authenticated wrapped scalar inputs and writable outputs use the same loops,
+including mixed raw and wrapped copy ranges; iterator results retain the
+public wrapped type.
 `replace_copy_if` writes exactly one output per input and returns the advanced
 output. Every range, output, callback and replacement argument is evaluated
 once; empty ranges return their unadvanced iterator and do not invoke the

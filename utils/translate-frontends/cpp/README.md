@@ -483,6 +483,9 @@ convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `partition_point`.
 For the six predicate queries, authenticated mutable or const wrapped scalar
 iterators are also accepted, and find results retain their iterator type.
+The five predicate copy, remove and replace forms also accept authenticated
+wrapped scalar ranges under their existing writable-output and conversion
+checks, including mixed raw and wrapped copy inputs or outputs.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and
