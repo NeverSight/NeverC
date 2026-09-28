@@ -2574,7 +2574,10 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
-    case UtilityOperation::CStringSpan: {
+    case UtilityOperation::CStringSpan:
+    case UtilityOperation::CStringComplementSpan: {
+      const bool Complement =
+          Operation == UtilityOperation::CStringComplementSpan;
       auto Input = snapshot(expression(Call->getArg(0)), L);
       auto SetStart = snapshot(expression(Call->getArg(1)), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
@@ -2603,11 +2606,11 @@ class FunctionLowering {
           snapshot(cast(dereference(json::Object(SetCursor), L), "u8", L), L);
       branch(binary("==", json::Object(SetByte), json::Object(InputByte),
                     "bool", L),
-             AdvanceInput, CheckSetEnd, L);
+             Complement ? End : AdvanceInput, CheckSetEnd, L);
       label(CheckSetEnd, L);
       branch(
           binary("==", json::Object(SetByte), quantity(0, "u8", L), "bool", L),
-          End, AdvanceSet, L);
+          Complement ? AdvanceInput : End, AdvanceSet, L);
       label(AdvanceSet, L);
       assign(SetCursor,
              binary("+", json::Object(SetCursor),

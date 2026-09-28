@@ -632,6 +632,7 @@ bool approvedUtilityAllocatorAssignment(
 enum class UtilityOperation {
   CStringLength,
   CStringSpan,
+  CStringComplementSpan,
   CStringCompare,
   CStringCompareN,
   CStringMemoryCompare,

@@ -14874,6 +14874,40 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringComplementSpanRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-complement-span.cpp");
+  const auto Output = tmpFile("cstring-complement-span.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  const char text[8]{'a', 'b', static_cast<char>(0x80), 'a', 'c', 0, 'b', 0};
+  const char rejected[3]{'c', static_cast<char>(0x80), 0};
+  int text_effects = 0, set_effects = 0;
+  if (std::strcspn((++text_effects, text), (++set_effects, rejected)) != 2 ||
+      text_effects != 1 || set_effects != 1 ||
+      std::strcspn(text, "") != 5 ||
+      std::strcspn(text, "z") != 5 ||
+      std::strcspn(text, "a") != 0 ||
+      std::strcspn(text, "c") != 4 ||
+      std::strcspn("", rejected) != 0 ||
+      std::strcspn("aabbcc", "c") != 4)
+    return 1;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-complement-span" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryFindRunsAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-find.cpp");
   const auto Output = tmpFile("cmemory-find.nc");
@@ -15090,6 +15124,9 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
        "TR0203"},
       {"global-strspn",
        "#include <cstring>\nint main(){return ::strspn(\"abc\",\"ab\");}",
+       "TR0203"},
+      {"global-strcspn",
+       "#include <cstring>\nint main(){return ::strcspn(\"abc\",\"c\");}",
        "TR0203"},
       {"global-memcmp",
        "#include <cstring>\nint main(){return ::memcmp(\"a\",\"b\",1);}",

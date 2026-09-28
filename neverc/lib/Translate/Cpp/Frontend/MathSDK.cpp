@@ -20172,12 +20172,14 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Context.getSizeType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::CStringLength;
-  if (Name == "strspn" && Function->getNumParams() == 2 &&
+  if ((Name == "strspn" || Name == "strcspn") &&
+      Function->getNumParams() == 2 &&
       Same(Function->getParamDecl(0)->getType(), Character) &&
       Same(Function->getParamDecl(1)->getType(), Character) &&
       Same(Function->getReturnType(), Context.getSizeType()) &&
       Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::CStringSpan;
+    return Name == "strspn" ? UtilityOperation::CStringSpan
+                            : UtilityOperation::CStringComplementSpan;
   if ((Name == "strcmp" || Name == "strncmp") &&
       Function->getNumParams() == (Name == "strcmp" ? 2u : 3u) &&
       Same(Function->getParamDecl(0)->getType(), Character) &&
