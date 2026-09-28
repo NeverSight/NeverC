@@ -56219,6 +56219,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedScalarOrderedOutputAndPartialSortCopyRun) {
+  const auto Source = tmpFile("wrapped-scalar-ordered-output-copy.cpp");
+  const auto Output = tmpFile("wrapped-scalar-ordered-output-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int main() {
+  const std::vector<int> first{1, 1, 2, 4};
+  const std::vector<int> second{1, 2, 3};
+  std::vector<long> merged(7);
+  if (std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                 second.cend(), merged.begin()) != merged.end()) return 1;
+  const long merged_expected[7]{1, 1, 1, 2, 2, 3, 4};
+  for (int i = 0; i < 7; ++i)
+    if (merged[i] != merged_expected[i]) return 2;
+
+  std::vector<long> output(8);
+  auto end = std::set_union(first.cbegin(), first.cend(), second.cbegin(),
+                            second.cend(), output.begin());
+  const long union_expected[5]{1, 1, 2, 3, 4};
+  if (end != output.begin() + 5) return 3;
+  for (int i = 0; i < 5; ++i)
+    if (output[i] != union_expected[i]) return 4;
+  auto intersection_end = std::set_intersection(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      output.begin());
+  if (intersection_end != output.begin() + 2 || output[0] != 1 ||
+      output[1] != 2)
+    return 5;
+  auto difference_end = std::set_difference(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      output.begin());
+  if (difference_end != output.begin() + 2 || output[0] != 1 ||
+      output[1] != 4)
+    return 6;
+  auto symmetric_end = std::set_symmetric_difference(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      output.begin());
+  if (symmetric_end != output.begin() + 3 || output[0] != 1 || output[1] != 3 ||
+      output[2] != 4) return 7;
+
+  std::vector<int> unordered{7, 1, 5, 2, 9, 3, 4};
+  std::vector<long> smallest(3);
+  if (std::partial_sort_copy(unordered.cbegin(), unordered.cend(),
+                             smallest.begin(), smallest.end()) !=
+          smallest.end() ||
+      smallest[0] != 1 || smallest[1] != 2 || smallest[2] != 3)
+    return 8;
+  long raw[2]{};
+  if (std::partial_sort_copy(unordered.cbegin(), unordered.cend(), raw,
+                             raw + 2) != raw + 2 || raw[0] != 1 ||
+      raw[1] != 2) return 9;
+  std::vector<int> empty;
+  if (std::merge(empty.begin(), empty.end(), empty.begin(), empty.end(),
+                 output.begin()) != output.begin() ||
+      std::partial_sort_copy(empty.begin(), empty.end(), smallest.begin(),
+                             smallest.end()) != smallest.begin())
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-scalar-ordered-output-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordPartialSortCopyRun) {
   const auto Source = tmpFile("source-record-partial-sort-copy.cpp");
   const auto Output = tmpFile("source-record-partial-sort-copy.nc");

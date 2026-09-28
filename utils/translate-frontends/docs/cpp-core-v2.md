@@ -2048,6 +2048,10 @@ It copies complete records into the bounded output, compares current input and
 output lvalues through that selected Boolean `operator<`, and returns the
 original output iterator form. Record comparator overloads remain rejected.
 
+Its default scalar overload also accepts independent authenticated wrapped or
+raw input and output ranges under the existing checked ordering and output
+conversion rules, returning the original output iterator form.
+
 Default `std::nth_element` accepts the same writable source-record ranges.
 Its three-way partition compares current elements with a retained trivial
 record pivot by const reference and swaps complete values. Equivalent values
@@ -2188,6 +2192,11 @@ or wrapped destination of that type. One uniquely selected Boolean
 write copies the complete record. The returned position retains the output
 iterator type. Nontrivial records and record comparator overloads remain
 rejected.
+
+The default scalar ordered output forms also accept independent authenticated
+wrapped or raw input and output ranges under their existing checked common
+ordering and destination conversion rules, returning the original output
+iterator form.
 
 Default `std::lexicographical_compare` and `std::includes` also accept
 independent authenticated mutable or const wrapped iterators, mixed with raw

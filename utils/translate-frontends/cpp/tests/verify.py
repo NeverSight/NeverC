@@ -31939,6 +31939,57 @@ void scalar_wrapped(std::vector<int> &values) {
           'std::inplace_merge(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_scalar_ordered_output_copy_source = """\
+#include <algorithm>
+#include <vector>
+std::vector<long>::iterator merge_wrapped(const std::vector<int> &first,
+                                           const std::vector<int> &second,
+                                           std::vector<long> &output) {
+  return std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                    second.cend(), output.begin());
+}
+std::vector<long>::iterator union_wrapped(const std::vector<int> &first,
+                                           const std::vector<int> &second,
+                                           std::vector<long> &output) {
+  return std::set_union(first.cbegin(), first.cend(), second.cbegin(),
+                        second.cend(), output.begin());
+}
+std::vector<long>::iterator intersection_wrapped(
+    const std::vector<int> &first, const std::vector<int> &second,
+    std::vector<long> &output) {
+  return std::set_intersection(first.cbegin(), first.cend(),
+                                second.cbegin(), second.cend(),
+                                output.begin());
+}
+std::vector<long>::iterator difference_wrapped(
+    const std::vector<int> &first, const std::vector<int> &second,
+    std::vector<long> &output) {
+  return std::set_difference(first.cbegin(), first.cend(), second.cbegin(),
+                              second.cend(), output.begin());
+}
+std::vector<long>::iterator symmetric_wrapped(
+    const std::vector<int> &first, const std::vector<int> &second,
+    std::vector<long> &output) {
+  return std::set_symmetric_difference(first.cbegin(), first.cend(),
+                                        second.cbegin(), second.cend(),
+                                        output.begin());
+}
+std::vector<long>::iterator partial_copy_wrapped(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::partial_sort_copy(input.cbegin(), input.cend(),
+                                output.begin(), output.end());
+}
+long *partial_copy_mixed(const std::vector<int> &input,
+                         long *output, long *output_last) {
+  return std::partial_sort_copy(input.cbegin(), input.cend(), output,
+                                output_last);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-scalar-ordered-output-copy-" + target,
+              wrapped_scalar_ordered_output_copy_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     source_record_partial_sort_copy_source = """\
 #include <algorithm>
 #include <vector>

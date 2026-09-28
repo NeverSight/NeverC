@@ -24022,7 +24022,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    const bool Scalar =
+    const bool RawScalar =
         AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
         AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
         AlgorithmTransferParameters(0, 4) &&
@@ -24031,6 +24031,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          (Call->getNumArgs() == 6 &&
           AlgorithmBinaryComparisonParameter(5, 0, 2) &&
           AlgorithmBinaryComparisonParameter(5, 2, 0)));
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarSecond = AlgorithmRangePointerParameter(2);
+    const bool WrappedScalarDefault =
+        Call->getNumArgs() == 5 && ScalarFirst && ScalarSecond &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangePointerParameter(3) &&
+        AlgorithmTransferRangeParameters(0, 4) &&
+        AlgorithmTransferRangeParameters(2, 4) &&
+        AlgorithmOrderedRangeParameter(0) &&
+        AlgorithmOrderedRangeParameter(2) &&
+        utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
+                                    (*ScalarSecond)->getPointeeType(), true);
     const auto RecordFirst = AlgorithmRecordOrderedRangeParameter(0);
     const auto RecordSecond = AlgorithmRecordOrderedRangeParameter(2);
     const auto RecordOutput = AlgorithmWritableRecordRangeParameter(4);
@@ -24042,7 +24054,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        (*RecordSecond)->getPointeeType()) &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordOutput)->getPointeeType());
-    if (!Scalar && !Record)
+    if (!RawScalar && !WrappedScalarDefault && !Record)
       return std::nullopt;
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;
@@ -24343,7 +24355,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    const bool Scalar =
+    const bool RawScalar =
         AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
         AlgorithmTransferParameters(0, 2) && AlgorithmPointerParameter(3) &&
         ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
@@ -24351,6 +24363,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          (Call->getNumArgs() == 5 &&
           AlgorithmBinaryComparisonParameter(4, 0, 2) &&
           AlgorithmBinaryComparisonParameter(4, 2, 2)));
+    const auto ScalarInput = AlgorithmRangePointerParameter(0);
+    const auto ScalarOutput = AlgorithmRangePointerParameter(2);
+    const bool WrappedScalarDefault =
+        Call->getNumArgs() == 4 && ScalarInput && ScalarOutput &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangePointerParameter(3) &&
+        AlgorithmTransferRangeParameters(0, 2) &&
+        AlgorithmOrderedRangeParameter(0) &&
+        AlgorithmOrderedRangeParameter(2) &&
+        utilityScalarComparisonType(Context, (*ScalarInput)->getPointeeType(),
+                                    (*ScalarOutput)->getPointeeType(), true);
     const auto RecordInput = AlgorithmRecordOrderedRangeParameter(0);
     const auto RecordOutput = AlgorithmWritableRecordRangeParameter(2);
     const bool Record =
@@ -24360,7 +24383,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmWritableRecordRangeParameter(3) &&
         Context.hasSameUnqualifiedType((*RecordInput)->getPointeeType(),
                                        (*RecordOutput)->getPointeeType());
-    if (Scalar || Record)
+    if (RawScalar || WrappedScalarDefault || Record)
       return UtilityOperation::AlgorithmPartialSortCopy;
   }
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&

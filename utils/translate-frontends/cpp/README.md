@@ -454,6 +454,9 @@ source-record ranges; wrapped scalar ranges retain their comparator forms.
 Default `partial_sort_copy` admits raw or authenticated wrapped input and
 writable output ranges of the same trivial source-record type, returning the
 original output iterator form.
+Its default scalar form and the default scalar `merge` and four ordered
+`set_*` forms also accept independent authenticated wrapped or raw input and
+output ranges under their checked comparison and conversion rules.
 Default `nth_element` admits the same record ranges through its retained pivot
 and three-way partition, while wrapped scalars retain comparator forms.
 Default `stable_sort` and `inplace_merge` admit writable raw or authenticated
