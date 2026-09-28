@@ -32166,6 +32166,37 @@ bool next_scalar_wrapped(std::vector<int> &values) {
           'return std::next_permutation(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_permutation_mutation_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+bool next_raw(Item *first, Item *last) {
+  return std::next_permutation(first, last, less);
+}
+bool previous_raw(Item *first, Item *last) {
+  return std::prev_permutation(first, last, less);
+}
+bool next_wrapped(std::vector<Item> &items) {
+  return std::next_permutation(items.begin(), items.end(), less);
+}
+bool previous_wrapped(std::vector<Item> &items) {
+  return std::prev_permutation(items.begin(), items.end(), less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-permutation-mutation-predicate-" + target,
+              source_record_permutation_mutation_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-permutation-mutation-predicate-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'bool f(Item*a,Item*b){'
+          'return std::next_permutation(a,b,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_partial_sort_source = """\
 #include <algorithm>
 #include <functional>

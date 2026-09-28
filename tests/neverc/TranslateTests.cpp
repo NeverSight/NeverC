@@ -56703,6 +56703,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordPermutationMutationPredicateRun) {
+  const auto Source = tmpFile("source-record-permutation-mutation-predicate.cpp");
+  const auto Output = tmpFile("source-record-permutation-mutation-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+int comparisons;
+bool less(const Item &left, const Item &right) {
+  ++comparisons;
+  return left.rank < right.rank;
+}
+int main() {
+  Item raw[3]{{1, 10}, {2, 20}, {3, 30}};
+  int first_effects = 0, last_effects = 0;
+  if (!std::next_permutation((++first_effects, raw),
+                             (++last_effects, raw + 3), less) ||
+      first_effects != 1 || last_effects != 1 || !comparisons ||
+      raw[0].rank != 1 || raw[0].tag != 10 ||
+      raw[1].rank != 3 || raw[1].tag != 30 ||
+      raw[2].rank != 2 || raw[2].tag != 20) return 1;
+  if (!std::prev_permutation(raw, raw + 3, less) ||
+      raw[0].rank != 1 || raw[1].rank != 2 || raw[2].rank != 3) return 2;
+  Item descending[3]{{3, 30}, {2, 20}, {1, 10}};
+  if (std::next_permutation(descending, descending + 3, less) ||
+      descending[0].rank != 1 || descending[0].tag != 10 ||
+      descending[1].rank != 2 || descending[1].tag != 20 ||
+      descending[2].rank != 3 || descending[2].tag != 30) return 3;
+  if (std::prev_permutation(descending, descending + 3, less) ||
+      descending[0].rank != 3 || descending[1].rank != 2 ||
+      descending[2].rank != 1) return 4;
+  std::vector<Item> wrapped{{1, 10}, {2, 20}, {3, 30}};
+  if (!std::next_permutation(wrapped.begin(), wrapped.end(), less) ||
+      wrapped[0].rank != 1 || wrapped[1].rank != 3 ||
+      wrapped[2].rank != 2 || wrapped[2].tag != 20) return 5;
+  if (!std::prev_permutation(wrapped.begin(), wrapped.end(), less) ||
+      wrapped[0].rank != 1 || wrapped[1].rank != 2 ||
+      wrapped[2].rank != 3) return 6;
+  std::vector<Item> empty;
+  Item one[1]{{7, 70}};
+  int before = comparisons;
+  if (std::next_permutation(empty.begin(), empty.end(), less) ||
+      std::prev_permutation(empty.begin(), empty.end(), less) ||
+      std::next_permutation(one, one + 1, less) ||
+      std::prev_permutation(one, one + 1, less) ||
+      comparisons != before) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-permutation-mutation-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordPartialSortRun) {
   const auto Source = tmpFile("source-record-partial-sort.cpp");
   const auto Output = tmpFile("source-record-partial-sort.nc");

@@ -475,6 +475,8 @@ ranges through that const-reference function pointer, moving complete values.
 Default `next_permutation` and `prev_permutation` admit the same writable
 source-record ranges, while wrapped scalar ranges retain their comparator
 forms.
+Their checked comparator forms also accept those records through
+`bool(const Record&, const Record&)`, preserving complete values on swaps.
 Default `partial_sort` admits writable raw or authenticated wrapped trivial
 source-record ranges; wrapped scalar ranges retain their comparator forms.
 Default `partial_sort_copy` admits raw or authenticated wrapped input and

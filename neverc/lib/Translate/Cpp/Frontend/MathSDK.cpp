@@ -25089,12 +25089,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
         ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
          (Call->getNumArgs() == 3 && AlgorithmRangeComparisonParameter(2, 0)));
-    const bool Record = Call->getNumArgs() == 2 &&
-                        AlgorithmRecordOrderedRangeParameter(0) &&
-                        AlgorithmRecordOrderedRangeParameter(1) &&
-                        AlgorithmWritableRecordRangeParameter(0) &&
-                        AlgorithmWritableRecordRangeParameter(1);
-    if (Scalar || Record)
+    const bool RecordDefault = Call->getNumArgs() == 2 &&
+                               AlgorithmRecordOrderedRangeParameter(0) &&
+                               AlgorithmRecordOrderedRangeParameter(1) &&
+                               AlgorithmWritableRecordRangeParameter(0) &&
+                               AlgorithmWritableRecordRangeParameter(1);
+    const bool RecordComparator =
+        Call->getNumArgs() == 3 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator)
       return Name == "next_permutation"
                  ? UtilityOperation::AlgorithmNextPermutation
                  : UtilityOperation::AlgorithmPrevPermutation;

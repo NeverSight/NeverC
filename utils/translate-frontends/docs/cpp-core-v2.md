@@ -2373,14 +2373,16 @@ hidden-friend, or enclosing-namespace free Boolean `operator<`. Comparisons
 receive the current range elements by reference; swaps preserve complete
 record values. Writable authenticated wrapped scalar ranges use the same
 default and checked comparator boundaries as raw scalar ranges.
+Their checked comparator forms also accept those writable trivial records
+through `bool(const Record&, const Record&)` without requiring `operator<`.
+Comparisons use current range elements, and swaps move complete records.
 
 Their three-argument comparator overloads accept the same checked scalar
 function-pointer boundary, including enum and object-pointer elements. The
 callback defines the lexicographical order, is retained once, and is not called
 for empty or single-element ranges. Repeated values, suffix reversal and
 endpoint wraparound retain the same behavior under that order. Unsupported
-callbacks, other callable objects and record comparator overloads remain
-rejected. These
+callbacks and other callable objects remain rejected. These
 two overloads also accept authenticated typed or transparent empty standard
 comparison objects on arithmetic scalars, preserving the selected ordering,
 wraparound and one-time object evaluation without a libc++ runtime call.
