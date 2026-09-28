@@ -2889,6 +2889,12 @@ evaluated once, comparisons use unsigned bytes, and the returned pointer
 retains the input's constness. The selected pinned C++ builtin wrapper is
 authenticated before direct lowering.
 
+The exact `std::strcpy(char *, const char *)` call copies source bytes through
+the first NUL, writes that NUL to the destination, and returns the original
+destination pointer. Both arguments are evaluated once. The caller supplies
+enough writable destination storage and nonoverlapping source and destination
+ranges. No runtime libc string-copy call is emitted.
+
 The exact `std::memcpy(void *, const void *, std::size_t)`,
 `std::memmove(void *, const void *, std::size_t)` and
 `std::memset(void *, int, std::size_t)` calls write bytes directly and return
@@ -2901,11 +2907,11 @@ ranges and, for `memcpy`, nonoverlapping ranges. No runtime libc memory call is 
 
 Only the `std::` names introduced by the pinned header are admitted. Global
 `::strlen`, `::strspn`, `::strcspn`, `::strcmp`, `::memchr`, `::strchr`,
-`::strrchr`, `::strpbrk`, `::strstr`, other `<cstring>` functions, quoted or
-shadow headers, and function addresses remain outside this boundary. The caller
-supplies zero-terminated strings where a scan depends on NUL and readable
-character arrays through the bytes examined by `strncmp`. String object operations have
-their own contract below.
+`::strrchr`, `::strpbrk`, `::strstr`, `::strcpy`, other `<cstring>` functions,
+quoted or shadow headers, and function addresses remain outside this boundary.
+The caller supplies zero-terminated strings where a scan depends on NUL and
+readable character arrays through the bytes examined by `strncmp`. String
+object operations have their own contract below.
 
 Eight-target protocol checks and O0/O2 execution cover the direct lowering,
 unsigned comparison order, embedded zero bytes, prefix and zero-count behavior,

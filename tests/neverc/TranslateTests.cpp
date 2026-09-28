@@ -15108,6 +15108,47 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-copy.cpp");
+  const auto Output = tmpFile("cstring-copy.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  const char source[5]{'a', static_cast<char>(0x80), 0, 'z', 0};
+  char destination[7]{'L', 'x', 'x', 'x', 'R', 0, 0};
+  int destination_effects = 0, source_effects = 0;
+  char *copied = std::strcpy((++destination_effects, destination + 1),
+                             (++source_effects, source));
+  if (copied != destination + 1 || destination_effects != 1 ||
+      source_effects != 1 || destination[0] != 'L' ||
+      destination[1] != 'a' ||
+      static_cast<unsigned char>(destination[2]) != 0x80 ||
+      destination[3] != 0 || destination[4] != 'R')
+    return 1;
+  char empty[4]{'x', 'y', 'z', 0};
+  if (std::strcpy(empty, "") != empty || empty[0] != 0 ||
+      empty[1] != 'y')
+    return 2;
+  if (std::strcpy(destination + 2, "bc") != destination + 2 ||
+      destination[1] != 'a' || destination[2] != 'b' ||
+      destination[3] != 'c' || destination[4] != 0)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-writes.cpp");
   const auto Output = tmpFile("cmemory-writes.nc");
@@ -15243,9 +15284,13 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
       {"global-memset",
        "#include <cstring>\nint main(){char d[2]{};::memset(d,0,2);return 0;}",
        "TR0203"},
-      {"unsupported-copy",
+      {"global-strcpy",
        "#include <cstring>\nint main(){char "
-       "s[3]{};std::strcpy(s,\"x\");return 0;}",
+       "s[3]{};::strcpy(s,\"x\");return 0;}",
+       "TR0203"},
+      {"unsupported-strncpy",
+       "#include <cstring>\nint main(){char "
+       "s[3]{};std::strncpy(s,\"x\",2);return 0;}",
        "TR0203"},
       {"quoted-header", "#include \"cstring\"\nint main(){return 0;}",
        "TR0201"}};

@@ -29325,6 +29325,9 @@ char *find_substring(char *text, const char *pattern) {
 const char *find_const_substring(const char *text, const char *pattern) {
   return std::strstr(text, pattern);
 }
+char *copy_string(char *destination, const char *source) {
+  return std::strcpy(destination, source);
+}
 void *copy_bytes(void *destination, const void *source, std::size_t count) {
   return std::memcpy(destination, source, count);
 }
@@ -29347,7 +29350,7 @@ void *fill_bytes(void *destination, int value, std::size_t count) {
             cstring_dependencies = dependencies
         else:
             assert dependencies == cstring_dependencies, target
-        assert len(cstring_ir["functions"]) == 19, target
+        assert len(cstring_ir["functions"]) == 20, target
         length_function = cstring_ir["functions"][0]
         character_type = length_function["params"][0]["type"].split(":", 1)[1]
         length_check = next(node for node in length_function["body"]
@@ -29375,6 +29378,10 @@ void *fill_bytes(void *destination, int value, std::size_t count) {
     check("v2-cstring-global-strpbrk", '#include <cstring>\nchar *f(char *p){return ::strpbrk(p,"a");}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-global-strstr", '#include <cstring>\nchar *f(char *p){return ::strstr(p,"a");}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-global-strcpy", '#include <cstring>\nchar *f(char *p){return ::strcpy(p,"a");}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-unsupported-strncpy", '#include <cstring>\nchar *f(char *p){return std::strncpy(p,"a",2);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-global-memcpy", '#include <cstring>\nvoid f(char *p){::memcpy(p,"a",2);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
