@@ -57323,6 +57323,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordSecondInnerProductRun) {
+  const auto Source = tmpFile("record-second-inner-product.cpp");
+  const auto Output = tmpFile("record-second-inner-product.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base;
+int reductions, products, bad_identity;
+long add(long total, long term) {
+  ++reductions;
+  return total + term;
+}
+long product(long weight, const Item &item) {
+  if (&item != base + products) ++bad_identity;
+  ++products;
+  return weight * (item.key * 10L + item.tag);
+}
+int main() {
+  const std::vector<int> weights{2, 3, 4};
+  const std::vector<Item> records{{1, 2}, {3, 4}, {5, 6}};
+  base = &records[0]; reductions = products = bad_identity = 0;
+  if (std::inner_product(weights.cbegin(), weights.cend(), records.cbegin(),
+                         10L, add, product) != 360 ||
+      reductions != 3 || products != 3 || bad_identity) return 1;
+  const long raw_weights[3]{2, 3, 4};
+  base = &records[0]; reductions = products = bad_identity = 0;
+  if (std::inner_product(raw_weights, raw_weights + 3, records.cbegin(),
+                         10L, add, product) != 360 ||
+      reductions != 3 || products != 3 || bad_identity) return 2;
+  reductions = products = bad_identity = 0;
+  if (std::inner_product(weights.cend(), weights.cend(), records.cbegin(),
+                         7L, add, product) != 7 ||
+      reductions != 0 || products != 0 || bad_identity) return 3;
+  const Item raw_records[2]{{7, 8}, {9, 10}};
+  base = raw_records; reductions = products = bad_identity = 0;
+  if (std::inner_product(raw_weights, raw_weights + 2, raw_records,
+                         -5L, add, product) != 451 ||
+      reductions != 2 || products != 2 || bad_identity) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("record-second-inner-product" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedNumericReduceRun) {
   const auto Source = tmpFile("wrapped-numeric-reduce.cpp");
   const auto Output = tmpFile("wrapped-numeric-reduce.nc");

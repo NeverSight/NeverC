@@ -881,11 +881,12 @@ the independent accumulator retain their checked arithmetic conversions;
 directly value-initialized standard function-object pairs accept the same
 authenticated ranges under their existing arithmetic conversion rules.
 The six-argument function-pointer form additionally accepts exact trivial
-source records in the first raw or wrapped range and arithmetic elements in
-the second. The transform callback receives the original record as exact
-`const Record&` and the scalar by value through a checked direct conversion;
-its scalar result converts to the arithmetic accumulator before the checked
-by-value reduction callback. Empty ranges invoke neither callback.
+source records in either raw or wrapped range and arithmetic elements in the
+other. The transform callback receives the original record as exact
+`const Record&` and the scalar by value through a checked direct conversion,
+in the matching input order. Its scalar result converts to the arithmetic
+accumulator before the checked by-value reduction callback. Empty ranges invoke
+neither callback.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges. Empty ranges retain
 their zero or explicit initial result, and callbacks remain by-value.

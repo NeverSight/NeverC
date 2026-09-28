@@ -32424,6 +32424,41 @@ long raw_product(const Item *first, const Item *last, const long *weights) {
           '0L,add,product);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    record_second_inner_product_source = """\
+#include <numeric>
+#include <vector>
+struct Item { int key; int tag; };
+long add(long total, long term) { return total + term; }
+long product(long weight, const Item &item) {
+  return weight * (item.key * 10L + item.tag);
+}
+long wrapped_product(const std::vector<int> &weights,
+                     const std::vector<Item> &records) {
+  return std::inner_product(weights.cbegin(), weights.cend(),
+                            records.cbegin(), 10L, add, product);
+}
+long mixed_product(const long *weights, const std::vector<Item> &records) {
+  return std::inner_product(weights, weights + 2,
+                            records.cbegin(), 10L, add, product);
+}
+long raw_product(const long *first, const long *last, const Item *records) {
+  return std::inner_product(first, last, records, -5L, add, product);
+}
+"""
+    for target in sdk_targets:
+        check("v2-record-second-inner-product-" + target,
+              record_second_inner_product_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-record-second-inner-product-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'long add(long total,long term){return total+term;}'
+          'long product(long weight,Item item){return weight*item.key;}'
+          'long f(const std::vector<int>&w,const std::vector<Item>&items){'
+          'return std::inner_product(w.cbegin(),w.cend(),items.cbegin(),'
+          '0L,add,product);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_numeric_reduce_source = """\
 #include <numeric>
 #include <vector>
