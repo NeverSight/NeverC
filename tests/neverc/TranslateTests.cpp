@@ -55153,6 +55153,73 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSearchNPredicateRun) {
+  const auto Source = tmpFile("source-record-search-n-predicate.cpp");
+  const auto Output = tmpFile("source-record-search-n-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base, *expected_value;
+int size, calls, bad_identity, evaluations;
+const Item &next_value() { ++evaluations; return *expected_value; }
+bool same(const Item &left, const Item &right) {
+  bool found = false;
+  for (int i = 0; i < size; ++i)
+    if (&left == base + i) found = true;
+  if (!found || &right != expected_value) ++bad_identity;
+  ++calls;
+  return left.key == right.key;
+}
+int main() {
+  Item raw[7]{{1, 10}, {2, 20}, {2, 30}, {3, 40},
+              {2, 50}, {2, 60}, {2, 70}};
+  const Item needle{2, 99};
+  base = raw; size = 7; expected_value = &needle;
+  calls = bad_identity = evaluations = 0;
+  if (std::search_n(raw, raw + 7, 2, next_value(), same) != raw + 1 ||
+      evaluations != 1 || calls == 0 || bad_identity) return 1;
+  calls = bad_identity = 0;
+  if (std::search_n(raw, raw + 7, 3, needle, same) != raw + 4 ||
+      calls == 0 || bad_identity) return 2;
+  calls = bad_identity = 0;
+  if (std::search_n(raw, raw + 7, 4, needle, same) != raw + 7 ||
+      calls == 0 || bad_identity) return 3;
+  calls = bad_identity = 0;
+  if (std::search_n(raw, raw + 7, 0, next_value(), same) != raw ||
+      evaluations != 2 || calls || bad_identity) return 4;
+  expected_value = &raw[1]; calls = bad_identity = 0;
+  if (std::search_n(raw, raw + 7, 2, raw[1], same) != raw + 1 ||
+      calls == 0 || bad_identity) return 5;
+  const std::vector<Item> wrapped{{4, 1}, {5, 2}, {5, 3}, {6, 4}};
+  const Item wrapped_needle{5, 9};
+  base = &wrapped[0]; size = 4; expected_value = &wrapped_needle;
+  calls = bad_identity = 0;
+  if (std::search_n(wrapped.cbegin(), wrapped.cend(), 2,
+                    wrapped_needle, same) != wrapped.cbegin() + 1 ||
+      calls == 0 || bad_identity) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-search-n-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSortedQueriesRun) {
   const auto Source = tmpFile("source-record-sorted-queries.cpp");
   const auto Output = tmpFile("source-record-sorted-queries.nc");

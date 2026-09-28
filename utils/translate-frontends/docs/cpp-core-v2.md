@@ -1854,6 +1854,10 @@ result when the input is wrapped. Zero and non-positive count behavior keeps
 the existing fast path. Predicate overloads retain checked scalar callbacks.
 Checked function-pointer predicate overloads also accept authenticated
 wrapped scalar ranges and keep the wrapped result position.
+They additionally admit exact trivial source-record raw or wrapped ranges and
+an exact const record value through `bool(const Record&, const Record&)`. The
+callback receives original element and live value references, while a zero
+count returns the first iterator without invoking it.
 
 Default `std::search`, `std::find_end` and `std::find_first_of` also accept two
 raw-pointer or authenticated wrapped ranges of the same exact source-owned

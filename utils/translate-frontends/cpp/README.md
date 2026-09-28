@@ -563,6 +563,10 @@ rules; copying forms also admit mixed raw and wrapped ranges.
 Checked predicate `search`, `find_end`, `find_first_of`, `search_n` and both
 `is_permutation` forms accept authenticated wrapped scalar ranges with the
 existing by-value callback conversion rules.
+Predicate `search_n` also accepts exact trivial source-record raw or wrapped
+ranges and an exact const record value through a checked
+`bool(const Record&, const Record&)` function pointer. The value reference stays
+live across comparisons, and zero count invokes no callback.
 Both predicate forms of `is_permutation` also accept two exact same-type trivial
 source-record ranges with a checked `bool(const Record&, const Record&)`
 function pointer. The callback receives original elements, including comparisons

@@ -31236,6 +31236,33 @@ owned::Free *find_free(owned::Free *first, owned::Free *last,
           'return std::search_n(a,b,2,v);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_search_n_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+bool same(const Item &left, const Item &right) {
+  return left.key == right.key;
+}
+Item *find_raw(Item *first, Item *last, const Item &needle) {
+  return std::search_n(first, last, 2, needle, same);
+}
+std::vector<Item>::const_iterator find_wrapped(
+    const std::vector<Item> &values, const Item &needle) {
+  return std::search_n(values.cbegin(), values.cend(), 2, needle, same);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-search-n-predicate-" + target,
+              source_record_search_n_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-search-n-predicate-by-value-rejected",
+          '#include <algorithm>\n'
+          'struct Item{int key;};'
+          'bool same(Item left,Item right){return left.key==right.key;}'
+          'Item*f(Item*a,Item*b,const Item&v){'
+          'return std::search_n(a,b,2,v,same);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_subrange_search_source = """\
 #include <algorithm>
 struct Member {

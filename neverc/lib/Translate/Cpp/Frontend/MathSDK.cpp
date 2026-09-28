@@ -24313,6 +24313,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeBinaryPredicateValueParameter(4, 0, 3))
       return UtilityOperation::AlgorithmSearchN;
+    if (Call->getNumArgs() == 5 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(4, 0, 0)) {
+      const auto Value = Function->getParamDecl(3)->getType();
+      if (Value->isLValueReferenceType() &&
+          Value->getPointeeType().isConstQualified() &&
+          !Value->getPointeeType().isVolatileQualified() &&
+          Context.hasSameUnqualifiedType(
+              (*AlgorithmRecordRangeParameter(0))->getPointeeType(),
+              Value->getPointeeType()) &&
+          Context.hasSameUnqualifiedType(Call->getArg(3)->getType(),
+                                         Value->getPointeeType()))
+        return UtilityOperation::AlgorithmSearchN;
+    }
   }
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
       Call->getNumArgs() >= 3 && Call->getNumArgs() <= 5 &&
