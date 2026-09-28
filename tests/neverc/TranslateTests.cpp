@@ -57890,6 +57890,98 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordPartitionAlgorithmsRun) {
+  const auto Source = tmpFile("wrapped-record-partition-algorithms.cpp");
+  const auto Output = tmpFile("wrapped-record-partition-algorithms.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *base;
+int length, calls, bad_identity;
+bool even(const Item &item) {
+  ++calls;
+  bool found = false;
+  for (int i = 0; i < length; ++i)
+    if (&item == base + i) found = true;
+  if (!found) ++bad_identity;
+  return item.key % 2 == 0;
+}
+int main() {
+  const std::vector<Item> partitioned{{2, 20}, {4, 40},
+                                      {1, 10}, {3, 30}};
+  base = &partitioned[0]; length = 4;
+  if (!std::is_partitioned(partitioned.cbegin(), partitioned.cend(), even) ||
+      std::partition_point(partitioned.cbegin(), partitioned.cend(), even) !=
+          partitioned.cbegin() + 2 || bad_identity) return 1;
+  const std::vector<Item> mixed{{2, 20}, {1, 10}, {4, 40}};
+  base = &mixed[0]; length = 3;
+  if (std::is_partitioned(mixed.cbegin(), mixed.cend(), even) ||
+      bad_identity) return 2;
+  std::vector<Item> values{{1, 10}, {2, 20}, {3, 30},
+                           {4, 40}, {5, 50}, {6, 60}};
+  base = &values[0]; length = 6;
+  auto boundary = std::partition(values.begin(), values.end(), even);
+  if (boundary != values.begin() + 3 || bad_identity) return 3;
+  for (auto it = values.begin(); it != boundary; ++it)
+    if (it->key % 2 != 0 || it->tag != it->key * 10) return 4;
+  for (auto it = boundary; it != values.end(); ++it)
+    if (it->key % 2 == 0 || it->tag != it->key * 10) return 5;
+  std::vector<Item> stable{{1, 10}, {2, 20}, {3, 30},
+                           {4, 40}, {5, 50}, {6, 60}};
+  base = &stable[0]; length = 6;
+  if (std::stable_partition(stable.begin(), stable.end(), even) !=
+          stable.begin() + 3 || stable[0].tag != 20 ||
+      stable[1].tag != 40 || stable[2].tag != 60 ||
+      stable[3].tag != 10 || stable[4].tag != 30 ||
+      stable[5].tag != 50 || bad_identity) return 6;
+  std::vector<Item> yes(4), no(4);
+  base = &partitioned[0]; length = 4;
+  auto ends = std::partition_copy(partitioned.cbegin(), partitioned.cend(),
+                                  yes.begin(), no.begin(), even);
+  if (ends.first != yes.begin() + 2 || ends.second != no.begin() + 2 ||
+      yes[0].tag != 20 || yes[1].tag != 40 ||
+      no[0].tag != 10 || no[1].tag != 30 || bad_identity) return 7;
+  Item raw_no[4]{};
+  auto mixed_ends = std::partition_copy(partitioned.cbegin(),
+      partitioned.cend(), yes.begin(), raw_no, even);
+  if (mixed_ends.first != yes.begin() + 2 ||
+      mixed_ends.second != raw_no + 2 || raw_no[1].tag != 30 ||
+      bad_identity) return 8;
+  std::vector<Item> empty;
+  calls = 0;
+  if (!std::is_partitioned(empty.begin(), empty.end(), even) ||
+      std::partition_point(empty.begin(), empty.end(), even) != empty.begin() ||
+      std::partition(empty.begin(), empty.end(), even) != empty.begin() ||
+      std::stable_partition(empty.begin(), empty.end(), even) !=
+          empty.begin()) return 9;
+  auto empty_ends = std::partition_copy(empty.cbegin(), empty.cend(),
+                                        yes.begin(), no.begin(), even);
+  if (empty_ends.first != yes.begin() ||
+      empty_ends.second != no.begin() || calls != 0 || bad_identity)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-record-partition-algorithms" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedRotateCopyRun) {
   const auto Source = tmpFile("wrapped-rotate-copy.cpp");
   const auto Output = tmpFile("wrapped-rotate-copy.nc");

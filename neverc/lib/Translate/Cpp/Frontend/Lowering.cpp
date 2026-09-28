@@ -8269,6 +8269,7 @@ class FunctionLowering {
           type(TrueOutputRange.second->getPointeeType(), L);
       const auto FalseOutputElementType =
           type(FalseOutputRange.second->getPointeeType(), L);
+      const bool Record = InputRange.second->getPointeeType()->isRecordType();
       const auto Check = labelName(), Test = labelName();
       const auto CopyTrue = labelName(), CopyFalse = labelName();
       const auto Advance = labelName(), End = labelName();
@@ -8284,7 +8285,9 @@ class FunctionLowering {
       }
       label(CopyTrue, L);
       assign(dereference(TrueOutput, L),
-             cast(dereference(Input, L), TrueOutputElementType, L), L);
+             Record ? dereference(Input, L)
+                    : cast(dereference(Input, L), TrueOutputElementType, L),
+             L);
       assign(TrueOutput,
              binary("+", TrueOutput, quantity(1, DifferenceType, L),
                     TrueOutputType, L),
@@ -8292,7 +8295,9 @@ class FunctionLowering {
       jump(Advance, L);
       label(CopyFalse, L);
       assign(dereference(FalseOutput, L),
-             cast(dereference(Input, L), FalseOutputElementType, L), L);
+             Record ? dereference(Input, L)
+                    : cast(dereference(Input, L), FalseOutputElementType, L),
+             L);
       assign(FalseOutput,
              binary("+", FalseOutput, quantity(1, DifferenceType, L),
                     FalseOutputType, L),

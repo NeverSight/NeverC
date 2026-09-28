@@ -493,6 +493,10 @@ output of the same record type and retain mixed raw and wrapped iterator forms.
 checked `Record&` callback on mutable ranges or `const Record&` callback on
 mutable or const ranges. The callback acts on original elements, and the
 counted form retains its raw or wrapped iterator result.
+`is_partitioned`, `partition_point`, `partition`, `stable_partition` and
+`partition_copy` accept the same trivial record ranges with a checked
+`bool(const Record&)` predicate. Copying requires writable same-type outputs,
+including independent wrapped or raw result positions.
 The five predicate copy, remove and replace forms also accept authenticated
 wrapped scalar ranges under their existing writable-output and conversion
 checks, including mixed raw and wrapped copy inputs or outputs.

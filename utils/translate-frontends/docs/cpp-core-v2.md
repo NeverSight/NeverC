@@ -1846,6 +1846,13 @@ void or admitted scalar return values. Each invocation receives the original
 element address. `for_each` returns the original function pointer and
 `for_each_n` returns the original iterator form, including for nonpositive
 counts. By-value record callbacks remain rejected.
+`is_partitioned`, `partition_point`, `partition`, `stable_partition` and
+`partition_copy` also admit exact trivial source-record raw or authenticated
+wrapped ranges under a checked `bool(const Record&)` function pointer.
+Mutation forms require writable input and move complete values; the stable
+form retains relative order. `partition_copy` independently accepts writable
+raw or wrapped destinations of the same record type and returns their original
+iterator forms in the authenticated pair.
 
 `std::rotate` accepts those writable trivial source-record ranges and writable
 authenticated wrapped scalar ranges. Its three range endpoints are evaluated

@@ -33023,6 +33023,51 @@ std::vector<Item>::const_iterator for_each_n_const_record(
           'std::for_each(values.begin(),values.end(),modify);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_partition_source = """\
+#include <algorithm>
+#include <utility>
+#include <vector>
+struct Item { int key; int tag; };
+bool selected(const Item &item) { return item.key % 2 == 0; }
+bool partitioned(const std::vector<Item> &values) {
+  return std::is_partitioned(values.cbegin(), values.cend(), selected);
+}
+std::vector<Item>::const_iterator partition_boundary(
+    const std::vector<Item> &values) {
+  return std::partition_point(values.cbegin(), values.cend(), selected);
+}
+std::vector<Item>::iterator partition_records(std::vector<Item> &values) {
+  return std::partition(values.begin(), values.end(), selected);
+}
+std::vector<Item>::iterator stable_partition_records(
+    std::vector<Item> &values) {
+  return std::stable_partition(values.begin(), values.end(), selected);
+}
+std::pair<std::vector<Item>::iterator, std::vector<Item>::iterator>
+partition_copy_records(const std::vector<Item> &source,
+                       std::vector<Item> &yes, std::vector<Item> &no) {
+  return std::partition_copy(source.cbegin(), source.cend(),
+                             yes.begin(), no.begin(), selected);
+}
+std::pair<std::vector<Item>::iterator, Item *>
+partition_copy_mixed(const std::vector<Item> &source,
+                     std::vector<Item> &yes, Item *no) {
+  return std::partition_copy(source.cbegin(), source.cend(),
+                             yes.begin(), no, selected);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-partition-" + target,
+              wrapped_record_partition_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-partition-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;int tag;};'
+          'bool selected(Item item){return item.key%2==0;}'
+          'std::vector<Item>::iterator f(std::vector<Item>&values){'
+          'return std::partition(values.begin(),values.end(),selected);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

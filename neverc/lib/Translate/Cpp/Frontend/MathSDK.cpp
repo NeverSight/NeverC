@@ -24925,6 +24925,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "partition_point");
   if (PointerPartitionQuery && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(2, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "is_partitioned" && Function->getReturnType()->isBooleanType())
+      return UtilityOperation::AlgorithmIsPartitioned;
+    if (Name == "partition_point" &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmPartitionPoint;
+  }
+  if (PointerPartitionQuery && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -24936,6 +24949,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
       return UtilityOperation::AlgorithmPartitionPoint;
   }
+  if (Origin->Path == "__algorithm/partition.h" && Name == "partition" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmPartition;
   if (Origin->Path == "__algorithm/partition.h" && Name == "partition" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
@@ -24951,6 +24974,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/stable_partition.h" &&
       Name == "stable_partition" && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmWritableRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmStablePartition;
+  if (Origin->Path == "__algorithm/stable_partition.h" &&
+      Name == "stable_partition" && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -24960,6 +24994,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmStablePartition;
+  if (Origin->Path == "__algorithm/partition_copy.h" &&
+      Name == "partition_copy" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      AlgorithmTransferRecordRangeParameters(0, 2) &&
+      AlgorithmTransferRecordRangeParameters(0, 3) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeUnaryPredicateParameter(4, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(2)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(3)->getType()))
+      return UtilityOperation::AlgorithmPartitionCopy;
+  }
   if (Origin->Path == "__algorithm/partition_copy.h" &&
       Name == "partition_copy" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&
