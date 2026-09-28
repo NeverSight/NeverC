@@ -4695,6 +4695,7 @@ class FunctionLowering {
           MemoryConstruction
               ? std::string()
               : type(OutputRange.second->getPointeeType(), L);
+      const bool Record = CurrentRange.second->getPointeeType()->isRecordType();
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Transfer, End, L);
@@ -4708,12 +4709,16 @@ class FunctionLowering {
             binary("-", Output, quantity(1, DifferenceType, L), OutputType, L),
             L);
         assign(dereference(Output, L),
-               cast(dereference(Last, L), OutputElementType, L), L);
+               Record ? dereference(Last, L)
+                      : cast(dereference(Last, L), OutputElementType, L),
+               L);
       } else {
         if (MemoryConstruction && Constructor)
           constructMemorySource(dereference(Output, L), ElementType,
                                 Constructor, json::Object(Current), L);
         else if (MemoryConstruction)
+          assign(dereference(Output, L), dereference(Current, L), L);
+        else if (Record)
           assign(dereference(Output, L), dereference(Current, L), L);
         else
           assign(dereference(Output, L),

@@ -23530,13 +23530,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Name == "copy" || Name == "move" || Name == "copy_backward" ||
        Name == "move_backward") &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
-      AlgorithmTransferRangeParameters(0, 2) &&
+      Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const bool Scalar = AlgorithmRangePointerParameter(0) &&
+                        AlgorithmRangePointerParameter(1) &&
+                        AlgorithmTransferRangeParameters(0, 2);
+    const bool Record = AlgorithmRecordRangeParameter(0) &&
+                        AlgorithmRecordRangeParameter(1) &&
+                        AlgorithmTransferRecordRangeParameters(0, 2);
+    if (!Scalar && !Record)
+      return std::nullopt;
     if (Origin->Path == "__algorithm/copy.h" && Name == "copy")
       return UtilityOperation::AlgorithmCopy;
     if (Origin->Path == "__algorithm/move.h" && Name == "move")

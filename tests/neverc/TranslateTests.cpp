@@ -57658,6 +57658,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordTransferRun) {
+  const auto Source = tmpFile("wrapped-record-transfer.cpp");
+  const auto Output = tmpFile("wrapped-record-transfer.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+int main() {
+  const std::vector<Item> source{{1, 10}, {2, 20}, {3, 30}};
+  std::vector<Item> output(4);
+  if (std::copy(source.cbegin(), source.cend(), output.begin()) !=
+          output.begin() + 3 || output[0].key != 1 ||
+      output[1].tag != 20 || output[2].key != 3) return 1;
+  std::vector<Item> movable{{4, 40}, {5, 50}, {6, 60}};
+  if (std::move(movable.begin(), movable.end(), output.begin()) !=
+          output.begin() + 3 || output[0].key != 4 ||
+      output[1].tag != 50 || output[2].key != 6) return 2;
+  if (std::copy_backward(source.cbegin(), source.cend(), output.end()) !=
+          output.begin() + 1 || output[1].key != 1 ||
+      output[2].tag != 20 || output[3].key != 3) return 3;
+  if (std::move_backward(movable.begin(), movable.end(), output.end()) !=
+          output.begin() + 1 || output[1].key != 4 ||
+      output[2].tag != 50 || output[3].key != 6) return 4;
+  Item raw_output[3]{};
+  if (std::copy(source.cbegin(), source.cend(), raw_output) !=
+          raw_output + 3 || raw_output[2].tag != 30) return 5;
+  Item raw_input[3]{{7, 70}, {8, 80}, {9, 90}};
+  if (std::move(raw_input, raw_input + 3, output.begin()) !=
+          output.begin() + 3 || output[0].tag != 70 ||
+      output[2].key != 9) return 6;
+  std::vector<Item> empty;
+  if (std::copy(empty.begin(), empty.end(), output.begin()) !=
+          output.begin() ||
+      std::copy_backward(empty.begin(), empty.end(), output.end()) !=
+          output.end()) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-record-transfer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

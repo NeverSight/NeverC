@@ -1731,6 +1731,10 @@ trivial record type with a writable destination, copying complete values from
 const or mutable inputs without requiring a comparison operator.
 `reverse_copy` uses the same exact record-copy boundary and preserves the
 output iterator form while traversing its input backward.
+`copy`, three-iterator `move`, `copy_backward` and `move_backward` also use
+that boundary for complete trivial source-record values. They accept const or
+mutable raw or wrapped inputs as C++ permits, require a writable destination
+of the same record type, and return its original iterator form.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

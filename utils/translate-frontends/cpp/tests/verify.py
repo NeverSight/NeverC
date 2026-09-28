@@ -32744,6 +32744,43 @@ Item *reverse_record_mixed(const std::vector<Item> &source, Item *output) {
           'v.begin(),v.end(),o.begin());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_transfer_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+std::vector<Item>::iterator copy_records(const std::vector<Item> &source,
+                                          std::vector<Item> &output) {
+  return std::copy(source.cbegin(), source.cend(), output.begin());
+}
+std::vector<Item>::iterator move_records(std::vector<Item> &source,
+                                          std::vector<Item> &output) {
+  return std::move(source.begin(), source.end(), output.begin());
+}
+std::vector<Item>::iterator copy_backward_records(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::copy_backward(source.cbegin(), source.cend(), output.end());
+}
+std::vector<Item>::iterator move_backward_records(
+    std::vector<Item> &source, std::vector<Item> &output) {
+  return std::move_backward(source.begin(), source.end(), output.end());
+}
+Item *copy_mixed(const std::vector<Item> &source, Item *output) {
+  return std::copy(source.cbegin(), source.cend(), output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-transfer-" + target,
+              wrapped_record_transfer_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-record-transfer-nontrivial",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
+          'std::vector<Record>::iterator f(std::vector<Record>&v,'
+          'std::vector<Record>&o){return std::copy('
+          'v.begin(),v.end(),o.begin());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>
