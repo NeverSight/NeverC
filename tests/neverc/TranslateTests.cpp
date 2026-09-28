@@ -56300,6 +56300,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedScalarLexicalIncludesComparatorsRun) {
+  const auto Source =
+      tmpFile("wrapped-scalar-lexical-includes-comparators.cpp");
+  const auto Output = tmpFile("wrapped-scalar-lexical-includes-comparators.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+int calls;
+bool greater_value(long left, long right) {
+  ++calls;
+  return left > right;
+}
+int main() {
+  const std::vector<int> first{9, 7, 5};
+  const std::vector<long> second{9, 6, 4};
+  if (!std::lexicographical_compare(first.cbegin(), first.cend(),
+                                     second.cbegin(), second.cend(),
+                                     std::greater<>{})) return 1;
+  if (std::lexicographical_compare(second.cbegin(), second.cend(),
+                                    first.cbegin(), first.cend(),
+                                    greater_value)) return 2;
+  if (calls == 0) return 3;
+
+  const std::vector<long> superset{9, 7, 7, 5, 3};
+  const std::vector<int> subset{7, 5};
+  calls = 0;
+  if (!std::includes(superset.cbegin(), superset.cend(),
+                      subset.cbegin(), subset.cend(), greater_value))
+    return 4;
+  const int absent[1]{8};
+  if (std::includes(superset.cbegin(), superset.cend(), absent,
+                    absent + 1, std::greater<>{})) return 5;
+  if (calls == 0) return 6;
+
+  const long raw[3]{9, 6, 4};
+  if (!std::lexicographical_compare(first.cbegin(), first.cend(),
+                                     raw, raw + 3, greater_value)) return 7;
+  if (!std::includes(superset.cbegin(), superset.cend(),
+                      subset.cbegin(), subset.cend(), std::greater<>{}))
+    return 8;
+  calls = 0;
+  if (std::lexicographical_compare(first.cbegin(), first.cbegin(),
+                                    second.cbegin(), second.cbegin(),
+                                    greater_value) ||
+      !std::includes(first.cbegin(), first.cbegin(),
+                      second.cbegin(), second.cbegin(), greater_value) ||
+      calls != 0) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-scalar-lexical-includes-comparators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

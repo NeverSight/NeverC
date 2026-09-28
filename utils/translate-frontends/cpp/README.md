@@ -427,6 +427,9 @@ Built-in arithmetic elements admit default-order
 algorithms. Default `lexicographical_compare` and `includes` additionally
 accept independent wrapped or raw-pointer ranges of exact same-type trivial
 source records with a uniquely selected Boolean `operator<`.
+Their scalar comparator forms also accept independent wrapped or raw-pointer
+ranges with a checked Boolean function pointer or standard comparison object,
+proving both comparison directions.
 Default `is_sorted` and `is_sorted_until` accept the same source-record
 comparison in raw or authenticated wrapped ranges.
 Default `min_element`, `max_element` and `minmax_element` return original raw

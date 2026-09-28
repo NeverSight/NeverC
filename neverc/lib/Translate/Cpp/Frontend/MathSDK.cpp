@@ -24050,7 +24050,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RecordSecond && AlgorithmRecordOrderedRangeParameter(3) &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordSecond)->getPointeeType());
+    const bool ScalarComparator =
+        Call->getNumArgs() == 5 && ScalarFirst && ScalarSecond &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangePointerParameter(3) &&
+        AlgorithmRangePairComparisonParameter(4, 0, 2) &&
+        AlgorithmRangePairComparisonParameter(4, 2, 0);
     if ((Call->getNumArgs() == 4 && (ScalarDefault || RecordDefault)) ||
+        ScalarComparator ||
         (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
          AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
          AlgorithmPointerParameter(3) &&

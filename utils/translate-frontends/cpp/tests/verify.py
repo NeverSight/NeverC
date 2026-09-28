@@ -31994,6 +31994,46 @@ std::vector<long>::iterator partial_copy_wrapped(
           'std::merge(v.begin(),v.end(),v.begin(),v.end(),v.begin(),compare);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_scalar_lexical_includes_comparators_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+bool greater_value(long left, long right) { return left > right; }
+bool lexical_object(const std::vector<int> &first,
+                    const std::vector<long> &second) {
+  return std::lexicographical_compare(first.cbegin(), first.cend(),
+                                       second.cbegin(), second.cend(),
+                                       std::greater<>{});
+}
+bool lexical_function(const std::vector<long> &first,
+                      const std::vector<int> &second) {
+  return std::lexicographical_compare(first.cbegin(), first.cend(),
+                                       second.cbegin(), second.cend(),
+                                       greater_value);
+}
+bool includes_function(const std::vector<long> &first,
+                       const std::vector<int> &second) {
+  return std::includes(first.cbegin(), first.cend(), second.cbegin(),
+                        second.cend(), greater_value);
+}
+bool includes_object(const std::vector<long> &first, const int *second,
+                     const int *second_last) {
+  return std::includes(first.cbegin(), first.cend(), second, second_last,
+                        std::greater<>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-scalar-lexical-includes-comparators-" + target,
+              wrapped_scalar_lexical_includes_comparators_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-scalar-lexical-includes-comparators-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'int compare(int a,int b){return a>b;}'
+          'bool f(const std::vector<int>&a,const std::vector<int>&b){'
+          'return std::includes(a.cbegin(),a.cend(),b.cbegin(),b.cend(),'
+          'compare);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

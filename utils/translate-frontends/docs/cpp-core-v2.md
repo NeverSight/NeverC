@@ -2215,6 +2215,10 @@ selected const member, hidden-friend, or enclosing-namespace free Boolean
 `operator<`; both comparison directions receive the original elements by
 reference. They preserve lexicographic prefix and sorted-subset behavior,
 including empty ranges and duplicate counts.
+Their scalar comparator overloads admit the same independent wrapped or raw
+ranges with a checked Boolean function pointer or authenticated standard
+comparison object. Both comparison directions are proved for the two scalar
+element types; empty ranges do not invoke the comparator.
 
 Default `std::is_sorted` and `std::is_sorted_until` likewise accept exact
 trivial source-record pointer or authenticated wrapped ranges with that unique
