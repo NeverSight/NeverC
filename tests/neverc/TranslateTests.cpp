@@ -56627,6 +56627,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2HeterogeneousRecordTransformRun) {
+  const auto Source = tmpFile("heterogeneous-record-transform.cpp");
+  const auto Output = tmpFile("heterogeneous-record-transform.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Input { int key; int weight; };
+struct Scale { long amount; int bias; };
+struct Result { long total; int marker; };
+const Input *input_base;
+const Scale *scale_base;
+int calls, bad_identity;
+Result project(const Input &value) {
+  if (&value != input_base + calls) ++bad_identity;
+  ++calls;
+  return {value.key * 3L, value.weight + 1};
+}
+Result combine(const Input &value, const Scale &scale) {
+  if (&value != input_base + calls || &scale != scale_base + calls)
+    ++bad_identity;
+  ++calls;
+  return {value.key + scale.amount, value.weight + scale.bias};
+}
+int main() {
+  const std::vector<Input> input{{1, 10}, {2, 20}, {3, 30}};
+  const std::vector<Scale> scales{{40, 4}, {50, 5}, {60, 6}};
+  std::vector<Result> output(3);
+  input_base = &input[0]; calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), output.begin(), project) !=
+          output.end() || calls != 3 || bad_identity ||
+      output[0].total != 3 || output[0].marker != 11 ||
+      output[1].total != 6 || output[1].marker != 21 ||
+      output[2].total != 9 || output[2].marker != 31) return 1;
+  input_base = &input[0]; scale_base = &scales[0];
+  calls = bad_identity = 0;
+  if (std::transform(input.cbegin(), input.cend(), scales.cbegin(),
+                     output.begin(), combine) != output.end() ||
+      calls != 3 || bad_identity ||
+      output[0].total != 41 || output[0].marker != 14 ||
+      output[1].total != 52 || output[1].marker != 25 ||
+      output[2].total != 63 || output[2].marker != 36) return 2;
+  const Input raw_input[2]{{7, 70}, {8, 80}};
+  Result raw_output[2]{};
+  input_base = raw_input; calls = bad_identity = 0;
+  if (std::transform(raw_input, raw_input + 2, raw_output, project) !=
+          raw_output + 2 || calls != 2 || bad_identity ||
+      raw_output[0].total != 21 || raw_output[0].marker != 71 ||
+      raw_output[1].total != 24 || raw_output[1].marker != 81) return 3;
+  input_base = raw_input; scale_base = &scales[0];
+  calls = bad_identity = 0;
+  if (std::transform(raw_input, raw_input + 2, scales.cbegin(),
+                     raw_output, combine) != raw_output + 2 ||
+      calls != 2 || bad_identity ||
+      raw_output[0].total != 47 || raw_output[0].marker != 74 ||
+      raw_output[1].total != 58 || raw_output[1].marker != 85) return 4;
+  calls = bad_identity = 0;
+  if (std::transform(input.cend(), input.cend(), output.begin(), project) !=
+          output.begin() || calls != 0 || bad_identity) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("heterogeneous-record-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedScalarGenerateCallbacksRun) {
   const auto Source = tmpFile("wrapped-scalar-generate-callbacks.cpp");
   const auto Output = tmpFile("wrapped-scalar-generate-callbacks.nc");

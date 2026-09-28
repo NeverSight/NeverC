@@ -25106,17 +25106,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Output = AlgorithmWritableRecordRangeParameter(OutputIndex);
     const bool Valid =
         Callback && Callback->getNumParams() == (Binary ? 2u : 1u) && Output &&
-        AlgorithmTransferRecordRangeParameters(0, OutputIndex) &&
         AlgorithmRecordRangeCallbackReferenceParameter(CallbackIndex, 0, 0) &&
         Context.hasSameUnqualifiedType(Callback->getReturnType(),
                                        (*Output)->getPointeeType()) &&
         Same(Function->getReturnType(),
              Function->getParamDecl(OutputIndex)->getType()) &&
         Same(Call->getType(), Function->getReturnType());
-    if (Valid &&
-        (!Binary ||
-         (AlgorithmTransferRecordRangeParameters(2, OutputIndex) &&
-          AlgorithmRecordRangeCallbackReferenceParameter(CallbackIndex, 1, 2))))
+    if (Valid && (!Binary || AlgorithmRecordRangeCallbackReferenceParameter(
+                                 CallbackIndex, 1, 2)))
       return Binary ? UtilityOperation::AlgorithmTransformBinary
                     : UtilityOperation::AlgorithmTransformUnary;
   }

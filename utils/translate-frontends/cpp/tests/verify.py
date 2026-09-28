@@ -33132,6 +33132,38 @@ std::vector<Item>::iterator transform_record_raw_input(
           'source.cend(),output.begin(),raise);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    heterogeneous_record_transform_source = """\
+#include <algorithm>
+#include <vector>
+struct Input { int key; int weight; };
+struct Scale { long amount; int bias; };
+struct Result { long total; int marker; };
+Result project(const Input &value) {
+  return {value.key * 3L, value.weight + 1};
+}
+Result combine(const Input &value, const Scale &scale) {
+  return {value.key + scale.amount, value.weight + scale.bias};
+}
+std::vector<Result>::iterator unary_transform(
+    const std::vector<Input> &input, std::vector<Result> &output) {
+  return std::transform(input.cbegin(), input.cend(), output.begin(), project);
+}
+std::vector<Result>::iterator binary_transform(
+    const std::vector<Input> &input, const std::vector<Scale> &scales,
+    std::vector<Result> &output) {
+  return std::transform(input.cbegin(), input.cend(), scales.cbegin(),
+                        output.begin(), combine);
+}
+Result *mixed_transform(const Input *input, const std::vector<Scale> &scales,
+                        Result *output) {
+  return std::transform(input, input + 2, scales.cbegin(), output, combine);
+}
+"""
+    for target in sdk_targets:
+        check("v2-heterogeneous-record-transform-" + target,
+              heterogeneous_record_transform_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>
