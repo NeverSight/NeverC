@@ -24027,15 +24027,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 &&
-           ((AlgorithmRangePointerParameter(0) &&
-             AlgorithmRangePointerParameter(1) &&
-             AlgorithmOrderedRangeParameter(0)) ||
-            (AlgorithmRecordOrderedRangeParameter(0) &&
-             AlgorithmRecordOrderedRangeParameter(1)))) ||
-          (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
-           AlgorithmRangePointerParameter(1) &&
-           AlgorithmRangeComparisonParameter(2, 0))))
+    const bool Default =
+        Call->getNumArgs() == 2 && ((AlgorithmRangePointerParameter(0) &&
+                                     AlgorithmRangePointerParameter(1) &&
+                                     AlgorithmOrderedRangeParameter(0)) ||
+                                    (AlgorithmRecordOrderedRangeParameter(0) &&
+                                     AlgorithmRecordOrderedRangeParameter(1)));
+    const bool ScalarComparator = Call->getNumArgs() == 3 &&
+                                  AlgorithmRangePointerParameter(0) &&
+                                  AlgorithmRangePointerParameter(1) &&
+                                  AlgorithmRangeComparisonParameter(2, 0);
+    const bool RecordComparator =
+        Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
+    if (!Default && !ScalarComparator && !RecordComparator)
       return std::nullopt;
     if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsSorted;
@@ -24746,16 +24752,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 &&
-        ((AlgorithmRangePointerParameter(0) &&
-          AlgorithmRangePointerParameter(1) &&
-          AlgorithmOrderedRangeParameter(0)) ||
-         (AlgorithmRecordOrderedRangeParameter(0) &&
-          AlgorithmRecordOrderedRangeParameter(1)))) ||
-       (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
-        AlgorithmRangePointerParameter(1) &&
-        AlgorithmRangeComparisonParameter(2, 0)))) {
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Default =
+        Call->getNumArgs() == 2 && ((AlgorithmRangePointerParameter(0) &&
+                                     AlgorithmRangePointerParameter(1) &&
+                                     AlgorithmOrderedRangeParameter(0)) ||
+                                    (AlgorithmRecordOrderedRangeParameter(0) &&
+                                     AlgorithmRecordOrderedRangeParameter(1)));
+    const bool ScalarComparator = Call->getNumArgs() == 3 &&
+                                  AlgorithmRangePointerParameter(0) &&
+                                  AlgorithmRangePointerParameter(1) &&
+                                  AlgorithmRangeComparisonParameter(2, 0);
+    const bool RecordComparator =
+        Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
+    if (!Default && !ScalarComparator && !RecordComparator)
+      return std::nullopt;
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;
     if (Name == "is_heap_until" &&

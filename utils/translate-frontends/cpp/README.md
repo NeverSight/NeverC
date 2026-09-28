@@ -433,6 +433,9 @@ ranges with a checked Boolean function pointer or standard comparison object,
 proving both comparison directions.
 Default `is_sorted` and `is_sorted_until` accept the same source-record
 comparison in raw or authenticated wrapped ranges.
+Their checked comparator forms also accept exact trivial source-record ranges
+through `bool(const Record&, const Record&)`, preserving original adjacent
+addresses and the iterator result of `is_sorted_until`.
 Default `min_element`, `max_element` and `minmax_element` return original raw
 or wrapped positions for those records, retaining the standard tie rules.
 Their checked comparator forms also accept exact trivial source-record raw or
@@ -440,6 +443,9 @@ wrapped ranges through a `bool(const Record&, const Record&)` function pointer.
 Comparisons retain original element addresses and need no `operator<`.
 Default `is_heap` and `is_heap_until` accept the same source-record ordering
 for raw or authenticated wrapped ranges.
+Their checked comparator forms likewise accept exact trivial source-record
+ranges through that const-reference function pointer, preserving original
+parent and child addresses and the first violation position.
 Default direct `min`, `max`, `clamp` and `minmax` accept exact trivial source
 records with that selected ordering and preserve returned reference identity.
 Default `lower_bound`, `upper_bound`, `binary_search` and `equal_range` accept

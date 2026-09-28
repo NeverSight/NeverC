@@ -31744,6 +31744,51 @@ std::vector<Member>::iterator heap_until_wrapped(std::vector<Member> &values) {
           'return std::is_heap(a.begin(),a.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_ordered_queries_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+bool sorted_raw(Item *first, Item *last) {
+  return std::is_sorted(first, last, less);
+}
+Item *sorted_until_raw(Item *first, Item *last) {
+  return std::is_sorted_until(first, last, less);
+}
+bool heap_raw(Item *first, Item *last) {
+  return std::is_heap(first, last, less);
+}
+Item *heap_until_raw(Item *first, Item *last) {
+  return std::is_heap_until(first, last, less);
+}
+bool sorted_wrapped(const std::vector<Item> &values) {
+  return std::is_sorted(values.cbegin(), values.cend(), less);
+}
+std::vector<Item>::const_iterator sorted_until_wrapped(
+    const std::vector<Item> &values) {
+  return std::is_sorted_until(values.cbegin(), values.cend(), less);
+}
+bool heap_wrapped(const std::vector<Item> &values) {
+  return std::is_heap(values.cbegin(), values.cend(), less);
+}
+std::vector<Item>::const_iterator heap_until_wrapped(
+    const std::vector<Item> &values) {
+  return std::is_heap_until(values.cbegin(), values.cend(), less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-queries-predicate-" + target,
+              source_record_ordered_queries_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-heap-predicate-by-value-rejected",
+          '#include <algorithm>\n'
+          'struct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'Item*f(Item*a,Item*b){return std::is_heap_until(a,b,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_direct_extrema_source = """\
 #include <algorithm>
 struct Member {

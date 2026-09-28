@@ -2445,6 +2445,10 @@ trivial source-record pointer or authenticated wrapped ranges with that unique
 Boolean `operator<`. Adjacent comparisons receive the original elements by
 reference; `is_sorted_until` returns the first inversion in the original
 iterator form, including the end iterator for a sorted range.
+Their checked comparator overloads also accept exact trivial source-record raw
+or authenticated wrapped ranges through `bool(const Record&, const Record&)`,
+without requiring `operator<`. They compare original adjacent elements and
+return the same Boolean or iterator result.
 
 Default `std::min_element`, `std::max_element` and `std::minmax_element` also
 accept those source-record raw or authenticated wrapped ranges. Comparisons
@@ -2461,6 +2465,9 @@ source-record raw or authenticated wrapped ranges with a selected Boolean
 `operator<`. Parent and child comparisons use original element addresses;
 `is_heap_until` returns the first violating child in the original iterator
 form, or the end for a heap.
+Their checked comparator overloads also accept those exact source-record
+ranges through `bool(const Record&, const Record&)`, preserving original parent
+and child addresses and the first violation position.
 
 Default two-value `std::min`, `std::max`, three-value `std::clamp` and
 two-value `std::minmax` also accept exact trivial source records with one

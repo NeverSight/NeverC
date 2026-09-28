@@ -55357,6 +55357,87 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedQueriesPredicateRun) {
+  const auto Source = tmpFile("source-record-ordered-queries-predicate.cpp");
+  const auto Output = tmpFile("source-record-ordered-queries-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+const Item *base;
+int size, comparisons, bad_identity;
+bool less(const Item &left, const Item &right) {
+  bool left_found = false, right_found = false;
+  for (int i = 0; i < size; ++i) {
+    if (&left == base + i) left_found = true;
+    if (&right == base + i) right_found = true;
+  }
+  if (!left_found || !right_found) ++bad_identity;
+  ++comparisons;
+  return left.rank < right.rank;
+}
+int main() {
+  Item sorted[4]{{1, 10}, {2, 20}, {2, 30}, {3, 40}};
+  base = sorted; size = 4; comparisons = bad_identity = 0;
+  if (!std::is_sorted(sorted, sorted + 4, less) ||
+      std::is_sorted_until(sorted, sorted + 4, less) != sorted + 4 ||
+      comparisons == 0 || bad_identity) return 1;
+  Item unsorted[4]{{1, 10}, {3, 20}, {2, 30}, {4, 40}};
+  base = unsorted; size = 4; comparisons = bad_identity = 0;
+  if (std::is_sorted(unsorted, unsorted + 4, less) ||
+      std::is_sorted_until(unsorted, unsorted + 4, less) != unsorted + 2 ||
+      comparisons == 0 || bad_identity) return 2;
+  comparisons = bad_identity = 0;
+  if (!std::is_sorted(unsorted, unsorted, less) ||
+      std::is_sorted_until(unsorted, unsorted + 1, less) != unsorted + 1 ||
+      comparisons || bad_identity) return 3;
+  Item heap[5]{{9, 1}, {7, 2}, {8, 3}, {3, 4}, {4, 5}};
+  base = heap; size = 5; comparisons = bad_identity = 0;
+  if (!std::is_heap(heap, heap + 5, less) ||
+      std::is_heap_until(heap, heap + 5, less) != heap + 5 ||
+      comparisons == 0 || bad_identity) return 4;
+  Item broken[5]{{9, 1}, {7, 2}, {10, 3}, {3, 4}, {4, 5}};
+  base = broken; size = 5; comparisons = bad_identity = 0;
+  if (std::is_heap(broken, broken + 5, less) ||
+      std::is_heap_until(broken, broken + 5, less) != broken + 2 ||
+      comparisons == 0 || bad_identity) return 5;
+  comparisons = bad_identity = 0;
+  if (!std::is_heap(broken, broken, less) ||
+      std::is_heap_until(broken, broken + 1, less) != broken + 1 ||
+      comparisons || bad_identity) return 6;
+  const std::vector<Item> wrapped_sorted{{1, 1}, {2, 2}, {2, 3}};
+  base = &wrapped_sorted[0]; size = 3; comparisons = bad_identity = 0;
+  if (!std::is_sorted(wrapped_sorted.cbegin(), wrapped_sorted.cend(), less) ||
+      std::is_sorted_until(wrapped_sorted.cbegin(), wrapped_sorted.cend(),
+                           less) != wrapped_sorted.cend() ||
+      comparisons == 0 || bad_identity) return 7;
+  const std::vector<Item> wrapped_heap{{9, 1}, {7, 2}, {8, 3}};
+  base = &wrapped_heap[0]; size = 3; comparisons = bad_identity = 0;
+  if (!std::is_heap(wrapped_heap.cbegin(), wrapped_heap.cend(), less) ||
+      std::is_heap_until(wrapped_heap.cbegin(), wrapped_heap.cend(), less) !=
+          wrapped_heap.cend() || comparisons == 0 || bad_identity) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-queries-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordExtremaRun) {
   const auto Source = tmpFile("source-record-extrema.cpp");
   const auto Output = tmpFile("source-record-extrema.nc");
