@@ -32101,6 +32101,42 @@ std::vector<int>::iterator each_n_mutable(
           'std::for_each(v.cbegin(),v.cend(),observe);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_scalar_transform_callbacks_source = """\
+#include <algorithm>
+#include <vector>
+long twice(long value) { return value * 2; }
+long add(long left, long right) { return left + right; }
+std::vector<long>::iterator unary_wrapped(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::transform(input.cbegin(), input.cend(), output.begin(), twice);
+}
+std::vector<long>::iterator binary_wrapped(
+    const std::vector<int> &first, const std::vector<long> &second,
+    std::vector<long> &output) {
+  return std::transform(first.cbegin(), first.cend(), second.cbegin(),
+                        output.begin(), add);
+}
+long *mixed_output(const std::vector<int> &input, long *output) {
+  return std::transform(input.cbegin(), input.cend(), output, twice);
+}
+std::vector<long>::iterator mixed_second(
+    const std::vector<int> &first, const long *second,
+    std::vector<long> &output) {
+  return std::transform(first.cbegin(), first.cend(), second,
+                        output.begin(), add);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-scalar-transform-callbacks-" + target,
+              wrapped_scalar_transform_callbacks_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-scalar-transform-callbacks-reference-callback",
+          '#include <algorithm>\n#include <vector>\n'
+          'long twice(const int &value){return value*2;}'
+          'void f(const std::vector<int>&v,std::vector<long>&o){'
+          'std::transform(v.cbegin(),v.cend(),o.begin(),twice);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

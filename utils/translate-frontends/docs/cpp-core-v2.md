@@ -1841,6 +1841,11 @@ The function-pointer `for_each` and `for_each_n` forms also accept authenticated
 mutable or const wrapped scalar input iterators. `for_each` still returns the
 retained callback; `for_each_n` returns the advanced wrapped iterator, including
 the original position for a non-positive count.
+The function-pointer unary and binary `transform` forms likewise accept
+independent raw or authenticated wrapped scalar input ranges and a writable raw
+or wrapped scalar output. Each callback argument and result uses its checked
+direct conversion; the returned position retains the output iterator type.
+The selected input values are read before an overlapping output write.
 `for_each_n` additionally accepts the same standard-layout, trivially copied
 source function objects described for unary predicates below. Its exact pinned
 count conversion and loop are authenticated, the selected non-template call

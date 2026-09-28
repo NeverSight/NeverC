@@ -56485,6 +56485,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedScalarTransformCallbacksRun) {
+  const auto Source = tmpFile("wrapped-scalar-transform-callbacks.cpp");
+  const auto Output = tmpFile("wrapped-scalar-transform-callbacks.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int calls;
+long twice(long value) { ++calls; return value * 2; }
+long add(long left, long right) { ++calls; return left + right; }
+int main() {
+  std::vector<int> input{1, 2, 3};
+  const std::vector<long> weights{10, 20, 30};
+  std::vector<long> output(3);
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), output.begin(), twice) !=
+          output.end() || calls != 3 || output[0] != 2 || output[1] != 4 ||
+      output[2] != 6) return 1;
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), weights.cbegin(),
+                     output.begin(), add) != output.end() || calls != 3 ||
+      output[0] != 11 || output[1] != 22 || output[2] != 33) return 2;
+  const long raw[3]{7, 8, 9};
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), raw,
+                     output.begin(), add) != output.end() || calls != 3 ||
+      output[0] != 8 || output[1] != 10 || output[2] != 12) return 3;
+  long raw_output[3]{};
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), raw_output, twice) !=
+          raw_output + 3 || calls != 3 || raw_output[0] != 2 ||
+      raw_output[1] != 4 || raw_output[2] != 6) return 4;
+  calls = 0;
+  if (std::transform(input.begin(), input.end(), input.begin(), twice) !=
+          input.end() || calls != 3 || input[0] != 2 || input[1] != 4 ||
+      input[2] != 6) return 5;
+  calls = 0;
+  if (std::transform(input.cend(), input.cend(), output.begin(), twice) !=
+          output.begin() || calls != 0) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-scalar-transform-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

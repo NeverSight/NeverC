@@ -8298,20 +8298,25 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmTransformBinary: {
       const bool Binary =
           Operation == UtilityOperation::AlgorithmTransformBinary;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       std::optional<Expression> Second;
-      if (Binary)
-        Second = snapshot(expression(Call->getArg(2)), L);
+      QualType SecondRangeType;
+      if (Binary) {
+        auto SecondRange = AlgorithmRangeValue(2);
+        Second = std::move(SecondRange.first);
+        SecondRangeType = SecondRange.second;
+      }
       const unsigned OutputIndex = Binary ? 3 : 2;
       const unsigned CallbackIndex = Binary ? 4 : 3;
-      auto Output = snapshot(expression(Call->getArg(OutputIndex)), L);
+      auto OutputRange = AlgorithmRangeValue(OutputIndex);
+      auto Output = std::move(OutputRange.first);
       auto Callback = captureUnaryPredicate(Call, Operation, CallbackIndex);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType =
-          Binary ? type(Call->getArg(2)->getType(), L) : std::string();
-      const auto OutputType = type(Call->getArg(OutputIndex)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = Binary ? type(SecondRangeType, L) : std::string();
+      const auto OutputType = type(OutputRange.second, L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
@@ -8327,8 +8332,7 @@ class FunctionLowering {
           Value = emitUnaryCallable(Callback,
                                     dereference(json::Object(First), L), L);
         }
-        const auto ElementType =
-            type(Call->getArg(OutputIndex)->getType()->getPointeeType(), L);
+        const auto ElementType = type(OutputRange.second->getPointeeType(), L);
         assign(dereference(Output, L), cast(std::move(Value), ElementType, L),
                L);
       }
@@ -8345,7 +8349,7 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), OutputIndex);
     }
     case UtilityOperation::AlgorithmGenerate:
     case UtilityOperation::AlgorithmGenerateN: {

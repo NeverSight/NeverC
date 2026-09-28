@@ -24757,33 +24757,33 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     const bool Binary = Call->getNumArgs() == 5;
     const unsigned OutputIndex = Binary ? 3 : 2;
     const unsigned CallbackIndex = Binary ? 4 : 3;
     const auto *Callback = AlgorithmCallbackPrototype(CallbackIndex);
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
     bool Valid =
-        AlgorithmPointerParameter(OutputIndex) &&
-        utilityAlgorithmWritableScalarPointer(
-            Context, Function->getParamDecl(OutputIndex)->getType()) &&
-        Callback && Callback->getNumParams() == (Binary ? 2u : 1u) &&
-        utilityScalarDirectConversion(
-            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
-            Callback->getParamType(0)) &&
-        utilityScalarDirectConversion(
-            Context, Callback->getReturnType(),
-            Function->getParamDecl(OutputIndex)->getType()->getPointeeType()) &&
+        First && Output &&
+        utilityAlgorithmWritableScalarPointer(Context, *Output) && Callback &&
+        Callback->getNumParams() == (Binary ? 2u : 1u) &&
+        utilityScalarDirectConversion(Context, (*First)->getPointeeType(),
+                                      Callback->getParamType(0)) &&
+        utilityScalarDirectConversion(Context, Callback->getReturnType(),
+                                      (*Output)->getPointeeType()) &&
         Same(Function->getReturnType(),
              Function->getParamDecl(OutputIndex)->getType()) &&
         Same(Call->getType(), Function->getReturnType());
-    if (Binary)
+    if (Binary) {
+      const auto Second = AlgorithmRangePointerParameter(2);
       Valid =
-          Valid && AlgorithmPointerParameter(2) &&
-          utilityScalarDirectConversion(
-              Context, Function->getParamDecl(2)->getType()->getPointeeType(),
-              Callback->getParamType(1));
+          Valid && Second &&
+          utilityScalarDirectConversion(Context, (*Second)->getPointeeType(),
+                                        Callback->getParamType(1));
+    }
     if (Valid)
       return Binary ? UtilityOperation::AlgorithmTransformBinary
                     : UtilityOperation::AlgorithmTransformUnary;
