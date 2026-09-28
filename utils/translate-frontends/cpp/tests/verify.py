@@ -32086,6 +32086,38 @@ void heap_scalar_wrapped(std::vector<int> &values) {
           'void f(Entry*first,Entry*last){std::sort_heap(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_heap_sort_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+void raw(Item *first, Item *last) {
+  std::make_heap(first, last, less);
+  std::push_heap(first, last, less);
+  std::pop_heap(first, last, less);
+  std::sort_heap(first, last, less);
+  std::sort(first, last, less);
+}
+void wrapped(std::vector<Item> &items) {
+  std::make_heap(items.begin(), items.end(), less);
+  std::push_heap(items.begin(), items.end(), less);
+  std::pop_heap(items.begin(), items.end(), less);
+  std::sort_heap(items.begin(), items.end(), less);
+  std::sort(items.begin(), items.end(), less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-heap-sort-predicate-" + target,
+              source_record_heap_sort_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-heap-sort-predicate-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'void f(Item*a,Item*b){std::sort(a,b,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_permutation_mutation_source = """\
 #include <algorithm>
 #include <functional>

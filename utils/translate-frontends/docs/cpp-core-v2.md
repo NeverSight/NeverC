@@ -2226,7 +2226,10 @@ hidden-friend, or enclosing-namespace free Boolean `operator<`. Heap
 comparisons receive the current range elements by reference, and swaps move
 complete record values. Writable authenticated wrapped scalar ranges also
 admit the same default and checked comparator forms as raw scalar ranges.
-The comparator overloads for records and nontrivial records remain rejected.
+The checked comparator overloads also accept those writable trivial records
+through `bool(const Record&, const Record&)` without requiring `operator<`.
+Comparisons use current range lvalues, and heap mutations move complete values.
+Nontrivial records remain rejected.
 
 The corresponding three-argument heap overloads accept the checked scalar
 function-pointer comparator boundary above, including enum and object-pointer
@@ -2234,8 +2237,8 @@ elements. The comparator defines the heap order: for example, a greater-than
 callback builds a minimum heap and `sort_heap` produces descending order. Each
 call retains the callback once; query ranges may be read-only, mutation ranges
 remain writable, and empty or single-element work performs no callback calls.
-Reference callback signatures, non-boolean results, variadic functions,
-other callable objects and record elements remain rejected. The six heap
+Unapproved reference callback signatures, non-boolean results, variadic
+functions and other callable objects remain rejected. The six heap
 overloads also accept authenticated empty standard `<functional>` comparison
 objects on arithmetic scalars, including typed and transparent forms. The
 selected instantiated `operator()` body is proved before its comparison is
@@ -2297,8 +2300,9 @@ authenticated wrapped ranges of exact trivial source records with one uniquely
 selected const member, hidden-friend, or enclosing-namespace free Boolean
 `operator<`. Its heap comparisons use references to the current range elements;
 swaps preserve complete record values. Empty and single-element ranges perform
-no comparison. Comparator overloads for records and nontrivial records remain
-outside this boundary.
+no comparison. Its checked comparator overload also accepts those writable
+trivial records through `bool(const Record&, const Record&)` without requiring
+`operator<`; nontrivial records remain outside this boundary.
 
 The corresponding comparator overloads accept the same checked scalar
 function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
@@ -2307,7 +2311,8 @@ writable directly convertible output. A greater-than callback therefore sorts or
 selects in descending order. All callback and iterator arguments are retained
 once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
-values. Unsupported callbacks and record comparator overloads remain rejected.
+values. Unsupported callbacks and record comparator overloads for the partial
+sort and selection algorithms remain rejected.
 
 The three-argument `std::sort` overload also accepts the same authenticated
 standard comparison objects as the heap algorithms, including comparison

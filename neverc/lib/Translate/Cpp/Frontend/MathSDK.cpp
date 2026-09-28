@@ -24843,12 +24843,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
         ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
          (Call->getNumArgs() == 3 && AlgorithmRangeComparisonParameter(2, 0)));
-    const bool Record = Call->getNumArgs() == 2 &&
-                        AlgorithmRecordOrderedRangeParameter(0) &&
-                        AlgorithmRecordOrderedRangeParameter(1) &&
-                        AlgorithmWritableRecordRangeParameter(0) &&
-                        AlgorithmWritableRecordRangeParameter(1);
-    if (Scalar || Record) {
+    const bool RecordDefault = Call->getNumArgs() == 2 &&
+                               AlgorithmRecordOrderedRangeParameter(0) &&
+                               AlgorithmRecordOrderedRangeParameter(1) &&
+                               AlgorithmWritableRecordRangeParameter(0) &&
+                               AlgorithmWritableRecordRangeParameter(1);
+    const bool RecordComparator =
+        Call->getNumArgs() == 3 && AlgorithmWritableRecordRangeParameter(0) &&
+        AlgorithmWritableRecordRangeParameter(1) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator) {
       if (Name == "make_heap")
         return UtilityOperation::AlgorithmMakeHeap;
       if (Name == "push_heap")
@@ -24882,17 +24886,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool WritableRecord =
         utilityObjectPointer(Context, Pointer) &&
         !Pointer->getPointeeType().isConstQualified() &&
-        approvedUtilityTrivialSourceComparison(S, SM, Pointer->getPointeeType(),
-                                               OO_Less, Context);
+        utilityComparableSourceElement(S, SM, Pointer->getPointeeType(), false,
+                                       Context);
     if ((Raw || WrappedRange) && (WritableScalar || WritableRecord)) {
       const auto Element = Pointer->getPointeeType();
       bool Comparison = false;
       if (Call->getNumArgs() == 2) {
         Comparison =
-            WritableRecord ||
+            (WritableRecord && approvedUtilityTrivialSourceComparison(
+                                   S, SM, Element, OO_Less, Context)) ||
             (utilityScalarComparisonType(Context, Element, Element, true)
                  .has_value() &&
              !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less));
+      } else if (WritableRecord) {
+        Comparison = AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
       } else if (WritableScalar && Raw) {
         Comparison = AlgorithmBinaryComparisonParameter(2, 0, 0);
       } else if (WritableScalar) {

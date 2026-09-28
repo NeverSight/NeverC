@@ -56543,6 +56543,84 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordHeapAndSortPredicateRun) {
+  const auto Source = tmpFile("source-record-heap-sort-predicate.cpp");
+  const auto Output = tmpFile("source-record-heap-sort-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+int comparisons;
+bool less(const Item &left, const Item &right) {
+  ++comparisons;
+  return left.rank < right.rank;
+}
+int main() {
+  Item raw[8]{{4, 40}, {1, 10}, {7, 70}, {3, 30},
+              {5, 50}, {2, 20}, {6, 60}, {9, 90}};
+  int first_effects = 0, last_effects = 0;
+  std::make_heap((++first_effects, raw), (++last_effects, raw + 7), less);
+  if (first_effects != 1 || last_effects != 1 || !comparisons ||
+      !std::is_heap(raw, raw + 7, less)) return 1;
+  std::push_heap(raw, raw + 8, less);
+  if (raw[0].rank != 9 || !std::is_heap(raw, raw + 8, less)) return 2;
+  std::pop_heap(raw, raw + 8, less);
+  if (raw[7].rank != 9 || raw[7].tag != 90 ||
+      !std::is_heap(raw, raw + 7, less)) return 3;
+  std::sort_heap(raw, raw + 7, less);
+  for (int i = 0; i < 7; ++i)
+    if (raw[i].rank != i + 1 || raw[i].tag != (i + 1) * 10) return 4;
+  Item unsorted[7]{{3, 30}, {1, 10}, {4, 40}, {2, 20},
+                   {7, 70}, {5, 50}, {6, 60}};
+  int sort_first = 0, sort_last = 0;
+  std::sort((++sort_first, unsorted), (++sort_last, unsorted + 7), less);
+  if (sort_first != 1 || sort_last != 1) return 5;
+  for (int i = 0; i < 7; ++i)
+    if (unsorted[i].rank != i + 1 ||
+        unsorted[i].tag != (i + 1) * 10) return 6;
+  std::vector<Item> wrapped{{4, 40}, {1, 10}, {3, 30},
+                             {2, 20}, {5, 50}};
+  std::make_heap(wrapped.begin(), wrapped.begin() + 4, less);
+  std::push_heap(wrapped.begin(), wrapped.end(), less);
+  if (wrapped[0].rank != 5) return 7;
+  std::pop_heap(wrapped.begin(), wrapped.end(), less);
+  if (wrapped[4].rank != 5 || wrapped[4].tag != 50) return 8;
+  std::sort_heap(wrapped.begin(), wrapped.begin() + 4, less);
+  for (int i = 0; i < 4; ++i)
+    if (wrapped[i].rank != i + 1 ||
+        wrapped[i].tag != (i + 1) * 10) return 9;
+  std::vector<Item> other{{4, 40}, {1, 10}, {3, 30}, {2, 20}};
+  std::sort(other.begin(), other.end(), less);
+  for (int i = 0; i < 4; ++i)
+    if (other[i].rank != i + 1 || other[i].tag != (i + 1) * 10)
+      return 10;
+  std::vector<Item> empty;
+  int before = comparisons;
+  std::make_heap(empty.begin(), empty.end(), less);
+  std::sort_heap(empty.begin(), empty.end(), less);
+  std::sort(empty.begin(), empty.end(), less);
+  return comparisons == before ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-heap-sort-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordPermutationMutationRun) {
   const auto Source = tmpFile("source-record-permutation-mutation.cpp");
   const auto Output = tmpFile("source-record-permutation-mutation.nc");
