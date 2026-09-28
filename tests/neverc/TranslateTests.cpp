@@ -59546,6 +59546,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordSubrangePredicatesRun) {
+  const auto Source = tmpFile("record-subrange-predicates.cpp");
+  const auto Output = tmpFile("record-subrange-predicates.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { long key; };
+const Left *left_base;
+const Right *right_base;
+int left_count, right_count, calls, bad_identity;
+bool same(const Left &left, const Right &right) {
+  bool found_left = false, found_right = false;
+  for (int i = 0; i < left_count; ++i)
+    if (&left == left_base + i) found_left = true;
+  for (int i = 0; i < right_count; ++i)
+    if (&right == right_base + i) found_right = true;
+  if (!found_left || !found_right) ++bad_identity;
+  ++calls;
+  return left.key == right.key;
+}
+int main() {
+  const std::vector<Left> input{{1, 10}, {2, 20}, {1, 30}, {2, 40}, {3, 50}};
+  const std::vector<Right> pattern{{1}, {2}};
+  const std::vector<Right> choices{{3}, {2}};
+  left_base = &input[0]; left_count = 5;
+  right_base = &pattern[0]; right_count = 2;
+  calls = bad_identity = 0;
+  if (std::search(input.cbegin(), input.cend(), pattern.cbegin(),
+                  pattern.cend(), same) != input.cbegin() ||
+      calls == 0 || bad_identity) return 1;
+  calls = bad_identity = 0;
+  if (std::find_end(input.cbegin(), input.cend(), pattern.cbegin(),
+                    pattern.cend(), same) != input.cbegin() + 2 ||
+      calls == 0 || bad_identity) return 2;
+  right_base = &choices[0]; right_count = 2;
+  calls = bad_identity = 0;
+  if (std::find_first_of(input.cbegin(), input.cend(), choices.cbegin(),
+                         choices.cend(), same) != input.cbegin() + 1 ||
+      calls == 0 || bad_identity) return 3;
+  right_base = &pattern[0]; right_count = 2;
+  calls = bad_identity = 0;
+  if (std::search(input.cbegin(), input.cend(), pattern.cbegin(),
+                  pattern.cbegin(), same) != input.cbegin() ||
+      std::find_end(input.cbegin(), input.cend(), pattern.cbegin(),
+                    pattern.cbegin(), same) != input.cend() ||
+      calls || bad_identity) return 4;
+  const Left raw_input[4]{{1, 10}, {2, 20}, {1, 30}, {2, 40}};
+  const Right raw_pattern[2]{{1}, {2}};
+  left_base = raw_input; left_count = 4;
+  right_base = raw_pattern; right_count = 2;
+  calls = bad_identity = 0;
+  if (std::search(raw_input, raw_input + 4, raw_pattern,
+                  raw_pattern + 2, same) != raw_input ||
+      calls == 0 || bad_identity) return 5;
+  calls = bad_identity = 0;
+  if (std::find_end(raw_input, raw_input + 4, raw_pattern,
+                    raw_pattern + 2, same) != raw_input + 2 ||
+      calls == 0 || bad_identity) return 6;
+  calls = bad_identity = 0;
+  if (std::find_first_of(raw_input, raw_input + 4, raw_pattern,
+                         raw_pattern + 2, same) != raw_input ||
+      calls == 0 || bad_identity) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("record-subrange-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

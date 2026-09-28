@@ -1855,7 +1855,10 @@ Either range may be raw while the other is wrapped. Wrapped scalar ranges
 also retain the checked common equality type. Element addresses are preserved,
 and their first-match, last-match and empty-pattern results follow the
 existing scalar loops. Returned wrapped iterators retain their original type.
-Record predicate overloads remain rejected.
+Their checked function-pointer predicate overloads also accept two
+independently typed exact trivial source-record ranges. The callback receives
+each original element through its matching `const Record&` parameter, returns
+`bool`, and preserves the first-range raw or wrapped result type.
 Checked function-pointer predicate overloads of `search`, `find_end` and
 `find_first_of` accept independent raw or authenticated wrapped scalar ranges,
 including different directly convertible element types.

@@ -31326,6 +31326,48 @@ std::vector<int>::iterator search_scalar(std::vector<int> &values,
           'return std::search(a.begin(),a.end(),b.begin(),b.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_subrange_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { long key; };
+bool same(const Left &left, const Right &right) {
+  return left.key == right.key;
+}
+std::vector<Left>::const_iterator
+search_vectors(const std::vector<Left> &input,
+               const std::vector<Right> &pattern) {
+  return std::search(input.cbegin(), input.cend(),
+                     pattern.cbegin(), pattern.cend(), same);
+}
+std::vector<Left>::const_iterator
+find_end_vectors(const std::vector<Left> &input,
+                 const Right *pattern, const Right *last) {
+  return std::find_end(input.cbegin(), input.cend(),
+                       pattern, last, same);
+}
+Left *find_first_of_mixed(Left *first, Left *last,
+                          const std::vector<Right> &choices) {
+  return std::find_first_of(first, last,
+                            choices.cbegin(), choices.cend(), same);
+}
+Left *search_raw(Left *first, Left *last,
+                 const Right *pattern, const Right *pattern_last) {
+  return std::search(first, last, pattern, pattern_last, same);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-subrange-predicate-" + target,
+              source_record_subrange_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-subrange-predicate-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Left{int key;};struct Right{int key;};'
+          'bool same(const Left&left,Right right){return left.key==right.key;}'
+          'auto f(const std::vector<Left>&a,const std::vector<Right>&b){'
+          'return std::search(a.cbegin(),a.cend(),b.cbegin(),b.cend(),same);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_permutation_source = """\
 #include <algorithm>
 #include <vector>

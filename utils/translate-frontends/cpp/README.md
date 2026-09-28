@@ -558,6 +558,10 @@ rules; copying forms also admit mixed raw and wrapped ranges.
 Checked predicate `search`, `find_end`, `find_first_of`, `search_n` and both
 `is_permutation` forms accept authenticated wrapped scalar ranges with the
 existing by-value callback conversion rules.
+Predicate `search`, `find_end` and `find_first_of` also accept independently
+typed exact trivial source-record ranges with a checked
+`bool(const Left&, const Right&)` function pointer. Raw and authenticated
+wrapped iterators may be mixed, and callbacks receive the original elements.
 Checked function-pointer comparators with directly convertible by-value scalar
 parameters additionally admit `min_element`, `max_element`,
 `lower_bound`, `upper_bound`, `equal_range`, `binary_search`, `is_sorted` and

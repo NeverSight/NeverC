@@ -24226,8 +24226,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRecordEqualityRangeParameter(3) &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordSecond)->getPointeeType());
+    const auto *RecordPredicate = AlgorithmCallbackPrototype(4);
+    const bool PredicateRecordRanges =
+        Call->getNumArgs() == 5 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) && AlgorithmRecordRangeParameter(2) &&
+        AlgorithmRecordRangeParameter(3) && RecordPredicate &&
+        RecordPredicate->getNumParams() == 2 &&
+        RecordPredicate->getReturnType()->isBooleanType() &&
+        AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0) &&
+        AlgorithmRecordRangeCallbackReferenceParameter(4, 1, 2);
     const bool DefaultElements = ScalarDefault || RecordRanges;
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
+          PredicateRecordRanges ||
           (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast &&
            ScalarSecond && ScalarSecondLast &&
            AlgorithmRangeBinaryPredicateParameter(4, 0, 2))))
