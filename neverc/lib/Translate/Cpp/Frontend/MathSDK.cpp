@@ -24033,9 +24033,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/rotate_copy.h" && Name == "rotate_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
-      AlgorithmTransferParameters(0, 3) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) && AlgorithmRangePointerParameter(2) &&
+      AlgorithmTransferRangeParameters(0, 3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(0)->getType(),

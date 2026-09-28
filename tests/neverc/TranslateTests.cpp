@@ -57513,6 +57513,55 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRotateCopyRun) {
+  const auto Source = tmpFile("wrapped-rotate-copy.cpp");
+  const auto Output = tmpFile("wrapped-rotate-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+int main() {
+  const std::vector<int> source{1, 2, 3, 4, 5};
+  std::vector<long> output(5);
+  if (std::rotate_copy(source.cbegin(), source.cbegin() + 2,
+                       source.cend(), output.begin()) != output.end() ||
+      output[0] != 3 || output[1] != 4 || output[2] != 5 ||
+      output[3] != 1 || output[4] != 2) return 1;
+  long raw_output[5]{};
+  if (std::rotate_copy(source.cbegin(), source.cbegin() + 1,
+                       source.cend(), raw_output) != raw_output + 5 ||
+      raw_output[0] != 2 || raw_output[4] != 1) return 2;
+  int raw_input[4]{1, 2, 3, 4};
+  if (std::rotate_copy(raw_input, raw_input + 3, raw_input + 4,
+                       output.begin()) != output.begin() + 4 ||
+      output[0] != 4 || output[1] != 1 || output[2] != 2 ||
+      output[3] != 3) return 3;
+  std::vector<int> empty;
+  if (std::rotate_copy(empty.begin(), empty.end(), empty.end(),
+                       output.begin()) != output.begin()) return 4;
+  if (std::rotate_copy(source.cbegin(), source.cbegin(), source.cend(),
+                       output.begin()) != output.end() || output[0] != 1 ||
+      output[4] != 5) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-rotate-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

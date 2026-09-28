@@ -489,6 +489,9 @@ checks, including mixed raw and wrapped copy inputs or outputs.
 `is_partitioned`, `partition_point`, `partition`, `stable_partition` and
 `partition_copy` accept the same checked wrapped scalar ranges; partition
 results keep their wrapped iterator type, including both copy outputs.
+`rotate_copy` accepts raw or authenticated wrapped scalar inputs and writable
+outputs independently, with checked direct output conversion and a result in
+the output iterator type.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and

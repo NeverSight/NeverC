@@ -32670,6 +32670,35 @@ std::pair<std::vector<long>::iterator, long *> mixed_copy(
           'return std::partition(v.begin(),v.end(),even);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_rotate_copy_source = """\
+#include <algorithm>
+#include <vector>
+std::vector<long>::iterator rotate_wrapped(
+    const std::vector<int> &source, std::vector<long> &output) {
+  return std::rotate_copy(source.cbegin(), source.cbegin() + 1,
+                          source.cend(), output.begin());
+}
+long *rotate_mixed(const std::vector<int> &source, long *output) {
+  return std::rotate_copy(source.cbegin(), source.cbegin() + 1,
+                          source.cend(), output);
+}
+std::vector<long>::iterator rotate_raw(int *first, int *middle, int *last,
+                                        std::vector<long> &output) {
+  return std::rotate_copy(first, middle, last, output.begin());
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-rotate-copy-" + target,
+              wrapped_rotate_copy_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-rotate-copy-record",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;};'
+          'std::vector<Record>::iterator f(std::vector<Record>&v,'
+          'std::vector<Record>&o){return std::rotate_copy('
+          'v.begin(),v.begin(),v.end(),o.begin());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

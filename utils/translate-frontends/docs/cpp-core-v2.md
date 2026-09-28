@@ -1723,6 +1723,9 @@ also admit authenticated wrapped scalar ranges. Copying forms accept mixed raw
 and wrapped inputs or writable outputs, and returned positions keep the public
 iterator type. Their heterogeneous equality common type and direct output or
 replacement conversion rules remain in force.
+`rotate_copy` likewise accepts authenticated raw or wrapped scalar input and
+writable output ranges with checked direct conversion, preserving the output
+iterator type and empty-range result.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

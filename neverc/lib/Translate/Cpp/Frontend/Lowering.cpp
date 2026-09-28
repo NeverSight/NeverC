@@ -5883,15 +5883,17 @@ class FunctionLowering {
       return AlgorithmIteratorResult(std::move(Result), 0);
     }
     case UtilityOperation::AlgorithmRotateCopy: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Middle = snapshot(expression(Call->getArg(1)), L);
-      auto Last = snapshot(expression(Call->getArg(2)), L);
-      auto Output = snapshot(expression(Call->getArg(3)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Middle = std::move(AlgorithmRangeValue(1).first);
+      auto Last = std::move(AlgorithmRangeValue(2).first);
+      auto OutputRange = AlgorithmRangeValue(3);
+      auto Output = std::move(OutputRange.first);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(3)->getType(), L);
+      const auto InputType = type(FirstRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
-          type(Call->getArg(3)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       auto CopyRange = [&](const Expression &RangeFirst,
                            const Expression &RangeLast) {
         auto Current = snapshot(json::Object(RangeFirst), L);
@@ -5917,7 +5919,7 @@ class FunctionLowering {
       };
       CopyRange(Middle, Last);
       CopyRange(First, Middle);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 3);
     }
     case UtilityOperation::AlgorithmEqualRange: {
       auto FirstRange = AlgorithmRangeValue(0);
