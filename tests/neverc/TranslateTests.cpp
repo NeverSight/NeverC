@@ -15063,6 +15063,51 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringSubstringFindRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-substring-find.cpp");
+  const auto Output = tmpFile("cstring-substring-find.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  char text[9]{'a', 'b', 'a', 'b', 'a', 'c', 0, 'b', 0};
+  int text_effects = 0, pattern_effects = 0;
+  char *first = std::strstr((++text_effects, text),
+                            (++pattern_effects, "abac"));
+  if (first != text + 2 || text_effects != 1 || pattern_effects != 1 ||
+      std::strstr(text, "aba") != text ||
+      std::strstr(text, "b") != text + 1 ||
+      std::strstr(text, "ac") != text + 4 ||
+      std::strstr(text, "") != text ||
+      std::strstr(text + 6, "") != text + 6 ||
+      std::strstr(text, "cb") != nullptr ||
+      std::strstr(text, "abc") != nullptr)
+    return 1;
+  char empty[1]{};
+  if (std::strstr(empty, "") != empty ||
+      std::strstr(empty, "x") != nullptr)
+    return 2;
+  const char fixed[6]{'q', static_cast<char>(0x80), 'x', 0, 'x', 0};
+  const char pattern[3]{static_cast<char>(0x80), 'x', 0};
+  const char *const_first = std::strstr(fixed, pattern);
+  if (const_first != fixed + 1 || std::strstr(fixed, "x") != fixed + 2 ||
+      std::strstr(fixed, "xx") != nullptr)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-substring-find" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-writes.cpp");
   const auto Output = tmpFile("cmemory-writes.nc");
@@ -15182,6 +15227,10 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
       {"global-strpbrk",
        "#include <cstring>\nint main(){char a[2]{};return "
        "::strpbrk(a,\"a\")==a;}",
+       "TR0203"},
+      {"global-strstr",
+       "#include <cstring>\nint main(){char a[2]{};return "
+       "::strstr(a,\"a\")==a;}",
        "TR0203"},
       {"global-memcpy",
        "#include <cstring>\nint main(){char d[2]{};::memcpy(d,\"a\",2);return "

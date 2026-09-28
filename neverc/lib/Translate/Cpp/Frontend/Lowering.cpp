@@ -2870,6 +2870,75 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::CStringSubstringFind: {
+      const auto ResultType = type(Call->getType(), L);
+      const auto PatternType = type(Call->getArg(1)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Candidate = snapshot(expression(Call->getArg(0)), L);
+      auto PatternStart = snapshot(expression(Call->getArg(1)), L);
+      auto InputCursor = temporary(ResultType, L);
+      auto PatternCursor = temporary(PatternType, L);
+      auto Result = temporary(ResultType, L);
+      assign(
+          Result,
+          Expression{{"kind", "null"}, {"type", ResultType}, {"loc", A.loc(L)}},
+          L);
+      const auto CheckEmpty = labelName(), CheckCandidate = labelName();
+      const auto Reset = labelName(), CheckPattern = labelName();
+      const auto CheckInput = labelName(), AdvancePair = labelName();
+      const auto AdvanceCandidate = labelName(), Match = labelName();
+      const auto End = labelName();
+      jump(CheckEmpty, L);
+      label(CheckEmpty, L);
+      auto FirstPatternByte = snapshot(
+          cast(dereference(json::Object(PatternStart), L), "u8", L), L);
+      branch(binary("==", json::Object(FirstPatternByte), quantity(0, "u8", L),
+                    "bool", L),
+             Match, CheckCandidate, L);
+      label(CheckCandidate, L);
+      auto CandidateByte =
+          snapshot(cast(dereference(json::Object(Candidate), L), "u8", L), L);
+      branch(binary("==", json::Object(CandidateByte), quantity(0, "u8", L),
+                    "bool", L),
+             End, Reset, L);
+      label(Reset, L);
+      assign(InputCursor, json::Object(Candidate), L);
+      assign(PatternCursor, json::Object(PatternStart), L);
+      jump(CheckPattern, L);
+      label(CheckPattern, L);
+      auto PatternByte = snapshot(
+          cast(dereference(json::Object(PatternCursor), L), "u8", L), L);
+      branch(binary("==", json::Object(PatternByte), quantity(0, "u8", L),
+                    "bool", L),
+             Match, CheckInput, L);
+      label(CheckInput, L);
+      auto InputByte =
+          snapshot(cast(dereference(json::Object(InputCursor), L), "u8", L), L);
+      branch(binary("==", json::Object(InputByte), json::Object(PatternByte),
+                    "bool", L),
+             AdvancePair, AdvanceCandidate, L);
+      label(AdvancePair, L);
+      assign(InputCursor,
+             binary("+", json::Object(InputCursor),
+                    quantity(1, DifferenceType, L), ResultType, L),
+             L);
+      assign(PatternCursor,
+             binary("+", json::Object(PatternCursor),
+                    quantity(1, DifferenceType, L), PatternType, L),
+             L);
+      jump(CheckPattern, L);
+      label(AdvanceCandidate, L);
+      assign(Candidate,
+             binary("+", json::Object(Candidate),
+                    quantity(1, DifferenceType, L), ResultType, L),
+             L);
+      jump(CheckCandidate, L);
+      label(Match, L);
+      assign(Result, json::Object(Candidate), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::CStringMemoryCopy:
     case UtilityOperation::CStringMemoryMove:
     case UtilityOperation::CStringMemorySet: {
