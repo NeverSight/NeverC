@@ -32719,6 +32719,31 @@ Item *rotate_record_mixed(const std::vector<Item> &source, Item *output) {
           'v.begin(),v.begin(),v.end(),o.begin());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_record_reverse_copy_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+std::vector<Item>::iterator reverse_record(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::reverse_copy(source.cbegin(), source.cend(), output.begin());
+}
+Item *reverse_record_mixed(const std::vector<Item> &source, Item *output) {
+  return std::reverse_copy(source.cbegin(), source.cend(), output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-reverse-copy-" + target,
+              wrapped_record_reverse_copy_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-reverse-copy-nontrivial-record",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Record{int value;Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
+          'std::vector<Record>::iterator f(std::vector<Record>&v,'
+          'std::vector<Record>&o){return std::reverse_copy('
+          'v.begin(),v.end(),o.begin());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

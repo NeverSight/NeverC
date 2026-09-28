@@ -57611,6 +57611,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedRecordReverseCopyRun) {
+  const auto Source = tmpFile("wrapped-record-reverse-copy.cpp");
+  const auto Output = tmpFile("wrapped-record-reverse-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+int main() {
+  const std::vector<Item> source{{1, 10}, {2, 20}, {3, 30}};
+  std::vector<Item> output(3);
+  if (std::reverse_copy(source.cbegin(), source.cend(), output.begin()) !=
+          output.end() || output[0].key != 3 || output[0].tag != 30 ||
+      output[1].key != 2 || output[1].tag != 20 ||
+      output[2].key != 1 || output[2].tag != 10) return 1;
+  Item raw_output[3]{};
+  if (std::reverse_copy(source.cbegin(), source.cend(), raw_output) !=
+          raw_output + 3 || raw_output[0].key != 3 ||
+      raw_output[2].tag != 10) return 2;
+  Item raw_input[3]{{4, 40}, {5, 50}, {6, 60}};
+  if (std::reverse_copy(raw_input, raw_input + 3, output.begin()) !=
+          output.end() || output[0].key != 6 ||
+      output[1].tag != 50 || output[2].key != 4) return 3;
+  std::vector<Item> empty;
+  if (std::reverse_copy(empty.begin(), empty.end(), output.begin()) !=
+      output.begin()) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-record-reverse-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

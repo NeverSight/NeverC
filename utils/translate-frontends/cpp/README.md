@@ -494,6 +494,8 @@ outputs independently, with checked direct output conversion and a result in
 the output iterator type.
 It also copies complete values of the same exact source-owned trivial record
 type through raw or wrapped ranges, including const inputs and mixed outputs.
+`reverse_copy` shares that record boundary, returning the original output
+iterator type after copying complete records in reverse order.
 Checked function-pointer binary predicates with directly
 convertible by-value scalar parameters additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and

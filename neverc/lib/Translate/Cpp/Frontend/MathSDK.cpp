@@ -22187,7 +22187,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Wrapped->IteratorType;
     return std::nullopt;
   };
-  auto AlgorithmWritableRecordRangeParameter =
+  auto AlgorithmRecordRangeParameter =
       [&](unsigned Index) -> std::optional<QualType> {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return std::nullopt;
@@ -22202,11 +22202,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return std::nullopt;
       Pointer = Wrapped->IteratorType;
     }
-    if (Pointer->getPointeeType().isConstQualified() ||
-        !utilityComparableSourceElement(S, SM, Pointer->getPointeeType(), false,
+    if (!utilityComparableSourceElement(S, SM, Pointer->getPointeeType(), false,
                                         Context))
       return std::nullopt;
     return Pointer;
+  };
+  auto AlgorithmWritableRecordRangeParameter =
+      [&](unsigned Index) -> std::optional<QualType> {
+    const auto Pointer = AlgorithmRecordRangeParameter(Index);
+    return Pointer && !(*Pointer)->getPointeeType().isConstQualified()
+               ? Pointer
+               : std::nullopt;
   };
   auto AlgorithmRecordComparisonRangeParameter =
       [&](unsigned Index,
@@ -22258,6 +22264,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityAlgorithmWritableScalarPointer(Context, *Output) &&
            utilityScalarDirectConversion(Context, (*Input)->getPointeeType(),
                                          (*Output)->getPointeeType());
+  };
+  auto AlgorithmTransferRecordRangeParameters = [&](unsigned InputIndex,
+                                                    unsigned OutputIndex) {
+    const auto Input = AlgorithmRecordRangeParameter(InputIndex);
+    const auto Output = AlgorithmWritableRecordRangeParameter(OutputIndex);
+    return Input && Output &&
+           Context.hasSameUnqualifiedType((*Input)->getPointeeType(),
+                                          (*Output)->getPointeeType());
   };
   auto AlgorithmTransferRangeValueParameter = [&](unsigned ValueIndex,
                                                   unsigned OutputIndex) {
@@ -23623,14 +23637,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
-      AlgorithmTransferRangeParameters(0, 2) &&
+      Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmReverseCopy;
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Scalar = AlgorithmRangePointerParameter(0) &&
+                        AlgorithmRangePointerParameter(1) &&
+                        AlgorithmTransferRangeParameters(0, 2);
+    const bool Record = AlgorithmRecordRangeParameter(0) &&
+                        AlgorithmRecordRangeParameter(1) &&
+                        AlgorithmTransferRecordRangeParameters(0, 2);
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmReverseCopy;
+  }
   if (((Origin->Path == "__algorithm/min_element.h" && Name == "min_element") ||
        (Origin->Path == "__algorithm/max_element.h" &&
         Name == "max_element")) &&
@@ -24044,30 +24064,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                         AlgorithmRangePointerParameter(1) &&
                         AlgorithmRangePointerParameter(2) &&
                         AlgorithmTransferRangeParameters(0, 3);
-    const auto RecordInput = [&]() -> std::optional<QualType> {
-      const auto Iterator = Function->getParamDecl(0)->getType();
-      if (!Same(Call->getArg(0)->getType(), Iterator) ||
-          !Same(Call->getArg(1)->getType(), Iterator) ||
-          !Same(Call->getArg(2)->getType(), Iterator))
-        return std::nullopt;
-      auto Pointer = Iterator;
-      if (!utilityObjectPointer(Context, Pointer)) {
-        const auto Wrapped = approvedUtilityWrapIteratorRecord(
-            S, SM, Iterator->getAsCXXRecordDecl(), Context);
-        if (!Wrapped || !utilityObjectPointer(Context, Wrapped->IteratorType))
-          return std::nullopt;
-        Pointer = Wrapped->IteratorType;
-      }
-      return utilityComparableSourceElement(S, SM, Pointer->getPointeeType(),
-                                            false, Context)
-                 ? std::optional<QualType>(Pointer)
-                 : std::nullopt;
-    }();
-    const auto RecordOutput = AlgorithmWritableRecordRangeParameter(3);
-    const bool Record =
-        RecordInput && RecordOutput &&
-        Context.hasSameUnqualifiedType((*RecordInput)->getPointeeType(),
-                                       (*RecordOutput)->getPointeeType());
+    const bool Record = AlgorithmRecordRangeParameter(0) &&
+                        AlgorithmRecordRangeParameter(1) &&
+                        AlgorithmRecordRangeParameter(2) &&
+                        AlgorithmTransferRecordRangeParameters(0, 3);
     if (Scalar || Record)
       return UtilityOperation::AlgorithmRotateCopy;
   }

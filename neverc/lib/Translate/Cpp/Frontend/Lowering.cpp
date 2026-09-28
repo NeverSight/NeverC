@@ -4896,6 +4896,7 @@ class FunctionLowering {
       const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
           type(OutputRange.second->getPointeeType(), L);
+      const bool Record = FirstRange.second->getPointeeType()->isRecordType();
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L), Transfer, End, L);
@@ -4904,7 +4905,9 @@ class FunctionLowering {
              binary("-", Last, quantity(1, DifferenceType, L), InputType, L),
              L);
       assign(dereference(Output, L),
-             cast(dereference(Last, L), OutputElementType, L), L);
+             Record ? dereference(Last, L)
+                    : cast(dereference(Last, L), OutputElementType, L),
+             L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);

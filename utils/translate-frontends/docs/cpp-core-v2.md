@@ -1729,6 +1729,8 @@ iterator type and empty-range result.
 The same operation accepts raw or wrapped ranges of one exact source-owned
 trivial record type with a writable destination, copying complete values from
 const or mutable inputs without requiring a comparison operator.
+`reverse_copy` uses the same exact record-copy boundary and preserves the
+output iterator form while traversing its input backward.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`
