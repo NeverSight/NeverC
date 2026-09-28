@@ -56062,6 +56062,89 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordDirectExtremaFunctorRun) {
+  const auto Source = tmpFile("source-record-direct-extrema-functor.cpp");
+  const auto Output = tmpFile("source-record-direct-extrema-functor.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Item { int rank, tag; };
+const Item *base;
+int comparisons, bad_identity, evaluations;
+bool within(const Item *value) {
+  for (int i = 0; i < 5; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    if (!within(&left) || !within(&right)) ++bad_identity;
+    return left.rank < right.rank;
+  }
+};
+struct MutableLess {
+  int calls;
+  int *observed;
+  bool operator()(const Item &left, const Item &right) {
+    *observed += ++calls;
+    return left.rank < right.rank;
+  }
+};
+Less next_less() { ++evaluations; return Less{&comparisons}; }
+int main() {
+  Item values[5]{{0, 0}, {1, 10}, {2, 20}, {3, 30}, {2, 21}};
+  base = values;
+  Less less{&comparisons};
+  if (&std::min(values[3], values[1], next_less()) != values + 1 ||
+      &std::max(values[3], values[1], less) != values + 3 ||
+      &std::clamp(values[0], values[1], values[3], less) != values + 1 ||
+      &std::clamp(values[2], values[1], values[3], less) != values + 2 ||
+      &std::clamp(values[3], values[1], values[2], less) != values + 2 ||
+      evaluations != 1 || !comparisons || bad_identity) return 1;
+  auto extremes = std::minmax(values[3], values[1], less);
+  if (&extremes.first != values + 1 ||
+      &extremes.second != values + 3) return 2;
+  auto ties = std::minmax(values[2], values[4], less);
+  if (&ties.first != values + 2 || &ties.second != values + 4 ||
+      bad_identity) return 3;
+  int first_effects = 0, second_effects = 0, third_effects = 0;
+  auto evaluated = std::minmax((++first_effects, values[3]),
+                                (++second_effects, values[1]),
+                                next_less());
+  if (&evaluated.first != values + 1 ||
+      &evaluated.second != values + 3 ||
+      first_effects != 1 || second_effects != 1 ||
+      evaluations != 2 || bad_identity) return 4;
+  if (&std::clamp((++first_effects, values[2]),
+                   (++second_effects, values[1]),
+                   (++third_effects, values[3]), less) != values + 2 ||
+      first_effects != 2 || second_effects != 2 ||
+      third_effects != 1 || bad_identity) return 5;
+  int observed = 0;
+  MutableLess mutable_less{0, &observed};
+  if (&std::min(values[3], values[1], mutable_less) != values + 1 ||
+      mutable_less.calls != 0 || observed != 1) return 6;
+  if (&std::clamp(values[2], values[1], values[3], mutable_less) !=
+          values + 2 ||
+      mutable_less.calls != 0 || observed != 4) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-direct-extrema-functor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("source-record-ordered-bounds.nc");

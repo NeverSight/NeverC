@@ -455,6 +455,10 @@ records with that selected ordering and preserve returned reference identity.
 Their checked comparator forms also accept those records through an exact
 `bool(const Record&, const Record&)` function pointer without `operator<`,
 preserving comparison referents and returned references.
+They also accept a source-owned, trivially copyable comparison object with an
+exact `bool operator()(const Record&, const Record&)` method. The selected
+libc++ call is authenticated, the object argument is evaluated once, and the
+method observes the original record references.
 Default `lower_bound`, `upper_bound`, `binary_search` and `equal_range` accept
 raw or authenticated wrapped source-record ranges and exact const record keys.
 Their checked comparator forms accept `bool(const Record&, const Record&)`

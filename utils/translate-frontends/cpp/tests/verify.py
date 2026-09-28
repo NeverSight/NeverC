@@ -31915,6 +31915,54 @@ std::pair<const Item &, const Item &> extrema(const Item &left,
           'return std::min(a,b,less);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_direct_extrema_functor_source = """\
+#include <algorithm>
+struct Item { int rank, tag; };
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    return left.rank < right.rank;
+  }
+};
+struct MutableLess {
+  int calls;
+  bool operator()(const Item &left, const Item &right) {
+    ++calls;
+    return left.rank < right.rank;
+  }
+};
+const Item &minimum(const Item &left, const Item &right, Less less) {
+  return std::min(left, right, less);
+}
+const Item &minimum_mutable(const Item &left, const Item &right,
+                            MutableLess less) {
+  return std::min(left, right, less);
+}
+const Item &maximum(const Item &left, const Item &right, Less less) {
+  return std::max(left, right, less);
+}
+const Item &bounded(const Item &value, const Item &low,
+                    const Item &high, Less less) {
+  return std::clamp(value, low, high, less);
+}
+std::pair<const Item &, const Item &> extrema(const Item &left,
+                                               const Item &right, Less less) {
+  return std::minmax(left, right, less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-direct-extrema-functor-" + target,
+              source_record_direct_extrema_functor_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-direct-extrema-functor-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(Item left,Item right) const {'
+          'return left.rank<right.rank;}};'
+          'const Item&f(const Item&a,const Item&b){'
+          'return std::min(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>

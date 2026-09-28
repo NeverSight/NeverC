@@ -2185,8 +2185,8 @@ the selected argument identity; equivalent inputs select the first argument for
 second as its maximum. Comparator `minmax_element` retains the first equivalent
 minimum and last equivalent maximum, uses the same pairwise comparison bound,
 and performs no calls for empty or single-element ranges. Enum and object
-pointer values are admitted, while records and unsupported callbacks remain
-rejected.
+pointer values are admitted; the separate exact source-record boundary is
+described below. Other callbacks remain rejected.
 
 The three-argument `std::minmax_element` overload also accepts authenticated
 typed or transparent empty standard `<functional>` comparison objects on
@@ -2204,8 +2204,7 @@ object with its own parameter objects in the documented order, and the selected
 `operator()` body must pass the existing functional-operation proof. The object
 argument is evaluated once; checked scalar conversions and the selected
 reference identity are preserved. Generated programs make no libc++ call for
-these comparisons. Source specializations and user-defined comparator objects
-remain outside this boundary.
+these comparisons. Source specializations remain outside this scalar boundary.
 
 The exact two-iterator `std::is_heap`, `std::is_heap_until`, `std::make_heap`,
 `std::push_heap`, `std::pop_heap` and `std::sort_heap` templates use the same
@@ -2506,6 +2505,13 @@ Their checked comparator overloads also accept exact trivial source records
 through `bool(const Record&, const Record&)` without requiring `operator<`.
 The callback receives original referents; returned references and the pair of
 references retain the selected source objects and standard tie behavior.
+These overloads also accept a source-owned, standard-layout, trivially copyable
+function object with a checked `bool operator()(const Record&, const Record&)`
+method. The exact instantiated libc++ conditional calls the object in the
+approved order; `clamp` authenticates both calls. The comparator argument is
+evaluated once and copied into the by-value algorithm parameter, while its
+method receives the original record references. Source method bodies and all
+redeclared signatures must be owned by the translation source.
 
 Default `std::lower_bound`, `std::upper_bound`, `std::binary_search` and
 `std::equal_range` accept exact trivial source-record ranges and a const

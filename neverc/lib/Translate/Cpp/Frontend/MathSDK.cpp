@@ -18652,9 +18652,15 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       SDKOperation};
 }
 
-std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
-    const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+struct DirectAlgorithmComparatorInvocations {
+  const CXXOperatorCallExpr *First;
+  const CXXOperatorCallExpr *Second;
+};
+
+static std::optional<DirectAlgorithmComparatorInvocations>
+directAlgorithmComparatorInvocations(const State &S, const SourceManager &SM,
+                                     const CallExpr *Call,
+                                     const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Definition = Function ? Function->getDefinition() : nullptr;
@@ -18675,16 +18681,13 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
       !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", Path))
     return std::nullopt;
   const auto Object = Function->getParamDecl(Index)->getType();
-  const auto *Record = Object->getAsCXXRecordDecl();
-  const auto Approved = approvedFunctionalObjectRecord(S, SM, Record, Context);
-  if (!Approved || Object.hasLocalQualifiers() ||
+  if (Object.hasLocalQualifiers() ||
       !Context.hasSameType(Call->getArg(Index)->getType(), Object) ||
       !Function->getParamDecl(0)->getType()->isLValueReferenceType() ||
       !Context.hasSameType(Function->getParamDecl(0)->getType(),
                            Function->getParamDecl(1)->getType()) ||
-      (Clamp && !Context.hasSameType(
-                    Function->getParamDecl(0)->getType(),
-                    Function->getParamDecl(2)->getType())))
+      (Clamp && !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                                     Function->getParamDecl(2)->getType())))
     return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
   const auto *Return =
@@ -18695,9 +18698,8 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
                            ? dyn_cast<ConditionalOperator>(
                                  Return->getRetValue()->IgnoreParenImpCasts())
                            : nullptr;
-  const auto Check = [&](const ConditionalOperator *Selected,
-                         unsigned Left, unsigned Right)
-      -> std::optional<FunctionalOperationInfo> {
+  const auto Check = [&](const ConditionalOperator *Selected, unsigned Left,
+                         unsigned Right) -> const CXXOperatorCallExpr * {
     const auto *Invocation = Selected
                                  ? dyn_cast<CXXOperatorCallExpr>(
                                        Selected->getCond()->IgnoreParenImpCasts())
@@ -18705,7 +18707,7 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
     if (!Invocation || Invocation->getOperator() != OO_Call ||
         Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
         !Invocation->getType()->isBooleanType())
-      return std::nullopt;
+      return nullptr;
     const auto Reference = [&](unsigned Argument, unsigned Parameter) {
       const auto *Ref = dyn_cast<DeclRefExpr>(
           Invocation->getArg(Argument)->IgnoreParenImpCasts());
@@ -18713,11 +18715,39 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
     };
     if (!Reference(0, Index) || !Reference(1, Left) ||
         !Reference(2, Right))
-      return std::nullopt;
-    return approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+      return nullptr;
+    return Invocation;
   };
   const bool Forward = Name == "max" || Clamp;
-  auto Operation = Check(Choice, Forward ? 0u : 1u, Forward ? 1u : 0u);
+  const auto *First = Check(Choice, Forward ? 0u : 1u, Forward ? 1u : 0u);
+  if (!First)
+    return std::nullopt;
+  const auto *Second = Clamp
+                           ? dyn_cast<ConditionalOperator>(
+                                 Choice->getFalseExpr()->IgnoreParenImpCasts())
+                           : nullptr;
+  const auto *SecondInvocation = Clamp ? Check(Second, 2, 0) : nullptr;
+  if (Clamp && !SecondInvocation)
+    return std::nullopt;
+  return DirectAlgorithmComparatorInvocations{First, SecondInvocation};
+}
+
+std::optional<FunctionalOperationInfo>
+approvedDirectAlgorithmComparator(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call,
+                                  const ASTContext &Context) {
+  const auto Invocations =
+      directAlgorithmComparatorInvocations(S, SM, Call, Context);
+  if (!Invocations)
+    return std::nullopt;
+  const auto *Function = Call->getDirectCallee();
+  const unsigned Index = Function->getName() == "clamp" ? 3u : 2u;
+  const auto Object = Function->getParamDecl(Index)->getType();
+  if (!approvedFunctionalObjectRecord(S, SM, Object->getAsCXXRecordDecl(),
+                                      Context))
+    return std::nullopt;
+  auto Operation = approvedFunctionalOperationImpl(S, SM, Invocations->First,
+                                                   Context, false);
   if (!Operation || Operation->RightType.isNull() ||
       !Operation->ResultType->isBooleanType() ||
       !utilityScalarDirectConversion(
@@ -18727,10 +18757,9 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
           Context, Function->getParamDecl(0)->getType()->getPointeeType(),
           Operation->RightType))
     return std::nullopt;
-  if (Clamp) {
-    const auto *Second = dyn_cast<ConditionalOperator>(
-        Choice->getFalseExpr()->IgnoreParenImpCasts());
-    const auto SecondOperation = Check(Second, 2, 0);
+  if (Invocations->Second) {
+    const auto SecondOperation = approvedFunctionalOperationImpl(
+        S, SM, Invocations->Second, Context, false);
     if (!SecondOperation ||
         SecondOperation->Operation != Operation->Operation ||
         !Context.hasSameType(SecondOperation->LeftType,
@@ -18742,6 +18771,61 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
       return std::nullopt;
   }
   return Operation;
+}
+
+const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto Invocations =
+      directAlgorithmComparatorInvocations(S, SM, Call, Context);
+  if (!Invocations)
+    return nullptr;
+  const auto *Function = Call->getDirectCallee();
+  const unsigned Index = Function->getName() == "clamp" ? 3u : 2u;
+  const auto Object = Function->getParamDecl(Index)->getType();
+  const auto *Record = Object->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  const auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+  if (!Record || !S.owns(SM, Record->getLocation()) || Record->isLambda() ||
+      Record->isUnion() || !Record->isStandardLayout() ||
+      !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor() ||
+      !utilityComparableSourceElement(S, SM, Element, false, Context))
+    return nullptr;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Invocations->First->getDirectCallee());
+  const auto *Definition = Method ? Method->getDefinition() : nullptr;
+  if (!Method || !Definition || Method->isStatic() || Method->isVolatile() ||
+      Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 2 ||
+      !Method->getReturnType()->isBooleanType() ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
+      !ordinaryOperator(Method) || !callableMethod(Method) ||
+      !S.owns(SM, Definition->getLocation()) ||
+      !functionalMemberReceiverValueCategory(
+          Method, Invocations->First->getArg(0), false) ||
+      (Invocations->Second &&
+       (!Invocations->Second->getDirectCallee() ||
+        Invocations->Second->getDirectCallee()->getCanonicalDecl() !=
+            Method->getCanonicalDecl() ||
+        !functionalMemberReceiverValueCategory(
+            Method, Invocations->Second->getArg(0), false))))
+    return nullptr;
+  for (const auto *D : Method->redecls())
+    if (!S.owns(SM, D->getLocation()))
+      return nullptr;
+  for (unsigned I = 0; I < 2; ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    if (!Parameter->isLValueReferenceType() ||
+        !Parameter->getPointeeType().isConstQualified() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Element))
+      return nullptr;
+  }
+  return Method;
 }
 
 std::optional<FunctionalOperationInfo>
@@ -24752,7 +24836,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((AlgorithmReferenceParameter(0) &&
           (AlgorithmBinaryPredicateReferenceParameter(2, 0) ||
            approvedDirectAlgorithmComparator(S, SM, Call, Context))) ||
-         AlgorithmRecordReferenceComparator(2, 0)))))
+         AlgorithmRecordReferenceComparator(2, 0) ||
+         approvedDirectAlgorithmSourceComparator(S, SM, Call, Context)))))
     return Name == "min" ? UtilityOperation::AlgorithmMin
                          : UtilityOperation::AlgorithmMax;
   if (Origin->Path == "__algorithm/clamp.h" && Name == "clamp" &&
@@ -24781,7 +24866,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((AlgorithmReferenceParameter(0) &&
           (AlgorithmBinaryPredicateReferenceParameter(3, 0) ||
            approvedDirectAlgorithmComparator(S, SM, Call, Context))) ||
-         AlgorithmRecordReferenceComparator(3, 0)))))
+         AlgorithmRecordReferenceComparator(3, 0) ||
+         approvedDirectAlgorithmSourceComparator(S, SM, Call, Context)))))
     return UtilityOperation::AlgorithmClamp;
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
@@ -24802,7 +24888,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((AlgorithmReferenceParameter(0) &&
           (AlgorithmBinaryPredicateReferenceParameter(2, 0) ||
            approvedDirectAlgorithmComparator(S, SM, Call, Context))) ||
-         AlgorithmRecordReferenceComparator(2, 0))))) {
+         AlgorithmRecordReferenceComparator(2, 0) ||
+         approvedDirectAlgorithmSourceComparator(S, SM, Call, Context))))) {
     auto Pair = approvedUtilityReferencePairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

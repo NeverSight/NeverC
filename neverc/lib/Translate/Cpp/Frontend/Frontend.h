@@ -303,6 +303,9 @@ approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
 std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+const clang::CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<FunctionalOperationInfo> approvedRangeAlgorithmComparator(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, unsigned ComparatorIndex,

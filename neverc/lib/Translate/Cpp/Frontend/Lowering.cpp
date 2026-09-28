@@ -779,12 +779,19 @@ class FunctionLowering {
                                    Operation.Type, std::move(Arguments), L);
     }
     const auto *Method = Operation.Method;
+    auto Convert = [&](Expression Value, QualType Parameter) {
+      if (Parameter->isLValueReferenceType() &&
+          recordValue(Parameter->getPointeeType()))
+        return cast(address(std::move(Value), Parameter->getPointeeType(), L),
+                    type(Parameter, L), L);
+      return cast(std::move(Value), type(Parameter, L), L);
+    };
     Arguments.push_back(cast(json::Object(Operation.Storage),
                              type(Method->getThisType(), L), L));
     Arguments.push_back(
-        cast(std::move(Left), type(Method->getParamDecl(0)->getType(), L), L));
+        Convert(std::move(Left), Method->getParamDecl(0)->getType()));
     Arguments.push_back(
-        cast(std::move(Right), type(Method->getParamDecl(1)->getType(), L), L));
+        Convert(std::move(Right), Method->getParamDecl(1)->getType()));
     chargeCall(Arguments, L);
     auto Result = temporary(type(Method->getReturnType(), L), L);
     Body.push_back(json::Object{{"op", "call"},
@@ -842,6 +849,16 @@ class FunctionLowering {
     Arguments.push_back(std::move(Right));
     return emitAlgorithmCallback(std::move(Callable), PredicateType,
                                  std::move(Arguments), L);
+  }
+  std::optional<CapturedAlgorithmPredicate>
+  captureDirectSourceComparator(const CallExpr *Call, unsigned Index) {
+    const auto *Method = approvedDirectAlgorithmSourceComparator(
+        A.S, A.Sources, Call, A.Context);
+    if (!Method)
+      return std::nullopt;
+    const auto Object = Call->getDirectCallee()->getParamDecl(Index)->getType();
+    return CapturedAlgorithmPredicate{argument(Call->getArg(Index), Object),
+                                      Object, Method, std::nullopt};
   }
   std::optional<FunctionalOperationInfo> captureRangeSDKComparator(
       const CallExpr *Call, unsigned Index, QualType LeftElement,
@@ -6462,13 +6479,17 @@ class FunctionLowering {
                    L);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
+      std::optional<CapturedAlgorithmPredicate> SourceComparator;
       if (Call->getNumArgs() == 3) {
         SDKComparator = approvedDirectAlgorithmComparator(
             A.S, A.Sources, Call, A.Context);
         if (SDKComparator)
           discardFunctionalObject(Call->getArg(2));
-        else
-          Comparator = snapshot(expression(Call->getArg(2)), L);
+        else {
+          SourceComparator = captureDirectSourceComparator(Call, 2);
+          if (!SourceComparator)
+            Comparator = snapshot(expression(Call->getArg(2)), L);
+        }
       }
       auto Result = temporary(*LeftAddress.getString("type"), L);
       const auto SelectLeft = labelName(), SelectRight = labelName();
@@ -6481,6 +6502,14 @@ class FunctionLowering {
                        Minimum ? dereference(json::Object(LeftAddress), L)
                                : dereference(json::Object(RightAddress), L),
                        *SDKComparator)
+             : SourceComparator
+                 ? emitBinaryCallable(
+                       *SourceComparator,
+                       Minimum ? dereference(json::Object(RightAddress), L)
+                               : dereference(json::Object(LeftAddress), L),
+                       Minimum ? dereference(json::Object(LeftAddress), L)
+                               : dereference(json::Object(RightAddress), L),
+                       L)
              : Comparator
                  ? emitBinaryPredicate(
                        json::Object(*Comparator), Call->getArg(2)->getType(),
@@ -6518,35 +6547,49 @@ class FunctionLowering {
                    L);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
+      std::optional<CapturedAlgorithmPredicate> SourceComparator;
       if (Call->getNumArgs() == 4) {
         SDKComparator = approvedDirectAlgorithmComparator(
             A.S, A.Sources, Call, A.Context);
         if (SDKComparator)
           discardFunctionalObject(Call->getArg(3));
-        else
-          Comparator = snapshot(expression(Call->getArg(3)), L);
+        else {
+          SourceComparator = captureDirectSourceComparator(Call, 3);
+          if (!SourceComparator)
+            Comparator = snapshot(expression(Call->getArg(3)), L);
+        }
       }
       auto Result = temporary(*ValueAddress.getString("type"), L);
       const auto CheckHigh = labelName(), SelectValue = labelName();
       const auto SelectLow = labelName(), SelectHigh = labelName();
       const auto End = labelName();
-      branch(SDKComparator
-                 ? functionalOperationValues(
-                       L, dereference(json::Object(ValueAddress), L),
-                       dereference(json::Object(LowAddress), L), *SDKComparator)
-             : Comparator
-                 ? emitBinaryPredicate(
-                       json::Object(*Comparator), Call->getArg(3)->getType(),
-                       dereference(json::Object(ValueAddress), L),
-                       dereference(json::Object(LowAddress), L), L)
-                 : AlgorithmReferenceLess(json::Object(ValueAddress),
-                                          json::Object(LowAddress)),
-             SelectLow, CheckHigh, L);
+      branch(
+          SDKComparator
+              ? functionalOperationValues(
+                    L, dereference(json::Object(ValueAddress), L),
+                    dereference(json::Object(LowAddress), L), *SDKComparator)
+          : SourceComparator
+              ? emitBinaryCallable(*SourceComparator,
+                                   dereference(json::Object(ValueAddress), L),
+                                   dereference(json::Object(LowAddress), L), L)
+          : Comparator
+              ? emitBinaryPredicate(json::Object(*Comparator),
+                                    Call->getArg(3)->getType(),
+                                    dereference(json::Object(ValueAddress), L),
+                                    dereference(json::Object(LowAddress), L), L)
+              : AlgorithmReferenceLess(json::Object(ValueAddress),
+                                       json::Object(LowAddress)),
+          SelectLow, CheckHigh, L);
       label(CheckHigh, L);
       branch(SDKComparator ? functionalOperationValues(
                                  L, dereference(json::Object(HighAddress), L),
                                  dereference(json::Object(ValueAddress), L),
                                  *SDKComparator)
+             : SourceComparator
+                 ? emitBinaryCallable(
+                       *SourceComparator,
+                       dereference(json::Object(HighAddress), L),
+                       dereference(json::Object(ValueAddress), L), L)
              : Comparator
                  ? emitBinaryPredicate(
                        json::Object(*Comparator), Call->getArg(3)->getType(),
@@ -6575,13 +6618,17 @@ class FunctionLowering {
           bind(Call->getArg(1), Function->getParamDecl(1)->getType()), L);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
+      std::optional<CapturedAlgorithmPredicate> SourceComparator;
       if (Call->getNumArgs() == 3) {
         SDKComparator = approvedDirectAlgorithmComparator(
             A.S, A.Sources, Call, A.Context);
         if (SDKComparator)
           discardFunctionalObject(Call->getArg(2));
-        else
-          Comparator = snapshot(expression(Call->getArg(2)), L);
+        else {
+          SourceComparator = captureDirectSourceComparator(Call, 2);
+          if (!SourceComparator)
+            Comparator = snapshot(expression(Call->getArg(2)), L);
+        }
       }
       auto Pair = approvedUtilityReferencePairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
@@ -6595,18 +6642,23 @@ class FunctionLowering {
                "The std::minmax destination type differs from its result.");
       const auto Forward = labelName(), Reverse = labelName(),
                  End = labelName();
-      branch(SDKComparator ? functionalOperationValues(
-                                 L, dereference(json::Object(RightAddress), L),
-                                 dereference(json::Object(LeftAddress), L),
-                                 *SDKComparator)
-             : Comparator
-                 ? emitBinaryPredicate(
-                       json::Object(*Comparator), Call->getArg(2)->getType(),
-                       dereference(json::Object(RightAddress), L),
-                       dereference(json::Object(LeftAddress), L), L)
-                 : AlgorithmReferenceLess(json::Object(RightAddress),
-                                          json::Object(LeftAddress)),
-             Reverse, Forward, L);
+      branch(
+          SDKComparator
+              ? functionalOperationValues(
+                    L, dereference(json::Object(RightAddress), L),
+                    dereference(json::Object(LeftAddress), L), *SDKComparator)
+          : SourceComparator
+              ? emitBinaryCallable(*SourceComparator,
+                                   dereference(json::Object(RightAddress), L),
+                                   dereference(json::Object(LeftAddress), L), L)
+          : Comparator
+              ? emitBinaryPredicate(
+                    json::Object(*Comparator), Call->getArg(2)->getType(),
+                    dereference(json::Object(RightAddress), L),
+                    dereference(json::Object(LeftAddress), L), L)
+              : AlgorithmReferenceLess(json::Object(RightAddress),
+                                       json::Object(LeftAddress)),
+          Reverse, Forward, L);
       label(Forward, L);
       assign(fieldStorage(json::Object(Place), Pair->First, L), LeftAddress, L);
       assign(fieldStorage(json::Object(Place), Pair->Second, L), RightAddress,
