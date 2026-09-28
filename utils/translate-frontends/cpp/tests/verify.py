@@ -32188,6 +32188,32 @@ void iota_wide(std::vector<long> &values) {
           'std::iota(v.begin(),v.end(),Counter{0});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_accumulate_source = """\
+#include <numeric>
+#include <vector>
+long subtract(long total, long value) { return total - value; }
+long default_sum(const std::vector<int> &values) {
+  return std::accumulate(values.cbegin(), values.cend(), 10L);
+}
+long callback_sum(const std::vector<int> &values) {
+  return std::accumulate(values.cbegin(), values.cend(), 10L, subtract);
+}
+unsigned char narrow_sum(const std::vector<unsigned char> &values) {
+  return std::accumulate(values.cbegin(), values.cend(),
+                         (unsigned char)0);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-accumulate-" + target,
+              wrapped_numeric_accumulate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-accumulate-reference-callback",
+          '#include <numeric>\n#include <vector>\n'
+          'long add(const long &total,int value){return total+value;}'
+          'long f(const std::vector<int>&v){'
+          'return std::accumulate(v.cbegin(),v.cend(),0L,add);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

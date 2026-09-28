@@ -522,6 +522,9 @@ and exact same-type by-value function-pointer operations. Integer `gcd` and
 `lcm` accept the documented built-in integer combinations.
 Default `iota` also accepts authenticated writable wrapped scalar ranges,
 including vector iterators, with its checked initial-value conversion.
+Default and checked function-pointer `accumulate` also accept authenticated
+mutable or const wrapped arithmetic ranges with their existing accumulator
+conversion and callback rules.
 Output ranges must be writable; callable objects, heterogeneous element types
 and custom iterators remain rejected. New contributes an exact, platform-free
 37-file C++17 header closure. The standard allocation tag types and

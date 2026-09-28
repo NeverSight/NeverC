@@ -3825,16 +3825,20 @@ class FunctionLowering {
       };
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
       std::optional<Expression> Second;
-      if (Inner)
-        Second = snapshot(expression(Call->getArg(2)), L);
+      QualType SecondRangeType;
+      if (Inner) {
+        auto SecondRange = AlgorithmRangeValue(2);
+        Second = std::move(SecondRange.first);
+        SecondRangeType = SecondRange.second;
+      }
       const unsigned InitialIndex = Inner ? 3 : 2;
       const bool HasInitial = InitialIndex < Call->getNumArgs();
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType =
-          Inner ? type(Call->getArg(2)->getType(), L) : std::string();
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = Inner ? type(SecondRangeType, L) : std::string();
       const auto ResultQualType =
           HasInitial ? Call->getArg(InitialIndex)->getType() : Call->getType();
       const auto ResultType = type(ResultQualType, L);
@@ -3874,11 +3878,11 @@ class FunctionLowering {
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
       auto DefaultTermQualType =
-          Call->getArg(0)->getType()->getPointeeType().getUnqualifiedType();
+          FirstRange.second->getPointeeType().getUnqualifiedType();
       if (Second && !TransformCallback) {
         auto Common = utilityScalarComparisonType(
-            A.Context, DefaultTermQualType,
-            Call->getArg(2)->getType()->getPointeeType(), false);
+            A.Context, DefaultTermQualType, SecondRangeType->getPointeeType(),
+            false);
         if (!Common)
           reject(L, "numeric product",
                  "The input elements have no arithmetic common type.");
@@ -3923,11 +3927,10 @@ class FunctionLowering {
       label(Add, L);
       auto Term = dereference(First, L);
       if (DefaultUnaryFunctionalPair) {
-        auto InputType = TypedTransformType.isNull() ? Call->getArg(0)
-                                                           ->getType()
-                                                           ->getPointeeType()
-                                                           .getUnqualifiedType()
-                                                     : TypedTransformType;
+        auto InputType =
+            TypedTransformType.isNull()
+                ? FirstRange.second->getPointeeType().getUnqualifiedType()
+                : TypedTransformType;
         auto Promoted = LogicalNotTransform ? A.Context.BoolTy : InputType;
         if (!LogicalNotTransform && A.Context.isPromotableIntegerType(Promoted))
           Promoted = A.Context.getPromotedIntegerType(Promoted);

@@ -22958,14 +22958,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ValueIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
       return false;
-    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    const auto Iterator = AlgorithmRangePointerParameter(IteratorIndex);
     auto Value = Function->getParamDecl(ValueIndex)->getType();
-    return utilityAlgorithmScalarPointer(Context, Iterator) &&
-           NumericArithmetic(Iterator->getPointeeType(), IncludeNarrow) &&
+    return Iterator &&
+           NumericArithmetic((*Iterator)->getPointeeType(), IncludeNarrow) &&
            NumericArithmetic(Value, IncludeNarrow) &&
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            utilityScalarComparisonType(Context, Value,
-                                       Iterator->getPointeeType(), false)
+                                       (*Iterator)->getPointeeType(), false)
                .has_value();
   };
   auto NumericIotaValueParameter = [&](unsigned ValueIndex,
@@ -23160,8 +23160,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, true) &&
-      NumericPointerParameter(1, false, true) &&
+      NumericRangeParameter(0, false, true) &&
+      NumericRangeParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       NumericReductionValueParameter(2, 0, true) &&
@@ -23171,7 +23171,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        NumericBinaryTransformCallback(
            3, Function->getParamDecl(2)->getType(),
            Function->getParamDecl(2)->getType(),
-           Function->getParamDecl(0)->getType()->getPointeeType(), true)))
+           (*AlgorithmRangePointerParameter(0))->getPointeeType(), true)))
     return UtilityOperation::NumericAccumulate;
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
