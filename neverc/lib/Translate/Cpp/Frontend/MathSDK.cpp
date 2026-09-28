@@ -24333,19 +24333,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (PermutationMutation &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isBooleanType() &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0))))
-    return Name == "next_permutation"
-               ? UtilityOperation::AlgorithmNextPermutation
-               : UtilityOperation::AlgorithmPrevPermutation;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto ScalarFirst = AlgorithmRangePointerParameter(0);
+    const auto ScalarLast = AlgorithmRangePointerParameter(1);
+    const bool Scalar =
+        ScalarFirst && ScalarLast &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarFirst) &&
+        ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
+         (Call->getNumArgs() == 3 && AlgorithmRangeComparisonParameter(2, 0)));
+    const bool Record = Call->getNumArgs() == 2 &&
+                        AlgorithmRecordOrderedRangeParameter(0) &&
+                        AlgorithmRecordOrderedRangeParameter(1) &&
+                        AlgorithmWritableRecordRangeParameter(0) &&
+                        AlgorithmWritableRecordRangeParameter(1);
+    if (Scalar || Record)
+      return Name == "next_permutation"
+                 ? UtilityOperation::AlgorithmNextPermutation
+                 : UtilityOperation::AlgorithmPrevPermutation;
+  }
   if (Origin->Path == "__algorithm/is_permutation.h" &&
       Name == "is_permutation" && Call->getNumArgs() >= 3 &&
       Call->getNumArgs() <= 5 &&

@@ -44780,10 +44780,11 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"record-prev", "#include <algorithm>\nstruct R{int n;};"
-                      "bool operator<(const R&a,const R&b){return a.n<b.n;}"
-                      "int main(){R a[2]{{1},{2}};"
-                      "return std::prev_permutation(a,a+2)?0:1;}"},
+      {"nontrivial-record-prev",
+       "#include <algorithm>\nstruct R{int n;~R(){}};"
+       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
+       "int main(){R a[2]{{1},{2}};"
+       "return std::prev_permutation(a,a+2)?0:1;}"},
       {"record-is-permutation",
        "#include <algorithm>\nstruct R{int n;};"
        "int operator==(const R&a,const R&b){return a.n==b.n;}"
@@ -55884,6 +55885,88 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("source-record-heap-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordPermutationMutationRun) {
+  const auto Source = tmpFile("source-record-permutation-mutation.cpp");
+  const auto Output = tmpFile("source-record-permutation-mutation.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Point {
+  int value, id;
+  bool operator<(const Point &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point raw[3]{{1, 10}, {2, 20}, {3, 30}};
+  int first_effects = 0, last_effects = 0;
+  if (!std::next_permutation((++first_effects, raw),
+                             (++last_effects, raw + 3)) ||
+      first_effects != 1 || last_effects != 1 ||
+      raw[0].value != 1 || raw[0].id != 10 ||
+      raw[1].value != 3 || raw[1].id != 30 ||
+      raw[2].value != 2 || raw[2].id != 20) return 1;
+  if (!std::prev_permutation(raw, raw + 3) ||
+      raw[0].value != 1 || raw[1].value != 2 || raw[2].value != 3) return 2;
+  Point descending[3]{{3, 30}, {2, 20}, {1, 10}};
+  if (std::next_permutation(descending, descending + 3) ||
+      descending[0].value != 1 || descending[1].value != 2 ||
+      descending[2].value != 3) return 3;
+  if (std::prev_permutation(descending, descending + 3) ||
+      descending[0].value != 3 || descending[1].value != 2 ||
+      descending[2].value != 1) return 4;
+  std::vector<Friend> friends{Friend{1}, Friend{2}, Friend{3}};
+  if (!std::next_permutation(friends.begin(), friends.end()) ||
+      friends[0].value != 1 || friends[1].value != 3 ||
+      friends[2].value != 2) return 5;
+  if (!std::prev_permutation(friends.begin(), friends.end()) ||
+      friends[0].value != 1 || friends[1].value != 2 ||
+      friends[2].value != 3) return 6;
+  owned::Free frees[2]{{1}, {2}};
+  if (!std::next_permutation(frees, frees + 2) ||
+      frees[0].value != 2 || frees[1].value != 1 ||
+      !std::prev_permutation(frees, frees + 2) ||
+      frees[0].value != 1 || frees[1].value != 2) return 7;
+  std::vector<int> numbers{3, 2, 1};
+  if (!std::next_permutation(numbers.begin(), numbers.end(),
+                             std::greater<int>{}) ||
+      numbers[0] != 3 || numbers[1] != 1 || numbers[2] != 2) return 8;
+  std::vector<Friend> empty;
+  if (std::next_permutation(empty.begin(), empty.end()) ||
+      std::prev_permutation(empty.begin(), empty.end())) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-permutation-mutation" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

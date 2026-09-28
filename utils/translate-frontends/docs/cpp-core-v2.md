@@ -2103,12 +2103,20 @@ permutation existed. Empty and single-element ranges return false. A range at
 its final or initial permutation is reversed to the opposite endpoint before
 returning false.
 
+Their default forms also accept writable raw or authenticated wrapped ranges
+of exact trivial source records with one uniquely selected const member,
+hidden-friend, or enclosing-namespace free Boolean `operator<`. Comparisons
+receive the current range elements by reference; swaps preserve complete
+record values. Writable authenticated wrapped scalar ranges use the same
+default and checked comparator boundaries as raw scalar ranges.
+
 Their three-argument comparator overloads accept the same checked scalar
 function-pointer boundary, including enum and object-pointer elements. The
 callback defines the lexicographical order, is retained once, and is not called
 for empty or single-element ranges. Repeated values, suffix reversal and
 endpoint wraparound retain the same behavior under that order. Unsupported
-callbacks, other callable objects and record elements remain rejected. These
+callbacks, other callable objects and record comparator overloads remain
+rejected. These
 two overloads also accept authenticated typed or transparent empty standard
 comparison objects on arithmetic scalars, preserving the selected ordering,
 wraparound and one-time object evaluation without a libc++ runtime call.

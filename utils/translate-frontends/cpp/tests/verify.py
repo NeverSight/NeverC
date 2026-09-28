@@ -31745,6 +31745,54 @@ void heap_scalar_wrapped(std::vector<int> &values) {
           'void f(Entry*first,Entry*last){std::sort_heap(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_permutation_mutation_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+bool next_raw(Member *first, Member *last) {
+  return std::next_permutation(first, last);
+}
+bool previous_raw(owned::Free *first, owned::Free *last) {
+  return std::prev_permutation(first, last);
+}
+bool next_wrapped(std::vector<Friend> &values) {
+  return std::next_permutation(values.begin(), values.end());
+}
+bool previous_wrapped(std::vector<Friend> &values) {
+  return std::prev_permutation(values.begin(), values.end());
+}
+bool next_scalar_wrapped(std::vector<int> &values) {
+  return std::next_permutation(values.begin(), values.end(),
+                               std::greater<int>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-permutation-mutation-" + target,
+              source_record_permutation_mutation_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-permutation-mutation-nontrivial",
+          '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'bool f(Entry*first,Entry*last){'
+          'return std::next_permutation(first,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_swap_reverse_source = """\
 #include <algorithm>
 #include <vector>
