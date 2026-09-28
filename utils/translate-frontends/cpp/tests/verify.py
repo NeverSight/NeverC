@@ -32137,6 +32137,40 @@ std::vector<long>::iterator mixed_second(
           'std::transform(v.cbegin(),v.cend(),o.begin(),twice);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    scalar_to_record_transform_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { long total; int tag; };
+Item make(long value) { return {value * 10, 1}; }
+Item combine(long left, int right) { return {left + right, int(left - right)}; }
+std::vector<Item>::iterator unary_record_result(
+    const std::vector<int> &input, std::vector<Item> &output) {
+  return std::transform(input.cbegin(), input.cend(), output.begin(), make);
+}
+std::vector<Item>::iterator binary_record_result(
+    const std::vector<int> &input,
+    const std::vector<unsigned char> &weights,
+    std::vector<Item> &output) {
+  return std::transform(input.cbegin(), input.cend(), weights.cbegin(),
+                        output.begin(), combine);
+}
+Item *raw_record_result(const int *input, Item *output) {
+  return std::transform(input, input + 2, output, make);
+}
+"""
+    for target in sdk_targets:
+        check("v2-scalar-to-record-transform-" + target,
+              scalar_to_record_transform_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-scalar-to-record-transform-reference-result-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{long total;int tag;};Item current{1,2};'
+          'const Item& make(long){return current;}'
+          'std::vector<Item>::iterator f(const std::vector<int>&source,'
+          'std::vector<Item>&output){return std::transform(source.cbegin(),'
+          'source.cend(),output.begin(),make);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_scalar_generate_callbacks_source = """\
 #include <algorithm>
 #include <vector>

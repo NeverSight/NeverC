@@ -1964,6 +1964,10 @@ independent raw or authenticated wrapped scalar input ranges and a writable raw
 or wrapped scalar output. Each callback argument and result uses its checked
 direct conversion; the returned position retains the output iterator type.
 The selected input values are read before an overlapping output write.
+Scalar inputs may also produce an exact trivial source record in a writable raw
+or wrapped output range. Each callback input uses the existing checked direct
+scalar conversion, and the callback must return the exact output record by
+value; unary and binary results keep the output iterator form.
 Both forms also accept exact trivial source records in raw or authenticated
 wrapped input ranges. The checked callback takes one or two `const Record&`
 parameters matching their respective input types and returns the exact writable

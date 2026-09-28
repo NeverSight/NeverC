@@ -25138,15 +25138,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const unsigned CallbackIndex = Binary ? 4 : 3;
     const auto *Callback = AlgorithmCallbackPrototype(CallbackIndex);
     const auto First = AlgorithmRangePointerParameter(0);
-    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
+    const auto ScalarOutput = AlgorithmRangePointerParameter(OutputIndex);
+    const auto RecordOutput =
+        AlgorithmWritableRecordRangeParameter(OutputIndex);
+    const bool ScalarResult =
+        Callback && ScalarOutput &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarOutput) &&
+        utilityScalarDirectConversion(Context, Callback->getReturnType(),
+                                      (*ScalarOutput)->getPointeeType());
+    const bool RecordResult =
+        Callback && RecordOutput &&
+        Context.hasSameUnqualifiedType(Callback->getReturnType(),
+                                       (*RecordOutput)->getPointeeType());
     bool Valid =
-        First && Output &&
-        utilityAlgorithmWritableScalarPointer(Context, *Output) && Callback &&
+        First && Callback && (ScalarResult || RecordResult) &&
         Callback->getNumParams() == (Binary ? 2u : 1u) &&
         utilityScalarDirectConversion(Context, (*First)->getPointeeType(),
                                       Callback->getParamType(0)) &&
-        utilityScalarDirectConversion(Context, Callback->getReturnType(),
-                                      (*Output)->getPointeeType()) &&
         Same(Function->getReturnType(),
              Function->getParamDecl(OutputIndex)->getType()) &&
         Same(Call->getType(), Function->getReturnType());

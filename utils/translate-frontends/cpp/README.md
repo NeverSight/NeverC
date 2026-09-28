@@ -567,6 +567,9 @@ or const wrapped scalar inputs, with `for_each_n` returning the wrapped position
 Function-pointer unary and binary `transform` accept independent raw or
 authenticated wrapped scalar inputs and writable outputs, returning the output
 iterator type after checked callback and destination conversions.
+Those scalar input forms also accept writable exact trivial source-record
+outputs when the checked callback returns that output record by value; the
+input parameters keep their direct scalar conversion rules.
 Function-pointer `generate` and `generate_n` also accept writable wrapped
 scalar outputs, with `generate_n` returning the wrapped output position.
 They additionally accept writable raw or wrapped exact trivial source-record

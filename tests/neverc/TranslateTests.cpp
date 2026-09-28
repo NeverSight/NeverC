@@ -56545,6 +56545,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarToRecordTransformRun) {
+  const auto Source = tmpFile("scalar-to-record-transform.cpp");
+  const auto Output = tmpFile("scalar-to-record-transform.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { long total; int tag; };
+int calls;
+Item make(long value) { ++calls; return {value * 10, calls}; }
+Item combine(long left, int right) {
+  ++calls;
+  return {left + right, int(left - right)};
+}
+int main() {
+  const std::vector<int> input{1, 2, 3};
+  const std::vector<unsigned char> weights{4, 5, 6};
+  std::vector<Item> output(3);
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), output.begin(), make) !=
+          output.end() || calls != 3 ||
+      output[0].total != 10 || output[0].tag != 1 ||
+      output[1].total != 20 || output[1].tag != 2 ||
+      output[2].total != 30 || output[2].tag != 3) return 1;
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), weights.cbegin(),
+                     output.begin(), combine) != output.end() ||
+      calls != 3 || output[0].total != 5 || output[0].tag != -3 ||
+      output[1].total != 7 || output[1].tag != -3 ||
+      output[2].total != 9 || output[2].tag != -3) return 2;
+  Item raw_output[3]{};
+  calls = 0;
+  if (std::transform(input.cbegin(), input.cend(), raw_output, make) !=
+          raw_output + 3 || calls != 3 ||
+      raw_output[0].total != 10 || raw_output[0].tag != 1 ||
+      raw_output[2].total != 30 || raw_output[2].tag != 3) return 3;
+  const int raw_input[2]{7, 8};
+  calls = 0;
+  if (std::transform(raw_input, raw_input + 2, weights.cbegin(),
+                     raw_output, combine) != raw_output + 2 ||
+      calls != 2 || raw_output[0].total != 11 || raw_output[0].tag != 3 ||
+      raw_output[1].total != 13 || raw_output[1].tag != 3) return 4;
+  calls = 0;
+  if (std::transform(input.cend(), input.cend(), output.begin(), make) !=
+          output.begin() || calls != 0) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("scalar-to-record-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedRecordTransformRun) {
   const auto Source = tmpFile("wrapped-record-transform.cpp");
   const auto Output = tmpFile("wrapped-record-transform.nc");
