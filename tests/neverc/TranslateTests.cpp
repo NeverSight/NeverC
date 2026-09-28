@@ -55974,6 +55974,79 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordPartialSortRun) {
+  const auto Source = tmpFile("source-record-partial-sort.cpp");
+  const auto Output = tmpFile("source-record-partial-sort.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Point {
+  int value, id;
+  bool operator<(const Point &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+int main() {
+  Point raw[8]{{7, 0}, {1, 1}, {5, 2}, {2, 3},
+               {9, 4}, {3, 5}, {4, 6}, {8, 7}};
+  int first_effects = 0, middle_effects = 0, last_effects = 0;
+  std::partial_sort((++first_effects, raw), (++middle_effects, raw + 4),
+                    (++last_effects, raw + 8));
+  if (first_effects != 1 || middle_effects != 1 || last_effects != 1 ||
+      raw[0].value != 1 || raw[1].value != 2 ||
+      raw[2].value != 3 || raw[3].value != 4) return 1;
+  int id_sum = 0;
+  for (int i = 0; i < 8; ++i) id_sum += raw[i].id;
+  if (id_sum != 28) return 2;
+  std::partial_sort(raw, raw, raw + 8);
+  if (raw[0].value != 1 || raw[3].value != 4) return 3;
+  std::vector<Friend> friends{Friend{5}, Friend{1}, Friend{6},
+                              Friend{3}, Friend{2}, Friend{4}};
+  std::partial_sort(friends.begin(), friends.begin() + 3, friends.end());
+  if (friends[0].value != 1 || friends[1].value != 2 ||
+      friends[2].value != 3) return 4;
+  owned::Free frees[4]{{4}, {1}, {3}, {2}};
+  std::partial_sort(frees, frees + 2, frees + 4);
+  if (frees[0].value != 1 || frees[1].value != 2) return 5;
+  std::vector<int> numbers{1, 5, 3, 4, 2};
+  std::partial_sort(numbers.begin(), numbers.begin() + 2, numbers.end(),
+                    std::greater<int>{});
+  if (numbers[0] != 5 || numbers[1] != 4) return 6;
+  std::vector<Friend> empty;
+  std::partial_sort(empty.begin(), empty.begin(), empty.end());
+  return empty.empty() ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-partial-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordSubrangeSearchRun) {
   const auto Source = tmpFile("source-record-subrange-search.cpp");
   const auto Output = tmpFile("source-record-subrange-search.nc");

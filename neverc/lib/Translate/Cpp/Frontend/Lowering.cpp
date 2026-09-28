@@ -6955,20 +6955,41 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmPartialSort: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Middle = snapshot(expression(Call->getArg(1)), L);
-      auto Last = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto MiddleRange = AlgorithmRangeValue(1);
+      auto LastRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Middle = std::move(MiddleRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 4) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 3, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(3)), L);
       }
       const auto ComparatorType =
           Comparator ? Call->getArg(3)->getType() : QualType{};
+      const auto Element = FirstRange.second->getPointeeType();
+      const auto SourceComparison =
+          Call->getNumArgs() == 3
+              ? approvedUtilityTrivialSourceComparison(A.S, A.Sources, Element,
+                                                       OO_Less, A.Context)
+              : std::nullopt;
       auto Less = [&](Expression Left, Expression Right) {
+        if (SourceComparison) {
+          auto LeftAddress =
+              snapshot(address(std::move(Left), Element.withConst(), L), L);
+          auto RightAddress =
+              snapshot(address(std::move(Right), Element.withConst(), L), L);
+          return compareVectorSourceElements(
+              std::move(LeftAddress), std::move(RightAddress),
+              SourceComparison->Member,
+              SourceComparison->Friend ? SourceComparison->Friend
+                                       : SourceComparison->Namespace,
+              L);
+        }
         if (SDKComparator)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
                                            *SDKComparator);
@@ -6978,7 +6999,8 @@ class FunctionLowering {
         return binary("<", std::move(Left), std::move(Right), "bool", L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
+      const auto SourceElement = SourceComparison ? Element : QualType{};
       auto HeapSize =
           snapshot(binary("-", Middle, First, DifferenceType, L), L);
       auto Current = snapshot(json::Object(Middle), L);
@@ -6990,7 +7012,8 @@ class FunctionLowering {
              NonEmpty, End, L);
       label(NonEmpty, L);
       makeHeap(json::Object(First), json::Object(HeapSize), PointerType,
-               DifferenceType, L, Comparator, ComparatorType, SDKComparator);
+               DifferenceType, L, Comparator, ComparatorType, SDKComparator,
+               SourceElement);
       jump(Scan, L);
       label(Scan, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Finish, L);
@@ -7005,7 +7028,7 @@ class FunctionLowering {
       assign(dereference(Current, L), std::move(RootValue), L);
       heapSiftDown(json::Object(First), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), PointerType, DifferenceType,
-                   L, Comparator, ComparatorType, SDKComparator);
+                   L, Comparator, ComparatorType, SDKComparator, SourceElement);
       jump(Advance, L);
       label(Advance, L);
       assign(
@@ -7015,7 +7038,8 @@ class FunctionLowering {
       jump(Scan, L);
       label(Finish, L);
       sortHeap(json::Object(First), json::Object(HeapSize), PointerType,
-               DifferenceType, L, Comparator, ComparatorType, SDKComparator);
+               DifferenceType, L, Comparator, ComparatorType, SDKComparator,
+               SourceElement);
       jump(End, L);
       label(End, L);
       return {};

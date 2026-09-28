@@ -449,6 +449,8 @@ Boolean `operator<`; wrapped scalar ranges retain their comparator forms.
 Default `next_permutation` and `prev_permutation` admit the same writable
 source-record ranges, while wrapped scalar ranges retain their comparator
 forms.
+Default `partial_sort` admits writable raw or authenticated wrapped trivial
+source-record ranges; wrapped scalar ranges retain their comparator forms.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

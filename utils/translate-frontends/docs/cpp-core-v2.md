@@ -2034,6 +2034,14 @@ complexity and terminates directly on ranges of equivalent values. An empty
 selected prefix leaves `partial_sort` unchanged; an empty output returns the
 original output pointer.
 
+Default `std::partial_sort` also accepts writable raw or authenticated wrapped
+ranges of exact trivial source records with one uniquely selected const member,
+hidden-friend, or enclosing-namespace free Boolean `operator<`. Heap and scan
+comparisons receive the current elements by reference; swaps retain complete
+record values. Writable authenticated wrapped scalar ranges retain the default
+and checked comparator forms. Record comparator overloads and nontrivial
+records remain rejected.
+
 `std::sort` also accepts authenticated `std::__wrap_iter<T*>` ranges for the
 same writable scalar element and comparison boundary. This includes mutable
 `std::vector<T>` iterators. The iterator arguments are evaluated once, then

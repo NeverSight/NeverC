@@ -31793,6 +31793,52 @@ bool next_scalar_wrapped(std::vector<int> &values) {
           'return std::next_permutation(first,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_partial_sort_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+struct Member {
+  int value;
+  bool operator<(const Member &other) const { return value < other.value; }
+};
+struct Friend {
+  int value;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.value < b.value;
+  }
+};
+namespace owned {
+struct Free { int value; };
+bool operator<(const Free &a, const Free &b) {
+  return a.value < b.value;
+}
+}
+void partial_raw(Member *first, Member *middle, Member *last) {
+  std::partial_sort(first, middle, last);
+}
+void partial_wrapped(std::vector<Friend> &values) {
+  std::partial_sort(values.begin(), values.begin() + 2, values.end());
+}
+void partial_free(owned::Free *first, owned::Free *middle,
+                  owned::Free *last) {
+  std::partial_sort(first, middle, last);
+}
+void partial_scalar_wrapped(std::vector<int> &values) {
+  std::partial_sort(values.begin(), values.begin() + 2, values.end(),
+                    std::greater<int>{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-partial-sort-" + target,
+              source_record_partial_sort_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-partial-sort-nontrivial",
+          '#include <algorithm>\nstruct Entry{int value;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.value<b.value;}'
+          'void f(Entry*first,Entry*middle,Entry*last){'
+          'std::partial_sort(first,middle,last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_swap_reverse_source = """\
 #include <algorithm>
 #include <vector>
