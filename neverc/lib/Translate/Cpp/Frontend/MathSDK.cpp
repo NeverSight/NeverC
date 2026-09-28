@@ -23450,6 +23450,64 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
   }
   if (Origin->Path == "__numeric/transform_reduce.h" &&
+      Name == "transform_reduce" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType())) {
+    const auto Initial = Function->getParamDecl(2)->getType();
+    const auto *Transform = AlgorithmCallbackPrototype(4);
+    if (NumericArithmetic(Initial, true) &&
+        Same(Call->getArg(2)->getType(), Initial) &&
+        Same(Function->getReturnType(), Initial) &&
+        Same(Call->getType(), Initial) &&
+        NumericBinaryTransformCallback(3, Initial, Initial, Initial, true) &&
+        Transform && Transform->getNumParams() == 1 &&
+        AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0) &&
+        utilityScalarDirectConversion(Context, Transform->getReturnType(),
+                                      Initial))
+      return UtilityOperation::NumericTransformReduce;
+  }
+  if (Origin->Path == "__numeric/transform_reduce.h" &&
+      Name == "transform_reduce" && Call->getNumArgs() == 6 &&
+      Function->getNumParams() == 6 && Call->isPRValue() &&
+      ((AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1)) ||
+       (NumericRangeParameter(0, false, true) &&
+        NumericRangeParameter(1, false, true))) &&
+      (AlgorithmRecordRangeParameter(2) ||
+       NumericRangeParameter(2, false, true)) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      (AlgorithmRecordRangeParameter(0) || AlgorithmRecordRangeParameter(2))) {
+    const auto Initial = Function->getParamDecl(3)->getType();
+    const auto RecordFirst = AlgorithmRecordRangeParameter(0);
+    const auto RecordSecond = AlgorithmRecordRangeParameter(2);
+    const auto First =
+        RecordFirst ? RecordFirst : AlgorithmRangePointerParameter(0);
+    const auto Second =
+        RecordSecond ? RecordSecond : AlgorithmRangePointerParameter(2);
+    const auto *Transform = AlgorithmCallbackPrototype(5);
+    if (NumericArithmetic(Initial, true) &&
+        Same(Call->getArg(3)->getType(), Initial) &&
+        Same(Function->getReturnType(), Initial) &&
+        Same(Call->getType(), Initial) &&
+        NumericBinaryTransformCallback(4, Initial, Initial, Initial, true) &&
+        First && Second && Transform && Transform->getNumParams() == 2 &&
+        (RecordFirst ? AlgorithmRecordRangeCallbackReferenceParameter(5, 0, 0)
+                     : !Transform->getParamType(0)->isReferenceType() &&
+                           utilityScalarDirectConversion(
+                               Context, (*First)->getPointeeType(),
+                               Transform->getParamType(0))) &&
+        (RecordSecond ? AlgorithmRecordRangeCallbackReferenceParameter(5, 1, 2)
+                      : !Transform->getParamType(1)->isReferenceType() &&
+                            utilityScalarDirectConversion(
+                                Context, (*Second)->getPointeeType(),
+                                Transform->getParamType(1))) &&
+        utilityScalarDirectConversion(Context, Transform->getReturnType(),
+                                      Initial))
+      return UtilityOperation::NumericTransformReduce;
+  }
+  if (Origin->Path == "__numeric/transform_reduce.h" &&
       Name == "transform_reduce" &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Same(Call->getType(), Function->getReturnType()) &&

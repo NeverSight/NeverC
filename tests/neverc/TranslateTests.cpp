@@ -57450,6 +57450,99 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordTransformReduceRun) {
+  const auto Source = tmpFile("record-transform-reduce.cpp");
+  const auto Output = tmpFile("record-transform-reduce.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { long weight; int bias; };
+const Left *left_base;
+const Right *right_base;
+int reductions, transforms, bad_identity;
+long add(long total, long term) {
+  ++reductions;
+  return total + term;
+}
+long unary(const Left &left) {
+  if (&left != left_base + transforms) ++bad_identity;
+  ++transforms;
+  return left.key * 10L + left.tag;
+}
+long record_scalar(const Left &left, long weight) {
+  if (&left != left_base + transforms) ++bad_identity;
+  ++transforms;
+  return (left.key * 10L + left.tag) * weight;
+}
+long scalar_record(long weight, const Right &right) {
+  if (&right != right_base + transforms) ++bad_identity;
+  ++transforms;
+  return weight * (right.weight * 10L + right.bias);
+}
+long record_record(const Left &left, const Right &right) {
+  if (&left != left_base + transforms ||
+      &right != right_base + transforms) ++bad_identity;
+  ++transforms;
+  return (left.key * 10L + left.tag) * right.weight + right.bias;
+}
+int main() {
+  const std::vector<Left> left{{1, 2}, {3, 4}, {5, 6}};
+  const std::vector<Right> right{{2, 1}, {3, 2}, {4, 3}};
+  const long weights[3]{2, 3, 4};
+  left_base = &left[0]; right_base = &right[0];
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(left.cbegin(), left.cend(), 10L,
+                            add, unary) != 112 ||
+      reductions != 3 || transforms != 3 || bad_identity) return 1;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(left.cbegin(), left.cend(), weights,
+                            10L, add, record_scalar) != 360 ||
+      reductions != 3 || transforms != 3 || bad_identity) return 2;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(weights, weights + 3, right.cbegin(),
+                            10L, add, scalar_record) != 320 ||
+      reductions != 3 || transforms != 3 || bad_identity) return 3;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(left.cbegin(), left.cend(), right.cbegin(),
+                            10L, add, record_record) != 366 ||
+      reductions != 3 || transforms != 3 || bad_identity) return 4;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(left.cend(), left.cend(), right.cbegin(),
+                            7L, add, record_record) != 7 ||
+      reductions || transforms || bad_identity) return 5;
+  const Left raw_left[2]{{7, 8}, {9, 10}};
+  const Right raw_right[2]{{2, 1}, {3, 2}};
+  left_base = raw_left; right_base = raw_right;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(raw_left, raw_left + 2, -5L,
+                            add, unary) != 173 ||
+      reductions != 2 || transforms != 2 || bad_identity) return 6;
+  reductions = transforms = bad_identity = 0;
+  if (std::transform_reduce(raw_left, raw_left + 2, raw_right,
+                            -5L, add, record_record) != 454 ||
+      reductions != 2 || transforms != 2 || bad_identity) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-transform-reduce" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedNumericReduceRun) {
   const auto Source = tmpFile("wrapped-numeric-reduce.cpp");
   const auto Output = tmpFile("wrapped-numeric-reduce.nc");

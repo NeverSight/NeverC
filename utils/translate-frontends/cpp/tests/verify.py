@@ -32562,6 +32562,79 @@ long callback_unary(const std::vector<int> &values) {
           'std::plus<>{},std::negate<>{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    record_transform_reduce_source = """\
+#include <numeric>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { long weight; int bias; };
+long add(long total, long term) { return total + term; }
+long unary(const Left &left) { return left.key * 10L + left.tag; }
+long record_scalar(const Left &left, long weight) {
+  return (left.key * 10L + left.tag) * weight;
+}
+long scalar_record(long weight, const Right &right) {
+  return weight * (right.weight * 10L + right.bias);
+}
+long record_record(const Left &left, const Right &right) {
+  return (left.key * 10L + left.tag) * right.weight + right.bias;
+}
+long wrapped_unary(const std::vector<Left> &left) {
+  return std::transform_reduce(left.cbegin(), left.cend(), 10L, add, unary);
+}
+long raw_unary(const Left *first, const Left *last) {
+  return std::transform_reduce(first, last, -5L, add, unary);
+}
+long mixed_first(const std::vector<Left> &left, const long *weights) {
+  return std::transform_reduce(left.cbegin(), left.cend(), weights,
+                               10L, add, record_scalar);
+}
+long mixed_second(const long *first, const long *last,
+                  const std::vector<Right> &right) {
+  return std::transform_reduce(first, last, right.cbegin(),
+                               10L, add, scalar_record);
+}
+long wrapped_both(const std::vector<Left> &left,
+                  const std::vector<Right> &right) {
+  return std::transform_reduce(left.cbegin(), left.cend(),
+                               right.cbegin(), 10L, add, record_record);
+}
+long raw_both(const Left *first, const Left *last, const Right *right) {
+  return std::transform_reduce(first, last, right,
+                               -5L, add, record_record);
+}
+"""
+    for target in sdk_targets:
+        check("v2-record-transform-reduce-" + target,
+              record_transform_reduce_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-record-transform-reduce-unary-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Item{int key;};'
+          'long add(long a,long b){return a+b;}'
+          'long transform(Item item){return item.key;}'
+          'long f(const std::vector<Item>&v){'
+          'return std::transform_reduce(v.cbegin(),v.cend(),0L,'
+          'add,transform);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-record-transform-reduce-first-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Item{int key;};'
+          'long add(long a,long b){return a+b;}'
+          'long transform(Item item,long weight){return item.key*weight;}'
+          'long f(const std::vector<Item>&v,const long*w){'
+          'return std::transform_reduce(v.cbegin(),v.cend(),w,0L,'
+          'add,transform);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-record-transform-reduce-second-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Item{int key;};'
+          'long add(long a,long b){return a+b;}'
+          'long transform(long weight,Item item){return item.key*weight;}'
+          'long f(const long*first,const long*last,const std::vector<Item>&v){'
+          'return std::transform_reduce(first,last,v.cbegin(),0L,'
+          'add,transform);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_numeric_prefix_source = """\
 #include <numeric>
 #include <vector>

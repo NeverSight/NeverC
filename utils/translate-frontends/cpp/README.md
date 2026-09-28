@@ -620,6 +620,11 @@ Default two-range and checked function-pointer unary or two-range
 `transform_reduce` accept raw or authenticated wrapped arithmetic inputs;
 directly value-initialized standard function-object pairs accept the same
 ranges.
+The checked function-pointer forms additionally accept exact trivial source
+records in raw or wrapped ranges. A unary transform takes the original element
+as `const Record&`; a two-range transform takes each record as its matching
+`const Record&` and each arithmetic element by value. Its scalar result feeds
+the checked arithmetic reduction callback.
 Default and checked function-pointer `partial_sum` and
 `adjacent_difference` accept authenticated wrapped arithmetic inputs and
 writable wrapped outputs, including mixed raw-pointer ranges, and return the

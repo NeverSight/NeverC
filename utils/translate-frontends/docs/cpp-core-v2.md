@@ -899,6 +899,15 @@ Default two-range and checked function-pointer unary or two-range
 arithmetic inputs. The checked accumulator and operand conversions remain in
 force; directly value-initialized standard function-object pairs accept those
 ranges for unary and two-range reductions.
+The five-argument unary function-pointer form also accepts exact trivial
+source records in raw or wrapped ranges when its transform callback takes the
+original element as `const Record&` and returns a scalar directly convertible
+to the arithmetic accumulator. The six-argument form admits records in either
+input range or both independently typed ranges. Its transform callback takes
+each record as its matching `const Record&`, and arithmetic elements by value
+through a checked direct conversion. The scalar transform result converts to
+the accumulator before the checked by-value reduction callback. Empty ranges
+invoke neither callback, and by-value record parameters remain rejected.
 Default and checked function-pointer `partial_sum` and
 `adjacent_difference` accept authenticated mutable or const wrapped arithmetic
 inputs and authenticated writable wrapped arithmetic outputs, independently
