@@ -32272,6 +32272,44 @@ unsigned char narrow_reduce(const std::vector<unsigned char> &values) {
           'return std::reduce(v.cbegin(),v.cend(),0L,add);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_transform_reduce_source = """\
+#include <numeric>
+#include <vector>
+long add(long left, long right) { return left + right; }
+long multiply(long left, long right) { return left * right; }
+long square(long value) { return value * value; }
+long default_product(const std::vector<int> &first,
+                     const std::vector<long> &second) {
+  return std::transform_reduce(first.cbegin(), first.cend(),
+                               second.cbegin(), 10L);
+}
+long callback_product(const std::vector<int> &first,
+                      const std::vector<long> &second) {
+  return std::transform_reduce(first.cbegin(), first.cend(),
+                               second.cbegin(), 10L, add, multiply);
+}
+long callback_unary(const std::vector<int> &values) {
+  return std::transform_reduce(values.cbegin(), values.cend(),
+                               10L, add, square);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-transform-reduce-" + target,
+              wrapped_numeric_transform_reduce_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-transform-reduce-object-pair",
+          '#include <numeric>\n#include <functional>\n#include <vector>\n'
+          'long f(const std::vector<int>&v){'
+          'return std::transform_reduce(v.cbegin(),v.cend(),v.cbegin(),0L,'
+          'std::plus<>{},std::multiplies<>{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-wrapped-numeric-transform-reduce-unary-object-pair",
+          '#include <numeric>\n#include <functional>\n#include <vector>\n'
+          'long f(const std::vector<int>&v){'
+          'return std::transform_reduce(v.cbegin(),v.cend(),0L,'
+          'std::plus<>{},std::negate<>{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

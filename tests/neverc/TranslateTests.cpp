@@ -56789,6 +56789,64 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericTransformReduceRun) {
+  const auto Source = tmpFile("wrapped-numeric-transform-reduce.cpp");
+  const auto Output = tmpFile("wrapped-numeric-transform-reduce.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+int add_calls, transform_calls;
+long add(long left, long right) { ++add_calls; return left + right; }
+long multiply(long left, long right) {
+  ++transform_calls;
+  return left * right;
+}
+long square(long value) { ++transform_calls; return value * value; }
+int main() {
+  const std::vector<int> first{1, 2, 3};
+  const std::vector<long> second{4, 5, 6};
+  if (std::transform_reduce(first.cbegin(), first.cend(),
+                            second.cbegin(), 10L) != 42) return 1;
+  add_calls = transform_calls = 0;
+  if (std::transform_reduce(first.cbegin(), first.cend(),
+                            second.cbegin(), 10L, add, multiply) != 42 ||
+      add_calls != 3 || transform_calls != 3) return 2;
+  add_calls = transform_calls = 0;
+  if (std::transform_reduce(first.cbegin(), first.cend(),
+                            10L, add, square) != 24 ||
+      add_calls != 3 || transform_calls != 3) return 3;
+  const long raw[3]{4, 5, 6};
+  if (std::transform_reduce(first.cbegin(), first.cend(), raw, 10L) != 42)
+    return 4;
+  add_calls = transform_calls = 0;
+  if (std::transform_reduce(first.cend(), first.cend(), second.cbegin(),
+                            7L, add, multiply) != 7 ||
+      add_calls != 0 || transform_calls != 0) return 5;
+  const std::vector<unsigned char> narrow{2, 3};
+  if (std::transform_reduce(narrow.cbegin(), narrow.cend(), first.cbegin(),
+                            (unsigned char)1) != 9) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-numeric-transform-reduce" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

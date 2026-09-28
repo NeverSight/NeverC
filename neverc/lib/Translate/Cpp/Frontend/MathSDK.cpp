@@ -23256,18 +23256,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "transform_reduce" &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      NumericPointerParameter(0, false, true) &&
-      NumericPointerParameter(1, false, true) &&
+      NumericRangeParameter(0, false, true) &&
+      NumericRangeParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
-    auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+    auto Element = (*AlgorithmRangePointerParameter(0))->getPointeeType();
     if ((Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
-        NumericPointerParameter(2, false, true) &&
+        NumericRangeParameter(2, false, true) &&
         NumericReductionValueParameter(3, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
-        ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2, true)) ||
+        ((Call->getNumArgs() == 4 && NumericRangeCommonElements(0, 2, true)) ||
          (Call->getNumArgs() == 6 &&
-          ((NumericArithmeticFunctionalPair(false) &&
+          ((NumericPointerParameter(0, false, true) &&
+            NumericPointerParameter(2, false, true) &&
+            NumericArithmeticFunctionalPair(false) &&
             NumericCommonElements(0, 2, true)) ||
            (NumericBinaryTransformCallback(
                 4, Function->getParamDecl(3)->getType(),
@@ -23275,12 +23277,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                 Function->getParamDecl(3)->getType(), true) &&
             NumericBinaryTransformCallback(
                 5, Function->getParamDecl(3)->getType(), Element,
-                Function->getParamDecl(2)->getType()->getPointeeType(),
+                (*AlgorithmRangePointerParameter(2))->getPointeeType(),
                 true))))))
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        ((NumericArithmeticFunctionalPair(true) &&
+        ((NumericPointerParameter(0, false, true) &&
+          NumericArithmeticFunctionalPair(true) &&
           NumericArithmetic(Element, true)) ||
          (NumericBinaryTransformCallback(
               3, Function->getParamDecl(2)->getType(),

@@ -872,6 +872,10 @@ standard function-object pairs continue to require raw pointer ranges.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges. Empty ranges retain
 their zero or explicit initial result, and callbacks remain by-value.
+Default two-range and checked function-pointer unary or two-range
+`transform_reduce` also accept independent raw or authenticated wrapped
+arithmetic inputs. The checked accumulator and operand conversions remain in
+force; standard function-object pairs still require raw pointer ranges.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is
