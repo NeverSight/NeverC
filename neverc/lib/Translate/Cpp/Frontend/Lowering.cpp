@@ -3887,8 +3887,11 @@ class FunctionLowering {
       const bool RecordAccumulate =
           Operation == UtilityOperation::NumericAccumulate &&
           FirstRange.second->getPointeeType()->isRecordType();
+      const bool RecordProduct =
+          Operation == UtilityOperation::NumericInnerProduct &&
+          FirstRange.second->getPointeeType()->isRecordType();
       auto DefaultTermQualType =
-          RecordAccumulate
+          RecordAccumulate || RecordProduct
               ? ResultQualType
               : FirstRange.second->getPointeeType().getUnqualifiedType();
       if (Second && !TransformCallback) {

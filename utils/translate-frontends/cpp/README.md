@@ -606,6 +606,11 @@ The scalar callback result converts to the accumulator after every element.
 Default and checked function-pointer `inner_product` accept independent raw or
 authenticated wrapped arithmetic inputs; directly value-initialized standard
 function-object pairs accept the same ranges.
+The six-argument function-pointer form also accepts exact trivial source
+records in its first raw or wrapped range and arithmetic values in its second
+range. Its transform callback takes the original record as `const Record&`
+and a directly convertible scalar by value, then returns a scalar term for a
+checked arithmetic reduction callback.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges.
 Default two-range and checked function-pointer unary or two-range
