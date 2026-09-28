@@ -56688,6 +56688,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericInnerProductRun) {
+  const auto Source = tmpFile("wrapped-numeric-inner-product.cpp");
+  const auto Output = tmpFile("wrapped-numeric-inner-product.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+int reduce_calls, product_calls;
+long subtract(long total, long term) {
+  ++reduce_calls;
+  return total - term;
+}
+long multiply(long left, long right) {
+  ++product_calls;
+  return left * right;
+}
+int main() {
+  const std::vector<int> first{1, 2, 3};
+  const std::vector<long> second{4, 5, 6};
+  if (std::inner_product(first.cbegin(), first.cend(),
+                         second.cbegin(), 10L) != 42) return 1;
+  reduce_calls = product_calls = 0;
+  if (std::inner_product(first.cbegin(), first.cend(), second.cbegin(),
+                         10L, subtract, multiply) != -22 ||
+      reduce_calls != 3 || product_calls != 3) return 2;
+  const long raw[3]{4, 5, 6};
+  if (std::inner_product(first.cbegin(), first.cend(), raw, 10L) != 42)
+    return 3;
+  reduce_calls = product_calls = 0;
+  if (std::inner_product(first.cend(), first.cend(), second.cbegin(),
+                         7L, subtract, multiply) != 7 ||
+      reduce_calls != 0 || product_calls != 0) return 4;
+  const std::vector<unsigned char> narrow{2, 3};
+  if (std::inner_product(narrow.cbegin(), narrow.cend(), first.cbegin(),
+                         (unsigned char)1) != 9) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-numeric-inner-product" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

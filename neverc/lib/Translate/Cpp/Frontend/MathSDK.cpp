@@ -22937,6 +22937,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                false)
         .has_value();
   };
+  auto NumericRangeCommonElements = [&](unsigned LeftIndex, unsigned RightIndex,
+                                        bool IncludeNarrow = false) {
+    if (!NumericRangeParameter(LeftIndex, false, IncludeNarrow) ||
+        !NumericRangeParameter(RightIndex, false, IncludeNarrow))
+      return false;
+    const auto Left = AlgorithmRangePointerParameter(LeftIndex);
+    const auto Right = AlgorithmRangePointerParameter(RightIndex);
+    return utilityScalarComparisonType(Context, (*Left)->getPointeeType(),
+                                       (*Right)->getPointeeType(), false)
+        .has_value();
+  };
   auto NumericValueParameter = [&](unsigned ValueIndex, unsigned IteratorIndex,
                                    bool IncludeNarrow = false) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -23176,17 +23187,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, true) &&
-      NumericPointerParameter(1, false, true) &&
-      NumericPointerParameter(2, false, true) &&
+      NumericRangeParameter(0, false, true) &&
+      NumericRangeParameter(1, false, true) &&
+      NumericRangeParameter(2, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
-        NumericCommonElements(0, 2, true)) ||
+        NumericRangeCommonElements(0, 2, true)) ||
        (Call->getNumArgs() == 6 && NumericReductionValueParameter(3, 0, true) &&
-        ((NumericArithmeticFunctionalPair(false) &&
+        ((NumericPointerParameter(0, false, true) &&
+          NumericPointerParameter(2, false, true) &&
+          NumericArithmeticFunctionalPair(false) &&
           NumericCommonElements(0, 2, true)) ||
          (NumericBinaryTransformCallback(
               4, Function->getParamDecl(3)->getType(),
@@ -23194,8 +23207,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Function->getParamDecl(3)->getType(), true) &&
           NumericBinaryTransformCallback(
               5, Function->getParamDecl(3)->getType(),
-              Function->getParamDecl(0)->getType()->getPointeeType(),
-              Function->getParamDecl(2)->getType()->getPointeeType(), true))))))
+              (*AlgorithmRangePointerParameter(0))->getPointeeType(),
+              (*AlgorithmRangePointerParameter(2))->getPointeeType(), true))))))
     return UtilityOperation::NumericInnerProduct;
   if (((Origin->Path == "__numeric/partial_sum.h" && Name == "partial_sum") ||
        (Origin->Path == "__numeric/adjacent_difference.h" &&

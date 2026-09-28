@@ -865,6 +865,10 @@ increment rules.
 Default and checked function-pointer `accumulate` also accept authenticated
 mutable or const wrapped arithmetic ranges. They retain the independent
 accumulator type, arithmetic conversions and callback by-value restrictions.
+Default and checked function-pointer `inner_product` also accept independent
+raw or authenticated wrapped arithmetic input ranges. Both operand types and
+the independent accumulator retain their checked arithmetic conversions;
+standard function-object pairs continue to require raw pointer ranges.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is

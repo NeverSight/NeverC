@@ -32214,6 +32214,36 @@ unsigned char narrow_sum(const std::vector<unsigned char> &values) {
           'return std::accumulate(v.cbegin(),v.cend(),0L,add);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_inner_product_source = """\
+#include <numeric>
+#include <vector>
+long subtract(long total, long term) { return total - term; }
+long multiply(long left, long right) { return left * right; }
+long default_product(const std::vector<int> &first,
+                     const std::vector<long> &second) {
+  return std::inner_product(first.cbegin(), first.cend(),
+                            second.cbegin(), 10L);
+}
+long callback_product(const std::vector<int> &first,
+                      const std::vector<long> &second) {
+  return std::inner_product(first.cbegin(), first.cend(),
+                            second.cbegin(), 10L, subtract, multiply);
+}
+long mixed_product(const std::vector<int> &first, const long *second) {
+  return std::inner_product(first.cbegin(), first.cend(), second, 10L);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-inner-product-" + target,
+              wrapped_numeric_inner_product_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-inner-product-object-pair",
+          '#include <numeric>\n#include <functional>\n#include <vector>\n'
+          'long f(const std::vector<int>&v){'
+          'return std::inner_product(v.cbegin(),v.cend(),v.cbegin(),0L,'
+          'std::plus<>{},std::multiplies<>{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>
