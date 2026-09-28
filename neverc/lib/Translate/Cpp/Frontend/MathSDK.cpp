@@ -20119,7 +20119,9 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       Function && Function->getIdentifier() && Function->getName() == "memchr";
   const bool CharacterFind =
       Function && Function->getIdentifier() && Function->getName() == "strchr";
-  const bool InlineFind = MemoryFind || CharacterFind;
+  const bool CharacterFindLast =
+      Function && Function->getIdentifier() && Function->getName() == "strrchr";
+  const bool InlineFind = MemoryFind || CharacterFind || CharacterFindLast;
   if (!S.coreV2() || !Function || !Reference || !Function->getIdentifier() ||
       Function->isImplicit() || Function->isVariadic() ||
       (Function->hasBody() && !InlineFind) ||
@@ -20217,8 +20219,9 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
         BuiltinCall ? BuiltinCall->getDirectCallee() : nullptr;
     if (!BuiltinCall || BuiltinCall->getNumArgs() != Function->getNumParams() ||
         !Builtin || !Builtin->isImplicit() || !Builtin->getBuiltinID() ||
-        Builtin->getName() !=
-            (MemoryFind ? "__builtin_memchr" : "__builtin_strchr"))
+        Builtin->getName() != (MemoryFind          ? "__builtin_memchr"
+                               : CharacterFindLast ? "__builtin_strrchr"
+                                                   : "__builtin_strchr"))
       return std::nullopt;
     for (unsigned I = 0; I != Function->getNumParams(); ++I) {
       const auto *Argument =
@@ -20226,8 +20229,9 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
       if (!Argument || Argument->getDecl() != Function->getParamDecl(I))
         return std::nullopt;
     }
-    return MemoryFind ? UtilityOperation::CStringMemoryFind
-                      : UtilityOperation::CStringCharacterFind;
+    return MemoryFind          ? UtilityOperation::CStringMemoryFind
+           : CharacterFindLast ? UtilityOperation::CStringCharacterFindLast
+                               : UtilityOperation::CStringCharacterFind;
   }
   if ((Name == "memcpy" || Name == "memmove" || Name == "memset") &&
       Function->getNumParams() == 3 &&

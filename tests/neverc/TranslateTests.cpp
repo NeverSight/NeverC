@@ -14918,6 +14918,44 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringFindLastRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-find-last.cpp");
+  const auto Output = tmpFile("cstring-find-last.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  char text[8]{'a', 'b', 'a', static_cast<char>(0x80), 'a', 0, 'a', 0};
+  int pointer_effects = 0, value_effects = 0;
+  char *last = std::strrchr((++pointer_effects, text),
+                            (++value_effects, 'a'));
+  if (last != text + 4 || pointer_effects != 1 || value_effects != 1 ||
+      std::strrchr(text + 1, 'a') != text + 4 ||
+      std::strrchr(text, 0x180) != text + 3 ||
+      std::strrchr(text, 0) != text + 5 ||
+      std::strrchr(text, 'z') != nullptr)
+    return 1;
+  const char fixed[6]{'x', 'y', 'x', 0, 'x', 0};
+  const char *const_last = std::strrchr(fixed, 'x');
+  if (const_last != fixed + 2 || std::strrchr(fixed, 0) != fixed + 3 ||
+      std::strrchr(fixed, 'z') != nullptr ||
+      std::strrchr("", 0) == nullptr)
+    return 2;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-find-last" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-writes.cpp");
   const auto Output = tmpFile("cmemory-writes.nc");
@@ -15024,6 +15062,9 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
        "TR0203"},
       {"global-strchr",
        "#include <cstring>\nint main(){char a[2]{};return ::strchr(a,0)==a;}",
+       "TR0203"},
+      {"global-strrchr",
+       "#include <cstring>\nint main(){char a[2]{};return ::strrchr(a,0)==a;}",
        "TR0203"},
       {"global-memcpy",
        "#include <cstring>\nint main(){char d[2]{};::memcpy(d,\"a\",2);return "

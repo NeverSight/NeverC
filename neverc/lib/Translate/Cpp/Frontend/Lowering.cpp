@@ -2726,6 +2726,40 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::CStringCharacterFindLast: {
+      const auto ResultType = type(Call->getType(), L);
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Needle = snapshot(cast(expression(Call->getArg(1)), "u8", L), L);
+      auto Result = temporary(ResultType, L);
+      assign(
+          Result,
+          Expression{{"kind", "null"}, {"type", ResultType}, {"loc", A.loc(L)}},
+          L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Remember = labelName();
+      const auto CheckZero = labelName(), Step = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      auto Byte =
+          snapshot(cast(dereference(json::Object(Current), L), "u8", L), L);
+      branch(binary("==", json::Object(Byte), json::Object(Needle), "bool", L),
+             Remember, CheckZero, L);
+      label(Remember, L);
+      assign(Result, json::Object(Current), L);
+      jump(CheckZero, L);
+      label(CheckZero, L);
+      branch(binary("==", json::Object(Byte), quantity(0, "u8", L), "bool", L),
+             End, Step, L);
+      label(Step, L);
+      assign(Current,
+             binary("+", json::Object(Current), quantity(1, DifferenceType, L),
+                    ResultType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::CStringMemoryCopy:
     case UtilityOperation::CStringMemoryMove:
     case UtilityOperation::CStringMemorySet: {
