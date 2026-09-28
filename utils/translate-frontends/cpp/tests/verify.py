@@ -31939,6 +31939,61 @@ void scalar_wrapped(std::vector<int> &values) {
           'std::inplace_merge(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_scalar_ordered_comparators_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+bool greater_value(long left, long right) { return left > right; }
+std::vector<long>::iterator merge_wrapped(const std::vector<int> &first,
+                                           const std::vector<long> &second,
+                                           std::vector<long> &output) {
+  return std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                    second.cend(), output.begin(), std::greater<>{});
+}
+std::vector<long>::iterator union_wrapped(const std::vector<int> &first,
+                                           const std::vector<long> &second,
+                                           std::vector<long> &output) {
+  return std::set_union(first.cbegin(), first.cend(), second.cbegin(),
+                        second.cend(), output.begin(), greater_value);
+}
+std::vector<long>::iterator intersection_wrapped(
+    const std::vector<int> &first, const std::vector<long> &second,
+    std::vector<long> &output) {
+  return std::set_intersection(first.cbegin(), first.cend(),
+                                second.cbegin(), second.cend(),
+                                output.begin(), std::greater<>{});
+}
+std::vector<long>::iterator difference_wrapped(
+    const std::vector<int> &first, const std::vector<long> &second,
+    std::vector<long> &output) {
+  return std::set_difference(first.cbegin(), first.cend(),
+                              second.cbegin(), second.cend(),
+                              output.begin(), std::greater<>{});
+}
+std::vector<long>::iterator symmetric_wrapped(
+    const std::vector<int> &first, const std::vector<long> &second,
+    std::vector<long> &output) {
+  return std::set_symmetric_difference(first.cbegin(), first.cend(),
+                                        second.cbegin(), second.cend(),
+                                        output.begin(), std::greater<>{});
+}
+std::vector<long>::iterator partial_copy_wrapped(
+    const std::vector<int> &input, std::vector<long> &output) {
+  return std::partial_sort_copy(input.cbegin(), input.cend(),
+                                output.begin(), output.end(), greater_value);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-scalar-ordered-comparators-" + target,
+              wrapped_scalar_ordered_comparators_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-scalar-ordered-comparators-nonbool",
+          '#include <algorithm>\n#include <vector>\n'
+          'int compare(int a,int b){return a>b;}'
+          'void f(std::vector<int>&v){'
+          'std::merge(v.begin(),v.end(),v.begin(),v.end(),v.begin(),compare);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

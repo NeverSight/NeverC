@@ -56219,6 +56219,87 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedScalarOrderedComparatorsRun) {
+  const auto Source = tmpFile("wrapped-scalar-ordered-comparators.cpp");
+  const auto Output = tmpFile("wrapped-scalar-ordered-comparators.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+int calls;
+bool greater_value(long left, long right) {
+  ++calls;
+  return left > right;
+}
+int main() {
+  const std::vector<int> first{5, 3, 1};
+  const std::vector<long> second{6, 3, 2};
+  std::vector<long> merged(6);
+  if (std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                 second.cend(), merged.begin(), std::greater<>{}) !=
+          merged.end()) return 1;
+  const long merged_expected[6]{6, 5, 3, 3, 2, 1};
+  for (int i = 0; i < 6; ++i)
+    if (merged[i] != merged_expected[i]) return 2;
+
+  std::vector<long> output(6);
+  auto union_end = std::set_union(first.cbegin(), first.cend(),
+                                  second.cbegin(), second.cend(),
+                                  output.begin(), greater_value);
+  const long union_expected[5]{6, 5, 3, 2, 1};
+  if (union_end != output.begin() + 5 || calls == 0) return 3;
+  for (int i = 0; i < 5; ++i)
+    if (output[i] != union_expected[i]) return 4;
+  auto intersection_end = std::set_intersection(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      output.begin(), std::greater<>{});
+  if (intersection_end != output.begin() + 1 || output[0] != 3)
+    return 5;
+  auto difference_end = std::set_difference(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      output.begin(), std::greater<>{});
+  if (difference_end != output.begin() + 2 || output[0] != 5 ||
+      output[1] != 1) return 6;
+  auto symmetric_end = std::set_symmetric_difference(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      output.begin(), std::greater<>{});
+  if (symmetric_end != output.begin() + 4 || output[0] != 6 ||
+      output[1] != 5 || output[2] != 2 || output[3] != 1)
+    return 7;
+
+  const std::vector<int> unordered{5, 1, 4, 3, 2};
+  std::vector<long> top(3);
+  if (std::partial_sort_copy(unordered.cbegin(), unordered.cend(),
+                             top.begin(), top.end(), std::greater<>{}) !=
+          top.end() || top[0] != 5 || top[1] != 4 || top[2] != 3)
+    return 8;
+  calls = 0;
+  if (std::partial_sort_copy(unordered.cbegin(), unordered.cend(),
+                             top.begin(), top.end(), greater_value) !=
+          top.end() || top[0] != 5 || top[1] != 4 || top[2] != 3 ||
+      calls == 0) return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-scalar-ordered-comparators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

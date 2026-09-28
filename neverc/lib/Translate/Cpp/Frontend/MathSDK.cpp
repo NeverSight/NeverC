@@ -22800,6 +22800,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Element, Element, Context)
         .has_value();
   };
+  auto AlgorithmRangePairComparisonParameter = [&](unsigned PredicateIndex,
+                                                   unsigned LeftIndex,
+                                                   unsigned RightIndex) {
+    const auto Left = AlgorithmRangePointerParameter(LeftIndex);
+    const auto Right = AlgorithmRangePointerParameter(RightIndex);
+    if (!Left || !Right)
+      return false;
+    const auto LeftElement = (*Left)->getPointeeType();
+    const auto RightElement = (*Right)->getPointeeType();
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    if (Prototype && Prototype->getNumParams() == 2 &&
+        Prototype->getReturnType()->isBooleanType() &&
+        utilityScalarDirectConversion(Context, LeftElement,
+                                      Prototype->getParamType(0)) &&
+        utilityScalarDirectConversion(Context, RightElement,
+                                      Prototype->getParamType(1)))
+      return true;
+    return approvedRangeAlgorithmComparator(S, SM, Call, PredicateIndex,
+                                            LeftElement, RightElement, Context)
+        .has_value();
+  };
   auto AlgorithmRangeValueParameter = [&](unsigned ValueIndex,
                                           unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -24078,6 +24099,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmOrderedRangeParameter(2) &&
         utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
                                     (*ScalarSecond)->getPointeeType(), true);
+    const bool WrappedScalarComparator =
+        Call->getNumArgs() == 6 && ScalarFirst && ScalarSecond &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangePointerParameter(3) &&
+        AlgorithmTransferRangeParameters(0, 4) &&
+        AlgorithmTransferRangeParameters(2, 4) &&
+        AlgorithmRangePairComparisonParameter(5, 0, 2) &&
+        AlgorithmRangePairComparisonParameter(5, 2, 0);
     const auto RecordFirst = AlgorithmRecordOrderedRangeParameter(0);
     const auto RecordSecond = AlgorithmRecordOrderedRangeParameter(2);
     const auto RecordOutput = AlgorithmWritableRecordRangeParameter(4);
@@ -24089,7 +24118,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        (*RecordSecond)->getPointeeType()) &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordOutput)->getPointeeType());
-    if (!RawScalar && !WrappedScalarDefault && !Record)
+    if (!RawScalar && !WrappedScalarDefault && !WrappedScalarComparator &&
+        !Record)
       return std::nullopt;
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;
@@ -24409,6 +24439,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmOrderedRangeParameter(2) &&
         utilityScalarComparisonType(Context, (*ScalarInput)->getPointeeType(),
                                     (*ScalarOutput)->getPointeeType(), true);
+    const bool WrappedScalarComparator =
+        Call->getNumArgs() == 5 && ScalarInput && ScalarOutput &&
+        AlgorithmRangePointerParameter(1) &&
+        AlgorithmRangePointerParameter(3) &&
+        AlgorithmTransferRangeParameters(0, 2) &&
+        AlgorithmRangePairComparisonParameter(4, 0, 2) &&
+        AlgorithmRangePairComparisonParameter(4, 2, 2);
     const auto RecordInput = AlgorithmRecordOrderedRangeParameter(0);
     const auto RecordOutput = AlgorithmWritableRecordRangeParameter(2);
     const bool Record =
@@ -24418,7 +24455,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmWritableRecordRangeParameter(3) &&
         Context.hasSameUnqualifiedType((*RecordInput)->getPointeeType(),
                                        (*RecordOutput)->getPointeeType());
-    if (RawScalar || WrappedScalarDefault || Record)
+    if (RawScalar || WrappedScalarDefault || WrappedScalarComparator || Record)
       return UtilityOperation::AlgorithmPartialSortCopy;
   }
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&

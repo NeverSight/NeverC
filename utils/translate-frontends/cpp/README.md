@@ -459,6 +459,8 @@ original output iterator form.
 Its default scalar form and the default scalar `merge` and four ordered
 `set_*` forms also accept independent authenticated wrapped or raw input and
 output ranges under their checked comparison and conversion rules.
+Their scalar comparator forms admit those ranges with checked Boolean function
+pointers or standard comparison objects, proving every comparison direction.
 Default `nth_element` admits the same record ranges through its retained pivot
 and three-way partition, while wrapped scalars retain comparator forms.
 Default `stable_sort` and `inplace_merge` admit writable raw or authenticated

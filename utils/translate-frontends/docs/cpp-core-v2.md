@@ -2055,6 +2055,9 @@ original output iterator form. Record comparator overloads remain rejected.
 Its default scalar overload also accepts independent authenticated wrapped or
 raw input and output ranges under the existing checked ordering and output
 conversion rules, returning the original output iterator form.
+Its scalar comparator overload admits the same wrapped or raw range forms
+when both input-to-output and output-heap comparisons pass the checked
+function-pointer or standard comparison-object boundaries.
 
 Default `std::nth_element` accepts the same writable source-record ranges.
 Its three-way partition compares current elements with a retained trivial
@@ -2201,6 +2204,9 @@ The default scalar ordered output forms also accept independent authenticated
 wrapped or raw input and output ranges under their existing checked common
 ordering and destination conversion rules, returning the original output
 iterator form.
+Their comparator overloads admit the same scalar range forms after checking
+both input comparison directions with a Boolean function pointer or
+authenticated standard comparison object.
 
 Default `std::lexicographical_compare` and `std::includes` also accept
 independent authenticated mutable or const wrapped iterators, mixed with raw
