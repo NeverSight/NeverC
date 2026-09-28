@@ -7279,6 +7279,9 @@ class FunctionLowering {
           Comparator ? Call->getArg(4)->getType() : QualType{};
       const auto InputElement = InputFirstRange.second->getPointeeType();
       const auto OutputElement = OutputFirstRange.second->getPointeeType();
+      const bool RecordTransfer =
+          InputElement->isRecordType() &&
+          A.Context.hasSameUnqualifiedType(InputElement, OutputElement);
       const auto SourceComparison =
           Call->getNumArgs() == 4 &&
                   A.Context.hasSameUnqualifiedType(InputElement, OutputElement)
@@ -7340,9 +7343,8 @@ class FunctionLowering {
       label(Fill, L);
       auto FillValue = dereference(Input, L);
       assign(dereference(Output, L),
-             SourceComparison
-                 ? std::move(FillValue)
-                 : cast(std::move(FillValue), OutputElementType, L),
+             RecordTransfer ? std::move(FillValue)
+                            : cast(std::move(FillValue), OutputElementType, L),
              L);
       assign(Input,
              binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
@@ -7369,7 +7371,7 @@ class FunctionLowering {
       label(Replace, L);
       auto Replacement = dereference(Input, L);
       assign(dereference(json::Object(OutputFirst), L),
-             SourceComparison
+             RecordTransfer
                  ? std::move(Replacement)
                  : cast(std::move(Replacement), OutputElementType, L),
              L);

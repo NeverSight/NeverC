@@ -25054,7 +25054,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmWritableRecordRangeParameter(3) &&
         Context.hasSameUnqualifiedType((*RecordInput)->getPointeeType(),
                                        (*RecordOutput)->getPointeeType());
-    if (RawScalar || WrappedScalarDefault || WrappedScalarComparator || Record)
+    const bool RecordComparator =
+        Call->getNumArgs() == 5 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) &&
+        AlgorithmWritableRecordRangeParameter(2) &&
+        AlgorithmWritableRecordRangeParameter(3) &&
+        AlgorithmTransferRecordRangeParameters(0, 2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(4, 0, 2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(4, 2, 2);
+    if (RawScalar || WrappedScalarDefault || WrappedScalarComparator ||
+        Record || RecordComparator)
       return UtilityOperation::AlgorithmPartialSortCopy;
   }
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&

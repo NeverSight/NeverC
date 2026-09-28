@@ -34162,11 +34162,37 @@ std::vector<owned::Free>::iterator copy_mixed(owned::Free *first,
           'Entry*f(Entry*first,Entry*last,Entry*out,Entry*out_last){'
           'return std::partial_sort_copy(first,last,out,out_last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-source-record-partial-sort-copy-comparator",
-          '#include <algorithm>\nstruct Entry{int key;};'
-          'bool less(const Entry&a,const Entry&b){return a.key<b.key;}'
-          'Entry*f(Entry*first,Entry*last,Entry*out,Entry*out_last){'
-          'return std::partial_sort_copy(first,last,out,out_last,less);}',
+    source_record_partial_sort_copy_comparator_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+Item *copy_raw(const Item *first, const Item *last,
+               Item *output, Item *output_last) {
+  return std::partial_sort_copy(first, last, output, output_last, less);
+}
+std::vector<Item>::iterator copy_wrapped(const std::vector<Item> &input,
+                                          std::vector<Item> &output) {
+  return std::partial_sort_copy(input.cbegin(), input.cend(),
+                                output.begin(), output.end(), less);
+}
+Item *copy_mixed(const std::vector<Item> &input,
+                 Item *output, Item *output_last) {
+  return std::partial_sort_copy(input.cbegin(), input.cend(),
+                                output, output_last, less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-partial-sort-copy-comparator-" + target,
+              source_record_partial_sort_copy_comparator_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-partial-sort-copy-comparator-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'Item*f(Item*a,Item*b,Item*c,Item*d){'
+          'return std::partial_sort_copy(a,b,c,d,less);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     source_record_ordered_output_source = """\

@@ -60309,6 +60309,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordPartialSortCopyComparatorRun) {
+  const auto Source = tmpFile("source-record-partial-sort-copy-comparator.cpp");
+  const auto Output = tmpFile("source-record-partial-sort-copy-comparator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+int calls;
+bool less(const Item &left, const Item &right) {
+  ++calls;
+  return left.rank < right.rank;
+}
+int main() {
+  const Item input[7]{{7, 70}, {1, 10}, {5, 50}, {2, 20},
+                      {9, 90}, {3, 30}, {4, 40}};
+  Item output[3]{};
+  int first_effects = 0, last_effects = 0;
+  int output_effects = 0, output_last_effects = 0;
+  auto end = std::partial_sort_copy(
+      (++first_effects, input), (++last_effects, input + 7),
+      (++output_effects, output), (++output_last_effects, output + 3), less);
+  if (end != output + 3 || first_effects != 1 || last_effects != 1 ||
+      output_effects != 1 || output_last_effects != 1 || !calls) return 1;
+  for (int i = 0; i < 3; ++i)
+    if (output[i].rank != i + 1 || output[i].tag != (i + 1) * 10)
+      return 2;
+  const std::vector<Item> wrapped_input{{4, 40}, {2, 20},
+                                         {5, 50}, {1, 10}};
+  std::vector<Item> wrapped_output{Item{}, Item{}, Item{}};
+  auto wrapped_end = std::partial_sort_copy(
+      wrapped_input.cbegin(), wrapped_input.cend(),
+      wrapped_output.begin(), wrapped_output.end(), less);
+  if (wrapped_end != wrapped_output.end()) return 3;
+  const int wrapped_ranks[3]{1, 2, 4};
+  for (int i = 0; i < 3; ++i)
+    if (wrapped_output[i].rank != wrapped_ranks[i] ||
+        wrapped_output[i].tag != wrapped_ranks[i] * 10) return 4;
+  Item raw_output[2]{};
+  if (std::partial_sort_copy(wrapped_input.cbegin(),
+                             wrapped_input.cend(), raw_output,
+                             raw_output + 2, less) != raw_output + 2 ||
+      raw_output[0].rank != 1 || raw_output[0].tag != 10 ||
+      raw_output[1].rank != 2 || raw_output[1].tag != 20) return 5;
+  Item short_input[2]{{8, 80}, {6, 60}};
+  std::vector<Item> large_output{Item{}, Item{}, Item{}};
+  auto short_end = std::partial_sort_copy(
+      short_input, short_input + 2, large_output.begin(),
+      large_output.end(), less);
+  if (short_end != large_output.begin() + 2 ||
+      large_output[0].rank != 6 || large_output[0].tag != 60 ||
+      large_output[1].rank != 8 || large_output[1].tag != 80) return 6;
+  Item untouched[1]{{99, 990}};
+  int before = calls;
+  if (std::partial_sort_copy(input, input + 7, untouched,
+                             untouched, less) != untouched ||
+      std::partial_sort_copy(input, input, untouched,
+                             untouched + 1, less) != untouched ||
+      untouched[0].tag != 990 || calls != before) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-partial-sort-copy-comparator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedOutputRun) {
   const auto Source = tmpFile("source-record-ordered-output.cpp");
   const auto Output = tmpFile("source-record-ordered-output.nc");

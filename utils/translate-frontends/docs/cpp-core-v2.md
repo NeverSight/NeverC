@@ -2274,7 +2274,10 @@ Default `std::partial_sort_copy` also accepts raw or authenticated wrapped
 input and writable output ranges of the same exact trivial source-record type.
 It copies complete records into the bounded output, compares current input and
 output lvalues through that selected Boolean `operator<`, and returns the
-original output iterator form. Record comparator overloads remain rejected.
+original output iterator form. Its checked comparator overload also accepts
+same-type trivial record inputs and writable outputs through
+`bool(const Record&, const Record&)`, comparing current input and output
+lvalues while copying complete records without requiring `operator<`.
 
 Its default scalar overload also accepts independent authenticated wrapped or
 raw input and output ranges under the existing checked ordering and output

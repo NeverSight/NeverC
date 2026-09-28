@@ -484,6 +484,9 @@ Its checked comparator form also accepts those records through
 Default `partial_sort_copy` admits raw or authenticated wrapped input and
 writable output ranges of the same trivial source-record type, returning the
 original output iterator form.
+Its checked comparator form also accepts those same-type record ranges through
+`bool(const Record&, const Record&)`, preserving complete output values and
+the returned raw or wrapped iterator.
 Its default scalar form and the default scalar `merge` and four ordered
 `set_*` forms also accept independent authenticated wrapped or raw input and
 output ranges under their checked comparison and conversion rules.
