@@ -56459,6 +56459,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceAdjacentFindFunctorRun) {
+  const auto Source = tmpFile("source-adjacent-find-functor.cpp");
+  const auto Output = tmpFile("source-adjacent-find-functor.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Item { int rank, tag; };
+const Item *base;
+int length, comparisons, bad_identity, evaluations;
+bool within(const Item *value) {
+  for (int i = 0; i < length; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+struct Equal {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    if (!within(&left) || !within(&right)) ++bad_identity;
+    return left.rank == right.rank;
+  }
+};
+struct ScalarEqual {
+  bool operator()(int left, int right) const { return left == right; }
+};
+struct ScalarRefEqual {
+  bool operator()(const int &left, const int &right) const {
+    return left == right;
+  }
+};
+Equal next_equal() { ++evaluations; return Equal{&comparisons}; }
+int main() {
+  Item values[5]{{1, 0}, {2, 10}, {2, 11}, {3, 20}, {3, 30}};
+  base = values; length = 5;
+  if (std::adjacent_find(values, values + 5, next_equal()) != values + 1 ||
+      evaluations != 1 || comparisons != 2 || bad_identity) return 1;
+  comparisons = 0;
+  if (std::adjacent_find(values, values, next_equal()) != values ||
+      std::adjacent_find(values, values + 1, next_equal()) != values + 1 ||
+      evaluations != 3 || comparisons || bad_identity) return 2;
+  if (std::adjacent_find(values + 2, values + 4, next_equal()) != values + 4 ||
+      evaluations != 4 || comparisons != 1 || bad_identity) return 3;
+  int scalar[5]{1, 2, 2, 3, 3};
+  if (std::adjacent_find(scalar, scalar + 5, ScalarEqual{}) != scalar + 1 ||
+      std::adjacent_find(scalar, scalar + 5, ScalarRefEqual{}) != scalar + 1)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-adjacent-find-functor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("source-record-ordered-bounds.nc");

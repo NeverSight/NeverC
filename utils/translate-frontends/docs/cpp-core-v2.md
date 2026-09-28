@@ -1845,6 +1845,12 @@ or authenticated wrapped scalar boundary and checked by-value callback rules.
 They also admit exact trivial source-record ranges with a checked
 `bool(const Record&, const Record&)` function pointer, comparing original
 adjacent element addresses and preserving the input iterator form.
+The predicate overload also accepts a source-owned, standard-layout,
+trivially copyable object with one non-template Boolean `operator()` after
+authenticating the pinned `__adjacent_find` and `std::__invoke` chain.
+Exact trivial records use original const references; scalars admit checked
+by-value parameters or exact const references. The object is evaluated once
+even for an empty range, and the first matching iterator form is preserved.
 
 Default `std::search_n` also accepts raw or authenticated wrapped scalar
 ranges and exact source-owned trivial record ranges under the selected Boolean

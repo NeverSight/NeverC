@@ -5247,13 +5247,25 @@ class FunctionLowering {
       auto First = std::move(FirstRange.first);
       auto Last = std::move(LastRange.first);
       std::optional<Expression> Predicate;
-      if (Call->getNumArgs() == 3)
-        Predicate = snapshot(expression(Call->getArg(2)), L);
+      std::optional<CapturedAlgorithmPredicate> SourcePredicate;
+      if (Call->getNumArgs() == 3) {
+        const auto Element = FirstRange.second->getPointeeType();
+        if (const auto *Method = approvedAdjacentFindSourcePredicate(
+                A.S, A.Sources, Call, Element, A.Context)) {
+          const auto Object =
+              Call->getDirectCallee()->getParamDecl(2)->getType();
+          SourcePredicate = CapturedAlgorithmPredicate{
+              argument(Call->getArg(2), Object), Object, Method, std::nullopt};
+        } else {
+          Predicate = snapshot(expression(Call->getArg(2)), L);
+        }
+      }
       const auto SourceComparison =
-          !Predicate ? approvedUtilityTrivialSourceComparison(
-                           A.S, A.Sources, FirstRange.second->getPointeeType(),
-                           OO_EqualEqual, A.Context)
-                     : std::nullopt;
+          !Predicate && !SourcePredicate
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, FirstRange.second->getPointeeType(),
+                    OO_EqualEqual, A.Context)
+              : std::nullopt;
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(FirstRange.second, L);
@@ -5269,7 +5281,11 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Exhausted, L);
       label(Compare, L);
-      branch(Predicate
+      branch(SourcePredicate
+                 ? emitBinaryCallable(*SourcePredicate,
+                                      dereference(json::Object(First), L),
+                                      dereference(json::Object(Current), L), L)
+             : Predicate
                  ? emitBinaryPredicate(json::Object(*Predicate),
                                        Call->getArg(2)->getType(),
                                        dereference(json::Object(First), L),

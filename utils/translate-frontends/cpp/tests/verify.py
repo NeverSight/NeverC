@@ -32175,6 +32175,57 @@ int *until_scalar_ref(int *first, int *last) {
           'Item*f(Item*a,Item*b){return std::is_sorted_until(a,b,Less{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_adjacent_find_functor_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+struct Equal {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    return left.rank == right.rank;
+  }
+};
+struct ScalarEqual {
+  bool operator()(int left, int right) const { return left == right; }
+};
+struct ScalarRefEqual {
+  bool operator()(const int &left, const int &right) const {
+    return left == right;
+  }
+};
+Item *find_record(Item *first, Item *last, Equal equal) {
+  return std::adjacent_find(first, last, equal);
+}
+std::vector<Item>::const_iterator find_wrapped(
+    const std::vector<Item> &values, Equal equal) {
+  return std::adjacent_find(values.cbegin(), values.cend(), equal);
+}
+int *find_scalar(int *first, int *last) {
+  return std::adjacent_find(first, last, ScalarEqual{});
+}
+int *find_scalar_ref(int *first, int *last) {
+  return std::adjacent_find(first, last, ScalarRefEqual{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-adjacent-find-functor-" + target,
+              source_adjacent_find_functor_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-adjacent-find-functor-record-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Equal{bool operator()(Item a,Item b) const {'
+          'return a.rank==b.rank;}};'
+          'Item*f(Item*a,Item*b){return std::adjacent_find(a,b,Equal{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-adjacent-find-functor-overload-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Equal{bool operator()(const Item&a,const Item&b)const{'
+          'return a.rank==b.rank;}'
+          'bool operator()(int a,int b)const{return a==b;}};'
+          'Item*f(Item*a,Item*b){return std::adjacent_find(a,b,Equal{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>

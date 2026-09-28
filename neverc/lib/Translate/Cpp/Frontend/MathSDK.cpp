@@ -19440,6 +19440,187 @@ const CXXMethodDecl *approvedSortedSourceComparator(const State &S,
              : nullptr;
 }
 
+const CXXMethodDecl *
+approvedAdjacentFindSourcePredicate(const State &S, const SourceManager &SM,
+                                    const CallExpr *Call, QualType Element,
+                                    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  auto SDK = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/adjacent_find.h");
+  };
+  if (!S.coreV2() || !Function || !Primary || !Definition ||
+      Function->getName() != "adjacent_find" || Call->getNumArgs() != 3 ||
+      Function->getNumParams() != 3 || !Call->isPRValue() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function) || !SDK(Function) ||
+      !SDK(Primary) || !SDK(Definition))
+    return nullptr;
+  const auto Iterator = Function->getParamDecl(0)->getType();
+  const auto Object = Function->getParamDecl(2)->getType();
+  const auto *Method =
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+  if (!Method ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Iterator) ||
+      !Context.hasSameType(Function->getReturnType(), Iterator) ||
+      !Context.hasSameType(Call->getType(), Iterator) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Object))
+    return nullptr;
+  const auto *Body = dyn_cast<CompoundStmt>(Definition->getBody());
+  const auto *ProjectionStmt = Body && Body->size() == 2
+                                   ? dyn_cast<DeclStmt>(*Body->body_begin())
+                                   : nullptr;
+  const auto *Projection =
+      ProjectionStmt && ProjectionStmt->isSingleDecl()
+          ? dyn_cast<VarDecl>(ProjectionStmt->getSingleDecl())
+          : nullptr;
+  const auto *Construction =
+      Projection ? dyn_cast_or_null<CXXConstructExpr>(Projection->getInit())
+                 : nullptr;
+  const auto *Return = Body ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const auto *Nested =
+      Return && Return->getRetValue()
+          ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Internal = Nested ? Nested->getDirectCallee() : nullptr;
+  const auto *InternalPrimary =
+      Internal ? Internal->getPrimaryTemplate() : nullptr;
+  const auto *InternalDefinition =
+      Internal ? Internal->getDefinition() : nullptr;
+  if (!Projection || Projection->getDeclContext() != Definition ||
+      !Construction || Construction->getNumArgs() != 0 || !Nested ||
+      Nested->getNumArgs() != 4 || !Internal || !InternalPrimary ||
+      !InternalDefinition || Internal->getName() != "__adjacent_find" ||
+      Internal->getNumParams() != 4 ||
+      Internal->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !SDK(Internal) || !SDK(InternalPrimary) || !SDK(InternalDefinition) ||
+      !Context.hasSameType(Internal->getReturnType(), Iterator) ||
+      !Context.hasSameType(Internal->getParamDecl(0)->getType(), Iterator) ||
+      !Context.hasSameType(Internal->getParamDecl(1)->getType(), Iterator) ||
+      !Context.hasSameType(Internal->getParamDecl(2)->getType(),
+                           Context.getLValueReferenceType(Object)) ||
+      !Context.hasSameType(
+          Internal->getParamDecl(3)->getType(),
+          Context.getLValueReferenceType(Projection->getType())))
+    return nullptr;
+  for (unsigned I = 0; I < 2; ++I) {
+    const Expr *Argument = Nested->getArg(I)->IgnoreParenImpCasts();
+    if (const auto *Copy = dyn_cast<CXXConstructExpr>(Argument)) {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+      if (!Wrapped || Copy->getNumArgs() != 1 ||
+          !Copy->getConstructor()->isMoveConstructor() ||
+          !Context.hasSameType(Copy->getType(), Iterator))
+        return nullptr;
+      Argument = Copy->getArg(0)->IgnoreParenImpCasts();
+    }
+    if (!utilityAlgorithmScalarForward(
+            S, SM, dyn_cast_or_null<CallExpr>(Argument),
+            Definition->getParamDecl(I), Iterator, true, Context))
+      return nullptr;
+  }
+  if (!utilityAlgorithmReference(Nested->getArg(2), Definition->getParamDecl(2),
+                                 Context) ||
+      !utilityAlgorithmReference(Nested->getArg(3), Projection, Context))
+    return nullptr;
+  const auto *InternalBody =
+      dyn_cast<CompoundStmt>(InternalDefinition->getBody());
+  const auto *CurrentStmt =
+      InternalBody && InternalBody->size() == 4
+          ? dyn_cast<DeclStmt>(InternalBody->body_begin()[1])
+          : nullptr;
+  const auto *Current = CurrentStmt && CurrentStmt->isSingleDecl()
+                            ? dyn_cast<VarDecl>(CurrentStmt->getSingleDecl())
+                            : nullptr;
+  if (!Current || !Context.hasSameType(Current->getType(), Iterator))
+    return nullptr;
+  const Expr *CurrentInit = Current->getInit();
+  if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(CurrentInit)) {
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+    if (!Wrapped || Copy->getNumArgs() != 1 ||
+        !Copy->getConstructor()->isCopyConstructor())
+      return nullptr;
+    CurrentInit = Copy->getArg(0);
+  }
+  if (!utilityAlgorithmReference(CurrentInit,
+                                 InternalDefinition->getParamDecl(0), Context))
+    return nullptr;
+  const CallExpr *Compare = nullptr;
+  unsigned Comparisons = 0;
+  auto Visit = [&](auto &&Self, const Stmt *Node) -> void {
+    if (!Node)
+      return;
+    if (const auto *Candidate = dyn_cast<CallExpr>(Node)) {
+      const auto *F = Candidate->getDirectCallee();
+      if (Candidate->getNumArgs() == 3 &&
+          utilitySwapSDKFunction(S, SM, F, "__invoke",
+                                 "__type_traits/invoke.h")) {
+        ++Comparisons;
+        Compare = Candidate;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child);
+  };
+  Visit(Visit, InternalBody);
+  const auto *Selected =
+      utilityAlgorithmBinaryDispatch(S, SM, Compare, Object, Element, Context);
+  if (Comparisons != 1 || !Selected || !Selected->getDirectCallee() ||
+      Selected->getDirectCallee()->getCanonicalDecl() !=
+          Method->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(Method, Selected->getArg(0),
+                                             false) ||
+      !utilityAlgorithmReference(Compare->getArg(0),
+                                 InternalDefinition->getParamDecl(2), Context))
+    return nullptr;
+  for (unsigned I = 1; I < 3; ++I) {
+    const auto *Project = dyn_cast<CallExpr>(Compare->getArg(I));
+    const auto *Identity = utilityAlgorithmUnaryDispatch(
+        S, SM, Project, Projection->getType(), Element, true, Context);
+    if (!Identity ||
+        !utilityAlgorithmIdentity(S, SM, Identity, Projection->getType(),
+                                  Element, Context) ||
+        !utilityAlgorithmReference(
+            Project->getArg(0), InternalDefinition->getParamDecl(3), Context))
+      return nullptr;
+    const auto *Source = I == 1 ? InternalDefinition->getParamDecl(0)
+                                : static_cast<const ValueDecl *>(Current);
+    const Expr *Read = Project->getArg(1);
+    if (const auto *PointerRead = dyn_cast<UnaryOperator>(Read)) {
+      if (PointerRead->getOpcode() != UO_Deref || !PointerRead->isLValue() ||
+          !Context.hasSameType(PointerRead->getType(), Element) ||
+          !utilityAlgorithmReference(PointerRead->getSubExpr(), Source,
+                                     Context))
+        return nullptr;
+    } else {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Iterator->getAsCXXRecordDecl(), Context);
+      const auto *WrappedRead = dyn_cast<CXXOperatorCallExpr>(Read);
+      const auto *Dereference =
+          WrappedRead
+              ? dyn_cast_or_null<CXXMethodDecl>(WrappedRead->getDirectCallee())
+              : nullptr;
+      if (!Wrapped || !WrappedRead || WrappedRead->getOperator() != OO_Star ||
+          WrappedRead->getNumArgs() != 1 || !WrappedRead->isLValue() ||
+          !Context.hasSameType(WrappedRead->getType(), Element) ||
+          !Dereference || !Dereference->isConst() ||
+          Dereference->getNumParams() != 0 ||
+          Dereference->getParent()->getCanonicalDecl() !=
+              Wrapped->Record->getCanonicalDecl() ||
+          !approvedStandardSDKDeclaration(S, SM, Dereference) ||
+          !cstddefOrigin(S, SM, Dereference->getLocation(), "libcxx",
+                         "__iterator/wrap_iter.h") ||
+          !utilityAlgorithmReference(WrappedRead->getArg(0), Source, Context))
+        return nullptr;
+    }
+  }
+  return Method;
+}
+
 std::optional<FunctionalOperationInfo>
 approvedRangeAlgorithmComparator(const State &S, const SourceManager &SM,
                                  const CallExpr *Call, unsigned ComparatorIndex,
@@ -24847,6 +25028,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
         AlgorithmRecordRangeParameter(1) &&
         AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmAdjacentFind;
+    const auto ScalarRange = AlgorithmRangePointerParameter(0);
+    const auto RecordRange = AlgorithmRecordRangeParameter(0);
+    const auto Range = ScalarRange ? ScalarRange : RecordRange;
+    if (Call->getNumArgs() == 3 && Range &&
+        (ScalarRange ? AlgorithmRangePointerParameter(1).has_value()
+                     : AlgorithmRecordRangeParameter(1).has_value()) &&
+        approvedAdjacentFindSourcePredicate(
+            S, SM, Call, (*Range)->getPointeeType(), Context))
       return UtilityOperation::AlgorithmAdjacentFind;
   }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
