@@ -5894,6 +5894,7 @@ class FunctionLowering {
       const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
           type(OutputRange.second->getPointeeType(), L);
+      const bool Record = FirstRange.second->getPointeeType()->isRecordType();
       auto CopyRange = [&](const Expression &RangeFirst,
                            const Expression &RangeLast) {
         auto Current = snapshot(json::Object(RangeFirst), L);
@@ -5905,7 +5906,9 @@ class FunctionLowering {
         branch(binary("!=", Current, End, "bool", L), Transfer, Done, L);
         label(Transfer, L);
         assign(dereference(Output, L),
-               cast(dereference(Current, L), OutputElementType, L), L);
+               Record ? dereference(Current, L)
+                      : cast(dereference(Current, L), OutputElementType, L),
+               L);
         assign(
             Current,
             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),

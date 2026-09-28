@@ -32691,9 +32691,29 @@ std::vector<long>::iterator rotate_raw(int *first, int *middle, int *last,
         check("v2-wrapped-rotate-copy-" + target,
               wrapped_rotate_copy_source,
               profile="cpp-core-v2", target=target, sdk=True)
-    check("v2-wrapped-rotate-copy-record",
+
+    wrapped_record_rotate_copy_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+std::vector<Item>::iterator rotate_record(
+    const std::vector<Item> &source, std::vector<Item> &output) {
+  return std::rotate_copy(source.cbegin(), source.cbegin() + 1,
+                          source.cend(), output.begin());
+}
+Item *rotate_record_mixed(const std::vector<Item> &source, Item *output) {
+  return std::rotate_copy(source.cbegin(), source.cbegin(),
+                          source.cend(), output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-record-rotate-copy-" + target,
+              wrapped_record_rotate_copy_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-rotate-copy-nontrivial-record",
           '#include <algorithm>\n#include <vector>\n'
-          'struct Record{int value;};'
+          'struct Record{int value;Record&operator=(const Record&other){'
+          'value=other.value;return *this;}};'
           'std::vector<Record>::iterator f(std::vector<Record>&v,'
           'std::vector<Record>&o){return std::rotate_copy('
           'v.begin(),v.begin(),v.end(),o.begin());}',

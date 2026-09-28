@@ -1726,6 +1726,9 @@ replacement conversion rules remain in force.
 `rotate_copy` likewise accepts authenticated raw or wrapped scalar input and
 writable output ranges with checked direct conversion, preserving the output
 iterator type and empty-range result.
+The same operation accepts raw or wrapped ranges of one exact source-owned
+trivial record type with a writable destination, copying complete values from
+const or mutable inputs without requiring a comparison operator.
 
 `std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
 ranges, including mutable and const iterators from admitted scalar `std::vector`

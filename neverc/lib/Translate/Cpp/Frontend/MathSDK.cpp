@@ -24033,16 +24033,44 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/rotate_copy.h" && Name == "rotate_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
-      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) && AlgorithmRangePointerParameter(2) &&
-      AlgorithmTransferRangeParameters(0, 3) &&
+      Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmRotateCopy;
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Scalar = AlgorithmRangePointerParameter(0) &&
+                        AlgorithmRangePointerParameter(1) &&
+                        AlgorithmRangePointerParameter(2) &&
+                        AlgorithmTransferRangeParameters(0, 3);
+    const auto RecordInput = [&]() -> std::optional<QualType> {
+      const auto Iterator = Function->getParamDecl(0)->getType();
+      if (!Same(Call->getArg(0)->getType(), Iterator) ||
+          !Same(Call->getArg(1)->getType(), Iterator) ||
+          !Same(Call->getArg(2)->getType(), Iterator))
+        return std::nullopt;
+      auto Pointer = Iterator;
+      if (!utilityObjectPointer(Context, Pointer)) {
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            S, SM, Iterator->getAsCXXRecordDecl(), Context);
+        if (!Wrapped || !utilityObjectPointer(Context, Wrapped->IteratorType))
+          return std::nullopt;
+        Pointer = Wrapped->IteratorType;
+      }
+      return utilityComparableSourceElement(S, SM, Pointer->getPointeeType(),
+                                            false, Context)
+                 ? std::optional<QualType>(Pointer)
+                 : std::nullopt;
+    }();
+    const auto RecordOutput = AlgorithmWritableRecordRangeParameter(3);
+    const bool Record =
+        RecordInput && RecordOutput &&
+        Context.hasSameUnqualifiedType((*RecordInput)->getPointeeType(),
+                                       (*RecordOutput)->getPointeeType());
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmRotateCopy;
+  }
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
