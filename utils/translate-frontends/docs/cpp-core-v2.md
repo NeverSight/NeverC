@@ -2042,6 +2042,12 @@ record values. Writable authenticated wrapped scalar ranges retain the default
 and checked comparator forms. Record comparator overloads and nontrivial
 records remain rejected.
 
+Default `std::partial_sort_copy` also accepts raw or authenticated wrapped
+input and writable output ranges of the same exact trivial source-record type.
+It copies complete records into the bounded output, compares current input and
+output lvalues through that selected Boolean `operator<`, and returns the
+original output iterator form. Record comparator overloads remain rejected.
+
 Default `std::nth_element` accepts the same writable source-record ranges.
 Its three-way partition compares current elements with a retained trivial
 record pivot by const reference and swaps complete values. Equivalent values

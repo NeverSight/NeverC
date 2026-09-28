@@ -7110,16 +7110,20 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmPartialSortCopy: {
-      auto InputFirst = snapshot(expression(Call->getArg(0)), L);
-      auto InputLast = snapshot(expression(Call->getArg(1)), L);
-      auto OutputFirst = snapshot(expression(Call->getArg(2)), L);
-      auto OutputLast = snapshot(expression(Call->getArg(3)), L);
+      auto InputFirstRange = AlgorithmRangeValue(0);
+      auto InputLastRange = AlgorithmRangeValue(1);
+      auto OutputFirstRange = AlgorithmRangeValue(2);
+      auto OutputLastRange = AlgorithmRangeValue(3);
+      auto InputFirst = std::move(InputFirstRange.first);
+      auto InputLast = std::move(InputLastRange.first);
+      auto OutputFirst = std::move(OutputFirstRange.first);
+      auto OutputLast = std::move(OutputLastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparison;
       std::optional<FunctionalOperationInfo> SDKHeapComparison;
       if (Call->getNumArgs() == 5) {
-        const auto InputElement = Call->getArg(0)->getType()->getPointeeType();
-        const auto OutputElement = Call->getArg(2)->getType()->getPointeeType();
+        const auto InputElement = InputFirstRange.second->getPointeeType();
+        const auto OutputElement = OutputFirstRange.second->getPointeeType();
         SDKComparison =
             captureRangeSDKComparator(Call, 4, InputElement, OutputElement);
         if (SDKComparison) {
@@ -7134,17 +7138,37 @@ class FunctionLowering {
       }
       const auto ComparatorType =
           Comparator ? Call->getArg(4)->getType() : QualType{};
+      const auto InputElement = InputFirstRange.second->getPointeeType();
+      const auto OutputElement = OutputFirstRange.second->getPointeeType();
+      const auto SourceComparison =
+          Call->getNumArgs() == 4 &&
+                  A.Context.hasSameUnqualifiedType(InputElement, OutputElement)
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, InputElement, OO_Less, A.Context)
+              : std::nullopt;
+      const auto SourceElement = SourceComparison ? OutputElement : QualType{};
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKComparison) {
-        auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
-            Call->getArg(2)->getType()->getPointeeType(), true);
+      if (!Comparator && !SDKComparison && !SourceComparison) {
+        auto Common = utilityScalarComparisonType(A.Context, InputElement,
+                                                  OutputElement, true);
         if (!Common)
           reject(L, "algorithm partial_sort_copy",
                  "The input and output elements have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
       auto Less = [&](Expression Left, Expression Right) {
+        if (SourceComparison) {
+          auto LeftAddress = snapshot(
+              address(std::move(Left), InputElement.withConst(), L), L);
+          auto RightAddress = snapshot(
+              address(std::move(Right), InputElement.withConst(), L), L);
+          return compareVectorSourceElements(
+              std::move(LeftAddress), std::move(RightAddress),
+              SourceComparison->Member,
+              SourceComparison->Friend ? SourceComparison->Friend
+                                       : SourceComparison->Namespace,
+              L);
+        }
         if (SDKComparison)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
                                            *SDKComparison);
@@ -7156,10 +7180,9 @@ class FunctionLowering {
                       L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
-      const auto OutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+      const auto InputType = type(InputFirstRange.second, L);
+      const auto OutputType = type(OutputFirstRange.second, L);
+      const auto OutputElementType = type(OutputElement, L);
       auto Input = snapshot(json::Object(InputFirst), L);
       auto Output = snapshot(json::Object(OutputFirst), L);
       auto HeapSize = temporary(DifferenceType, L);
@@ -7176,8 +7199,12 @@ class FunctionLowering {
       label(CheckOutput, L);
       branch(binary("!=", Output, OutputLast, "bool", L), Fill, Prepared, L);
       label(Fill, L);
+      auto FillValue = dereference(Input, L);
       assign(dereference(Output, L),
-             cast(dereference(Input, L), OutputElementType, L), L);
+             SourceComparison
+                 ? std::move(FillValue)
+                 : cast(std::move(FillValue), OutputElementType, L),
+             L);
       assign(Input,
              binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
              L);
@@ -7191,8 +7218,8 @@ class FunctionLowering {
              NonEmpty, End, L);
       label(NonEmpty, L);
       makeHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
-               DifferenceType, L, Comparator, ComparatorType,
-               SDKHeapComparison);
+               DifferenceType, L, Comparator, ComparatorType, SDKHeapComparison,
+               SourceElement);
       jump(Scan, L);
       label(Scan, L);
       branch(binary("!=", Input, InputLast, "bool", L), Compare, Finish, L);
@@ -7201,11 +7228,16 @@ class FunctionLowering {
                   dereference(json::Object(OutputFirst), L)),
              Replace, Advance, L);
       label(Replace, L);
+      auto Replacement = dereference(Input, L);
       assign(dereference(json::Object(OutputFirst), L),
-             cast(dereference(Input, L), OutputElementType, L), L);
+             SourceComparison
+                 ? std::move(Replacement)
+                 : cast(std::move(Replacement), OutputElementType, L),
+             L);
       heapSiftDown(json::Object(OutputFirst), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), OutputType, DifferenceType,
-                   L, Comparator, ComparatorType, SDKHeapComparison);
+                   L, Comparator, ComparatorType, SDKHeapComparison,
+                   SourceElement);
       jump(Advance, L);
       label(Advance, L);
       assign(Input,
@@ -7214,11 +7246,11 @@ class FunctionLowering {
       jump(Scan, L);
       label(Finish, L);
       sortHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
-               DifferenceType, L, Comparator, ComparatorType,
-               SDKHeapComparison);
+               DifferenceType, L, Comparator, ComparatorType, SDKHeapComparison,
+               SourceElement);
       jump(End, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmNthElement: {
       auto FirstRange = AlgorithmRangeValue(0);

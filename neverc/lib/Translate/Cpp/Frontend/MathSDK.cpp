@@ -24337,20 +24337,32 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "partial_sort_copy" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmTransferParameters(0, 2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
-        AlgorithmOrderedPointerParameter(2)) ||
-       (Call->getNumArgs() == 5 &&
-        AlgorithmBinaryComparisonParameter(4, 0, 2) &&
-        AlgorithmBinaryComparisonParameter(4, 2, 2))))
-    return UtilityOperation::AlgorithmPartialSortCopy;
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Scalar =
+        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+        AlgorithmTransferParameters(0, 2) && AlgorithmPointerParameter(3) &&
+        ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
+          AlgorithmOrderedPointerParameter(2)) ||
+         (Call->getNumArgs() == 5 &&
+          AlgorithmBinaryComparisonParameter(4, 0, 2) &&
+          AlgorithmBinaryComparisonParameter(4, 2, 2)));
+    const auto RecordInput = AlgorithmRecordOrderedRangeParameter(0);
+    const auto RecordOutput = AlgorithmWritableRecordRangeParameter(2);
+    const bool Record =
+        Call->getNumArgs() == 4 && RecordInput && RecordOutput &&
+        AlgorithmRecordOrderedRangeParameter(1) &&
+        AlgorithmRecordOrderedRangeParameter(2) &&
+        AlgorithmWritableRecordRangeParameter(3) &&
+        Context.hasSameUnqualifiedType((*RecordInput)->getPointeeType(),
+                                       (*RecordOutput)->getPointeeType());
+    if (Scalar || Record)
+      return UtilityOperation::AlgorithmPartialSortCopy;
+  }
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() &&

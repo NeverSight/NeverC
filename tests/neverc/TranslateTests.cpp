@@ -44018,8 +44018,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
        "#include <algorithm>\nenum E{low,high};"
        "bool operator<(E,E){return true;}"
        "int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}"},
-      {"record-nth",
-       "#include <algorithm>\nstruct R{int n;};"
+      {"nontrivial-record-nth",
+       "#include <algorithm>\nstruct R{int n;~R(){}};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
        "int main(){R a[2]{{2},{1}};std::nth_element(a,a+1,a+2);return 0;}"}};
   for (const auto &Case : Cases) {
@@ -56212,6 +56212,88 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("source-record-stable-sort-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordPartialSortCopyRun) {
+  const auto Source = tmpFile("source-record-partial-sort-copy.cpp");
+  const auto Output = tmpFile("source-record-partial-sort-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point {
+  int key, id;
+  bool operator<(const Point &other) const { return key < other.key; }
+};
+struct Friend {
+  int key, id;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.key < b.key;
+  }
+};
+namespace owned {
+struct Free { int key, id; };
+bool operator<(const Free &a, const Free &b) {
+  return a.key < b.key;
+}
+}
+int main() {
+  const Point input[7]{{7, 0}, {1, 1}, {5, 2}, {2, 3},
+                       {9, 4}, {3, 5}, {4, 6}};
+  Point output[3]{};
+  int first_calls = 0, last_calls = 0;
+  int output_calls = 0, output_last_calls = 0;
+  if (std::partial_sort_copy((++first_calls, input),
+                             (++last_calls, input + 7),
+                             (++output_calls, output),
+                             (++output_last_calls, output + 3)) != output + 3 ||
+      first_calls != 1 || last_calls != 1 || output_calls != 1 ||
+      output_last_calls != 1) return 1;
+  if (output[0].id != 1 || output[1].id != 3 || output[2].id != 5)
+    return 2;
+
+  const std::vector<Friend> friends{Friend{4, 0}, Friend{2, 1},
+                                    Friend{5, 2}, Friend{1, 3}};
+  std::vector<Friend> wrapped{Friend{}, Friend{}, Friend{}};
+  auto end = std::partial_sort_copy(friends.cbegin(), friends.cend(),
+                                    wrapped.begin(), wrapped.end());
+  if (end != wrapped.end() || wrapped[0].id != 3 || wrapped[1].id != 1 ||
+      wrapped[2].id != 0) return 3;
+
+  owned::Free free_values[2]{{8, 0}, {6, 1}};
+  std::vector<owned::Free> free_output{owned::Free{}, owned::Free{},
+                                       owned::Free{}};
+  auto free_end = std::partial_sort_copy(free_values, free_values + 2,
+                                         free_output.begin(), free_output.end());
+  if (free_end != free_output.begin() + 2 || free_output[0].id != 1 ||
+      free_output[1].id != 0) return 4;
+
+  Point empty_output[1]{{99, 8}};
+  if (std::partial_sort_copy(input, input + 7, empty_output,
+                             empty_output) != empty_output ||
+      empty_output[0].id != 8) return 5;
+  if (std::partial_sort_copy(input, input, empty_output,
+                             empty_output + 1) != empty_output ||
+      empty_output[0].id != 8) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-partial-sort-copy" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

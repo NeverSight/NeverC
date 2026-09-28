@@ -31939,6 +31939,57 @@ void scalar_wrapped(std::vector<int> &values) {
           'std::inplace_merge(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_partial_sort_copy_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int key, id;
+  bool operator<(const Member &other) const { return key < other.key; }
+};
+struct Friend {
+  int key, id;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.key < b.key;
+  }
+};
+namespace owned {
+struct Free { int key, id; };
+bool operator<(const Free &a, const Free &b) {
+  return a.key < b.key;
+}
+}
+Member *copy_raw(const Member *first, const Member *last,
+                 Member *output, Member *output_last) {
+  return std::partial_sort_copy(first, last, output, output_last);
+}
+std::vector<Friend>::iterator copy_wrapped(const std::vector<Friend> &input,
+                                            std::vector<Friend> &output) {
+  return std::partial_sort_copy(input.cbegin(), input.cend(),
+                                output.begin(), output.end());
+}
+std::vector<owned::Free>::iterator copy_mixed(owned::Free *first,
+                                               owned::Free *last,
+                                               std::vector<owned::Free> &out) {
+  return std::partial_sort_copy(first, last, out.begin(), out.end());
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-partial-sort-copy-" + target,
+              source_record_partial_sort_copy_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-partial-sort-copy-nontrivial",
+          '#include <algorithm>\nstruct Entry{int key;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'Entry*f(Entry*first,Entry*last,Entry*out,Entry*out_last){'
+          'return std::partial_sort_copy(first,last,out,out_last);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-record-partial-sort-copy-comparator",
+          '#include <algorithm>\nstruct Entry{int key;};'
+          'bool less(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'Entry*f(Entry*first,Entry*last,Entry*out,Entry*out_last){'
+          'return std::partial_sort_copy(first,last,out,out_last,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_output_source = """\
 #include <algorithm>
 #include <vector>
