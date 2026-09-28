@@ -780,8 +780,7 @@ class FunctionLowering {
     }
     const auto *Method = Operation.Method;
     auto Convert = [&](Expression Value, QualType Parameter) {
-      if (Parameter->isLValueReferenceType() &&
-          recordValue(Parameter->getPointeeType()))
+      if (Parameter->isLValueReferenceType())
         return cast(address(std::move(Value), Parameter->getPointeeType(), L),
                     type(Parameter, L), L);
       return cast(std::move(Value), type(Parameter, L), L);

@@ -2207,11 +2207,12 @@ reference identity are preserved. Generated programs make no libc++ call for
 these comparisons. Source specializations remain outside this scalar boundary.
 Source-owned standard-layout, trivially copyable comparison objects are also
 admitted for these four direct algorithms when a checked Boolean `operator()`
-accepts two directly convertible scalar values by value. The same pinned
-conditional-call proof fixes the comparison order, including both `clamp`
+accepts two directly convertible scalar values by value or exact `const T&`
+references. The same pinned conditional-call proof fixes the comparison order,
+including both `clamp`
 calls. A named or temporary comparator is evaluated once and copied into the
 algorithm parameter; reference identity and standard tie behavior are kept.
-Scalar reference-parameter methods remain outside this boundary.
+Scalar reference parameters receive the original bound argument objects.
 
 The exact two-iterator `std::is_heap`, `std::is_heap_until`, `std::make_heap`,
 `std::push_heap`, `std::pop_heap` and `std::sort_heap` templates use the same

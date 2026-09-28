@@ -18821,14 +18821,14 @@ const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
       return nullptr;
   for (unsigned I = 0; I < 2; ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
-    if (SourceRecord
-            ? (!Parameter->isLValueReferenceType() ||
-               !Parameter->getPointeeType().isConstQualified() ||
-               Parameter->getPointeeType().isVolatileQualified() ||
-               !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                               Element))
-            : (Parameter->isReferenceType() ||
-               !utilityScalarDirectConversion(Context, Element, Parameter)))
+    const bool ConstReference =
+        Parameter->isLValueReferenceType() &&
+        Parameter->getPointeeType().isConstQualified() &&
+        !Parameter->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Element);
+    if (!(ConstReference ||
+          (!SourceRecord && !Parameter->isReferenceType() &&
+           utilityScalarDirectConversion(Context, Element, Parameter))))
       return nullptr;
   }
   return Method;

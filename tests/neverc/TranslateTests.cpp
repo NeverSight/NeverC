@@ -56207,6 +56207,59 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarDirectExtremaFunctorReferenceRun) {
+  const auto Source = tmpFile("scalar-direct-extrema-functor-reference.cpp");
+  const auto Output = tmpFile("scalar-direct-extrema-functor-reference.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+const int *base;
+int comparisons, bad_identity, evaluations;
+bool within(const int *value) {
+  for (int i = 0; i < 4; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+struct Less {
+  int *count;
+  bool operator()(const int &left, const int &right) const {
+    ++*count;
+    if (!within(&left) || !within(&right)) ++bad_identity;
+    return left < right;
+  }
+};
+Less next_less() { ++evaluations; return Less{&comparisons}; }
+int main() {
+  int values[4]{1, 2, 2, 3};
+  base = values;
+  Less less{&comparisons};
+  if (&std::min(values[3], values[0], next_less()) != values ||
+      &std::max(values[3], values[0], less) != values + 3 ||
+      &std::clamp(values[0], values[1], values[3], less) != values + 1 ||
+      &std::clamp(values[2], values[1], values[3], less) != values + 2 ||
+      evaluations != 1 || !comparisons || bad_identity) return 1;
+  auto pair = std::minmax(values[3], values[0], less);
+  if (&pair.first != values || &pair.second != values + 3 ||
+      bad_identity) return 2;
+  auto ties = std::minmax(values[1], values[2], less);
+  if (&ties.first != values + 1 || &ties.second != values + 2 ||
+      bad_identity) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("scalar-direct-extrema-functor-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("source-record-ordered-bounds.nc");
