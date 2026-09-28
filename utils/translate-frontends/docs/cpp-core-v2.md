@@ -887,6 +887,10 @@ other. The transform callback receives the original record as exact
 in the matching input order. Its scalar result converts to the arithmetic
 accumulator before the checked by-value reduction callback. Empty ranges invoke
 neither callback.
+Both inputs may instead be independently typed exact trivial source records.
+The transform callback receives each original element as its matching
+`const Record&` in input order and returns a scalar term through the same
+accumulator conversion and checked reduction boundary.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges. Empty ranges retain
 their zero or explicit initial result, and callbacks remain by-value.

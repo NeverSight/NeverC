@@ -57384,6 +57384,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TwoRecordInnerProductRun) {
+  const auto Source = tmpFile("two-record-inner-product.cpp");
+  const auto Output = tmpFile("two-record-inner-product.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { long weight; int bias; };
+const Left *left_base;
+const Right *right_base;
+int reductions, products, bad_identity;
+long add(long total, long term) {
+  ++reductions;
+  return total + term;
+}
+long product(const Left &left, const Right &right) {
+  if (&left != left_base + products || &right != right_base + products)
+    ++bad_identity;
+  ++products;
+  return (left.key * 10L + left.tag) * right.weight + right.bias;
+}
+int main() {
+  const std::vector<Left> first{{1, 2}, {3, 4}, {5, 6}};
+  const std::vector<Right> second{{2, 1}, {3, 2}, {4, 3}};
+  left_base = &first[0]; right_base = &second[0];
+  reductions = products = bad_identity = 0;
+  if (std::inner_product(first.cbegin(), first.cend(), second.cbegin(),
+                         10L, add, product) != 366 ||
+      reductions != 3 || products != 3 || bad_identity) return 1;
+  const Right raw_second[3]{{2, 1}, {3, 2}, {4, 3}};
+  left_base = &first[0]; right_base = raw_second;
+  reductions = products = bad_identity = 0;
+  if (std::inner_product(first.cbegin(), first.cend(), raw_second,
+                         10L, add, product) != 366 ||
+      reductions != 3 || products != 3 || bad_identity) return 2;
+  reductions = products = bad_identity = 0;
+  if (std::inner_product(first.cend(), first.cend(), second.cbegin(),
+                         7L, add, product) != 7 ||
+      reductions != 0 || products != 0 || bad_identity) return 3;
+  const Left raw_first[2]{{7, 8}, {9, 10}};
+  left_base = raw_first; right_base = raw_second;
+  reductions = products = bad_identity = 0;
+  if (std::inner_product(raw_first, raw_first + 2, raw_second,
+                         -5L, add, product) != 454 ||
+      reductions != 2 || products != 2 || bad_identity) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("two-record-inner-product" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedNumericReduceRun) {
   const auto Source = tmpFile("wrapped-numeric-reduce.cpp");
   const auto Output = tmpFile("wrapped-numeric-reduce.nc");

@@ -32459,6 +32459,43 @@ long raw_product(const long *first, const long *last, const Item *records) {
           '0L,add,product);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    two_record_inner_product_source = """\
+#include <numeric>
+#include <vector>
+struct Left { int key; int tag; };
+struct Right { long weight; int bias; };
+long add(long total, long term) { return total + term; }
+long product(const Left &left, const Right &right) {
+  return (left.key * 10L + left.tag) * right.weight + right.bias;
+}
+long wrapped_product(const std::vector<Left> &first,
+                     const std::vector<Right> &second) {
+  return std::inner_product(first.cbegin(), first.cend(),
+                            second.cbegin(), 10L, add, product);
+}
+long mixed_product(const std::vector<Left> &first, const Right *second) {
+  return std::inner_product(first.cbegin(), first.cend(),
+                            second, 10L, add, product);
+}
+long raw_product(const Left *first, const Left *last, const Right *second) {
+  return std::inner_product(first, last, second, -5L, add, product);
+}
+"""
+    for target in sdk_targets:
+        check("v2-two-record-inner-product-" + target,
+              two_record_inner_product_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-two-record-inner-product-by-value-rejected",
+          '#include <numeric>\n#include <vector>\n'
+          'struct Left{int key;int tag;};struct Right{int weight;};'
+          'long add(long total,long term){return total+term;}'
+          'long product(const Left&left,Right right){'
+          'return left.key*right.weight;}'
+          'long f(const std::vector<Left>&a,const std::vector<Right>&b){'
+          'return std::inner_product(a.cbegin(),a.cend(),b.cbegin(),'
+          '0L,add,product);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_numeric_reduce_source = """\
 #include <numeric>
 #include <vector>

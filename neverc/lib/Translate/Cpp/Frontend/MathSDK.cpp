@@ -23340,6 +23340,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       Call->getNumArgs() == 6 && Function->getNumParams() == 6 &&
+      Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&
+      AlgorithmRecordRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmRecordRangeParameter(2)) {
+    const auto Initial = Function->getParamDecl(3)->getType();
+    const auto *Transform = AlgorithmCallbackPrototype(5);
+    if (NumericArithmetic(Initial, true) &&
+        Same(Call->getArg(3)->getType(), Initial) &&
+        Same(Function->getReturnType(), Initial) &&
+        Same(Call->getType(), Initial) &&
+        NumericBinaryTransformCallback(4, Initial, Initial, Initial, true) &&
+        Transform && Transform->getNumParams() == 2 &&
+        AlgorithmRecordRangeCallbackReferenceParameter(5, 0, 0) &&
+        AlgorithmRecordRangeCallbackReferenceParameter(5, 1, 2) &&
+        utilityScalarDirectConversion(Context, Transform->getReturnType(),
+                                      Initial))
+      return UtilityOperation::NumericInnerProduct;
+  }
+  if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
+      Call->getNumArgs() == 6 && Function->getNumParams() == 6 &&
       Call->isPRValue() && NumericRangeParameter(0, false, true) &&
       NumericRangeParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),

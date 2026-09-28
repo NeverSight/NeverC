@@ -611,6 +611,9 @@ record in either raw or wrapped input range with arithmetic values in the
 other. Its transform callback takes the original record as `const Record&`
 and the directly convertible scalar by value in the matching parameter order,
 then returns a scalar term for a checked arithmetic reduction callback.
+Both inputs may instead hold independently typed exact trivial records; the
+transform callback takes each original element as its matching `const Record&`
+and returns a scalar term for the same reduction boundary.
 Default, initialized and checked function-pointer `reduce` also accept
 authenticated mutable or const wrapped arithmetic ranges.
 Default two-range and checked function-pointer unary or two-range
