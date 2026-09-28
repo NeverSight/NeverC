@@ -2451,6 +2451,10 @@ accept those source-record raw or authenticated wrapped ranges. Comparisons
 retain original element addresses. The single extrema return the first tied
 minimum or maximum; `minmax_element` returns the first tied minimum and last
 tied maximum as a pair of the original iterator type.
+Their checked comparator overloads also accept exact trivial source-record raw
+or authenticated wrapped ranges through `bool(const Record&, const Record&)`,
+without requiring a source `operator<`. The callback receives original
+element references and each result keeps the same iterator and tie rules.
 
 Default `std::is_heap` and `std::is_heap_until` accept the same exact
 source-record raw or authenticated wrapped ranges with a selected Boolean

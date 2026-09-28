@@ -23970,9 +23970,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              AlgorithmOrderedRangeParameter(0)) ||
             (AlgorithmRecordOrderedRangeParameter(0) &&
              AlgorithmRecordOrderedRangeParameter(1)))) ||
-          (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
-           AlgorithmRangePointerParameter(1) &&
-           AlgorithmRangeComparisonParameter(2, 0))))
+          (Call->getNumArgs() == 3 &&
+           ((AlgorithmRangePointerParameter(0) &&
+             AlgorithmRangePointerParameter(1) &&
+             AlgorithmRangeComparisonParameter(2, 0)) ||
+            (AlgorithmRecordRangeParameter(0) &&
+             AlgorithmRecordRangeParameter(1) &&
+             AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0))))))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;
@@ -24719,9 +24723,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           AlgorithmOrderedRangeParameter(0)) ||
          (AlgorithmRecordOrderedRangeParameter(0) &&
           AlgorithmRecordOrderedRangeParameter(1)))) ||
-       (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
-        AlgorithmRangePointerParameter(1) &&
-        AlgorithmRangeComparisonParameter(2, 0)))) {
+       (Call->getNumArgs() == 3 &&
+        ((AlgorithmRangePointerParameter(0) &&
+          AlgorithmRangePointerParameter(1) &&
+          AlgorithmRangeComparisonParameter(2, 0)) ||
+         (AlgorithmRecordRangeParameter(0) &&
+          AlgorithmRecordRangeParameter(1) &&
+          AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0)))))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

@@ -435,6 +435,9 @@ Default `is_sorted` and `is_sorted_until` accept the same source-record
 comparison in raw or authenticated wrapped ranges.
 Default `min_element`, `max_element` and `minmax_element` return original raw
 or wrapped positions for those records, retaining the standard tie rules.
+Their checked comparator forms also accept exact trivial source-record raw or
+wrapped ranges through a `bool(const Record&, const Record&)` function pointer.
+Comparisons retain original element addresses and need no `operator<`.
 Default `is_heap` and `is_heap_until` accept the same source-record ordering
 for raw or authenticated wrapped ranges.
 Default direct `min`, `max`, `clamp` and `minmax` accept exact trivial source

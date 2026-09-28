@@ -55440,6 +55440,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordExtremaPredicateRun) {
+  const auto Source = tmpFile("source-record-extrema-predicate.cpp");
+  const auto Output = tmpFile("source-record-extrema-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+const Item *base;
+int size, comparisons, bad_identity;
+bool less(const Item &left, const Item &right) {
+  bool left_found = false, right_found = false;
+  for (int i = 0; i < size; ++i) {
+    if (&left == base + i) left_found = true;
+    if (&right == base + i) right_found = true;
+  }
+  if (!left_found || !right_found) ++bad_identity;
+  ++comparisons;
+  return left.rank < right.rank;
+}
+int main() {
+  Item values[6]{{4, 0}, {1, 1}, {1, 2}, {4, 3}, {2, 4}, {4, 5}};
+  base = values; size = 6; comparisons = bad_identity = 0;
+  auto extremes = std::minmax_element(values, values + 6, less);
+  if (std::min_element(values, values + 6, less) != values + 1 ||
+      std::max_element(values, values + 6, less) != values ||
+      extremes.first != values + 1 || extremes.second != values + 5 ||
+      comparisons == 0 || bad_identity) return 1;
+  comparisons = bad_identity = 0;
+  auto empty = std::minmax_element(values, values, less);
+  auto one = std::minmax_element(values, values + 1, less);
+  if (std::min_element(values, values, less) != values ||
+      std::max_element(values, values, less) != values ||
+      empty.first != values || empty.second != values ||
+      one.first != values || one.second != values || comparisons ||
+      bad_identity) return 2;
+  Item odd[5]{{3, 0}, {1, 1}, {2, 2}, {3, 3}, {3, 4}};
+  base = odd; size = 5; comparisons = bad_identity = 0;
+  auto odd_extremes = std::minmax_element(odd, odd + 5, less);
+  if (odd_extremes.first != odd + 1 ||
+      odd_extremes.second != odd + 4 || comparisons == 0 ||
+      bad_identity) return 3;
+  const std::vector<Item> wrapped{{4, 0}, {1, 1}, {1, 2},
+                                  {4, 3}, {2, 4}, {4, 5}};
+  base = &wrapped[0]; size = 6; comparisons = bad_identity = 0;
+  auto wrapped_extremes =
+      std::minmax_element(wrapped.cbegin(), wrapped.cend(), less);
+  if (std::min_element(wrapped.cbegin(), wrapped.cend(), less) !=
+          wrapped.cbegin() + 1 ||
+      std::max_element(wrapped.cbegin(), wrapped.cend(), less) !=
+          wrapped.cbegin() ||
+      wrapped_extremes.first != wrapped.cbegin() + 1 ||
+      wrapped_extremes.second != wrapped.cbegin() + 5 ||
+      comparisons == 0 || bad_identity) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-extrema-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedSourceRecordExtremaRun) {
   const auto Source = tmpFile("wrapped-source-record-extrema.cpp");
   const auto Output = tmpFile("wrapped-source-record-extrema.nc");

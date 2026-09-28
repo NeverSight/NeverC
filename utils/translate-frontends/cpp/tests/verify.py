@@ -31654,6 +31654,46 @@ extrema_wrapped(std::vector<Member> &values) {
           'return std::minmax_element(a.begin(),a.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_extrema_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+Item *minimum_raw(Item *first, Item *last) {
+  return std::min_element(first, last, less);
+}
+Item *maximum_raw(Item *first, Item *last) {
+  return std::max_element(first, last, less);
+}
+std::pair<Item *, Item *> extrema_raw(Item *first, Item *last) {
+  return std::minmax_element(first, last, less);
+}
+std::vector<Item>::const_iterator minimum_wrapped(
+    const std::vector<Item> &values) {
+  return std::min_element(values.cbegin(), values.cend(), less);
+}
+std::vector<Item>::const_iterator maximum_wrapped(
+    const std::vector<Item> &values) {
+  return std::max_element(values.cbegin(), values.cend(), less);
+}
+std::pair<std::vector<Item>::iterator, std::vector<Item>::iterator>
+extrema_wrapped(std::vector<Item> &values) {
+  return std::minmax_element(values.begin(), values.end(), less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-extrema-predicate-" + target,
+              source_record_extrema_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-extrema-predicate-by-value-rejected",
+          '#include <algorithm>\n'
+          'struct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'Item*f(Item*a,Item*b){return std::min_element(a,b,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_heap_queries_source = """\
 #include <algorithm>
 #include <vector>
