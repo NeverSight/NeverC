@@ -24016,19 +24016,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (OrderedOutputAlgorithm &&
       (Call->getNumArgs() == 5 || Call->getNumArgs() == 6) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
-      AlgorithmTransferParameters(0, 4) && AlgorithmTransferParameters(2, 4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 5 && AlgorithmOrderedParameters(0, 2)) ||
-       (Call->getNumArgs() == 6 &&
-        AlgorithmBinaryComparisonParameter(5, 0, 2) &&
-        AlgorithmBinaryComparisonParameter(5, 2, 0)))) {
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Scalar =
+        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+        AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
+        AlgorithmTransferParameters(0, 4) &&
+        AlgorithmTransferParameters(2, 4) &&
+        ((Call->getNumArgs() == 5 && AlgorithmOrderedParameters(0, 2)) ||
+         (Call->getNumArgs() == 6 &&
+          AlgorithmBinaryComparisonParameter(5, 0, 2) &&
+          AlgorithmBinaryComparisonParameter(5, 2, 0)));
+    const auto RecordFirst = AlgorithmRecordOrderedRangeParameter(0);
+    const auto RecordSecond = AlgorithmRecordOrderedRangeParameter(2);
+    const auto RecordOutput = AlgorithmWritableRecordRangeParameter(4);
+    const bool Record =
+        Call->getNumArgs() == 5 && RecordFirst && RecordSecond &&
+        RecordOutput && AlgorithmRecordOrderedRangeParameter(1) &&
+        AlgorithmRecordOrderedRangeParameter(3) &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordSecond)->getPointeeType()) &&
+        Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
+                                       (*RecordOutput)->getPointeeType());
+    if (!Scalar && !Record)
+      return std::nullopt;
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;
     if (Name == "set_union")

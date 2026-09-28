@@ -6167,33 +6167,58 @@ class FunctionLowering {
           Operation == UtilityOperation::AlgorithmSetDifference;
       const bool Symmetric =
           Operation == UtilityOperation::AlgorithmSetSymmetricDifference;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
-      auto SecondLast = snapshot(expression(Call->getArg(3)), L);
-      auto Output = snapshot(expression(Call->getArg(4)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto SecondLastRange = AlgorithmRangeValue(3);
+      auto OutputRange = AlgorithmRangeValue(4);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
+      auto SecondLast = std::move(SecondLastRange.first);
+      auto Output = std::move(OutputRange.first);
       std::optional<Expression> Comparator;
       std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
           SDKComparators;
       if (Call->getNumArgs() == 6) {
-        const auto LeftElement = Call->getArg(0)->getType()->getPointeeType();
-        const auto RightElement = Call->getArg(2)->getType()->getPointeeType();
+        const auto LeftElement = FirstRange.second->getPointeeType();
+        const auto RightElement = SecondRange.second->getPointeeType();
         SDKComparators =
             captureRangeSDKComparatorPair(Call, 5, LeftElement, RightElement);
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(5)), L);
       }
+      const auto SourceElement = FirstRange.second->getPointeeType();
+      const auto SourceComparison =
+          Call->getNumArgs() == 5 &&
+                  A.Context.hasSameUnqualifiedType(
+                      SourceElement, SecondRange.second->getPointeeType())
+              ? approvedUtilityTrivialSourceComparison(
+                    A.S, A.Sources, SourceElement, OO_Less, A.Context)
+              : std::nullopt;
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKComparators) {
+      if (!Comparator && !SDKComparators && !SourceComparison) {
         auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
-            Call->getArg(2)->getType()->getPointeeType(), true);
+            A.Context, SourceElement, SecondRange.second->getPointeeType(),
+            true);
         if (!Common)
           reject(L, "ordered output algorithm",
                  "The input elements have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
       auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+        if (SourceComparison) {
+          auto LeftAddress = snapshot(
+              address(std::move(Left), SourceElement.withConst(), L), L);
+          auto RightAddress = snapshot(
+              address(std::move(Right), SourceElement.withConst(), L), L);
+          return compareVectorSourceElements(
+              std::move(LeftAddress), std::move(RightAddress),
+              SourceComparison->Member,
+              SourceComparison->Friend ? SourceComparison->Friend
+                                       : SourceComparison->Namespace,
+              L);
+        }
         if (SDKComparators)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
                                            Reversed ? SDKComparators->second
@@ -6207,16 +6232,20 @@ class FunctionLowering {
                       L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType = type(Call->getArg(2)->getType(), L);
-      const auto OutputType = type(Call->getArg(4)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = type(SecondRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
-          type(Call->getArg(4)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       auto Emit = [&](Expression &Input, llvm::StringRef InputType,
                       bool Write) {
         if (Write) {
+          auto Value = dereference(Input, L);
           assign(dereference(Output, L),
-                 cast(dereference(Input, L), OutputElementType, L), L);
+                 SourceComparison
+                     ? std::move(Value)
+                     : cast(std::move(Value), OutputElementType, L),
+                 L);
           assign(Output,
                  binary("+", Output, quantity(1, DifferenceType, L), OutputType,
                         L),
@@ -6279,7 +6308,7 @@ class FunctionLowering {
         jump(CopySecondCheck, L);
       }
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 4);
     }
     case UtilityOperation::AlgorithmMin:
     case UtilityOperation::AlgorithmMax: {

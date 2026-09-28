@@ -42708,8 +42708,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"record-equal-range",
-       "#include <algorithm>\nstruct R{int n;};"
+      {"nontrivial-record-equal-range",
+       "#include <algorithm>\nstruct R{int n;~R(){}};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
        "int main(){R a[2]{{1},{2}};R key{1};"
        "return std::equal_range(a,a+2,key).first==a?0:1;}"}};
@@ -56212,6 +56212,113 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("source-record-stable-sort-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedOutputRun) {
+  const auto Source = tmpFile("source-record-ordered-output.cpp");
+  const auto Output = tmpFile("source-record-ordered-output.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Point {
+  int key, id;
+  bool operator<(const Point &other) const { return key < other.key; }
+};
+struct Friend {
+  int key, id;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.key < b.key;
+  }
+};
+namespace owned {
+struct Free { int key, id; };
+bool operator<(const Free &a, const Free &b) {
+  return a.key < b.key;
+}
+}
+int main() {
+  Point first[3]{{1, 0}, {2, 1}, {2, 2}};
+  Point second[3]{{1, 3}, {2, 4}, {3, 5}};
+  Point merged[6]{};
+  int first_calls = 0, last_calls = 0, second_calls = 0;
+  int second_last_calls = 0, output_calls = 0;
+  if (std::merge((++first_calls, first), (++last_calls, first + 3),
+                 (++second_calls, second),
+                 (++second_last_calls, second + 3),
+                 (++output_calls, merged)) != merged + 6 ||
+      first_calls != 1 || last_calls != 1 || second_calls != 1 ||
+      second_last_calls != 1 || output_calls != 1)
+    return 1;
+  const int merged_ids[6]{0, 3, 1, 2, 4, 5};
+  for (int i = 0; i < 6; ++i)
+    if (merged[i].id != merged_ids[i]) return 2;
+
+  std::vector<Friend> left{Friend{1, 0}, Friend{2, 1}};
+  std::vector<Friend> right{Friend{1, 2}, Friend{3, 3}};
+  std::vector<Friend> wrapped{Friend{}, Friend{}, Friend{}, Friend{}};
+  if (std::merge(left.cbegin(), left.cend(), right.cbegin(), right.cend(),
+                 wrapped.begin()) != wrapped.end()) return 3;
+  const int wrapped_ids[4]{0, 2, 1, 3};
+  for (int i = 0; i < 4; ++i)
+    if (wrapped[i].id != wrapped_ids[i]) return 4;
+
+  Point union_first[4]{{1, 0}, {2, 1}, {2, 2}, {4, 3}};
+  Point union_second[3]{{1, 4}, {2, 5}, {3, 6}};
+  Point united[7]{};
+  if (std::set_union(union_first, union_first + 4,
+                     union_second, union_second + 3, united) != united + 5)
+    return 5;
+  const int union_ids[5]{0, 1, 2, 6, 3};
+  for (int i = 0; i < 5; ++i)
+    if (united[i].id != union_ids[i]) return 6;
+
+  owned::Free intersection_first[4]{{1, 0}, {1, 1}, {2, 2}, {3, 3}};
+  owned::Free intersection_second[4]{{1, 4}, {2, 5}, {2, 6}, {4, 7}};
+  owned::Free common[4]{};
+  if (std::set_intersection(intersection_first, intersection_first + 4,
+                            intersection_second, intersection_second + 4,
+                            common) != common + 2 ||
+      common[0].id != 0 || common[1].id != 2) return 7;
+
+  Friend difference_first[4]{{1, 0}, {1, 1}, {2, 2}, {3, 3}};
+  Friend difference_second[2]{{1, 4}, {2, 5}};
+  Friend difference[4]{};
+  if (std::set_difference(difference_first, difference_first + 4,
+                          difference_second, difference_second + 2,
+                          difference) != difference + 2 ||
+      difference[0].id != 1 || difference[1].id != 3) return 8;
+
+  owned::Free symmetric_first[4]{{1, 0}, {2, 1}, {2, 2}, {4, 3}};
+  owned::Free symmetric_second[4]{{1, 4}, {2, 5}, {3, 6}, {3, 7}};
+  owned::Free symmetric[8]{};
+  if (std::set_symmetric_difference(symmetric_first, symmetric_first + 4,
+                                    symmetric_second, symmetric_second + 4,
+                                    symmetric) != symmetric + 4 ||
+      symmetric[0].id != 2 || symmetric[1].id != 6 ||
+      symmetric[2].id != 7 || symmetric[3].id != 3) return 9;
+
+  std::vector<Friend> empty;
+  return std::merge(empty.begin(), empty.end(), empty.begin(), empty.end(),
+                    wrapped.begin()) == wrapped.begin() ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-output" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

@@ -457,6 +457,10 @@ Default `stable_sort` and `inplace_merge` admit writable raw or authenticated
 wrapped trivial source-record ranges with that selected ordering, preserving
 the order of equivalent elements. Wrapped scalars retain their default and
 checked comparator forms; record comparator overloads remain unsupported.
+Default `merge` and the four ordered `set_*` algorithms accept independent raw
+or authenticated wrapped ranges of the same trivial source-record type and a
+writable output of that type, preserving complete values and the output
+iterator form.
 Checked unary boolean function-pointer predicates with directly
 convertible by-value scalar parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`,

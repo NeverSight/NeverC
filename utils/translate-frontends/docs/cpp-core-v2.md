@@ -2175,6 +2175,14 @@ enum. Object-pointer ranges use a checked compatible common pointer type; as
 with source C++, relational ordering is guaranteed for pointers into the same
 complete object or array.
 
+The default ordered output forms also accept independent raw or authenticated
+wrapped ranges of the same exact trivial source-record type and a writable raw
+or wrapped destination of that type. One uniquely selected Boolean
+`operator<` compares original input lvalues in both directions; each output
+write copies the complete record. The returned position retains the output
+iterator type. Nontrivial records and record comparator overloads remain
+rejected.
+
 Default `std::lexicographical_compare` and `std::includes` also accept
 independent authenticated mutable or const wrapped iterators, mixed with raw
 pointer ranges. Exact same-type trivial source-record ranges use one uniquely

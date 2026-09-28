@@ -31939,6 +31939,74 @@ void scalar_wrapped(std::vector<int> &values) {
           'std::inplace_merge(first,middle,last);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_ordered_output_source = """\
+#include <algorithm>
+#include <vector>
+struct Member {
+  int key, id;
+  bool operator<(const Member &other) const { return key < other.key; }
+};
+struct Friend {
+  int key, id;
+  friend bool operator<(const Friend &a, const Friend &b) {
+    return a.key < b.key;
+  }
+};
+namespace owned {
+struct Free { int key, id; };
+bool operator<(const Free &a, const Free &b) {
+  return a.key < b.key;
+}
+}
+Member *merge_raw(const Member *first, const Member *last,
+                  const Member *second, const Member *second_last,
+                  Member *output) {
+  return std::merge(first, last, second, second_last, output);
+}
+std::vector<Friend>::iterator merge_wrapped(const std::vector<Friend> &first,
+                                             const std::vector<Friend> &second,
+                                             std::vector<Friend> &output) {
+  return std::merge(first.cbegin(), first.cend(), second.cbegin(),
+                    second.cend(), output.begin());
+}
+Member *union_raw(Member *first, Member *last, Member *second,
+                  Member *second_last, Member *output) {
+  return std::set_union(first, last, second, second_last, output);
+}
+owned::Free *intersection_raw(owned::Free *first, owned::Free *last,
+                               owned::Free *second, owned::Free *second_last,
+                               owned::Free *output) {
+  return std::set_intersection(first, last, second, second_last, output);
+}
+Friend *difference_raw(Friend *first, Friend *last, Friend *second,
+                       Friend *second_last, Friend *output) {
+  return std::set_difference(first, last, second, second_last, output);
+}
+owned::Free *symmetric_raw(owned::Free *first, owned::Free *last,
+                            owned::Free *second, owned::Free *second_last,
+                            owned::Free *output) {
+  return std::set_symmetric_difference(first, last, second, second_last,
+                                        output);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-output-" + target,
+              source_record_ordered_output_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-record-ordered-output-nontrivial",
+          '#include <algorithm>\nstruct Entry{int key;~Entry(){}};'
+          'bool operator<(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'void f(Entry*first,Entry*last,Entry*second,Entry*second_last,'
+          'Entry*output){std::merge(first,last,second,second_last,output);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-record-ordered-output-comparator",
+          '#include <algorithm>\nstruct Entry{int key;};'
+          'bool less(const Entry&a,const Entry&b){return a.key<b.key;}'
+          'void f(Entry*first,Entry*last,Entry*second,Entry*second_last,'
+          'Entry*output){'
+          'std::set_union(first,last,second,second_last,output,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_swap_reverse_source = """\
 #include <algorithm>
 #include <vector>
