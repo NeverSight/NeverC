@@ -821,6 +821,10 @@ The authenticated forward wrappers directly lower arrow, subscript, prefix and
 postfix increment/decrement, member and left-hand offsets, and compound offset
 assignment. The result of postfix movement retains the old pointer, while
 compound assignment returns the mutated iterator by reference.
+Their `advance`, `distance`, `next` and `prev` calls also lower directly:
+mutable and const wrapped pointers retain their exact iterator result type,
+`advance` updates the referenced iterator once, and distance returns the
+target pointer-difference type.
 The same authenticated forward wrappers also admit their implicit trivial
 copy/move assignment. The right iterator is captured once before writing the
 single checked pointer field, so self-assignment and assignment from a

@@ -9374,12 +9374,21 @@ class FunctionLowering {
                              L);
       auto Iterator = dereference(std::move(IteratorAddress), L);
       auto Reverse = ReverseFor(IteratorType);
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
       if (Reverse) {
         auto Current = ReverseCurrent(std::move(Iterator), *Reverse);
         auto Value = snapshot(Current, L);
         assign(Current,
                binary("-", std::move(Value), std::move(Offset),
                       type(Reverse->PointerType, L), L),
+               L);
+      } else if (Wrapped) {
+        auto Current = fieldStorage(std::move(Iterator), Wrapped->Current, L);
+        auto Value = snapshot(Current, L);
+        assign(Current,
+               binary("+", std::move(Value), std::move(Offset),
+                      type(Wrapped->IteratorType, L), L),
                L);
       } else {
         auto Current = snapshot(Iterator, L);
@@ -9391,8 +9400,8 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::IteratorDistance: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto First = AlgorithmRangeValue(0).first;
+      auto Last = AlgorithmRangeValue(1).first;
       auto Reverse = ReverseFor(Call->getArg(0)->getType());
       if (Reverse) {
         auto FirstCurrent =
@@ -9410,7 +9419,8 @@ class FunctionLowering {
     }
     case UtilityOperation::IteratorNext:
     case UtilityOperation::IteratorPrev: {
-      auto Iterator = snapshot(expression(Call->getArg(0)), L);
+      auto IteratorRange = AlgorithmRangeValue(0);
+      auto Iterator = std::move(IteratorRange.first);
       Expression Offset;
       if (Call->getNumArgs() == 1) {
         Offset = quantity(1, type(A.Context.getPointerDiffType(), L), L);
@@ -9435,11 +9445,13 @@ class FunctionLowering {
                    type(Reverse->PointerType, L), L),
             *Reverse);
       }
-      return snapshot(
-          binary(Operation == UtilityOperation::IteratorNext ? "+" : "-",
-                 std::move(Iterator), std::move(Offset),
-                 type(Call->getType(), L), L),
-          L);
+      return AlgorithmIteratorResult(
+          snapshot(
+              binary(Operation == UtilityOperation::IteratorNext ? "+" : "-",
+                     std::move(Iterator), std::move(Offset),
+                     type(IteratorRange.second, L), L),
+              L),
+          0);
     }
     case UtilityOperation::IteratorRBegin:
     case UtilityOperation::IteratorREnd:

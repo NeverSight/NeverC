@@ -32434,6 +32434,33 @@ int bitwise(const std::vector<int> &first, const std::vector<int> &second) {
           '0L,plus,std::multiplies<>{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_iterator_navigation_source = """\
+#include <iterator>
+#include <string>
+#include <vector>
+std::vector<int>::iterator advance_next(std::vector<int> &values) {
+  auto current = values.begin();
+  std::advance(current, 2);
+  return std::next(current);
+}
+std::vector<int>::const_iterator previous(const std::vector<int> &values) {
+  return std::prev(values.cend());
+}
+auto distance(const std::vector<int> &values) {
+  return std::distance(values.cbegin(), values.cend());
+}
+std::string::const_iterator text_previous(const std::string &text) {
+  return std::prev(text.cend());
+}
+auto text_distance(const std::string &text) {
+  return std::distance(text.cbegin(), text.cend());
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-iterator-navigation-" + target,
+              wrapped_iterator_navigation_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

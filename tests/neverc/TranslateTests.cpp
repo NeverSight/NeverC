@@ -57084,6 +57084,58 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorNavigationRun) {
+  const auto Source = tmpFile("wrapped-iterator-navigation.cpp");
+  const auto Output = tmpFile("wrapped-iterator-navigation.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <iterator>
+#include <vector>
+int effects;
+int main() {
+  std::vector<int> values{1, 2, 3, 4};
+  auto current = values.begin();
+  std::advance(current, 2);
+  if (*current != 3) return 1;
+  std::advance(current, -1);
+  if (*current != 2 || *std::next(current) != 3 ||
+      *std::prev(current) != 1 || *std::next(current, 2) != 4 ||
+      *std::prev(values.end(), 2) != 3) return 2;
+  if (std::distance(values.begin(), values.end()) != 4 ||
+      std::distance(current, values.end()) != 3) return 3;
+  const std::vector<int> &constant = values;
+  auto const_current = constant.cend();
+  std::advance(const_current, -2);
+  if (*const_current != 3 ||
+      std::distance(constant.cbegin(), const_current) != 2 ||
+      *std::prev(constant.cend()) != 4) return 4;
+  effects = 0;
+  if (*std::next((++effects, values.begin()), 3) != 4 ||
+      effects != 1) return 5;
+  const std::vector<int> empty;
+  if (std::distance(empty.cbegin(), empty.cend()) != 0 ||
+      std::next(empty.cbegin(), 0) != empty.cend()) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-iterator-navigation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

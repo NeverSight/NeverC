@@ -10087,10 +10087,12 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   auto Distance = Parameter->getType();
   const auto Reverse = approvedUtilityReverseIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
+  const auto Wrapped = approvedUtilityWrapIteratorRecord(
+      S, SM, Iterator->getAsCXXRecordDecl(), Context);
   const auto *Init = selectedDefaultArgument(Default, Context);
   if (!Origin || Origin->Root != "libcxx" ||
       Origin->Path != "__iterator/next.h" ||
-      (!utilityObjectPointer(Context, Iterator) && !Reverse) ||
+      (!utilityObjectPointer(Context, Iterator) && !Reverse && !Wrapped) ||
       !Distance->isIntegralType(Context) ||
       Context.getTypeSize(Distance) > 64 ||
       !Context.hasSameType(Distance, Context.getPointerDiffType()) ||
@@ -24956,7 +24958,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->getPointeeType()->isVoidType();
   };
   auto PointerOrReverse = [&](QualType Type) {
-    return ObjectPointer(Type) || ReverseFor(Type).has_value();
+    return ObjectPointer(Type) || ReverseFor(Type).has_value() ||
+           approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
+                                             Context)
+               .has_value();
   };
   if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
