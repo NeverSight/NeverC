@@ -4031,9 +4031,11 @@ class FunctionLowering {
     case UtilityOperation::NumericInclusiveScan: {
       const bool Adjacent =
           Operation == UtilityOperation::NumericAdjacentDifference;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(AlgorithmRangeValue(1).first);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto Output = std::move(OutputRange.first);
       std::optional<Expression> Callback;
       std::optional<QualType> CallbackType;
       std::optional<CapturedAlgorithmPredicate> OperationObject;
@@ -4054,12 +4056,11 @@ class FunctionLowering {
           Callback = snapshot(expression(Call->getArg(3)), L);
         }
       }
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
-      const auto ElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
+      const auto ElementType = type(FirstRange.second->getPointeeType(), L);
       const auto OutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto Previous = temporary(ElementType, L);
       auto CurrentValue = temporary(ElementType, L);
@@ -4096,7 +4097,7 @@ class FunctionLowering {
             L);
         jump(Check, L);
         label(End, L);
-        return Output;
+        return AlgorithmIteratorResult(std::move(Output), 2);
       }
       const auto CheckFirst = labelName(), StoreFirst = labelName();
       const auto CheckNext = labelName(), StoreNext = labelName();
@@ -4127,8 +4128,8 @@ class FunctionLowering {
                       Adjacent ? OutputElementType : ElementType, L);
         if (!Callback) {
           auto Common = utilityScalarComparisonType(
-              A.Context, Call->getArg(0)->getType()->getPointeeType(),
-              Call->getArg(0)->getType()->getPointeeType(), false);
+              A.Context, FirstRange.second->getPointeeType(),
+              FirstRange.second->getPointeeType(), false);
           if (!Common)
             reject(L, "numeric prefix",
                    "The input elements have no arithmetic common type.");
@@ -4163,7 +4164,7 @@ class FunctionLowering {
              L);
       jump(CheckNext, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::NumericExclusiveScan: {
       auto First = snapshot(expression(Call->getArg(0)), L);

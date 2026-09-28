@@ -32310,6 +32310,43 @@ long callback_unary(const std::vector<int> &values) {
           'std::plus<>{},std::negate<>{});}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_numeric_prefix_source = """\
+#include <numeric>
+#include <vector>
+int multiply(int left, int right) { return left * right; }
+int add(int left, int right) { return left + right; }
+std::vector<long>::iterator prefix(const std::vector<int> &input,
+                                    std::vector<long> &output) {
+  return std::partial_sum(input.cbegin(), input.cend(), output.begin());
+}
+std::vector<long>::iterator custom_prefix(const std::vector<int> &input,
+                                           std::vector<long> &output) {
+  return std::partial_sum(input.cbegin(), input.cend(), output.begin(),
+                          multiply);
+}
+std::vector<long>::iterator adjacent(const std::vector<int> &input,
+                                      std::vector<long> &output) {
+  return std::adjacent_difference(input.cbegin(), input.cend(),
+                                   output.begin(), add);
+}
+long *mixed(const std::vector<int> &input, long *output) {
+  return std::adjacent_difference(input.cbegin(), input.cend(), output);
+}
+std::vector<int>::iterator in_place(std::vector<int> &input) {
+  return std::partial_sum(input.begin(), input.end(), input.begin());
+}
+"""
+    for target in sdk_targets:
+        check("v2-wrapped-numeric-prefix-" + target,
+              wrapped_numeric_prefix_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-numeric-prefix-reference-callback",
+          '#include <numeric>\n#include <vector>\n'
+          'int add(const int &left,int right){return left+right;}'
+          'std::vector<int>::iterator f(std::vector<int>&v){'
+          'return std::partial_sum(v.begin(),v.end(),v.begin(),add);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrap_iterator_assignment_source = """\
 #include <algorithm>
 #include <vector>

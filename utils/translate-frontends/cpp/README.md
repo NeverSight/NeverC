@@ -533,6 +533,10 @@ authenticated mutable or const wrapped arithmetic ranges.
 Default two-range and checked function-pointer unary or two-range
 `transform_reduce` accept raw or authenticated wrapped arithmetic inputs;
 standard function-object pairs retain their raw-pointer boundary.
+Default and checked function-pointer `partial_sum` and
+`adjacent_difference` accept authenticated wrapped arithmetic inputs and
+writable wrapped outputs, including mixed raw-pointer ranges, and return the
+matching output iterator.
 Output ranges must be writable; callable objects, heterogeneous element types
 and custom iterators remain rejected. New contributes an exact, platform-free
 37-file C++17 header closure. The standard allocation tag types and

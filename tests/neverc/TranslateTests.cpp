@@ -56847,6 +56847,83 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedNumericPrefixRun) {
+  const auto Source = tmpFile("wrapped-numeric-prefix.cpp");
+  const auto Output = tmpFile("wrapped-numeric-prefix.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <numeric>
+#include <vector>
+int calls;
+int multiply(int left, int right) { ++calls; return left * right; }
+int add(int left, int right) { ++calls; return left + right; }
+int main() {
+  const std::vector<int> input{1, 2, 3, 4};
+  std::vector<long> output(4);
+  if (std::partial_sum(input.cbegin(), input.cend(), output.begin()) !=
+          output.end() || output[0] != 1 || output[1] != 3 ||
+      output[2] != 6 || output[3] != 10) return 1;
+  if (std::adjacent_difference(input.cbegin(), input.cend(),
+                               output.begin()) != output.end() ||
+      output[0] != 1 || output[1] != 1 || output[2] != 1 ||
+      output[3] != 1) return 2;
+  calls = 0;
+  if (std::partial_sum(input.cbegin(), input.cend(), output.begin(),
+                       multiply) != output.end() ||
+      output[0] != 1 || output[1] != 2 || output[2] != 6 ||
+      output[3] != 24 || calls != 3) return 3;
+  calls = 0;
+  if (std::adjacent_difference(input.cbegin(), input.cend(),
+                               output.begin(), add) != output.end() ||
+      output[0] != 1 || output[1] != 3 || output[2] != 5 ||
+      output[3] != 7 || calls != 3) return 4;
+  long raw_output[4]{};
+  if (std::partial_sum(input.cbegin(), input.cend(), raw_output) !=
+          raw_output + 4 || raw_output[3] != 10) return 5;
+  int raw_input[4]{1, 2, 3, 4};
+  if (std::adjacent_difference(raw_input, raw_input + 4, output.begin()) !=
+          output.end() || output[3] != 1) return 6;
+  std::vector<int> in_place{1, 2, 3, 4};
+  if (std::partial_sum(in_place.begin(), in_place.end(), in_place.begin()) !=
+          in_place.end() || in_place[3] != 10) return 7;
+  in_place = {1, 2, 3, 4};
+  if (std::adjacent_difference(in_place.begin(), in_place.end(),
+                               in_place.begin()) != in_place.end() ||
+      in_place[0] != 1 || in_place[3] != 1) return 8;
+  const std::vector<int> empty;
+  calls = 0;
+  if (std::partial_sum(empty.cbegin(), empty.cend(), output.begin(),
+                       multiply) != output.begin() ||
+      std::adjacent_difference(empty.cbegin(), empty.cend(),
+                               output.begin(), add) != output.begin() ||
+      calls != 0) return 9;
+  const std::vector<unsigned char> narrow{250, 10};
+  if (std::partial_sum(narrow.cbegin(), narrow.cend(), output.begin()) !=
+          output.begin() + 2 || output[0] != 250 || output[1] != 4)
+    return 10;
+  if (std::adjacent_difference(narrow.cbegin(), narrow.cend(),
+                               output.begin()) != output.begin() + 2 ||
+      output[0] != 250 || output[1] != -240) return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-numeric-prefix" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrapIteratorAssignmentRun) {
   const auto Source = tmpFile("wrap-iterator-assignment.cpp");
   const auto Output = tmpFile("wrap-iterator-assignment.nc");

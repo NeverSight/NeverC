@@ -876,6 +876,12 @@ Default two-range and checked function-pointer unary or two-range
 `transform_reduce` also accept independent raw or authenticated wrapped
 arithmetic inputs. The checked accumulator and operand conversions remain in
 force; standard function-object pairs still require raw pointer ranges.
+Default and checked function-pointer `partial_sum` and
+`adjacent_difference` accept authenticated mutable or const wrapped arithmetic
+inputs and authenticated writable wrapped arithmetic outputs, independently
+mixed with raw pointers. They return the matching output iterator and preserve
+empty-range and in-place behavior, narrow-input promotion, and checked output
+and callback conversions.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is
