@@ -2502,6 +2502,10 @@ uniquely selected Boolean `operator<`. The selected const member,
 hidden-friend, or enclosing-namespace free comparison sees the original
 referents. The returned reference, or pair of const references for `minmax`,
 retains the selected source object's identity and standard tie behavior.
+Their checked comparator overloads also accept exact trivial source records
+through `bool(const Record&, const Record&)` without requiring `operator<`.
+The callback receives original referents; returned references and the pair of
+references retain the selected source objects and standard tie behavior.
 
 Default `std::lower_bound`, `std::upper_bound`, `std::binary_search` and
 `std::equal_range` accept exact trivial source-record ranges and a const

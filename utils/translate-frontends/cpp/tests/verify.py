@@ -31883,6 +31883,38 @@ const owned::Free &clamp_free(const owned::Free &v,
           'const Entry& f(const Entry&a,const Entry&b){return std::min(a,b);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_direct_extrema_comparator_source = """\
+#include <algorithm>
+struct Item { int rank, tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+const Item &minimum(const Item &left, const Item &right) {
+  return std::min(left, right, less);
+}
+const Item &maximum(const Item &left, const Item &right) {
+  return std::max(left, right, less);
+}
+const Item &bounded(const Item &value, const Item &low,
+                    const Item &high) {
+  return std::clamp(value, low, high, less);
+}
+std::pair<const Item &, const Item &> extrema(const Item &left,
+                                               const Item &right) {
+  return std::minmax(left, right, less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-direct-extrema-comparator-" + target,
+              source_record_direct_extrema_comparator_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-direct-extrema-comparator-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'const Item&f(const Item&a,const Item&b){'
+          'return std::min(a,b,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>
