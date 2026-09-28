@@ -31548,6 +31548,49 @@ bool lexical_scalar(std::vector<int> &first, long *second, long *last) {
           'return std::includes(a.begin(),a.end(),b.begin(),b.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_ordered_ranges_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+bool less(const Item &left, const Item &right) {
+  return left.rank < right.rank;
+}
+bool lexical_raw(Item *first, Item *last,
+                 Item *second, Item *second_last) {
+  return std::lexicographical_compare(first, last, second, second_last, less);
+}
+bool includes_raw(Item *first, Item *last,
+                  Item *second, Item *second_last) {
+  return std::includes(first, last, second, second_last, less);
+}
+bool lexical_wrapped(const std::vector<Item> &first,
+                     const std::vector<Item> &second) {
+  return std::lexicographical_compare(first.cbegin(), first.cend(),
+                                       second.cbegin(), second.cend(), less);
+}
+bool includes_mixed(const std::vector<Item> &first,
+                    Item *second, Item *second_last) {
+  return std::includes(first.cbegin(), first.cend(),
+                       second, second_last, less);
+}
+bool lexical_reverse_mixed(Item *first, Item *last,
+                           const std::vector<Item> &second) {
+  return std::lexicographical_compare(first, last,
+                                       second.cbegin(), second.cend(), less);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-ordered-ranges-predicate-" + target,
+              source_record_ordered_ranges_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-ordered-ranges-predicate-by-value-rejected",
+          '#include <algorithm>\n'
+          'struct Item{int rank;};'
+          'bool less(Item left,Item right){return left.rank<right.rank;}'
+          'bool f(Item*a,Item*b,Item*c,Item*d){'
+          'return std::includes(a,b,c,d,less);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_sorted_queries_source = """\
 #include <algorithm>
 #include <vector>

@@ -24567,8 +24567,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRangePointerParameter(3) &&
         AlgorithmRangePairComparisonParameter(4, 0, 2) &&
         AlgorithmRangePairComparisonParameter(4, 2, 0);
+    const auto PredicateFirst = AlgorithmRecordRangeParameter(0);
+    const auto PredicateSecond = AlgorithmRecordRangeParameter(2);
+    const bool RecordComparator =
+        Call->getNumArgs() == 5 && PredicateFirst &&
+        AlgorithmRecordRangeParameter(1) && PredicateSecond &&
+        AlgorithmRecordRangeParameter(3) &&
+        Context.hasSameUnqualifiedType((*PredicateFirst)->getPointeeType(),
+                                       (*PredicateSecond)->getPointeeType()) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(4, 0, 2) &&
+        AlgorithmRecordRangeBinaryPredicateParameter(4, 2, 0);
     if ((Call->getNumArgs() == 4 && (ScalarDefault || RecordDefault)) ||
-        ScalarComparator ||
+        ScalarComparator || RecordComparator ||
         (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
          AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
          AlgorithmPointerParameter(3) &&

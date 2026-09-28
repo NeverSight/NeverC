@@ -42893,6 +42893,98 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordOrderedRangesPredicateRun) {
+  const auto Source = tmpFile("source-record-ordered-ranges-predicate.cpp");
+  const auto Output = tmpFile("source-record-ordered-ranges-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int rank; int tag; };
+const Item *first_range, *second_range;
+int first_size, second_size, forward_calls, reverse_calls, bad_identity;
+bool within(const Item *value, const Item *base, int size) {
+  for (int i = 0; i < size; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+bool less(const Item &left, const Item &right) {
+  if (within(&left, first_range, first_size) &&
+      within(&right, second_range, second_size)) ++forward_calls;
+  else if (within(&left, second_range, second_size) &&
+           within(&right, first_range, first_size)) ++reverse_calls;
+  else ++bad_identity;
+  return left.rank < right.rank;
+}
+int main() {
+  const Item left[5]{{1, 1}, {2, 2}, {2, 3}, {4, 4}, {5, 5}};
+  const Item right[4]{{1, 6}, {2, 7}, {3, 8}, {5, 9}};
+  first_range = left; first_size = 5;
+  second_range = right; second_size = 4;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (!std::lexicographical_compare(left, left + 5, right, right + 4,
+                                     less) ||
+      !forward_calls || !reverse_calls || bad_identity) return 1;
+  first_range = right; first_size = 4;
+  second_range = left; second_size = 5;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (std::lexicographical_compare(right, right + 4, left, left + 5,
+                                    less) ||
+      !forward_calls || !reverse_calls || bad_identity) return 2;
+  const Item subset[2]{{2, 10}, {5, 11}};
+  first_range = left; first_size = 5;
+  second_range = subset; second_size = 2;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (!std::includes(left, left + 5, subset, subset + 2, less) ||
+      !forward_calls || !reverse_calls || bad_identity) return 3;
+  const Item missing[1]{{3, 12}};
+  second_range = missing; second_size = 1;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (std::includes(left, left + 5, missing, missing + 1, less) ||
+      !forward_calls || bad_identity) return 4;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (std::lexicographical_compare(left, left, right, right, less) ||
+      !std::includes(left, left + 5, right, right, less) ||
+      forward_calls || reverse_calls || bad_identity) return 5;
+  const std::vector<Item> wrapped{{1, 1}, {2, 2}, {2, 3}, {4, 4}, {5, 5}};
+  first_range = &wrapped[0]; first_size = 5;
+  second_range = right; second_size = 4;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (!std::lexicographical_compare(wrapped.cbegin(), wrapped.cend(),
+                                     right, right + 4, less) ||
+      !forward_calls || !reverse_calls || bad_identity) return 6;
+  second_range = subset; second_size = 2;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (!std::includes(wrapped.cbegin(), wrapped.cend(),
+                      subset, subset + 2, less) ||
+      !forward_calls || !reverse_calls || bad_identity) return 7;
+  first_range = right; first_size = 4;
+  second_range = &wrapped[0]; second_size = 5;
+  forward_calls = reverse_calls = bad_identity = 0;
+  if (std::lexicographical_compare(right, right + 4,
+                                    wrapped.cbegin(), wrapped.cend(), less) ||
+      !forward_calls || !reverse_calls || bad_identity) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-ordered-ranges-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmComparatorOrderedRangesRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-comparator-ordered-ranges.cpp");

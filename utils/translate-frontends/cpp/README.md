@@ -431,6 +431,10 @@ source records with a uniquely selected Boolean `operator<`.
 Their scalar comparator forms also accept independent wrapped or raw-pointer
 ranges with a checked Boolean function pointer or standard comparison object,
 proving both comparison directions.
+Their checked comparator forms also accept two exact same-type trivial
+source-record ranges through `bool(const Record&, const Record&)`, including
+mixed wrapped and raw iterators. Both comparison directions use original
+element references without requiring `operator<`.
 Default `is_sorted` and `is_sorted_until` accept the same source-record
 comparison in raw or authenticated wrapped ranges.
 Their checked comparator forms also accept exact trivial source-record ranges

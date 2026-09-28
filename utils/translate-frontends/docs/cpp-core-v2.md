@@ -2439,6 +2439,11 @@ Their scalar comparator overloads admit the same independent wrapped or raw
 ranges with a checked Boolean function pointer or authenticated standard
 comparison object. Both comparison directions are proved for the two scalar
 element types; empty ranges do not invoke the comparator.
+Their checked comparator overloads also accept independent raw or
+authenticated wrapped ranges of one exact trivial source-record type through
+`bool(const Record&, const Record&)`. The callback sees original elements in
+both comparison directions, and empty ranges invoke no callback. No source
+`operator<` is required for these calls.
 
 Default `std::is_sorted` and `std::is_sorted_until` likewise accept exact
 trivial source-record pointer or authenticated wrapped ranges with that unique
