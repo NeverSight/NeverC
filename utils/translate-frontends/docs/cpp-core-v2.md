@@ -2493,6 +2493,16 @@ Their checked comparator overloads also accept exact trivial source-record raw
 or authenticated wrapped ranges through `bool(const Record&, const Record&)`,
 without requiring a source `operator<`. The callback receives original
 element references and each result keeps the same iterator and tie rules.
+`std::max_element` additionally admits a source-owned, standard-layout,
+trivially copyable comparison object with one non-template Boolean
+`operator()`. The pinned public template must forward to the pinned internal
+`__max_element` specialization, whose selected call must resolve to that exact
+source method. Exact trivial source-record inputs use `const Record&`
+parameters and preserve element addresses; scalar inputs admit directly
+convertible by-value parameters or exact const references. The object is
+evaluated once and copied into the algorithm parameter even for an empty
+range, while no comparison runs for empty or single-element ranges. Raw and
+authenticated wrapped iterators retain their result type and first-tie rule.
 
 Default `std::is_heap` and `std::is_heap_until` accept the same exact
 source-record raw or authenticated wrapped ranges with a selected Boolean

@@ -56260,6 +56260,65 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceMaxElementFunctorRun) {
+  const auto Source = tmpFile("source-max-element-functor.cpp");
+  const auto Output = tmpFile("source-max-element-functor.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct Item { int rank, tag; };
+const Item *base;
+int length, comparisons, bad_identity, evaluations;
+bool within(const Item *value) {
+  for (int i = 0; i < length; ++i)
+    if (value == base + i) return true;
+  return false;
+}
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    if (!within(&left) || !within(&right)) ++bad_identity;
+    return left.rank < right.rank;
+  }
+};
+struct ScalarLess {
+  int *count;
+  bool operator()(int left, int right) const {
+    ++*count;
+    return left < right;
+  }
+};
+Less next_less() { ++evaluations; return Less{&comparisons}; }
+int main() {
+  Item values[5]{{2, 0}, {4, 10}, {4, 11}, {1, 20}, {3, 30}};
+  base = values; length = 5;
+  if (std::max_element(values, values + 5, next_less()) != values + 1 ||
+      evaluations != 1 || comparisons != 4 || bad_identity) return 1;
+  if (std::max_element(values, values, next_less()) != values ||
+      std::max_element(values, values + 1, Less{&comparisons}) != values ||
+      evaluations != 2 || comparisons != 4 || bad_identity) return 2;
+  int scalar[5]{2, 4, 4, 1, 3};
+  int scalar_comparisons = 0;
+  if (std::max_element(scalar, scalar + 5,
+                       ScalarLess{&scalar_comparisons}) != scalar + 1 ||
+      scalar_comparisons != 4) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-max-element-functor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordOrderedBoundsRun) {
   const auto Source = tmpFile("source-record-ordered-bounds.cpp");
   const auto Output = tmpFile("source-record-ordered-bounds.nc");

@@ -311,6 +311,9 @@ std::optional<FunctionalOperationInfo> approvedRangeAlgorithmComparator(
     const clang::CallExpr *Call, unsigned ComparatorIndex,
     clang::QualType LeftElement, clang::QualType RightElement,
     const clang::ASTContext &Context);
+const clang::CXXMethodDecl *approvedMaxElementSourceComparator(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    clang::QualType Element, const clang::ASTContext &Context);
 struct FunctionalInvokeObjectCall {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;

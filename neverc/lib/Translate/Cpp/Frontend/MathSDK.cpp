@@ -18773,31 +18773,39 @@ approvedDirectAlgorithmComparator(const State &S, const SourceManager &SM,
   return Operation;
 }
 
-const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
-    const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
-  const auto Invocations =
-      directAlgorithmComparatorInvocations(S, SM, Call, Context);
-  if (!Invocations)
-    return nullptr;
-  const auto *Function = Call->getDirectCallee();
-  const unsigned Index = Function->getName() == "clamp" ? 3u : 2u;
-  const auto Object = Function->getParamDecl(Index)->getType();
+static const CXXMethodDecl *
+approvedSourceComparatorMethod(const State &S, const SourceManager &SM,
+                               QualType Object, QualType Element,
+                               const ASTContext &Context) {
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  const auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
   const bool SourceRecord =
       utilityComparableSourceElement(S, SM, Element, false, Context);
   const bool Scalar = utilityScalar(Context, Element);
-  if (!Record || !S.owns(SM, Record->getLocation()) || Record->isLambda() ||
+  if (!Record || Object.hasLocalQualifiers() ||
+      !S.owns(SM, Record->getLocation()) || Record->isLambda() ||
       Record->isUnion() || !Record->isStandardLayout() ||
       !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
       !Record->hasTrivialDestructor() || (!SourceRecord && !Scalar))
     return nullptr;
-  const auto *Method =
-      dyn_cast_or_null<CXXMethodDecl>(Invocations->First->getDirectCallee());
+  const CXXMethodDecl *Method = nullptr;
+  for (const auto *Declaration : Record->decls()) {
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
+      if (const auto *Pattern =
+              dyn_cast<CXXMethodDecl>(Template->getTemplatedDecl()))
+        if (Pattern->getOverloadedOperator() == OO_Call)
+          return nullptr;
+    }
+    const auto *Candidate = dyn_cast<CXXMethodDecl>(Declaration);
+    if (!Candidate || Candidate->getOverloadedOperator() != OO_Call)
+      continue;
+    if (Method && Method->getCanonicalDecl() != Candidate->getCanonicalDecl())
+      return nullptr;
+    Method = Candidate;
+  }
   const auto *Definition = Method ? Method->getDefinition() : nullptr;
   if (!Method || !Definition || Method->isStatic() || Method->isVolatile() ||
+      Method->getRefQualifier() == RQ_RValue ||
       Method->getOverloadedOperator() != OO_Call ||
       Method->getNumParams() != 2 ||
       !Method->getReturnType()->isBooleanType() ||
@@ -18806,15 +18814,7 @@ const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
        Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
       Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
       !ordinaryOperator(Method) || !callableMethod(Method) ||
-      !S.owns(SM, Definition->getLocation()) ||
-      !functionalMemberReceiverValueCategory(
-          Method, Invocations->First->getArg(0), false) ||
-      (Invocations->Second &&
-       (!Invocations->Second->getDirectCallee() ||
-        Invocations->Second->getDirectCallee()->getCanonicalDecl() !=
-            Method->getCanonicalDecl() ||
-        !functionalMemberReceiverValueCategory(
-            Method, Invocations->Second->getArg(0), false))))
+      !S.owns(SM, Definition->getLocation()))
     return nullptr;
   for (const auto *D : Method->redecls())
     if (!S.owns(SM, D->getLocation()))
@@ -18831,6 +18831,142 @@ const CXXMethodDecl *approvedDirectAlgorithmSourceComparator(
            utilityScalarDirectConversion(Context, Element, Parameter))))
       return nullptr;
   }
+  return Method;
+}
+
+const CXXMethodDecl *
+approvedDirectAlgorithmSourceComparator(const State &S, const SourceManager &SM,
+                                        const CallExpr *Call,
+                                        const ASTContext &Context) {
+  const auto Invocations =
+      directAlgorithmComparatorInvocations(S, SM, Call, Context);
+  if (!Invocations)
+    return nullptr;
+  const auto *Function = Call->getDirectCallee();
+  const unsigned Index = Function->getName() == "clamp" ? 3u : 2u;
+  const auto Object = Function->getParamDecl(Index)->getType();
+  const auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+  const auto *Method =
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+  if (!Method || !Invocations->First->getDirectCallee() ||
+      Invocations->First->getDirectCallee()->getCanonicalDecl() !=
+          Method->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(
+          Method, Invocations->First->getArg(0), false) ||
+      (Invocations->Second &&
+       (!Invocations->Second->getDirectCallee() ||
+        Invocations->Second->getDirectCallee()->getCanonicalDecl() !=
+            Method->getCanonicalDecl() ||
+        !functionalMemberReceiverValueCategory(
+            Method, Invocations->Second->getArg(0), false))))
+    return nullptr;
+  return Method;
+}
+
+const CXXMethodDecl *
+approvedMaxElementSourceComparator(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call, QualType Element,
+                                   const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  auto SDK = [&](const Decl *Declaration) {
+    return Declaration && approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                         "__algorithm/max_element.h");
+  };
+  if (!S.coreV2() || !Function || !Primary || !Definition ||
+      Function->getName() != "max_element" || Call->getNumArgs() != 3 ||
+      Function->getNumParams() != 3 || !Call->isPRValue() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Function->isInlined() ||
+      !approvedUtilityReference(S, SM, Call, Function) || !SDK(Function) ||
+      !SDK(Primary) || !SDK(Definition) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(1)->getType()) ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !Context.hasSameType(Function->getReturnType(),
+                           Function->getParamDecl(0)->getType()))
+    return nullptr;
+  const auto Object = Function->getParamDecl(2)->getType();
+  if (!Context.hasSameType(Call->getArg(2)->getType(), Object))
+    return nullptr;
+  const auto *Method =
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+  if (!Method)
+    return nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  const auto *Return = Body && !Body->body_empty()
+                           ? dyn_cast<ReturnStmt>(Body->body_back())
+                           : nullptr;
+  const auto *NestedCall =
+      Return && Return->getRetValue()
+          ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Internal = NestedCall ? NestedCall->getDirectCallee() : nullptr;
+  const auto *InternalPrimary =
+      Internal ? Internal->getPrimaryTemplate() : nullptr;
+  const auto *InternalDefinition =
+      Internal ? Internal->getDefinition() : nullptr;
+  if (!NestedCall || !Internal || !InternalPrimary || !InternalDefinition ||
+      Internal->getName() != "__max_element" || NestedCall->getNumArgs() != 3 ||
+      Internal->getNumParams() != 3 ||
+      Internal->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !SDK(Internal) || !SDK(InternalPrimary) || !SDK(InternalDefinition) ||
+      !Context.hasSameType(Internal->getReturnType(),
+                           Function->getReturnType()))
+    return nullptr;
+  for (unsigned I = 0; I < 3; ++I) {
+    const Expr *Argument = NestedCall->getArg(I)->IgnoreParenImpCasts();
+    if (I < 2) {
+      if (const auto *Copy = dyn_cast<CXXConstructExpr>(Argument)) {
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            S, SM, Copy->getType()->getAsCXXRecordDecl(), Context);
+        const auto *Constructor = Copy->getConstructor();
+        if (!Wrapped || !Constructor || !Constructor->isCopyConstructor() ||
+            Copy->getNumArgs() != 1 ||
+            !Context.hasSameType(Copy->getType(),
+                                 Function->getParamDecl(I)->getType()) ||
+            Constructor->getParent()->getCanonicalDecl() !=
+                Wrapped->Record->getCanonicalDecl())
+          return nullptr;
+        Argument = Copy->getArg(0)->IgnoreParenImpCasts();
+      }
+    }
+    const auto *Reference = dyn_cast<DeclRefExpr>(Argument);
+    if (!Reference || Reference->getDecl() != Definition->getParamDecl(I))
+      return nullptr;
+  }
+  const auto *InternalBody = InternalDefinition->getBody();
+  if (!InternalBody)
+    return nullptr;
+  unsigned Comparisons = 0;
+  const CXXOperatorCallExpr *Selected = nullptr;
+  auto Visit = [&](auto &&Self, const Stmt *Node) -> void {
+    if (!Node)
+      return;
+    if (const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Node)) {
+      if (Invocation->getOperator() == OO_Call) {
+        ++Comparisons;
+        Selected = Invocation;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child);
+  };
+  Visit(Visit, InternalBody);
+  const auto *Receiver =
+      Selected && Selected->getNumArgs() == 3
+          ? dyn_cast<DeclRefExpr>(Selected->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  if (Comparisons != 1 || !Selected || !Selected->getDirectCallee() ||
+      Selected->getDirectCallee()->getCanonicalDecl() !=
+          Method->getCanonicalDecl() ||
+      !Selected->getType()->isBooleanType() || !Receiver ||
+      Receiver->getDecl() != InternalDefinition->getParamDecl(2) ||
+      !functionalMemberReceiverValueCategory(Method, Selected->getArg(0),
+                                             false))
+    return nullptr;
   return Method;
 }
 
@@ -24101,6 +24237,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto ScalarRange = AlgorithmRangePointerParameter(0);
+    const auto RecordRange = AlgorithmRecordRangeParameter(0);
+    const auto Range = ScalarRange ? ScalarRange : RecordRange;
+    const bool SourceObject =
+        Name == "max_element" && Call->getNumArgs() == 3 && Range &&
+        (ScalarRange ? AlgorithmRangePointerParameter(1).has_value()
+                     : AlgorithmRecordRangeParameter(1).has_value()) &&
+        approvedMaxElementSourceComparator(S, SM, Call,
+                                           (*Range)->getPointeeType(), Context);
     if (!((Call->getNumArgs() == 2 &&
            ((AlgorithmRangePointerParameter(0) &&
              AlgorithmRangePointerParameter(1) &&
@@ -24113,7 +24258,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              AlgorithmRangeComparisonParameter(2, 0)) ||
             (AlgorithmRecordRangeParameter(0) &&
              AlgorithmRecordRangeParameter(1) &&
-             AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0))))))
+             AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0)))) ||
+          SourceObject))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;

@@ -445,6 +445,10 @@ or wrapped positions for those records, retaining the standard tie rules.
 Their checked comparator forms also accept exact trivial source-record raw or
 wrapped ranges through a `bool(const Record&, const Record&)` function pointer.
 Comparisons retain original element addresses and need no `operator<`.
+`max_element` additionally accepts a source-owned, trivially copyable
+comparison object with one checked Boolean `operator()`. Exact record
+references retain element addresses; scalar parameters may be by value or
+exact const references. Empty and one-element ranges do not call the object.
 Default `is_heap` and `is_heap_until` accept the same source-record ordering
 for raw or authenticated wrapped ranges.
 Their checked comparator forms likewise accept exact trivial source-record

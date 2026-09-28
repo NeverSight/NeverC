@@ -32024,6 +32024,49 @@ std::pair<const int &, const int &> extrema_reference(
               scalar_direct_extrema_functor_source,
               profile="cpp-core-v2", target=target, sdk=True)
 
+    source_max_element_functor_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int rank, tag; };
+struct Less {
+  int *count;
+  bool operator()(const Item &left, const Item &right) const {
+    ++*count;
+    return left.rank < right.rank;
+  }
+};
+struct ScalarLess {
+  bool operator()(int left, int right) const { return left < right; }
+};
+Item *max_record(Item *first, Item *last, Less less) {
+  return std::max_element(first, last, less);
+}
+std::vector<Item>::const_iterator max_wrapped(const std::vector<Item> &values,
+                                               Less less) {
+  return std::max_element(values.cbegin(), values.cend(), less);
+}
+int *max_scalar(int *first, int *last) {
+  return std::max_element(first, last, ScalarLess{});
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-max-element-functor-" + target,
+              source_max_element_functor_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-source-max-element-functor-record-by-value-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(Item a,Item b) const {'
+          'return a.rank<b.rank;}};'
+          'Item*f(Item*a,Item*b){return std::max_element(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-source-max-element-functor-overload-rejected",
+          '#include <algorithm>\nstruct Item{int rank;};'
+          'struct Less{bool operator()(const Item&a,const Item&b)const{'
+          'return a.rank<b.rank;}'
+          'bool operator()(int a,int b)const{return a<b;}};'
+          'Item*f(Item*a,Item*b){return std::max_element(a,b,Less{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_bounds_source = """\
 #include <algorithm>
 #include <vector>
