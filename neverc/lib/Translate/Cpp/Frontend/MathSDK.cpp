@@ -25022,8 +25022,35 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmIsPermutation;
+      const auto *Predicate = AlgorithmCallbackPrototype(3);
+      if (AlgorithmRecordRangeParameter(0) &&
+          AlgorithmRecordRangeParameter(1) &&
+          AlgorithmRecordRangeParameter(2) &&
+          Context.hasSameUnqualifiedType(
+              (*AlgorithmRecordRangeParameter(0))->getPointeeType(),
+              (*AlgorithmRecordRangeParameter(2))->getPointeeType()) &&
+          Predicate && Predicate->getNumParams() == 2 &&
+          Predicate->getReturnType()->isBooleanType() &&
+          AlgorithmRecordRangeCallbackReferenceParameter(3, 0, 0) &&
+          AlgorithmRecordRangeCallbackReferenceParameter(3, 1, 2))
+        return UtilityOperation::AlgorithmIsPermutation;
       if (ScalarFirst && ScalarLast && ScalarSecond &&
           AlgorithmRangeBinaryPredicateParameter(3, 0, 2))
+        return UtilityOperation::AlgorithmIsPermutation;
+    }
+    if (Call->getNumArgs() == 5 && AlgorithmRecordRangeParameter(0) &&
+        AlgorithmRecordRangeParameter(1) && AlgorithmRecordRangeParameter(2) &&
+        AlgorithmRecordRangeParameter(3) &&
+        Same(Function->getParamDecl(2)->getType(),
+             Function->getParamDecl(3)->getType()) &&
+        Context.hasSameUnqualifiedType(
+            (*AlgorithmRecordRangeParameter(0))->getPointeeType(),
+            (*AlgorithmRecordRangeParameter(2))->getPointeeType())) {
+      const auto *Predicate = AlgorithmCallbackPrototype(4);
+      if (Predicate && Predicate->getNumParams() == 2 &&
+          Predicate->getReturnType()->isBooleanType() &&
+          AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0) &&
+          AlgorithmRecordRangeCallbackReferenceParameter(4, 1, 2))
         return UtilityOperation::AlgorithmIsPermutation;
     }
     if (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast && ScalarSecond &&

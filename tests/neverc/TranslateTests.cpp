@@ -44884,6 +44884,89 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SourceRecordPermutationPredicateRun) {
+  const auto Source = tmpFile("source-record-permutation-predicate.cpp");
+  const auto Output = tmpFile("source-record-permutation-predicate.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+const Item *first_base, *second_base;
+int first_size, second_size, calls, bad_identity;
+bool same(const Item &left, const Item &right) {
+  bool found_left = false, found_right = false;
+  for (int i = 0; i < first_size; ++i) {
+    if (&left == first_base + i) found_left = true;
+    if (&right == first_base + i) found_right = true;
+  }
+  for (int i = 0; i < second_size; ++i) {
+    if (&left == second_base + i) found_left = true;
+    if (&right == second_base + i) found_right = true;
+  }
+  if (!found_left || !found_right) ++bad_identity;
+  ++calls;
+  return left.key == right.key;
+}
+int main() {
+  const std::vector<Item> first{{1, 10}, {2, 20}, {2, 30}, {3, 40}};
+  const std::vector<Item> second{{2, 50}, {3, 60}, {2, 70}, {1, 80}};
+  first_base = &first[0]; second_base = &second[0];
+  first_size = second_size = 4;
+  calls = bad_identity = 0;
+  if (!std::is_permutation(first.cbegin(), first.cend(),
+                            second.cbegin(), same) ||
+      calls == 0 || bad_identity) return 1;
+  calls = bad_identity = 0;
+  if (!std::is_permutation(first.cbegin(), first.cend(),
+                            second.cbegin(), second.cend(), same) ||
+      calls == 0 || bad_identity) return 2;
+  calls = bad_identity = 0;
+  if (std::is_permutation(first.cbegin(), first.cend(),
+                           second.cbegin(), second.cbegin() + 3, same) ||
+      calls || bad_identity) return 3;
+  calls = bad_identity = 0;
+  if (!std::is_permutation(first.cbegin(), first.cbegin(),
+                            second.cbegin(), second.cbegin(), same) ||
+      calls || bad_identity) return 4;
+  const Item wrong[4]{{1, 1}, {2, 2}, {3, 3}, {3, 4}};
+  second_base = wrong; second_size = 4;
+  calls = bad_identity = 0;
+  if (std::is_permutation(first.cbegin(), first.cend(), wrong,
+                           wrong + 4, same) || calls == 0 || bad_identity)
+    return 5;
+  const Item raw_first[3]{{4, 1}, {5, 2}, {4, 3}};
+  const Item raw_second[3]{{5, 4}, {4, 5}, {4, 6}};
+  first_base = raw_first; second_base = raw_second;
+  first_size = second_size = 3;
+  calls = bad_identity = 0;
+  if (!std::is_permutation(raw_first, raw_first + 3, raw_second, same) ||
+      calls == 0 || bad_identity) return 6;
+  calls = bad_identity = 0;
+  if (!std::is_permutation(raw_first, raw_first + 3, raw_second,
+                            raw_second + 3, same) ||
+      calls == 0 || bad_identity) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-permutation-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedSourceRecordPermutationRun) {
   const auto Source = tmpFile("wrapped-source-record-permutation.cpp");
   const auto Output = tmpFile("wrapped-source-record-permutation.nc");

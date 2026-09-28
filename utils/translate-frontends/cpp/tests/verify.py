@@ -31424,6 +31424,42 @@ bool permutation_scalar(std::vector<int> &first, int *second) {
           'b.begin(),b.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    source_record_permutation_predicate_source = """\
+#include <algorithm>
+#include <vector>
+struct Item { int key; int tag; };
+bool same(const Item &left, const Item &right) {
+  return left.key == right.key;
+}
+bool permutation_wrapped(const std::vector<Item> &first,
+                         const std::vector<Item> &second) {
+  return std::is_permutation(first.cbegin(), first.cend(),
+                             second.cbegin(), same) &&
+         std::is_permutation(first.cbegin(), first.cend(),
+                             second.cbegin(), second.cend(), same);
+}
+bool permutation_mixed(const std::vector<Item> &first,
+                       const Item *second) {
+  return std::is_permutation(first.cbegin(), first.cend(), second, same);
+}
+bool permutation_raw(const Item *first, const Item *last,
+                     const Item *second, const Item *second_last) {
+  return std::is_permutation(first, last, second, second_last, same);
+}
+"""
+    for target in sdk_targets:
+        check("v2-source-record-permutation-predicate-" + target,
+              source_record_permutation_predicate_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-source-record-permutation-predicate-by-value-rejected",
+          '#include <algorithm>\n#include <vector>\n'
+          'struct Item{int key;};'
+          'bool same(Item left,Item right){return left.key==right.key;}'
+          'bool f(const std::vector<Item>&a,const std::vector<Item>&b){'
+          'return std::is_permutation(a.cbegin(),a.cend(),'
+          'b.cbegin(),b.cend(),same);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     source_record_ordered_ranges_source = """\
 #include <algorithm>
 #include <vector>

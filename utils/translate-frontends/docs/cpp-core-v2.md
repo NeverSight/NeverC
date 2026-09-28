@@ -1925,11 +1925,16 @@ lengths before invoking the predicate. Empty patterns and ranges perform no
 predicate calls; nonempty unique operations make one call per element after the
 first. Non-positive `search_n` counts return the first iterator without a call,
 and a positive unsuccessful run applies its predicate at most once per input
-element. Reference parameters, variadic functions, non-boolean results and
-callable objects stay outside this boundary.
+element. Reference parameters outside the exact record forms documented below,
+variadic functions, non-boolean results and callable objects stay outside this
+boundary.
 Both checked function-pointer forms of `is_permutation` accept independent raw
 or authenticated wrapped scalar ranges, preserving the existing length checks
-and by-value predicate conversions.
+and by-value predicate conversions. They also accept raw or authenticated
+wrapped ranges of one exact trivial source-record type when their checked
+predicate is `bool(const Record&, const Record&)`. The callback receives the
+original elements for comparisons within the first range and against the
+second range. Unequal bounded lengths and empty ranges invoke no callback.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept raw scalar
@@ -2373,7 +2378,8 @@ uniquely selected const member, hidden-friend, or enclosing-namespace free
 Boolean equality operator. Each comparison receives the original range element
 by reference.
 Their checked binary-predicate overloads use the scalar predicate boundary above
-and also admit heterogeneous scalar ranges, including enum ranges. The
+and also admit heterogeneous scalar ranges, including enum ranges, or the exact
+same-type trivial source-record boundary with both parameters as `const&`. The
 three-iterator form compares a second range of the first range's length. The
 four-iterator form checks both lengths before inspecting elements. Distinct
 equivalence classes are counted at most once, preserving the standard quadratic
