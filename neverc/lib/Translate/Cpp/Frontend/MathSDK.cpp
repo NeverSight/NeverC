@@ -26110,6 +26110,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto Input = AlgorithmRangePointerParameter(0);
+    const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
+    if (Call->getNumArgs() == 3 && CallbackInput &&
+        AlgorithmCallbackRangeParameter(1) && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
+                                    (*CallbackOutput)->getPointeeType()))
+      return UtilityOperation::AlgorithmUniqueCopy;
     if (Call->getNumArgs() == 3 && AlgorithmRecordEqualityRangeParameter(0) &&
         AlgorithmRecordEqualityRangeParameter(1) &&
         AlgorithmTransferRecordRangeParameters(0, 2))

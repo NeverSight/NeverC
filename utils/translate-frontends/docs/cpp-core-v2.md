@@ -1854,6 +1854,12 @@ of one exact function-pointer element type, including `noexcept` pointers. It
 compacts adjacent equal pointer values without invoking their functions and
 returns the original raw or wrapped iterator type. Empty and single-element
 ranges retain their usual end position.
+Default `std::unique_copy` accepts const or mutable raw or authenticated wrapped
+input ranges of that same exact function-pointer type and a separate writable
+raw or wrapped output. It compares pointer values without invoking functions,
+copies one value from each adjacent run, preserves the input, and returns the
+advanced output iterator. Empty and single-element inputs retain their expected
+output positions.
 The value-based `remove`, `remove_copy`, `replace` and `replace_copy` forms
 also admit authenticated wrapped scalar ranges. Copying forms accept mixed raw
 and wrapped inputs or writable outputs, and returned positions keep the public

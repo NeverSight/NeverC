@@ -57291,6 +57291,79 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackUniqueCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-unique-copy.cpp");
+  const auto Output = tmpFile("callback-unique-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  const std::array<Callback, 8> source{{one, one, nullptr, nullptr,
+                                       two, one, one, three}};
+  std::array<Callback, 8> output{};
+  int firstEffects = 0, lastEffects = 0, outputEffects = 0;
+  auto end = std::unique_copy((++firstEffects, source.cbegin()),
+                              (++lastEffects, source.cend()),
+                              (++outputEffects, output.begin()));
+  if (end != output.begin() + 5 || firstEffects != 1 || lastEffects != 1 ||
+      outputEffects != 1 || output[0] != one || output[1] != nullptr ||
+      output[2] != two || output[3] != one || output[4] != three ||
+      source[1] != one || source[3] != nullptr || calls != 0)
+    return 1;
+  const Callback raw[]{nullptr, nullptr, one, one, two};
+  std::array<Callback, 5> mixedOutput{};
+  if (std::unique_copy(raw, raw + 5, mixedOutput.begin()) !=
+          mixedOutput.begin() + 3 ||
+      mixedOutput[0] != nullptr || mixedOutput[1] != one ||
+      mixedOutput[2] != two || calls != 0)
+    return 2;
+  Callback rawOutput[8]{};
+  if (std::unique_copy(source.cbegin(), source.cend(), rawOutput) !=
+          rawOutput + 5 ||
+      rawOutput[0] != one || rawOutput[1] != nullptr ||
+      rawOutput[4] != three || calls != 0)
+    return 3;
+  const std::array<NoexceptCallback, 5> safe{{quiet, quiet, nullptr,
+                                               nullptr, quiet}};
+  std::array<NoexceptCallback, 5> safeOutput{};
+  if (std::unique_copy(safe.cbegin(), safe.cend(), safeOutput.begin()) !=
+          safeOutput.begin() + 3 ||
+      safeOutput[0] != quiet || safeOutput[1] != nullptr ||
+      safeOutput[2] != quiet || calls != 0)
+    return 4;
+  const std::array<Callback, 0> empty{};
+  const std::array<Callback, 1> single{{one}};
+  if (std::unique_copy(empty.cbegin(), empty.cend(), output.begin()) !=
+          output.begin() ||
+      std::unique_copy(single.cbegin(), single.cend(), output.begin()) !=
+          output.begin() + 1 ||
+      output[0] != one || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-unique-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
