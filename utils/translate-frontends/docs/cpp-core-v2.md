@@ -2542,6 +2542,14 @@ those writable trivial records through `bool(const Record&, const Record&)`,
 moving complete values without requiring `operator<`. Nontrivial records
 remain rejected.
 
+The checked comparator overload of `std::partial_sort` also accepts writable
+raw or authenticated wrapped ranges of one exact function-pointer element
+type, including `noexcept` pointers. The comparator takes two pointer values
+by value and returns `bool`; the selected prefix is sorted while all original
+pointer values remain in the range. Iterator and comparator arguments are
+evaluated once, and an empty selected prefix makes no comparisons. The
+pointed-to functions are not invoked.
+
 Default `std::partial_sort_copy` also accepts raw or authenticated wrapped
 input and writable output ranges of the same exact trivial source-record type.
 It copies complete records into the bounded output, compares current input and

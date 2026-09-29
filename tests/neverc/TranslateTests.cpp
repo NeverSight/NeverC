@@ -58050,6 +58050,143 @@ TEST_F(TranslateTest, CoreV2CallbackInplaceMergeRejectsUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPartialSortRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-partial-sort.cpp");
+  const auto Output = tmpFile("callback-partial-sort.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return rank(left) > rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : left == silent ? 2 : 0) <
+         (right == quiet ? 1 : right == silent ? 2 : 0);
+}
+int main() {
+  std::array<Callback, 7> values{{two, one, three, nullptr,
+                                  two, one, three}};
+  int firstEffects = 0, middleEffects = 0, lastEffects = 0;
+  int comparatorEffects = 0;
+  std::partial_sort((++firstEffects, values.begin()),
+                    (++middleEffects, values.begin() + 4),
+                    (++lastEffects, values.end()),
+                    (++comparatorEffects, before));
+  if (firstEffects != 1 || middleEffects != 1 || lastEffects != 1 ||
+      comparatorEffects != 1 || checks == 0 || calls != 0 ||
+      values[0] != nullptr || values[1] != one ||
+      values[2] != one || values[3] != two)
+    return 1;
+  int counts[4]{};
+  for (Callback value : values)
+    ++counts[rank(value)];
+  if (counts[0] != 1 || counts[1] != 2 ||
+      counts[2] != 2 || counts[3] != 2)
+    return 2;
+  Callback raw[]{two, one, three, nullptr, three};
+  checks = 0;
+  std::partial_sort(raw, raw + 3, raw + 5, after);
+  if (checks == 0 || calls != 0 || raw[0] != three ||
+      raw[1] != three || raw[2] != two)
+    return 3;
+  int rawCounts[4]{};
+  for (Callback value : raw)
+    ++rawCounts[rank(value)];
+  if (rawCounts[0] != 1 || rawCounts[1] != 1 ||
+      rawCounts[2] != 1 || rawCounts[3] != 2)
+    return 4;
+  std::array<NoexceptCallback, 5> safe{{silent, quiet, nullptr,
+                                         silent, quiet}};
+  checks = 0;
+  std::partial_sort(safe.begin(), safe.begin() + 3,
+                    safe.end(), safe_before);
+  if (checks == 0 || calls != 0 || safe[0] != nullptr ||
+      safe[1] != quiet || safe[2] != quiet)
+    return 5;
+  int safeCounts[3]{};
+  for (NoexceptCallback value : safe)
+    ++safeCounts[value == quiet ? 1 : value == silent ? 2 : 0];
+  if (safeCounts[0] != 1 || safeCounts[1] != 2 || safeCounts[2] != 2)
+    return 6;
+  Callback untouched[]{three, one, two};
+  checks = 0;
+  std::partial_sort(untouched, untouched, untouched + 3, before);
+  if (untouched[0] != three || untouched[1] != one ||
+      untouched[2] != two || checks != 0 || calls != 0)
+    return 7;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  std::partial_sort(empty.begin(), empty.end(), empty.end(), before);
+  std::partial_sort(single.begin(), single.end(), single.end(), before);
+  if (single[0] != one || checks != 0 || calls != 0)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-partial-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackPartialSortRejectsUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-partial-sort-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-partial-sort-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Comparator +
+                  "\nint main() { Callback values[]{two, one}; "
+                  "std::partial_sort(values, values + 1, values + 2, before); "
+                  "return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
