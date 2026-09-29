@@ -26063,6 +26063,44 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-array-swap.cpp");
+  const auto Output = tmpFile("native-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int main() {
+  int first[3]{1, 2, 3}, second[3]{4, 5, 6};
+  int effects = 0;
+  std::swap((++effects, first), (++effects, second));
+  if (effects != 2 || first[0] != 4 || first[1] != 5 || first[2] != 6 ||
+      second[0] != 1 || second[1] != 2 || second[2] != 3)
+    return 1;
+  std::swap((++effects, first), (++effects, first));
+  if (effects != 4 || first[0] != 4 || first[1] != 5 || first[2] != 6)
+    return 2;
+  double real[2]{1.25, 2.5}, other[2]{3.75, 4.5};
+  std::swap(real, other);
+  if (real[0] != 3.75 || real[1] != 4.5 || other[0] != 1.25 ||
+      other[1] != 2.5)
+    return 3;
+  bool flags[2]{true, false}, other_flags[2]{false, true};
+  std::swap(flags, other_flags);
+  return flags[0] || !flags[1] || !other_flags[0] || other_flags[1] ? 4 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("native-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26073,10 +26111,6 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
       {"quoted", "#include \"utility\"\nint main(){return 0;}", "TR0201"},
       {"function-address",
        "#include <utility>\nauto f(){return &std::move<int>;}", "TR0201"},
-      {"nontrivial-record-pair",
-       "#include <utility>\nstruct R{int n;~R(){}};int f(){std::pair<R,int> "
-       "p{{1},2};return p.first.n;}",
-       "TR0201"},
       {"record-pair-comparison",
        "#include <utility>\nstruct R{int n;};bool operator==(const R&a,"
        "const R&b){return a.n==b.n;}int f(){std::pair<R,int> a{{1},2},"
@@ -26121,8 +26155,18 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "std::pair<const int*,int>s(&n,2);"
        "std::pair<int*,long>d(nullptr,0L);d=s;return d.second;}",
        "TR0202"},
-      {"array-swap",
-       "#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};"
+      {"record-array-swap",
+       "#include <utility>\nstruct R{int n;};int f(){"
+       "R a[2]{{1},{2}},b[2]{{3},{4}};"
+       "std::swap(a,b);return a[0].n;}",
+       "TR0203"},
+      {"pointer-array-swap",
+       "#include <utility>\nstruct R{};int f(){R *a[2]{},*b[2]{};"
+       "std::swap(a,b);return a[0]==b[0];}",
+       "TR0203"},
+      {"adl-enum-array-swap",
+       "#include <utility>\nnamespace N{enum E{a,b};"
+       "void swap(E&,E&);}int f(){N::E a[1]{N::a},b[1]{N::b};"
        "std::swap(a,b);return a[0];}",
        "TR0203"},
       {"ambiguous-type-get",

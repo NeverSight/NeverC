@@ -27871,6 +27871,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Right->getPointeeType())) {
       if (utilityScalar(Context, Left->getPointeeType()))
         return UtilityOperation::Swap;
+      const auto *Array =
+          Context.getAsConstantArrayType(Left->getPointeeType());
+      if (Array && Array->getSize().getLimitedValue(65537) <= 65536 &&
+          !Array->getElementType().isConstQualified() &&
+          !Array->getElementType().isVolatileQualified() &&
+          Array->getElementType()->isBuiltinType() &&
+          utilityScalar(Context, Array->getElementType()))
+        return UtilityOperation::NativeArraySwap;
       if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
                                    Context))
         return UtilityOperation::OwnedSwap;

@@ -712,6 +712,7 @@ enum class UtilityOperation {
   MemoryUninitializedMoveN,
   Exchange,
   Swap,
+  NativeArraySwap,
   OwnedSwap,
   MakePair,
   PairSwap,
