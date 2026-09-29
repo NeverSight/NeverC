@@ -26154,7 +26154,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
     const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
     const bool CallbackDefault =
-        Name == "search" && CallbackFirst &&
+        (Name == "search" || Name == "find_end") && CallbackFirst &&
         AlgorithmCallbackRangeParameter(1) && CallbackSecond &&
         AlgorithmCallbackRangeParameter(3) &&
         utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),

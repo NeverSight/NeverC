@@ -57087,6 +57087,79 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackFindEndRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-find-end.cpp");
+  const auto Output = tmpFile("callback-find-end.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  const std::array<Callback, 7> values{{one, two, one, two, nullptr, one, two}};
+  const Callback pattern[]{one, two};
+  int firstEffects = 0, lastEffects = 0;
+  int patternEffects = 0, patternLastEffects = 0;
+  auto found = std::find_end((++firstEffects, values.cbegin()),
+                              (++lastEffects, values.cend()),
+                              (++patternEffects, pattern),
+                              (++patternLastEffects, pattern + 2));
+  if (found != values.cbegin() + 5 || firstEffects != 1 || lastEffects != 1 ||
+      patternEffects != 1 || patternLastEffects != 1 || calls != 0)
+    return 1;
+  if (std::find_end(values.cbegin(), values.cend(), pattern, pattern) !=
+          values.cend() ||
+      std::find_end(values.cbegin(), values.cend(), values.cbegin() + 2,
+                    values.cbegin() + 4) != values.cbegin() + 5 ||
+      calls != 0)
+    return 2;
+  const Callback missing[]{three};
+  if (std::find_end(values.cbegin(), values.cend(), missing, missing + 1) !=
+          values.cend() ||
+      calls != 0)
+    return 3;
+  const Callback raw[]{one, nullptr, one, three};
+  const std::array<Callback, 2> wrappedPattern{{nullptr, one}};
+  if (std::find_end(raw, raw + 4, wrappedPattern.cbegin(),
+                    wrappedPattern.cend()) != raw + 1 ||
+      calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 4> safe{{quiet, nullptr, quiet, nullptr}};
+  const NoexceptCallback safePattern[]{quiet, nullptr};
+  if (std::find_end(safe.cbegin(), safe.cend(), safePattern,
+                    safePattern + 2) != safe.cbegin() + 2 ||
+      calls != 0)
+    return 5;
+  const std::array<Callback, 0> empty{};
+  if (std::find_end(empty.cbegin(), empty.cend(), pattern, pattern + 2) !=
+          empty.cend() ||
+      std::find_end(empty.cbegin(), empty.cend(), pattern, pattern) !=
+          empty.cend() ||
+      calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-find-end" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
