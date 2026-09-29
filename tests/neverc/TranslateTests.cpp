@@ -56693,6 +56693,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackRemoveIfRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-remove-if.cpp");
+  const auto Output = tmpFile("callback-remove-if.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+bool is_two(Callback value) { ++checks; return value == two; }
+bool is_quiet(NoexceptCallback value) noexcept {
+  ++checks;
+  return value == quiet;
+}
+int main() {
+  std::array<Callback, 6> values{{one, two, nullptr, two, three, two}};
+  int firstEffects = 0, lastEffects = 0, predicateEffects = 0;
+  auto end = std::remove_if((++firstEffects, values.begin()),
+                            (++lastEffects, values.end()),
+                            (++predicateEffects, is_two));
+  if (firstEffects != 1 || lastEffects != 1 || predicateEffects != 1 ||
+      end != values.begin() + 3 || values[0] != one ||
+      values[1] != nullptr || values[2] != three || checks != 6 || calls != 0)
+    return 1;
+  Callback raw[]{two, one, two, three};
+  checks = 0;
+  Callback *rawEnd = std::remove_if(raw, raw + 4, is_two);
+  if (rawEnd != raw + 2 || raw[0] != one || raw[1] != three ||
+      checks != 4 || calls != 0)
+    return 2;
+  std::array<NoexceptCallback, 4> safe{{quiet, nullptr, quiet, nullptr}};
+  checks = 0;
+  auto safeEnd = std::remove_if(safe.begin(), safe.end(), is_quiet);
+  if (safeEnd != safe.begin() + 2 || safe[0] != nullptr ||
+      safe[1] != nullptr || checks != 4 || calls != 0)
+    return 3;
+  Callback all[]{two, two};
+  checks = 0;
+  if (std::remove_if(all, all + 2, is_two) != all ||
+      checks != 2 || calls != 0)
+    return 4;
+  std::array<Callback, 0> empty{};
+  checks = 0;
+  if (std::remove_if(empty.begin(), empty.end(), is_two) != empty.end() ||
+      checks != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-remove-if" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackRemoveRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-remove.cpp");
   const auto Output = tmpFile("callback-remove.nc");

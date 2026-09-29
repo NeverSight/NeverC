@@ -24385,6 +24385,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, (*Iterator)->getPointeeType(),
                                          Prototype->getParamType(0));
   };
+  auto AlgorithmCallbackRangeUnaryPredicateParameter =
+      [&](unsigned PredicateIndex, unsigned IteratorIndex) {
+        const auto Iterator = AlgorithmCallbackRangeParameter(IteratorIndex);
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        return Iterator && Prototype && Prototype->getNumParams() == 1 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityCallbackEqualityType(Context,
+                                           (*Iterator)->getPointeeType(),
+                                           Prototype->getParamType(0))
+                   .has_value();
+      };
   auto AlgorithmRecordRangeUnaryPredicateParameter =
       [&](unsigned PredicateIndex, unsigned IteratorIndex) {
         const auto Iterator = AlgorithmRecordRangeParameter(IteratorIndex);
@@ -27258,16 +27269,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/any_of.h" && Name == "any_of") ||
       (Origin->Path == "__algorithm/none_of.h" && Name == "none_of");
   bool CallbackUnaryQuery = false;
-  if (UnaryPredicateQuery && Call->getNumArgs() == 3) {
-    const auto First = AlgorithmCallbackRangeParameter(0);
-    const auto *Predicate = AlgorithmCallbackPrototype(2);
-    CallbackUnaryQuery =
-        First && AlgorithmCallbackRangeParameter(1) && Predicate &&
-        Predicate->getNumParams() == 1 &&
-        Predicate->getReturnType()->isBooleanType() &&
-        utilityCallbackEqualityType(Context, (*First)->getPointeeType(),
-                                    Predicate->getParamType(0));
-  }
+  if (UnaryPredicateQuery && Call->getNumArgs() == 3)
+    CallbackUnaryQuery = AlgorithmCallbackRangeParameter(1) &&
+                         AlgorithmCallbackRangeUnaryPredicateParameter(2, 0);
   if (UnaryPredicateQuery && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
@@ -27345,6 +27349,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemoveIf;
+  if (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    if (Input && !(*Input)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeUnaryPredicateParameter(2, 0))
+      return UtilityOperation::AlgorithmRemoveIf;
+  }
   if (Origin->Path == "__algorithm/replace_if.h" && Name == "replace_if" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       AlgorithmWritableRecordRangeParameter(0) &&
