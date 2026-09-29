@@ -26101,6 +26101,47 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativePointerArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-pointer-array-swap.cpp");
+  const auto Output = tmpFile("native-pointer-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int main() {
+  int values[4]{1, 2, 3, 4};
+  using Pointer = const int *;
+  Pointer first[2]{values, values + 1};
+  Pointer second[2]{values + 2, nullptr};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0] != values + 2 || first[1] != nullptr ||
+      second[0] != values || second[1] != values + 1)
+    return 1;
+  void *opaque[2]{values, values + 1};
+  void *other[2]{values + 2, values + 3};
+  std::swap(opaque, other);
+  if (opaque[0] != values + 2 || opaque[1] != values + 3 ||
+      other[0] != values || other[1] != values + 1)
+    return 2;
+  int *head = values, *tail = values + 3;
+  int **deep_first[1]{&head}, **deep_second[1]{&tail};
+  std::swap(deep_first, deep_second);
+  return deep_first[0] == &tail && deep_second[0] == &head ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("native-pointer-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;

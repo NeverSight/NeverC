@@ -182,11 +182,12 @@ Core v2 accepts an exact top-level `#include <utility>` from the pinned embedded
 VFS. `std::move`, `std::forward`, `std::move_if_noexcept`, `std::as_const`,
 `std::exchange` and scalar `std::swap` lower to the existing typed value,
 reference and assignment operations. The selected function must be the exact
-pinned libc++ declaration and must be called directly; function addresses,
+pinned libc++ declaration and must be called directly; function addresses and
 forged declarations are rejected. The pinned fixed-size C array overload of
-`std::swap` is supported for mutable arrays of built-in scalar elements (up to
-65,536 elements), with each array expression evaluated once and elements
-swapped in index order. Arrays of records, enums, pointers, or volatile/const
+`std::swap` is supported for mutable arrays of built-in scalar elements or
+pointers whose pointee chain ends in a built-in type (up to 65,536 elements),
+with each array expression evaluated once and elements swapped in index order.
+Arrays of records, enums, pointers to records or enums, and volatile/const
 elements remain outside this boundary.
 Exact generic `std::swap` of a source-owned nontrivial standard-layout record
 also invokes the selected supported move constructor and two move assignments,

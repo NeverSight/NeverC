@@ -27873,11 +27873,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::Swap;
       const auto *Array =
           Context.getAsConstantArrayType(Left->getPointeeType());
+      auto Element = Array ? Array->getElementType() : QualType();
+      // The array overload calls swap unqualified for each element. Pointer
+      // chains ending in a built-in type cannot add an ADL swap candidate.
+      auto Associated = Element.isNull()
+                            ? QualType()
+                            : Element.getCanonicalType().getUnqualifiedType();
+      while (!Associated.isNull() && Associated->isPointerType())
+        Associated = Associated->getPointeeType()
+                         .getCanonicalType()
+                         .getUnqualifiedType();
       if (Array && Array->getSize().getLimitedValue(65537) <= 65536 &&
-          !Array->getElementType().isConstQualified() &&
-          !Array->getElementType().isVolatileQualified() &&
-          Array->getElementType()->isBuiltinType() &&
-          utilityScalar(Context, Array->getElementType()))
+          !Element.isConstQualified() && !Element.isVolatileQualified() &&
+          Associated->isBuiltinType() && utilityScalar(Context, Element))
         return UtilityOperation::NativeArraySwap;
       if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
                                    Context))
