@@ -26052,7 +26052,9 @@ TEST_F(TranslateTest, CoreV2CallbackExchangeRunsAtBothOptimizations) {
 int one(int value) { return value + 1; }
 int two(int value) { return value + 2; }
 int three(int value) noexcept { return value + 3; }
+int four(int value) noexcept { return value + 4; }
 using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
 namespace N {
 struct Arg { int value; };
 int one(Arg value) { return value.value + 1; }
@@ -26103,9 +26105,23 @@ int main() {
   Callback noexcept_old = std::exchange(first, three);
   if (noexcept_old != nullptr || first(5) != 8)
     return 11;
+  NoexceptCallback replacement = four;
+  Callback noexcept_pointer_old = std::exchange(first, replacement);
+  if (noexcept_pointer_old(5) != 8 || first(5) != 9 ||
+      replacement(5) != 9)
+    return 12;
+  Callback noexcept_temporary_old =
+      std::exchange(first, NoexceptCallback{three});
+  if (noexcept_temporary_old(5) != 9 || first(5) != 8)
+    return 13;
+  const NoexceptCallback const_replacement = four;
+  Callback const_noexcept_old = std::exchange(first, const_replacement);
+  if (const_noexcept_old(5) != 8 || first(5) != 9 ||
+      const_replacement(5) != 9)
+    return 14;
   N::Callback nested_old = std::exchange(left, nullptr);
   if (nested_old(N::Arg{5}) != 7 || left != nullptr)
-    return 12;
+    return 15;
   N::Callback nested_empty = std::exchange(left, N::one);
   const N::Callback nested_immutable = N::two;
   N::Callback nested_const_old = std::exchange(left, nested_immutable);
@@ -26117,7 +26133,7 @@ int main() {
                  nested_noexcept_old == nullptr && left(N::Arg{5}) == 8 &&
                  nested_immutable(N::Arg{5}) == 7
              ? 0
-             : 13;
+             : 16;
 }
 )cpp");
   auto Result =

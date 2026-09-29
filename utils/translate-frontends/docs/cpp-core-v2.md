@@ -194,7 +194,9 @@ the selected lvalue-to-rvalue conversion, `nullptr`, and mutable or const
 function of the exact callback signature is also accepted when the selected
 assignment uses function-to-pointer decay. A matching `noexcept` function is
 accepted when that decay is followed by the selected conversion to a possibly
-throwing callback pointer. Source specializations remain rejected.
+throwing callback pointer. Matching mutable or const `noexcept` callback-pointer
+lvalues and unqualified rvalues use a checked pointer read and the same pointer
+conversion. Source specializations remain rejected.
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested
