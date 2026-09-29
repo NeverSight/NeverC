@@ -57702,6 +57702,104 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackSortedRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-sorted.cpp");
+  const auto Output = tmpFile("callback-sorted.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : 2) < (right == quiet ? 1 : 2);
+}
+int main() {
+  const std::array<Callback, 5> ordered{{one, one, two, three, three}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  if (!std::is_sorted((++firstEffects, ordered.cbegin()),
+                      (++lastEffects, ordered.cend()),
+                      (++comparatorEffects, before)) ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks != 4 || calls != 0)
+    return 1;
+  firstEffects = lastEffects = comparatorEffects = checks = 0;
+  if (std::is_sorted_until((++firstEffects, ordered.cbegin()),
+                           (++lastEffects, ordered.cend()),
+                           (++comparatorEffects, before)) != ordered.cend() ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks != 4 || calls != 0)
+    return 2;
+  const std::array<Callback, 5> broken{{one, two, three, one, two}};
+  checks = 0;
+  if (std::is_sorted(broken.cbegin(), broken.cend(), before) ||
+      checks != 3 || calls != 0)
+    return 3;
+  checks = 0;
+  if (std::is_sorted_until(broken.cbegin(), broken.cend(), before) !=
+          broken.cbegin() + 3 ||
+      checks != 3 || calls != 0)
+    return 4;
+  Callback raw[]{three, one, two};
+  checks = 0;
+  if (std::is_sorted(raw, raw + 3, before) || checks != 1 || calls != 0)
+    return 5;
+  checks = 0;
+  if (std::is_sorted_until(raw, raw + 3, before) != raw + 1 ||
+      checks != 1 || calls != 0)
+    return 6;
+  const std::array<NoexceptCallback, 3> safe{{quiet, silent, quiet}};
+  checks = 0;
+  if (std::is_sorted(safe.cbegin(), safe.cend(), safe_before) ||
+      checks != 2 || calls != 0)
+    return 7;
+  checks = 0;
+  if (std::is_sorted_until(safe.cbegin(), safe.cend(), safe_before) !=
+          safe.cbegin() + 2 ||
+      checks != 2 || calls != 0)
+    return 8;
+  const std::array<Callback, 0> empty{};
+  const std::array<Callback, 1> single{{one}};
+  checks = 0;
+  if (!std::is_sorted(empty.cbegin(), empty.cend(), before) ||
+      std::is_sorted_until(empty.cbegin(), empty.cend(), before) !=
+          empty.cend() ||
+      !std::is_sorted(single.cbegin(), single.cend(), before) ||
+      std::is_sorted_until(single.cbegin(), single.cend(), before) !=
+          single.cend() ||
+      checks != 0 || calls != 0)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-sorted" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackExtremaRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-extrema.cpp");
   const auto Output = tmpFile("callback-extrema.nc");

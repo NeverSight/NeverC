@@ -2362,6 +2362,12 @@ accept authenticated typed or transparent empty standard `<functional>`
 comparison objects on arithmetic scalar ranges. The selected instantiated
 `operator()` is proved and lowered directly; the object argument is evaluated
 once, including for an empty range.
+Their checked function-pointer comparator overloads also accept const or
+mutable raw or authenticated wrapped ranges of one exact function-pointer
+element type, including `noexcept` pointers. The comparator takes two values
+of that type and returns `bool`; it is retained once and never invokes the
+pointed-to functions. `is_sorted_until` returns the first inversion in the
+original iterator form. Empty and single-element ranges make no comparisons.
 
 The comparator overloads of `std::lower_bound`, `std::upper_bound`,
 `std::binary_search` and `std::equal_range` also accept authenticated typed or
