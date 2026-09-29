@@ -26886,6 +26886,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
         AlgorithmRecordRangeParameter(1) &&
         AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 3 && AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0);
     const auto ScalarRange = AlgorithmRangePointerParameter(0);
     const auto RecordRange = AlgorithmRecordRangeParameter(0);
     const auto Range = ScalarRange ? ScalarRange : RecordRange;
@@ -26895,7 +26899,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      : AlgorithmRecordRangeParameter(1).has_value()) &&
         approvedHeapQuerySourceComparator(S, SM, Call,
                                           (*Range)->getPointeeType(), Context);
-    if (!Default && !ScalarComparator && !RecordComparator && !SourceObject)
+    if (!Default && !ScalarComparator && !RecordComparator &&
+        !CallbackComparator && !SourceObject)
       return std::nullopt;
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;

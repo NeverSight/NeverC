@@ -2476,6 +2476,13 @@ produces ascending order from a max heap. `make_heap` visits parents bottom-up
 and retains the standard linear comparison bound. Empty and single-element
 query, construction, push and sort ranges are handled without dereferencing
 them; `pop_heap` retains the standard nonempty-range precondition.
+The checked comparator overloads of `std::is_heap` and `std::is_heap_until`
+also accept const or mutable raw or authenticated wrapped ranges of one exact
+function-pointer element type, including `noexcept` pointers. The comparator
+takes two values of that type and returns `bool`; it is retained once and does
+not invoke the pointed-to functions. `is_heap_until` returns the first
+violating child in the original iterator form. Empty and single-element ranges
+make no comparisons.
 
 The default `std::make_heap`, `std::push_heap`, `std::pop_heap` and
 `std::sort_heap` forms also accept writable raw or authenticated wrapped ranges

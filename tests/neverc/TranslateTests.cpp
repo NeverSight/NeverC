@@ -57702,6 +57702,92 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackHeapQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-heap-queries.cpp");
+  const auto Output = tmpFile("callback-heap-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : 2) < (right == quiet ? 1 : 2);
+}
+int main() {
+  const std::array<Callback, 5> heap{{three, two, two, one, one}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  if (!std::is_heap((++firstEffects, heap.cbegin()),
+                     (++lastEffects, heap.cend()),
+                     (++comparatorEffects, before)) ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks != 4 || calls != 0)
+    return 1;
+  firstEffects = lastEffects = comparatorEffects = checks = 0;
+  if (std::is_heap_until((++firstEffects, heap.cbegin()),
+                          (++lastEffects, heap.cend()),
+                          (++comparatorEffects, before)) != heap.cend() ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks != 4 || calls != 0)
+    return 2;
+  Callback broken[]{three, two, two, three, one};
+  checks = 0;
+  if (std::is_heap(broken, broken + 5, before) ||
+      checks != 3 || calls != 0)
+    return 3;
+  checks = 0;
+  if (std::is_heap_until(broken, broken + 5, before) != broken + 3 ||
+      checks != 3 || calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 3> safe{{silent, quiet, quiet}};
+  checks = 0;
+  if (!std::is_heap(safe.cbegin(), safe.cend(), safe_before) ||
+      std::is_heap_until(safe.cbegin(), safe.cend(), safe_before) !=
+          safe.cend() ||
+      checks != 4 || calls != 0)
+    return 5;
+  const std::array<Callback, 0> empty{};
+  const std::array<Callback, 1> single{{one}};
+  checks = 0;
+  if (!std::is_heap(empty.cbegin(), empty.cend(), before) ||
+      std::is_heap_until(empty.cbegin(), empty.cend(), before) !=
+          empty.cend() ||
+      !std::is_heap(single.cbegin(), single.cend(), before) ||
+      std::is_heap_until(single.cbegin(), single.cend(), before) !=
+          single.cend() ||
+      checks != 0 || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-heap-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackMinmaxElementRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-minmax-element.cpp");
   const auto Output = tmpFile("callback-minmax-element.nc");
