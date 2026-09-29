@@ -25355,14 +25355,33 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    const bool Raw = AlgorithmEqualityPointerParameter(0) &&
-                     AlgorithmEqualityPointerParameter(1);
+    const bool RawCallback =
+        utilityObjectPointer(Context, Iterator) &&
+        utilityCallbackEqualityType(Context, Iterator->getPointeeType(),
+                                    Iterator->getPointeeType()) &&
+        Same(Call->getArg(0)->getType(), Iterator) &&
+        Same(Call->getArg(1)->getType(), Iterator);
+    const bool Raw = (AlgorithmEqualityPointerParameter(0) &&
+                      AlgorithmEqualityPointerParameter(1)) ||
+                     RawCallback;
     const auto Wrapped = Raw ? std::optional<UtilityWrapIteratorRecord>()
                              : approvedUtilityWrapIteratorRecord(
                                    S, SM, Iterator->getAsCXXRecordDecl(),
                                    Context);
     const auto Pointer = Wrapped ? Wrapped->IteratorType : Iterator;
     const auto Value = Function->getParamDecl(2)->getType();
+    const bool CallbackRange =
+        utilityObjectPointer(Context, Pointer) &&
+        utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                    Pointer->getPointeeType());
+    const bool CallbackValue =
+        CallbackRange && Value->isLValueReferenceType() &&
+        Value->getPointeeType().isConstQualified() &&
+        !Value->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Value->getPointeeType()) &&
+        utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                    Value->getPointeeType());
     const bool RecordValue =
         utilityObjectPointer(Context, Pointer) &&
         Value->isLValueReferenceType() &&
@@ -25381,7 +25400,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           !utilityEnumHasSourceOperator(S, SM, Context,
                                         Wrapped->IteratorType->getPointeeType(),
                                         OO_EqualEqual)) ||
-         RecordValue);
+         CallbackRange || RecordValue);
     const bool WrappedValue =
         WrappedRange && Value->isLValueReferenceType() &&
         Value->getPointeeType().isConstQualified() &&
@@ -25391,12 +25410,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((utilityScalar(Context, Value->getPointeeType()) &&
           utilityScalarComparisonType(Context, Pointer->getPointeeType(),
                                       Value->getPointeeType(), false)) ||
-         RecordValue);
+         CallbackValue || RecordValue);
     const bool RawRecord = !Wrapped && RecordValue &&
                            Same(Call->getArg(0)->getType(), Iterator) &&
                            Same(Call->getArg(1)->getType(), Iterator);
-    if ((Raw && AlgorithmEqualityValueParameter(2, 0)) || WrappedValue ||
-        RawRecord) {
+    if ((Raw && (AlgorithmEqualityValueParameter(2, 0) || CallbackValue)) ||
+        WrappedValue || RawRecord) {
       if (Name == "find" && Origin->Path == "__algorithm/find.h" &&
           Same(Function->getReturnType(), Iterator) &&
           Same(Call->getType(), Function->getReturnType()))

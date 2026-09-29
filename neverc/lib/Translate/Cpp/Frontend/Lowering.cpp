@@ -5051,6 +5051,10 @@ class FunctionLowering {
       auto Common = utilityScalarComparisonType(
           A.Context, PointerQualType->getPointeeType(),
           Call->getArg(2)->getType(), false);
+      if (!Common)
+        Common = utilityCallbackEqualityType(A.Context,
+                                             PointerQualType->getPointeeType(),
+                                             Call->getArg(2)->getType());
       const auto SourceComparison =
           A.Context.hasSameUnqualifiedType(PointerQualType->getPointeeType(),
                                            Call->getArg(2)->getType())
@@ -5120,6 +5124,10 @@ class FunctionLowering {
       auto Common = utilityScalarComparisonType(
           A.Context, PointerQualType->getPointeeType(),
           Call->getArg(2)->getType(), false);
+      if (!Common)
+        Common = utilityCallbackEqualityType(A.Context,
+                                             PointerQualType->getPointeeType(),
+                                             Call->getArg(2)->getType());
       const auto SourceComparison =
           A.Context.hasSameUnqualifiedType(PointerQualType->getPointeeType(),
                                            Call->getArg(2)->getType())

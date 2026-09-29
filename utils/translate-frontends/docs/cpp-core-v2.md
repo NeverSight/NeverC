@@ -1845,6 +1845,11 @@ and `std::string` objects. The same scalar equality and heterogeneous value
 checks apply. Exact source-owned trivial records are admitted in raw-pointer
 and wrapped ranges when the selected `operator==` is uniquely supported as a
 const member, hidden friend or enclosing-namespace free `bool` function.
+These two algorithms also accept raw or authenticated wrapped ranges of exact
+function-pointer elements, including `noexcept` pointers, when the value is the
+same function-pointer type. They compare pointer values without calling the
+functions. A differently typed callback value or a bare function designator
+is outside this boundary.
 Their value argument retains its original address throughout the loop, and an
 empty range performs no record comparison. Each iterator is evaluated once;
 `find` returns a wrapper around the matching pointer or end pointer, and

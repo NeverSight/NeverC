@@ -55886,6 +55886,63 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackFindAndCountRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-find-count.cpp");
+  const auto Output = tmpFile("callback-find-count.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int quiet(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 4> values{{one, nullptr, two, one}};
+  Callback needle = two;
+  int firstEffects = 0, lastEffects = 0, valueEffects = 0;
+  auto found = std::find((++firstEffects, values.begin()),
+                         (++lastEffects, values.end()),
+                         (++valueEffects, needle));
+  if (firstEffects != 1 || lastEffects != 1 || valueEffects != 1 ||
+      found != values.begin() + 2 || *found != two || calls != 0)
+    return 1;
+  const auto &view = values;
+  if (std::count(view.cbegin(), view.cend(), values[0]) != 2 ||
+      std::count(values.begin(), values.end(), needle) != 1 || calls != 0)
+    return 2;
+  Callback absent = nullptr;
+  if (std::find(view.cbegin(), view.cend(), absent) != view.cbegin() + 1 ||
+      std::count(view.cbegin(), view.cend(), absent) != 1)
+    return 3;
+  std::array<NoexceptCallback, 2> safe{{quiet, nullptr}};
+  NoexceptCallback safeNeedle = quiet;
+  if (std::find(safe.begin(), safe.end(), safeNeedle) != safe.begin() ||
+      std::count(safe.begin(), safe.end(), safeNeedle) != 1)
+    return 4;
+  std::array<Callback, 0> empty{};
+  if (std::find(empty.begin(), empty.end(), needle) != empty.end() ||
+      std::count(empty.begin(), empty.end(), needle) != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-find-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
