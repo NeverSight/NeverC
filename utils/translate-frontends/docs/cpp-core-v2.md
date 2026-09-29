@@ -598,7 +598,11 @@ once before assigning each element; a zero-length array evaluates the argument
 without writing storage. Member `swap` and free `std::swap` authenticate the
 selected SDK element swap before exchanging callbacks, including `noexcept`
 signatures and zero-length arrays. A source-owned swap selected through ADL is
-rejected. Callback-array comparisons still require separate operation lowering.
+rejected. Callback arrays also support `==` and `!=` on the same callback
+type, including `noexcept` signatures and zero-length arrays.
+Function-pointer ordering remains rejected. Combining nested ordinary and
+`noexcept` callback arrays with the same extent can still produce a duplicate
+record identifier; that composition remains unsupported.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range

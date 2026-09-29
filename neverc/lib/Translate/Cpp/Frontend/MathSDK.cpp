@@ -2722,6 +2722,23 @@ std::optional<QualType> utilityScalarComparisonType(const ASTContext &Context,
   return Context.getCorrespondingUnsignedType(Signed);
 }
 
+std::optional<QualType> utilityCallbackEqualityType(const ASTContext &Context,
+                                                    QualType Left,
+                                                    QualType Right) {
+  if (Left.isNull() || Right.isNull() || Left->isReferenceType() ||
+      Right->isReferenceType() || Left.isVolatileQualified() ||
+      Right.isVolatileQualified() || Left.isRestrictQualified() ||
+      Right.isRestrictQualified() ||
+      Left.getAddressSpace() != LangAS::Default ||
+      Right.getAddressSpace() != LangAS::Default ||
+      !Left->isFunctionPointerType() || !Right->isFunctionPointerType())
+    return std::nullopt;
+  Left = Left.getCanonicalType().getUnqualifiedType();
+  Right = Right.getCanonicalType().getUnqualifiedType();
+  return Context.hasSameType(Left, Right) ? std::optional<QualType>(Left)
+                                          : std::nullopt;
+}
+
 static bool utilityScalarDirectConversion(const ASTContext &Context,
                                           QualType From, QualType To) {
   if (!utilityScalar(Context, From) || !utilityScalar(Context, To))
@@ -9572,6 +9589,8 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
                                   Depth + 1);
   }
   if (utilityScalarComparisonType(Context, Left, Right, Ordered))
+    return true;
+  if (!Ordered && utilityCallbackEqualityType(Context, Left, Right))
     return true;
 
   const auto LeftArray = approvedUtilityArrayRecord(

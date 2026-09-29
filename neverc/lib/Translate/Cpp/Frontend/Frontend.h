@@ -1495,6 +1495,9 @@ std::optional<clang::QualType>
 utilityScalarComparisonType(const clang::ASTContext &Context,
                             clang::QualType Left, clang::QualType Right,
                             bool RequireOrderedObject = false);
+std::optional<clang::QualType>
+utilityCallbackEqualityType(const clang::ASTContext &Context,
+                            clang::QualType Left, clang::QualType Right);
 enum class UtilityOptionalConstruction {
   Empty,
   InPlaceDefault,

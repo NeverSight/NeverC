@@ -1991,6 +1991,15 @@ class FunctionLowering {
                             cast(json::Object(RightValue), CommonType, L));
         return true;
       }
+      if (!Ordered) {
+        if (const auto Common =
+                utilityCallbackEqualityType(A.Context, LeftType, RightType)) {
+          const auto CommonType = type(*Common, L);
+          Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
+                              cast(json::Object(RightValue), CommonType, L));
+          return true;
+        }
+      }
 
       const auto LeftArray = ArrayFor(LeftType);
       const auto RightArray = ArrayFor(RightType);
