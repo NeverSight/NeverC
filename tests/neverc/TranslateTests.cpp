@@ -34731,6 +34731,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ArrayCallbackNoexceptIdentitiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("array-callback-noexcept-identities.cpp");
+  const auto Output = tmpFile("array-callback-noexcept-identities.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int value) { return value + 1; }
+int quiet(int value) noexcept { return value + 2; }
+int main() {
+  std::array<Callback, 2> plain{{one, nullptr}};
+  std::array<NoexceptCallback, 2> safe{{quiet, nullptr}};
+  std::array<std::array<Callback, 2>, 2> nestedPlain{{plain, plain}};
+  std::array<std::array<NoexceptCallback, 2>, 2> nestedSafe{{safe, safe}};
+  auto plainCopy = nestedPlain;
+  auto safeCopy = nestedSafe;
+  if (!(nestedPlain == plainCopy) || nestedPlain != plainCopy ||
+      !(nestedSafe == safeCopy) || nestedSafe != safeCopy)
+    return 1;
+  nestedPlain[1][1] = one;
+  nestedSafe[1][1] = quiet;
+  if (nestedPlain == plainCopy || !(nestedPlain != plainCopy) ||
+      nestedSafe == safeCopy || !(nestedSafe != safeCopy))
+    return 2;
+  if (plain[0](3) != 4 || safe[0](3) != 5 ||
+      nestedPlain[1][1](3) != 4 || nestedSafe[1][1](3) != 5)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-callback-noexcept-identities" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayComposesTrivialRecordsAndNestedArrays) {
   const auto Source = tmpFile("array-composition.cpp");
   const auto Output = tmpFile("array-composition.nc");

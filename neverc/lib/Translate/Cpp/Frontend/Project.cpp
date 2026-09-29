@@ -94,6 +94,53 @@ std::string Adapter::ownerTU(const NamedDecl *D) const {
              : "";
 }
 
+static bool hasNoexceptFunctionType(QualType Type, unsigned Depth);
+
+static bool hasNoexceptFunctionType(const TemplateArgument &Argument,
+                                    unsigned Depth) {
+  if (Depth > 64)
+    return false;
+  if (Argument.getKind() == TemplateArgument::Type)
+    return hasNoexceptFunctionType(Argument.getAsType(), Depth + 1);
+  if (Argument.getKind() == TemplateArgument::Pack)
+    for (const auto &Element : Argument.pack_elements())
+      if (hasNoexceptFunctionType(Element, Depth + 1))
+        return true;
+  return false;
+}
+
+static bool hasNoexceptFunctionType(QualType Type, unsigned Depth = 0) {
+  if (Type.isNull() || Depth > 64)
+    return false;
+  Type = Type.getCanonicalType();
+  if (const auto *Function = Type->getAs<FunctionProtoType>()) {
+    if (Function->isNothrow() ||
+        hasNoexceptFunctionType(Function->getReturnType(), Depth + 1))
+      return true;
+    for (QualType Parameter : Function->param_types())
+      if (hasNoexceptFunctionType(Parameter, Depth + 1))
+        return true;
+    return false;
+  }
+  if (const auto *Pointer = Type->getAs<PointerType>())
+    return hasNoexceptFunctionType(Pointer->getPointeeType(), Depth + 1);
+  if (const auto *Member = Type->getAs<MemberPointerType>())
+    return hasNoexceptFunctionType(Member->getPointeeType(), Depth + 1);
+  if (Type->isReferenceType())
+    return hasNoexceptFunctionType(Type->getPointeeType(), Depth + 1);
+  if (const auto *Array = dyn_cast<ArrayType>(Type.getTypePtr()))
+    return hasNoexceptFunctionType(Array->getElementType(), Depth + 1);
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!Specialization)
+    return false;
+  for (const auto &Argument : Specialization->getTemplateArgs().asArray())
+    if (hasNoexceptFunctionType(Argument, Depth + 1))
+      return true;
+  return false;
+}
+
 std::string Adapter::identity(const NamedDecl *D) {
   if (S.project()) {
     if (const auto *F = dyn_cast<FieldDecl>(D))
@@ -124,6 +171,15 @@ std::string Adapter::identity(const NamedDecl *D) {
   }
   auto Identity = USR.str().str();
   if (S.coreV2()) {
+    // Clang's specialization USR can omit noexcept in function-pointer
+    // template arguments. Distinct C++ records may then share one IR name.
+    if (const auto *Specialization =
+            dyn_cast<ClassTemplateSpecializationDecl>(D->getCanonicalDecl())) {
+      const auto Type = Context.getRecordType(Specialization);
+      if (hasNoexceptFunctionType(Type))
+        Identity +=
+            ":noexcept-type:" + digest(Type.getCanonicalType().getAsString());
+    }
     if (const auto *Primary = dyn_cast<FunctionTemplateDecl>(D->getCanonicalDecl())) {
       auto Found = TemplateOrdinals.find(Primary);
       auto L = Sources.getExpansionLoc(Primary->getLocation());

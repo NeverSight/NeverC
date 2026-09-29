@@ -600,9 +600,9 @@ selected SDK element swap before exchanging callbacks, including `noexcept`
 signatures and zero-length arrays. A source-owned swap selected through ADL is
 rejected. Callback arrays also support `==` and `!=` on the same callback
 type, including `noexcept` signatures and zero-length arrays.
-Function-pointer ordering remains rejected. Combining nested ordinary and
-`noexcept` callback arrays with the same extent can still produce a duplicate
-record identifier; that composition remains unsupported.
+Function-pointer ordering remains rejected. Ordinary and `noexcept` callback
+array specializations retain distinct record identities even when their
+translated storage layouts match, including in nested arrays.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range
