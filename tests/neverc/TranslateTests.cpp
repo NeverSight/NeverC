@@ -26084,8 +26084,17 @@ int main() {
   Callback cleared_again = std::exchange(first, empty);
   if (cleared_again(5) != 7 || first != nullptr)
     return 6;
+  Callback empty_old = std::exchange(first, one);
+  if (empty_old != nullptr || first(5) != 6)
+    return 7;
+  Callback function_old = std::exchange(first, two);
+  if (function_old(5) != 6 || first(5) != 7)
+    return 8;
   N::Callback nested_old = std::exchange(left, nullptr);
-  return nested_old(N::Arg{5}) == 7 && left == nullptr ? 0 : 7;
+  if (nested_old(N::Arg{5}) != 7 || left != nullptr)
+    return 9;
+  N::Callback nested_empty = std::exchange(left, N::one);
+  return nested_empty == nullptr && left(N::Arg{5}) == 6 ? 0 : 10;
 }
 )cpp");
   auto Result =
@@ -26648,6 +26657,20 @@ template<> decltype(nullptr)&& forward<decltype(nullptr)>(decltype(nullptr)& val
     noexcept { return static_cast<decltype(nullptr)&&>(value); }
 } }
 int f() { Callback slot = one; return std::exchange(slot, nullptr) == one; }
+)cpp",
+       "TR0201"},
+      {"callback-function-exchange-forward-specialization",
+       R"cpp(#include <utility>
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+using Callback = int (*)(int);
+using Function = int(int);
+namespace std { inline namespace __1 {
+template<> Function& forward<Function&>(Function& value) noexcept {
+  return value;
+}
+} }
+int f() { Callback slot = one; return std::exchange(slot, two) == one; }
 )cpp",
        "TR0201"},
       {"record-pair-comparison",

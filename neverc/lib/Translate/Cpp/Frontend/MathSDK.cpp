@@ -13875,7 +13875,7 @@ approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
   return true;
 }
 
-// A selected pointer move/forward call must preserve the same native pointer.
+// A selected move/forward call must preserve the native pointer or function.
 // The SDK provenance check includes source redeclarations and specializations.
 static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
                                       const Expr *Expression,
@@ -13934,9 +13934,12 @@ static bool approvedUtilityCallbackExchange(const State &S,
   const auto ReplacementType = Replacement->isLValueReferenceType()
                                    ? Replacement->getPointeeType()
                                    : Replacement;
+  const bool FunctionReplacement =
+      Replacement->isLValueReferenceType() &&
+      Context.hasSameType(ReplacementType, Type->getPointeeType());
   if (ReplacementType.hasQualifiers() ||
       (!Context.hasSameType(ReplacementType, Type) &&
-       !ReplacementType->isNullPtrType()))
+       !ReplacementType->isNullPtrType() && !FunctionReplacement))
     return false;
   const auto ReplacementReference =
       Replacement->isLValueReferenceType()
@@ -13960,8 +13963,8 @@ static bool approvedUtilityCallbackExchange(const State &S,
       Assignment ? dyn_cast_or_null<CallExpr>(
                        functionalInvokeStrippedExpression(Assignment->getRHS()))
                  : nullptr;
-  const auto *NullConversion =
-      Assignment && ReplacementType->isNullPtrType()
+  const auto *ValueConversion =
+      Assignment && (ReplacementType->isNullPtrType() || FunctionReplacement)
           ? dyn_cast<ImplicitCastExpr>(Assignment->getRHS())
           : nullptr;
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
@@ -13976,9 +13979,13 @@ static bool approvedUtilityCallbackExchange(const State &S,
          functionalInvokeParameterReference(Assignment->getLHS(),
                                             Function->getParamDecl(0)) &&
          (!ReplacementType->isNullPtrType() ||
-          (NullConversion &&
-           NullConversion->getCastKind() == CK_NullToPointer &&
-           Context.hasSameType(NullConversion->getType(), Type))) &&
+          (ValueConversion &&
+           ValueConversion->getCastKind() == CK_NullToPointer &&
+           Context.hasSameType(ValueConversion->getType(), Type))) &&
+         (!FunctionReplacement ||
+          (ValueConversion &&
+           ValueConversion->getCastKind() == CK_FunctionToPointerDecay &&
+           Context.hasSameType(ValueConversion->getType(), Type))) &&
          utilitySwapPointerAdapter(S, SM, Forward, Function->getParamDecl(1),
                                    ReplacementType, Replacement, true,
                                    Context) &&
@@ -28021,7 +28028,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          (Object->getPointeeType()->isFunctionPointerType() &&
           (Context.hasSameType(Object->getPointeeType(),
                                Value->getPointeeType()) ||
-           Value->getPointeeType()->isNullPtrType()) &&
+           Value->getPointeeType()->isNullPtrType() ||
+           Context.hasSameType(
+               Value->getPointeeType(),
+               Object->getPointeeType()->getPointeeType())) &&
           approvedUtilityCallbackExchange(
               S, SM, Function, Object->getPointeeType(), Context))) &&
         Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&

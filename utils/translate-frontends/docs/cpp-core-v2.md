@@ -189,8 +189,9 @@ qualified calls retain that overload even when the callback signature has an
 associated user swap. Callback-pointer `std::exchange` checks the selected
 pinned move and forward calls before returning the old pointer. It accepts
 same-type lvalue and rvalue replacements, `nullptr`, and mutable `nullptr_t`
-lvalues with the selected null-to-pointer conversion. Source specializations
-remain rejected.
+lvalues with the selected null-to-pointer conversion. A named function of the
+exact callback signature is also accepted when the selected assignment uses
+function-to-pointer decay. Source specializations remain rejected.
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested
