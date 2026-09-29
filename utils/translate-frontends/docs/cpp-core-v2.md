@@ -1791,6 +1791,13 @@ prefix, returns the old first element's new position, and preserves values for
 boundary middle positions. The operation never invokes the pointed-to
 functions.
 
+The exact `std::rotate_copy` form also accepts const or mutable raw or
+authenticated wrapped callback-pointer input ranges and a writable raw or
+wrapped output of the same function-pointer type, including `noexcept`
+signatures. It copies the suffix then the prefix, leaves the input unchanged,
+and returns the advanced output iterator; an empty input returns the original
+output iterator. The pointed-to functions are not invoked.
+
 The exact `std::iter_swap` form also exchanges writable raw or authenticated
 wrapped positions of the same function-pointer type, including mixed iterator
 forms and `noexcept` signatures. Both iterator arguments are evaluated once;

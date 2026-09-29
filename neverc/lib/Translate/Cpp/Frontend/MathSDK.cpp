@@ -26352,7 +26352,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                         AlgorithmRecordRangeParameter(1) &&
                         AlgorithmRecordRangeParameter(2) &&
                         AlgorithmTransferRecordRangeParameters(0, 3);
-    if (Scalar || Record)
+    const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(3);
+    const bool Callback =
+        CallbackInput && AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeParameter(2) && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
+                                    (*CallbackOutput)->getPointeeType());
+    if (Scalar || Record || Callback)
       return UtilityOperation::AlgorithmRotateCopy;
   }
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&

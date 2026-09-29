@@ -43604,6 +43604,79 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackRotateCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-rotate-copy.cpp");
+  const auto Output = tmpFile("callback-rotate-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int three(int n) { ++calls; return n + 3; }
+int safe(int n) noexcept { ++calls; return n + 4; }
+int safer(int n) noexcept { ++calls; return n + 5; }
+int main() {
+  std::array<Callback, 4> source{{one, nullptr, two, three}};
+  const auto &view = source;
+  std::array<Callback, 5> output{};
+  int firstEffects = 0, middleEffects = 0, lastEffects = 0;
+  int outputEffects = 0;
+  auto end = std::rotate_copy((++firstEffects, view.cbegin()),
+                              (++middleEffects, view.cbegin() + 2),
+                              (++lastEffects, view.cend()),
+                              (++outputEffects, output.begin() + 1));
+  if (end != output.end() || firstEffects != 1 || middleEffects != 1 ||
+      lastEffects != 1 || outputEffects != 1 || output[0] != nullptr ||
+      output[1] != two || output[2] != three || output[3] != one ||
+      output[4] != nullptr || source[0] != one || source[1] != nullptr ||
+      source[2] != two || source[3] != three || calls != 0)
+    return 1;
+  Callback rawOutput[4]{};
+  if (std::rotate_copy(view.cbegin(), view.cbegin() + 1, view.cend(),
+                       rawOutput) != rawOutput + 4 ||
+      rawOutput[0] != nullptr || rawOutput[1] != two ||
+      rawOutput[2] != three || rawOutput[3] != one)
+    return 2;
+  Callback rawInput[3]{one, nullptr, two};
+  std::array<Callback, 3> wrappedOutput{};
+  if (std::rotate_copy(rawInput, rawInput + 1, rawInput + 3,
+                       wrappedOutput.begin()) != wrappedOutput.end() ||
+      wrappedOutput[0] != nullptr || wrappedOutput[1] != two ||
+      wrappedOutput[2] != one)
+    return 3;
+  std::array<Callback, 0> empty{};
+  if (std::rotate_copy(empty.begin(), empty.begin(), empty.end(),
+                       output.begin()) != output.begin())
+    return 4;
+  std::array<NoexceptCallback, 3> safeSource{{safe, nullptr, safer}};
+  std::array<NoexceptCallback, 3> safeOutput{};
+  if (std::rotate_copy(safeSource.begin(), safeSource.begin() + 1,
+                       safeSource.end(), safeOutput.begin()) !=
+          safeOutput.end() ||
+      safeOutput[0] != nullptr || safeOutput[1] != safer ||
+      safeOutput[2] != safe || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-rotate-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");
