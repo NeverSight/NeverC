@@ -56706,6 +56706,63 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackAdjacentFindRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-adjacent-find.cpp");
+  const auto Output = tmpFile("callback-adjacent-find.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 5> values{{one, nullptr, two, two, one}};
+  int firstEffects = 0, lastEffects = 0;
+  auto found = std::adjacent_find((++firstEffects, values.begin()),
+                                  (++lastEffects, values.end()));
+  if (found != values.begin() + 2 || firstEffects != 1 || lastEffects != 1 ||
+      calls != 0)
+    return 1;
+  const auto &view = values;
+  if (std::adjacent_find(view.cbegin(), view.cend()) != view.cbegin() + 2)
+    return 2;
+  std::array<Callback, 3> distinct{{one, two, nullptr}};
+  if (std::adjacent_find(distinct.begin(), distinct.end()) != distinct.end())
+    return 3;
+  std::array<Callback, 3> nulls{{one, nullptr, nullptr}};
+  if (std::adjacent_find(nulls.begin(), nulls.end()) != nulls.begin() + 1)
+    return 4;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  if (std::adjacent_find(empty.begin(), empty.end()) != empty.end() ||
+      std::adjacent_find(single.begin(), single.end()) != single.end())
+    return 5;
+  std::array<NoexceptCallback, 3> safeValues{{safe, safe, nullptr}};
+  if (std::adjacent_find(safeValues.begin(), safeValues.end()) !=
+          safeValues.begin() ||
+      calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-adjacent-find" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordAdjacentFindRun) {
   const auto Source = tmpFile("source-record-adjacent-find.cpp");
   const auto Output = tmpFile("source-record-adjacent-find.nc");

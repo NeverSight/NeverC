@@ -1907,6 +1907,11 @@ Exact trivial records use original const references; scalars admit checked
 by-value parameters or exact const references. The object is evaluated once
 even for an empty range, and the first matching iterator form is preserved.
 
+The default `std::adjacent_find` form also accepts exact function-pointer
+element types, including `noexcept` pointers, in raw or authenticated wrapped
+ranges. It compares pointer values without invoking the functions;
+callback-range predicate forms remain outside this boundary.
+
 Default `std::search_n` also accepts raw or authenticated wrapped scalar
 ranges and exact source-owned trivial record ranges under the selected Boolean
 `operator==` check. It retains the original value argument address across

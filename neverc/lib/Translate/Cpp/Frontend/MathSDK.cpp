@@ -25824,9 +25824,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           First && Last && utilityAlgorithmEqualityPointer(Context, *First) &&
           !utilityEnumHasSourceOperator(
               S, SM, Context, (*First)->getPointeeType(), OO_EqualEqual);
+      const bool Callback = AlgorithmCallbackRangeParameter(0) &&
+                            AlgorithmCallbackRangeParameter(1);
       const bool Record = AlgorithmRecordEqualityRangeParameter(0) &&
                           AlgorithmRecordEqualityRangeParameter(1);
-      if (Builtin || Record)
+      if (Builtin || Callback || Record)
         return UtilityOperation::AlgorithmAdjacentFind;
     }
     if (Call->getNumArgs() == 3 && AlgorithmRangePointerParameter(0) &&
