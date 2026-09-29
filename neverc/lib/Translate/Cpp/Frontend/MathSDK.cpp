@@ -26936,7 +26936,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() == 3 && AlgorithmWritableRecordRangeParameter(0) &&
         AlgorithmWritableRecordRangeParameter(1) &&
         AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
-    if (Scalar || RecordDefault || RecordComparator) {
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 3 && CallbackFirst &&
+        AlgorithmCallbackRangeParameter(1) &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0);
+    if (Scalar || RecordDefault || RecordComparator || CallbackComparator) {
       if (Name == "make_heap")
         return UtilityOperation::AlgorithmMakeHeap;
       if (Name == "push_heap")

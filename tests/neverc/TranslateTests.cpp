@@ -57702,6 +57702,108 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-heap-mutations.cpp");
+  const auto Output = tmpFile("callback-heap-mutations.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : 2) < (right == quiet ? 1 : 2);
+}
+int main() {
+  std::array<Callback, 7> values{{two, one, three, one, two, three, one}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  std::make_heap((++firstEffects, values.begin()),
+      (++lastEffects, values.end() - 1), (++comparatorEffects, before));
+  if (firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks == 0 || calls != 0 || values[0] != three ||
+      !std::is_heap(values.begin(), values.end() - 1, before))
+    return 1;
+  values[6] = three;
+  checks = 0;
+  std::push_heap(values.begin(), values.end(), before);
+  if (checks == 0 || calls != 0 || values[0] != three ||
+      !std::is_heap(values.begin(), values.end(), before))
+    return 2;
+  checks = 0;
+  std::pop_heap(values.begin(), values.end(), before);
+  if (checks == 0 || calls != 0 || values[6] != three ||
+      !std::is_heap(values.begin(), values.end() - 1, before))
+    return 3;
+  checks = 0;
+  std::sort_heap(values.begin(), values.end() - 1, before);
+  if (checks == 0 || calls != 0 || values[0] != one ||
+      values[1] != one || values[2] != two || values[3] != two ||
+      values[4] != three || values[5] != three || values[6] != three)
+    return 4;
+  Callback raw[]{three, one, two};
+  std::make_heap(raw, raw + 3, before);
+  if (raw[0] != three || calls != 0)
+    return 5;
+  std::sort_heap(raw, raw + 3, before);
+  if (raw[0] != one || raw[1] != two || raw[2] != three || calls != 0)
+    return 6;
+  std::array<NoexceptCallback, 4> safe{{quiet, silent, quiet, silent}};
+  std::make_heap(safe.begin(), safe.end(), safe_before);
+  if (safe[0] != silent || calls != 0)
+    return 7;
+  std::pop_heap(safe.begin(), safe.end(), safe_before);
+  if (safe[3] != silent ||
+      !std::is_heap(safe.begin(), safe.end() - 1, safe_before) || calls != 0)
+    return 8;
+  std::push_heap(safe.begin(), safe.end(), safe_before);
+  if (!std::is_heap(safe.begin(), safe.end(), safe_before) || calls != 0)
+    return 9;
+  std::sort_heap(safe.begin(), safe.end(), safe_before);
+  if (safe[0] != quiet || safe[1] != quiet || safe[2] != silent ||
+      safe[3] != silent || calls != 0)
+    return 10;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  checks = 0;
+  std::make_heap(empty.begin(), empty.end(), before);
+  std::sort_heap(empty.begin(), empty.end(), before);
+  std::make_heap(single.begin(), single.end(), before);
+  std::push_heap(single.begin(), single.end(), before);
+  std::pop_heap(single.begin(), single.end(), before);
+  std::sort_heap(single.begin(), single.end(), before);
+  if (single[0] != one || checks != 0 || calls != 0)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-heap-mutations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-queries.cpp");
   const auto Output = tmpFile("callback-heap-queries.nc");

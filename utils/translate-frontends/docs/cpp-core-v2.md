@@ -2509,6 +2509,13 @@ objects on arithmetic scalars, including typed and transparent forms. The
 selected instantiated `operator()` body is proved before its comparison is
 lowered directly. The object argument is evaluated once; a greater-than object
 builds a minimum heap and makes `sort_heap` produce descending order.
+The checked comparator overloads of `std::make_heap`, `std::push_heap`,
+`std::pop_heap` and `std::sort_heap` also accept writable raw or authenticated
+wrapped ranges of one exact function-pointer element type, including `noexcept`
+pointers. The comparator takes two pointer values by value and returns `bool`;
+the algorithms move those values without invoking their pointed-to functions.
+`pop_heap` retains its nonempty-range precondition, while empty construction
+and sorting and single-element operations make no comparisons.
 
 The exact default-order `std::sort`, `std::partial_sort`,
 `std::partial_sort_copy` and `std::nth_element` templates use that arithmetic,
