@@ -43355,6 +43355,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackSwapRangesRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-swap-ranges.cpp");
+  const auto Output = tmpFile("callback-swap-ranges.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 3> left{{one, nullptr, two}};
+  std::array<Callback, 4> right{{nullptr, two, one, nullptr}};
+  int firstEffects = 0, lastEffects = 0, secondEffects = 0;
+  auto end = std::swap_ranges((++firstEffects, left.begin()),
+                              (++lastEffects, left.end()),
+                              (++secondEffects, right.begin() + 1));
+  if (end != right.end() || firstEffects != 1 || lastEffects != 1 ||
+      secondEffects != 1 || left[0] != two || left[1] != one ||
+      left[2] != nullptr || right[0] != nullptr || right[1] != one ||
+      right[2] != nullptr || right[3] != two || calls != 0)
+    return 1;
+  Callback rawOutput[2]{nullptr, one};
+  if (std::swap_ranges(left.begin() + 1, left.end(), rawOutput) !=
+          rawOutput + 2 ||
+      left[1] != nullptr || left[2] != one || rawOutput[0] != one ||
+      rawOutput[1] != nullptr)
+    return 2;
+  Callback rawInput[2]{one, nullptr};
+  std::array<Callback, 2> wrappedOutput{{two, one}};
+  if (std::swap_ranges(rawInput, rawInput + 2, wrappedOutput.begin()) !=
+          wrappedOutput.end() ||
+      rawInput[0] != two || rawInput[1] != one ||
+      wrappedOutput[0] != one || wrappedOutput[1] != nullptr)
+    return 3;
+  if (std::swap_ranges(left.begin(), left.begin(), right.begin()) !=
+          right.begin() ||
+      left[0] != two || right[0] != nullptr)
+    return 4;
+  std::array<NoexceptCallback, 2> safeLeft{{safe, nullptr}};
+  std::array<NoexceptCallback, 2> safeRight{{nullptr, safe}};
+  if (std::swap_ranges(safeLeft.begin(), safeLeft.end(), safeRight.begin()) !=
+          safeRight.end() ||
+      safeLeft[0] != nullptr || safeLeft[1] != safe ||
+      safeRight[0] != safe || safeRight[1] != nullptr || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-swap-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");

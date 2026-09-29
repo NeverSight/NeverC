@@ -1790,6 +1790,12 @@ forms and `noexcept` signatures. Both iterator arguments are evaluated once;
 swapping a position with itself preserves its pointer value without invoking
 the function.
 
+The exact `std::swap_ranges` form also exchanges writable raw or authenticated
+wrapped ranges of the same function-pointer type, including mixed iterator
+forms and `noexcept` signatures. It returns the advanced second iterator, or
+the original second iterator for an empty first range, without invoking the
+functions.
+
 Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
 record elements with a selected supported copy assignment. Their pinned public
 and internal fill bodies, pointer iterator category, count conversion, loop and

@@ -25658,6 +25658,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto RecordFirst = AlgorithmWritableRecordRangeParameter(0);
     const auto RecordLast = AlgorithmWritableRecordRangeParameter(1);
     const auto RecordSecond = AlgorithmWritableRecordRangeParameter(2);
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackLast = AlgorithmCallbackRangeParameter(1);
+    const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
     const bool Scalar =
         First && Last && Second &&
         utilityAlgorithmWritableScalarPointer(Context, *First) &&
@@ -25668,7 +25671,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RecordFirst && RecordLast && RecordSecond &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordSecond)->getPointeeType());
-    if (Scalar || Record)
+    const bool Callback =
+        CallbackFirst && CallbackLast && CallbackSecond &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified() &&
+        !(*CallbackSecond)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackSecond)->getPointeeType());
+    if (Scalar || Record || Callback)
       return UtilityOperation::AlgorithmSwapRanges;
   }
   if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
