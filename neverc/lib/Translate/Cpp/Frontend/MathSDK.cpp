@@ -26151,6 +26151,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             S, SM, Context, (*ScalarSecond)->getPointeeType(), OO_EqualEqual) &&
         utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
                                     (*ScalarSecond)->getPointeeType(), false);
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
+    const bool CallbackDefault =
+        Name == "search" && CallbackFirst &&
+        AlgorithmCallbackRangeParameter(1) && CallbackSecond &&
+        AlgorithmCallbackRangeParameter(3) &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackSecond)->getPointeeType());
     const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
     const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
     const bool RecordRanges =
@@ -26168,7 +26176,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RecordPredicate->getReturnType()->isBooleanType() &&
         AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0) &&
         AlgorithmRecordRangeCallbackReferenceParameter(4, 1, 2);
-    const bool DefaultElements = ScalarDefault || RecordRanges;
+    const bool DefaultElements =
+        ScalarDefault || RecordRanges || CallbackDefault;
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
           PredicateRecordRanges ||
           (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast &&
