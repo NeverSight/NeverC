@@ -15236,6 +15236,50 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringConcatNRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-concat-n.cpp");
+  const auto Output = tmpFile("cstring-concat-n.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  char destination[8]{'a', 'b', 0, 'Q', 'Q', 'Q', 'R', 0};
+  const char source[3]{static_cast<char>(0x80), 'y', 'z'};
+  int destination_effects = 0, source_effects = 0, count_effects = 0;
+  char *joined = std::strncat((++destination_effects, destination),
+                              (++source_effects, source), (++count_effects, 2));
+  if (joined != destination || destination_effects != 1 ||
+      source_effects != 1 || count_effects != 1 || destination[0] != 'a' ||
+      destination[1] != 'b' ||
+      static_cast<unsigned char>(destination[2]) != 0x80 ||
+      destination[3] != 'y' || destination[4] != 0 ||
+      destination[5] != 'Q' || destination[6] != 'R')
+    return 1;
+  if (std::strncat(destination, source, 0) != destination ||
+      destination[4] != 0 || destination[5] != 'Q')
+    return 2;
+  const char short_source[4]{'c', 0, 'Z', 0};
+  char target[7]{'p', 0, 'Q', 'Q', 'R', 0, 0};
+  if (std::strncat(target, short_source, 3) != target ||
+      target[0] != 'p' || target[1] != 'c' || target[2] != 0 ||
+      target[3] != 'Q' || target[4] != 'R' ||
+      std::strncat(target, "", 2) != target || target[2] != 0)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-concat-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-writes.cpp");
   const auto Output = tmpFile("cmemory-writes.nc");
@@ -15383,9 +15427,12 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
        "#include <cstring>\nint main(){char "
        "s[3]{};::strcat(s,\"x\");return 0;}",
        "TR0203"},
-      {"unsupported-strncat",
+      {"global-strncat",
        "#include <cstring>\nint main(){char "
-       "s[3]{};std::strncat(s,\"x\",1);return 0;}",
+       "s[3]{};::strncat(s,\"x\",1);return 0;}",
+       "TR0203"},
+      {"unsupported-strcoll",
+       "#include <cstring>\nint main(){return std::strcoll(\"a\",\"b\");}",
        "TR0203"},
       {"quoted-header", "#include \"cstring\"\nint main(){return 0;}",
        "TR0201"}};

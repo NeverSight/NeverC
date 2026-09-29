@@ -644,6 +644,7 @@ enum class UtilityOperation {
   CStringCopy,
   CStringCopyN,
   CStringConcat,
+  CStringConcatN,
   CStringMemoryCopy,
   CStringMemoryMove,
   CStringMemorySet,

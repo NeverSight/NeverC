@@ -20206,19 +20206,22 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::CStringMemoryCompare;
   const auto MutableBytePointer = Context.getPointerType(Context.VoidTy);
   const auto MutableCharacter = Context.getPointerType(Context.CharTy);
-  if ((Name == "strcpy" || Name == "strncpy" || Name == "strcat") &&
-      Function->getNumParams() == (Name == "strncpy" ? 3u : 2u) &&
+  const bool BoundedStringWrite = Name == "strncpy" || Name == "strncat";
+  if ((Name == "strcpy" || Name == "strncpy" || Name == "strcat" ||
+       Name == "strncat") &&
+      Function->getNumParams() == (BoundedStringWrite ? 3u : 2u) &&
       Context.hasSameUnqualifiedType(Function->getParamDecl(0)->getType(),
                                      MutableCharacter) &&
       Context.hasSameUnqualifiedType(Function->getParamDecl(1)->getType(),
                                      Character) &&
-      (Name != "strncpy" ||
+      (!BoundedStringWrite ||
        Same(Function->getParamDecl(2)->getType(), Context.getSizeType())) &&
       Same(Function->getReturnType(), MutableCharacter) &&
       Same(Call->getType(), Function->getReturnType()))
     return Name == "strcpy"    ? UtilityOperation::CStringCopy
            : Name == "strncpy" ? UtilityOperation::CStringCopyN
-                               : UtilityOperation::CStringConcat;
+           : Name == "strcat"  ? UtilityOperation::CStringConcat
+                               : UtilityOperation::CStringConcatN;
   if (InlineFind && Function->getNumParams() == (MemoryFind ? 3u : 2u) &&
       (Same(Function->getParamDecl(0)->getType(),
             MemoryFind ? BytePointer : Character) ||

@@ -2910,6 +2910,14 @@ The caller supplies a zero-terminated destination with enough remaining space,
 a zero-terminated source, and nonoverlapping ranges. No runtime libc call is
 emitted.
 
+The exact `std::strncat(char *, const char *, std::size_t)` call finds the first
+destination NUL, appends at most the requested number of nonzero source bytes,
+then writes one terminating NUL. A zero count reads no source bytes. It does
+not pad the remaining destination. All arguments are evaluated once. The
+original destination pointer is returned. The caller supplies a
+zero-terminated destination with space for the appended bytes and NUL,
+readable source bytes through the first NUL or count, and nonoverlapping ranges.
+
 The exact `std::memcpy(void *, const void *, std::size_t)`,
 `std::memmove(void *, const void *, std::size_t)` and
 `std::memset(void *, int, std::size_t)` calls write bytes directly and return
@@ -2922,9 +2930,9 @@ ranges and, for `memcpy`, nonoverlapping ranges. No runtime libc memory call is 
 
 Only the `std::` names introduced by the pinned header are admitted. Global
 `::strlen`, `::strspn`, `::strcspn`, `::strcmp`, `::memchr`, `::strchr`,
-`::strrchr`, `::strpbrk`, `::strstr`, `::strcpy`, `::strncpy`, `::strcat`, other
-`<cstring>` functions, quoted or shadow headers, and function addresses remain
-outside this boundary.
+`::strrchr`, `::strpbrk`, `::strstr`, `::strcpy`, `::strncpy`, `::strcat`,
+`::strncat`, other `<cstring>` functions, quoted or shadow headers, and function
+addresses remain outside this boundary.
 The caller supplies zero-terminated strings where a scan depends on NUL and
 readable character arrays through the bytes examined by `strncmp`. String
 object operations have their own contract below.
