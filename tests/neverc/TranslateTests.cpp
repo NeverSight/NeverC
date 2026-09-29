@@ -56877,6 +56877,80 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackReplaceCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-replace-copy.cpp");
+  const auto Output = tmpFile("callback-replace-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  const std::array<Callback, 5> source{{one, two, nullptr, two, three}};
+  std::array<Callback, 5> output{};
+  Callback oldValue = two, newValue = three, alternate = one;
+  int firstEffects = 0, lastEffects = 0, outputEffects = 0;
+  int oldEffects = 0, newEffects = 0;
+  auto end = std::replace_copy((++firstEffects, source.cbegin()),
+                               (++lastEffects, source.cend()),
+                               (++outputEffects, output.begin()),
+                               (++oldEffects, oldValue),
+                               (++newEffects, newValue));
+  if (firstEffects != 1 || lastEffects != 1 || outputEffects != 1 ||
+      oldEffects != 1 || newEffects != 1 || end != output.end() ||
+      output[0] != one || output[1] != three || output[2] != nullptr ||
+      output[3] != three || output[4] != three || source[1] != two ||
+      calls != 0)
+    return 1;
+  Callback rawOutput[5]{};
+  if (std::replace_copy(source.cbegin(), source.cend(), rawOutput,
+                        oldValue, alternate) != rawOutput + 5 ||
+      rawOutput[1] != one || rawOutput[3] != one || calls != 0)
+    return 2;
+  const Callback rawInput[4]{one, two, one, three};
+  std::array<Callback, 4> aliasOutput{{two, three, nullptr, nullptr}};
+  auto aliasEnd = std::replace_copy(rawInput, rawInput + 4,
+                                    aliasOutput.begin(), aliasOutput[0],
+                                    aliasOutput[1]);
+  if (aliasEnd != aliasOutput.end() || aliasOutput[0] != one ||
+      aliasOutput[1] != two || aliasOutput[2] != two ||
+      aliasOutput[3] != three || calls != 0)
+    return 3;
+  const std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  std::array<NoexceptCallback, 3> safeOutput{};
+  NoexceptCallback safeOld = quiet, safeNew = nullptr;
+  if (std::replace_copy(safe.cbegin(), safe.cend(), safeOutput.begin(),
+                        safeOld, safeNew) != safeOutput.end() ||
+      safeOutput[0] != nullptr || safeOutput[1] != nullptr ||
+      safeOutput[2] != nullptr || calls != 0)
+    return 4;
+  const std::array<Callback, 0> empty{};
+  if (std::replace_copy(empty.cbegin(), empty.cend(), output.begin(),
+                        oldValue, newValue) != output.begin() || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-replace-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");

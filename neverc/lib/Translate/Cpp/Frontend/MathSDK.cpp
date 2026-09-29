@@ -26046,6 +26046,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceCopy;
+  if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
+      Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
+      Call->isPRValue() && AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCallbackRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      AlgorithmTransferCallbackValueParameter(4, 2)) {
+    const auto Input = *AlgorithmCallbackRangeParameter(0);
+    const auto Output = *AlgorithmCallbackRangeParameter(2);
+    const auto Old = Function->getParamDecl(3)->getType();
+    if (utilityCallbackEqualityType(Context, Input->getPointeeType(),
+                                    Output->getPointeeType()) &&
+        Old->isLValueReferenceType() &&
+        Old->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, Call->getArg(3)->getType(),
+                                    Old->getPointeeType()) &&
+        utilityCallbackEqualityType(Context, Input->getPointeeType(),
+                                    Old->getPointeeType()))
+      return UtilityOperation::AlgorithmReplaceCopy;
+  }
   if (Origin->Path == "__algorithm/unique.h" && Name == "unique" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
