@@ -1784,6 +1784,13 @@ wrapped ranges of function-pointer elements, including `noexcept` signatures.
 It swaps pointer values without invoking the functions and leaves empty and
 single-element ranges unchanged. Const callback elements remain rejected.
 
+The exact `std::rotate` form likewise accepts writable raw or authenticated
+wrapped ranges of function-pointer elements, including `noexcept` signatures.
+It moves the suffix beginning at the selected middle position before the
+prefix, returns the old first element's new position, and preserves values for
+boundary middle positions. The operation never invokes the pointed-to
+functions.
+
 The exact `std::iter_swap` form also exchanges writable raw or authenticated
 wrapped positions of the same function-pointer type, including mixed iterator
 forms and `noexcept` signatures. Both iterator arguments are evaluated once;

@@ -26327,7 +26327,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool Record = AlgorithmWritableRecordRangeParameter(0) &&
                         AlgorithmWritableRecordRangeParameter(1) &&
                         AlgorithmWritableRecordRangeParameter(2);
-    if (Scalar || Record)
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const bool Callback =
+        CallbackFirst && AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeParameter(2) &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified();
+    if (Scalar || Record || Callback)
       return UtilityOperation::AlgorithmRotate;
   }
   if (Origin->Path == "__algorithm/rotate_copy.h" && Name == "rotate_copy" &&
