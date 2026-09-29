@@ -27871,10 +27871,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Right->getPointeeType())) {
       if (utilityScalar(Context, Left->getPointeeType()))
         return UtilityOperation::Swap;
-      const auto *Array =
-          Context.getAsConstantArrayType(Left->getPointeeType());
-      auto Element = Array ? Array->getElementType() : QualType();
-      // The array overload calls swap unqualified for each element. Pointer
+      auto ArrayLeaf = [&](QualType Current) {
+        uint64_t Elements = 1;
+        unsigned Dimensions = 0;
+        while (const auto *Array = Context.getAsConstantArrayType(Current)) {
+          const auto Size = Array->getSize().getLimitedValue(65537);
+          if (++Dimensions > 8 || !Size || Size > 65536 / Elements)
+            return QualType();
+          Elements *= Size;
+          Current = Array->getElementType();
+        }
+        return Dimensions ? Current : QualType();
+      };
+      auto Element = ArrayLeaf(Left->getPointeeType());
+      // Each array overload calls swap unqualified. Built-in leaves and pointer
       // chains ending in a built-in type cannot add an ADL swap candidate.
       auto Associated = Element.isNull()
                             ? QualType()
@@ -27883,9 +27893,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Associated = Associated->getPointeeType()
                          .getCanonicalType()
                          .getUnqualifiedType();
-      if (Array && Array->getSize().getLimitedValue(65537) <= 65536 &&
-          !Element.isConstQualified() && !Element.isVolatileQualified() &&
-          Associated->isBuiltinType() && utilityScalar(Context, Element))
+      if (!Element.isNull() && !Element.isConstQualified() &&
+          !Element.isVolatileQualified() && Associated->isBuiltinType() &&
+          utilityScalar(Context, Element))
         return UtilityOperation::NativeArraySwap;
       if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
                                    Context))

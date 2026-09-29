@@ -4189,45 +4189,54 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::NativeArraySwap: {
-      const auto *Array =
-          A.Context.getAsConstantArrayType(Call->getArg(0)->getType());
-      if (!Array)
+      const auto ArrayType = Call->getArg(0)->getType();
+      if (!A.Context.getAsConstantArrayType(ArrayType))
         reject(L, "utility native array swap",
                "The selected fixed array layout is unavailable.");
-      const auto Element = Array->getElementType();
-      const auto ElementType = type(Element, L);
       const auto SizeType = type(A.Context.getSizeType(), L);
-      const auto PointerType = type(A.Context.getPointerType(Element), L);
       // Bind both array expressions before the first element swap. The pinned
-      // array overload then swaps elements in ascending index order.
+      // array overloads then visit every dimension in ascending index order.
       auto LeftAddress = snapshot(
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
-      auto LeftPointer = snapshot(
-          decay(dereference(std::move(LeftAddress), L), PointerType, L), L);
-      auto RightPointer = snapshot(
-          decay(dereference(std::move(RightAddress), L), PointerType, L), L);
-      auto Position = snapshot(quantity(0, SizeType, L), L);
-      const auto Check = labelName(), Body = labelName(), End = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(binary("!=", Position,
-                    quantity(Array->getSize().getLimitedValue(), SizeType, L),
-                    "bool", L),
-             Body, End, L);
-      label(Body, L);
-      auto Left = index(json::Object(LeftPointer), json::Object(Position),
-                        ElementType, L);
-      auto Right = index(json::Object(RightPointer), json::Object(Position),
-                         ElementType, L);
-      auto OldLeft = snapshot(Left, L);
-      auto OldRight = snapshot(Right, L);
-      assign(Left, std::move(OldRight), L);
-      assign(Right, std::move(OldLeft), L);
-      assign(Position, binary("+", Position, one(SizeType, L), SizeType, L), L);
-      jump(Check, L);
-      label(End, L);
+      auto SwapElements = [&](auto &&Self, Expression Left, Expression Right,
+                              QualType Current) -> void {
+        const auto *Array = A.Context.getAsConstantArrayType(Current);
+        if (!Array) {
+          auto OldLeft = snapshot(Left, L);
+          auto OldRight = snapshot(Right, L);
+          assign(Left, std::move(OldRight), L);
+          assign(Right, std::move(OldLeft), L);
+          return;
+        }
+        const auto Element = Array->getElementType();
+        const auto ElementType = type(Element, L);
+        const auto PointerType = type(A.Context.getPointerType(Element), L);
+        auto LeftPointer = snapshot(decay(std::move(Left), PointerType, L), L);
+        auto RightPointer =
+            snapshot(decay(std::move(Right), PointerType, L), L);
+        auto Position = snapshot(quantity(0, SizeType, L), L);
+        const auto Check = labelName(), Body = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Position,
+                      quantity(Array->getSize().getLimitedValue(), SizeType, L),
+                      "bool", L),
+               Body, End, L);
+        label(Body, L);
+        auto LeftElement = index(json::Object(LeftPointer),
+                                 json::Object(Position), ElementType, L);
+        auto RightElement = index(json::Object(RightPointer),
+                                  json::Object(Position), ElementType, L);
+        Self(Self, std::move(LeftElement), std::move(RightElement), Element);
+        assign(Position, binary("+", Position, one(SizeType, L), SizeType, L),
+               L);
+        jump(Check, L);
+        label(End, L);
+      };
+      SwapElements(SwapElements, dereference(std::move(LeftAddress), L),
+                   dereference(std::move(RightAddress), L), ArrayType);
       return {};
     }
     case UtilityOperation::OwnedSwap: {

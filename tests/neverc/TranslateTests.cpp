@@ -26142,6 +26142,54 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeNestedArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-nested-array-swap.cpp");
+  const auto Output = tmpFile("native-nested-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int main() {
+  int first[2][3]{{1, 2, 3}, {4, 5, 6}};
+  int second[2][3]{{7, 8, 9}, {10, 11, 12}};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0][0] != 7 || first[0][1] != 8 || first[0][2] != 9 ||
+      first[1][0] != 10 || first[1][1] != 11 || first[1][2] != 12 ||
+      second[0][0] != 1 || second[0][1] != 2 || second[0][2] != 3 ||
+      second[1][0] != 4 || second[1][1] != 5 || second[1][2] != 6)
+    return 1;
+  std::swap(first, first);
+  if (first[0][0] != 7 || first[1][2] != 12)
+    return 2;
+  bool cube[2][1][2]{{{true, false}}, {{false, true}}};
+  bool other[2][1][2]{{{false, true}}, {{true, false}}};
+  std::swap(cube, other);
+  if (cube[0][0][0] || !cube[0][0][1] || !cube[1][0][0] ||
+      cube[1][0][1] || !other[0][0][0] || other[0][0][1] ||
+      other[1][0][0] || !other[1][0][1])
+    return 3;
+  const int *pointers[2][1]{{first[0]}, {first[1]}};
+  const int *others[2][1]{{second[0]}, {second[1]}};
+  std::swap(pointers, others);
+  return pointers[0][0] == second[0] && pointers[1][0] == second[1] &&
+                 others[0][0] == first[0] && others[1][0] == first[1]
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("native-nested-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26200,6 +26248,11 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "#include <utility>\nstruct R{int n;};int f(){"
        "R a[2]{{1},{2}},b[2]{{3},{4}};"
        "std::swap(a,b);return a[0].n;}",
+       "TR0203"},
+      {"nested-record-array-swap",
+       "#include <utility>\nstruct R{int n;};int f(){"
+       "R a[1][2]{{{1},{2}}},b[1][2]{{{3},{4}}};"
+       "std::swap(a,b);return a[0][0].n;}",
        "TR0203"},
       {"pointer-array-swap",
        "#include <utility>\nstruct R{};int f(){R *a[2]{},*b[2]{};"

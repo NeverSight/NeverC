@@ -184,11 +184,11 @@ VFS. `std::move`, `std::forward`, `std::move_if_noexcept`, `std::as_const`,
 reference and assignment operations. The selected function must be the exact
 pinned libc++ declaration and must be called directly; function addresses and
 forged declarations are rejected. The pinned fixed-size C array overload of
-`std::swap` is supported for mutable arrays of built-in scalar elements or
-pointers whose pointee chain ends in a built-in type (up to 65,536 elements),
-with each array expression evaluated once and elements swapped in index order.
-Arrays of records, enums, pointers to records or enums, and volatile/const
-elements remain outside this boundary.
+`std::swap` is supported for mutable fixed arrays up to eight dimensions and
+65,536 total elements when each leaf is a built-in scalar or a pointer whose
+pointee chain ends in a built-in type. Each array expression is evaluated once;
+elements are swapped in nested index order. Arrays of records, enums, pointers
+to records or enums, and volatile/const leaves remain outside this boundary.
 Exact generic `std::swap` of a source-owned nontrivial standard-layout record
 also invokes the selected supported move constructor and two move assignments,
 then destroys the temporary. Both arguments are evaluated once, including
