@@ -43477,6 +43477,69 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackFillNRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-fill-n.cpp");
+  const auto Output = tmpFile("callback-fill-n.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+enum Count : unsigned int { three = 3 };
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 4> values{{one, nullptr, two, one}};
+  Callback replacement = two;
+  int outputEffects = 0, countEffects = 0, valueEffects = 0;
+  auto end = std::fill_n((++outputEffects, values.begin() + 1),
+                         (++countEffects, Count::three),
+                         (++valueEffects, replacement));
+  if (end != values.end() || outputEffects != 1 || countEffects != 1 ||
+      valueEffects != 1 || values[0] != one || values[1] != two ||
+      values[2] != two || values[3] != two || calls != 0)
+    return 1;
+  Callback raw[2]{one, nullptr};
+  if (std::fill_n(raw, 2, replacement) != raw + 2 ||
+      raw[0] != two || raw[1] != two)
+    return 2;
+  std::array<Callback, 3> aliased{{one, two, nullptr}};
+  if (std::fill_n(aliased.begin(), 3, aliased[1]) != aliased.end() ||
+      aliased[0] != two || aliased[1] != two || aliased[2] != two)
+    return 3;
+  if (std::fill_n(values.begin(), 0, replacement) != values.begin() ||
+      values[0] != one)
+    return 4;
+  short negative = -2;
+  Callback untouched[1]{one};
+  if (std::fill_n(untouched, negative, replacement) != untouched ||
+      untouched[0] != one)
+    return 5;
+  NoexceptCallback safeReplacement = safe;
+  std::array<NoexceptCallback, 2> safeValues{{nullptr, nullptr}};
+  if (std::fill_n(safeValues.begin(), 2, safeReplacement) != safeValues.end() ||
+      safeValues[0] != safe || safeValues[1] != safe || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-fill-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");

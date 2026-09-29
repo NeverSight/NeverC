@@ -25645,6 +25645,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmFillN;
   if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      AlgorithmTransferCallbackValueParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmFillN;
+  if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmCountParameter(1) &&
       !Function->getParamDecl(0)->getType()->isPointerType() &&
       AlgorithmWritableRecordRangeParameter(0) &&
