@@ -2719,6 +2719,14 @@ two overloads also accept authenticated typed or transparent empty standard
 comparison objects on arithmetic scalars, preserving the selected ordering,
 wraparound and one-time object evaluation without a libc++ runtime call.
 
+The checked comparator overloads of `std::next_permutation` and
+`std::prev_permutation` also accept writable raw or authenticated wrapped
+ranges of one exact function-pointer element type, including `noexcept`
+pointers. The comparator takes two pointer values by value and returns `bool`.
+The algorithms exchange pointer values without invoking their pointed-to
+functions. Iterator and comparator arguments are evaluated once; empty and
+single-element ranges return false without comparisons.
+
 The exact default-equality three- and four-iterator `std::is_permutation`
 templates use the equality element boundary, so const ranges, enums and
 object-pointer elements are accepted. The two ranges may have different scalar

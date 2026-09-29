@@ -58465,6 +58465,141 @@ TEST_F(TranslateTest, CoreV2CallbackNthElementRejectsUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPermutationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-permutations.cpp");
+  const auto Output = tmpFile("callback-permutations.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return rank(left) > rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : 2) < (right == quiet ? 1 : 2);
+}
+int main() {
+  std::array<Callback, 3> values{{one, one, two}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  if (!std::next_permutation((++firstEffects, values.begin()),
+                              (++lastEffects, values.end()),
+                              (++comparatorEffects, before)) ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks == 0 || calls != 0 || values[0] != one ||
+      values[1] != two || values[2] != one)
+    return 1;
+  checks = 0;
+  if (!std::prev_permutation(values.begin(), values.end(), before) ||
+      checks == 0 || calls != 0 || values[0] != one ||
+      values[1] != one || values[2] != two)
+    return 2;
+  Callback final[]{three, two, one};
+  checks = 0;
+  if (std::next_permutation(final, final + 3, before) ||
+      checks == 0 || calls != 0 || final[0] != one ||
+      final[1] != two || final[2] != three)
+    return 3;
+  Callback initial[]{one, two, three};
+  checks = 0;
+  if (std::prev_permutation(initial, initial + 3, before) ||
+      checks == 0 || calls != 0 || initial[0] != three ||
+      initial[1] != two || initial[2] != one)
+    return 4;
+  Callback descending[]{three, two, one};
+  checks = 0;
+  if (!std::next_permutation(descending, descending + 3, after) ||
+      checks == 0 || calls != 0 || descending[0] != three ||
+      descending[1] != one || descending[2] != two ||
+      !std::prev_permutation(descending, descending + 3, after) ||
+      descending[0] != three || descending[1] != two ||
+      descending[2] != one)
+    return 5;
+  std::array<NoexceptCallback, 3> safe{{quiet, quiet, silent}};
+  checks = 0;
+  if (!std::next_permutation(safe.begin(), safe.end(), safe_before) ||
+      checks == 0 || calls != 0 || safe[0] != quiet ||
+      safe[1] != silent || safe[2] != quiet ||
+      !std::prev_permutation(safe.begin(), safe.end(), safe_before) ||
+      safe[0] != quiet || safe[1] != quiet || safe[2] != silent)
+    return 6;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  checks = 0;
+  if (std::next_permutation(empty.begin(), empty.end(), before) ||
+      std::prev_permutation(empty.begin(), empty.end(), before) ||
+      std::next_permutation(single.begin(), single.end(), before) ||
+      std::prev_permutation(single.begin(), single.end(), before) ||
+      single[0] != one || checks != 0 || calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-permutations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackPermutationsRejectUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+    const char *Algorithm;
+  } Cases[] = {
+      {"next-non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }",
+       "next_permutation"},
+      {"prev-reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }",
+       "prev_permutation"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-permutation-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-permutation-") + Case.Name + ".nc");
+    writeFile(Source, std::string("#include <algorithm>\n"
+                                  "using Callback = int (*)(int);\n"
+                                  "int one(int x) { return x + 1; }\n"
+                                  "int two(int x) { return x + 2; }\n") +
+                          Case.Comparator +
+                          "\nint main() { Callback values[]{one, two}; "
+                          "return std::" +
+                          Case.Algorithm +
+                          "(values, values + 2, before) ? 0 : 1; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
