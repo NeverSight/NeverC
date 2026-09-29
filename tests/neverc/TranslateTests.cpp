@@ -26380,6 +26380,77 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeOwnedRecordArraySwapCallsSelectedOperations) {
+  const auto Source = tmpFile("native-owned-record-array-swap.cpp");
+  const auto Output = tmpFile("native-owned-record-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int events[32];
+int event_count;
+int left_reads, right_reads;
+void note(int value) { events[event_count++] = value; }
+bool matches(const int *expected, int count) {
+  if (event_count != count) return false;
+  for (int i = 0; i != count; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {
+    note(10 + value);
+    other.value = -1;
+  }
+  Item& operator=(Item&& other) noexcept {
+    note(20 + other.value);
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+  ~Item() noexcept { note(30 + value); }
+};
+int main() {
+  Item left[2]{Item(1), Item(2)}, right[2]{Item(3), Item(4)};
+  event_count = 0;
+  std::swap((++left_reads, left), (++right_reads, right));
+  const int direct[] = {11, 23, 21, 29, 12, 24, 22, 29};
+  if (!matches(direct, 8) || left_reads != 1 || right_reads != 1 ||
+      left[0].value != 3 || left[1].value != 4 ||
+      right[0].value != 1 || right[1].value != 2)
+    return 1;
+  event_count = 0;
+  std::swap(left, left);
+  const int self[] = {13, 19, 23, 29, 14, 19, 24, 29};
+  if (!matches(self, 8) || left[0].value != 3 || left[1].value != 4)
+    return 2;
+  Item grid[2][1]{{Item(5)}, {Item(6)}};
+  Item other[2][1]{{Item(7)}, {Item(8)}};
+  event_count = 0;
+  std::swap(grid, other);
+  const int nested[] = {15, 27, 25, 29, 16, 28, 26, 29};
+  return matches(nested, 8) && grid[0][0].value == 7 &&
+                 grid[1][0].value == 8 && other[0][0].value == 5 &&
+                 other[1][0].value == 6
+             ? 0
+             : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("native-owned-record-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26446,9 +26517,10 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "N::R a[1][2]{{{1},{2}}},b[1][2]{{{3},{4}}};"
        "std::swap(a,b);return a[0][0].n;}",
        "TR0203"},
-      {"nontrivial-record-array-swap",
+      {"adl-nontrivial-record-array-swap",
        "#include <utility>\nnamespace N{struct R{int n;R()=default;"
-       "R(R&&)=default;R&operator=(R&& other){n=other.n;return *this;}};}"
+       "R(R&&)=default;R&operator=(R&& other){n=other.n;return *this;}};"
+       "void swap(R&,R&);}"
        "int f(){N::R a[1]{},b[1]{};std::swap(a,b);return a[0].n;}",
        "TR0203"},
       {"adl-pointer-array-swap",

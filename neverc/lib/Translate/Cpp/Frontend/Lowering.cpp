@@ -4188,11 +4188,20 @@ class FunctionLowering {
       assign(Right, std::move(OldLeft), L);
       return {};
     }
-    case UtilityOperation::NativeArraySwap: {
+    case UtilityOperation::NativeArraySwap:
+    case UtilityOperation::NativeOwnedArraySwap: {
       const auto ArrayType = Call->getArg(0)->getType();
       if (!A.Context.getAsConstantArrayType(ArrayType))
         reject(L, "utility native array swap",
                "The selected fixed array layout is unavailable.");
+      std::optional<UtilityOwnedSwapOperations> Selected;
+      if (Operation == UtilityOperation::NativeOwnedArraySwap) {
+        Selected = approvedUtilityNativeArrayOwnedSwap(
+            A.S, A.Sources, Call->getDirectCallee(), ArrayType, A.Context);
+        if (!Selected)
+          reject(L, "utility native array swap",
+                 "The selected source-owned element swap is unavailable.");
+      }
       const auto SizeType = type(A.Context.getSizeType(), L);
       // Bind both array expressions before the first element swap. The pinned
       // array overloads then visit every dimension in ascending index order.
@@ -4204,6 +4213,11 @@ class FunctionLowering {
                               QualType Current) -> void {
         const auto *Array = A.Context.getAsConstantArrayType(Current);
         if (!Array) {
+          if (Selected) {
+            swapOwnedValues(std::move(Left), std::move(Right), Current,
+                            *Selected, L);
+            return;
+          }
           auto OldLeft = snapshot(Left, L);
           auto OldRight = snapshot(Right, L);
           assign(Left, std::move(OldRight), L);

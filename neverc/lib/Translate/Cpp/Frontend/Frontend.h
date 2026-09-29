@@ -713,6 +713,7 @@ enum class UtilityOperation {
   Exchange,
   Swap,
   NativeArraySwap,
+  NativeOwnedArraySwap,
   OwnedSwap,
   MakePair,
   PairSwap,
@@ -1114,6 +1115,10 @@ approvedUtilityOwnedSwap(const State &S, const clang::SourceManager &SM,
                          const clang::FunctionDecl *Function,
                          clang::QualType Type,
                          const clang::ASTContext &Context);
+std::optional<UtilityOwnedSwapOperations> approvedUtilityNativeArrayOwnedSwap(
+    const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, clang::QualType Type,
+    const clang::ASTContext &Context);
 std::optional<UtilityOwnedSwapOperations>
 approvedUtilityArrayOwnedSwap(const State &S, const clang::SourceManager &SM,
                               const clang::CXXMethodDecl *Method,

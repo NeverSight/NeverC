@@ -13440,7 +13440,8 @@ static bool utilityNativeArrayTrivialRecord(const State &S,
 
 static bool approvedUtilityNativeArrayAssociatedSwap(
     const State &S, const SourceManager &SM, const FunctionDecl *Function,
-    QualType Current, const ASTContext &Context, unsigned Depth = 0) {
+    QualType Current, const ASTContext &Context, unsigned Depth = 0,
+    std::optional<UtilityOwnedSwapOperations> *Owned = nullptr) {
   if (!Function || Current.isNull() || Depth > 8 ||
       !utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h") ||
       Function->getNumParams() != 2 || !Function->getReturnType()->isVoidType())
@@ -13454,6 +13455,10 @@ static bool approvedUtilityNativeArrayAssociatedSwap(
     return false;
   const auto *Array = Context.getAsConstantArrayType(Current);
   if (!Array) {
+    if (Owned) {
+      *Owned = approvedUtilityOwnedSwap(S, SM, Function, Current, Context);
+      return Owned->has_value();
+    }
     const bool Scalar =
         (Current->isEnumeralType() || Current->isPointerType()) &&
         utilityScalar(Context, Current);
@@ -13489,7 +13494,21 @@ static bool approvedUtilityNativeArrayAssociatedSwap(
          Context.hasSameType(Call->getArg(0)->getType(), Element) &&
          Context.hasSameType(Call->getArg(1)->getType(), Element) &&
          approvedUtilityNativeArrayAssociatedSwap(
-             S, SM, Call->getDirectCallee(), Element, Context, Depth + 1);
+             S, SM, Call->getDirectCallee(), Element, Context, Depth + 1,
+             Owned);
+}
+
+std::optional<UtilityOwnedSwapOperations>
+approvedUtilityNativeArrayOwnedSwap(const State &S, const SourceManager &SM,
+                                    const FunctionDecl *Function, QualType Type,
+                                    const ASTContext &Context) {
+  if (!Context.getAsConstantArrayType(Type))
+    return std::nullopt;
+  std::optional<UtilityOwnedSwapOperations> Selected;
+  if (!approvedUtilityNativeArrayAssociatedSwap(S, SM, Function, Type, Context,
+                                                0, &Selected))
+    return std::nullopt;
+  return Selected;
 }
 
 std::optional<UtilityOwnedSwapOperations>
@@ -27976,6 +27995,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             approvedUtilityNativeArrayAssociatedSwap(
                 S, SM, Function, Left->getPointeeType(), Context))))
         return UtilityOperation::NativeArraySwap;
+      if (!Element.isNull() && Element->isRecordType() &&
+          approvedUtilityNativeArrayOwnedSwap(S, SM, Function,
+                                              Left->getPointeeType(), Context))
+        return UtilityOperation::NativeOwnedArraySwap;
       if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
                                    Context))
         return UtilityOperation::OwnedSwap;
