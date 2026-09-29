@@ -2903,6 +2903,13 @@ arguments are evaluated once, and the original destination pointer is returned.
 The caller supplies the requested destination space, readable source bytes
 through the first NUL or count, and nonoverlapping ranges.
 
+The exact `std::strcat(char *, const char *)` call finds the first destination
+NUL and writes the source string there, including its terminating NUL. It
+returns the original destination pointer and evaluates both arguments once.
+The caller supplies a zero-terminated destination with enough remaining space,
+a zero-terminated source, and nonoverlapping ranges. No runtime libc call is
+emitted.
+
 The exact `std::memcpy(void *, const void *, std::size_t)`,
 `std::memmove(void *, const void *, std::size_t)` and
 `std::memset(void *, int, std::size_t)` calls write bytes directly and return
@@ -2915,7 +2922,7 @@ ranges and, for `memcpy`, nonoverlapping ranges. No runtime libc memory call is 
 
 Only the `std::` names introduced by the pinned header are admitted. Global
 `::strlen`, `::strspn`, `::strcspn`, `::strcmp`, `::memchr`, `::strchr`,
-`::strrchr`, `::strpbrk`, `::strstr`, `::strcpy`, `::strncpy`, other
+`::strrchr`, `::strpbrk`, `::strstr`, `::strcpy`, `::strncpy`, `::strcat`, other
 `<cstring>` functions, quoted or shadow headers, and function addresses remain
 outside this boundary.
 The caller supplies zero-terminated strings where a scan depends on NUL and

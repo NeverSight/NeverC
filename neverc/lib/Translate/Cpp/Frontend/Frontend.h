@@ -643,6 +643,7 @@ enum class UtilityOperation {
   CStringSubstringFind,
   CStringCopy,
   CStringCopyN,
+  CStringConcat,
   CStringMemoryCopy,
   CStringMemoryMove,
   CStringMemorySet,

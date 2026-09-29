@@ -3024,6 +3024,47 @@ class FunctionLowering {
       label(End, L);
       return Destination;
     }
+    case UtilityOperation::CStringConcat: {
+      const auto DestinationType = type(Call->getType(), L);
+      const auto SourceType = type(Call->getArg(1)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Destination = snapshot(expression(Call->getArg(0)), L);
+      auto Source = snapshot(expression(Call->getArg(1)), L);
+      auto Cursor = snapshot(json::Object(Destination), L);
+      const auto FindEnd = labelName(), AdvanceDestination = labelName();
+      const auto Copy = labelName(), AdvanceBoth = labelName();
+      const auto End = labelName();
+      jump(FindEnd, L);
+      label(FindEnd, L);
+      auto DestinationByte = snapshot(dereference(json::Object(Cursor), L), L);
+      branch(binary("==", cast(json::Object(DestinationByte), "u8", L),
+                    quantity(0, "u8", L), "bool", L),
+             Copy, AdvanceDestination, L);
+      label(AdvanceDestination, L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    DestinationType, L),
+             L);
+      jump(FindEnd, L);
+      label(Copy, L);
+      auto Byte = snapshot(dereference(json::Object(Source), L), L);
+      assign(dereference(json::Object(Cursor), L), json::Object(Byte), L);
+      branch(binary("==", cast(json::Object(Byte), "u8", L),
+                    quantity(0, "u8", L), "bool", L),
+             End, AdvanceBoth, L);
+      label(AdvanceBoth, L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    DestinationType, L),
+             L);
+      assign(Source,
+             binary("+", json::Object(Source), quantity(1, DifferenceType, L),
+                    SourceType, L),
+             L);
+      jump(Copy, L);
+      label(End, L);
+      return Destination;
+    }
     case UtilityOperation::CStringMemoryCopy:
     case UtilityOperation::CStringMemoryMove:
     case UtilityOperation::CStringMemorySet: {
