@@ -186,10 +186,12 @@ pinned libc++ declaration and must be called directly; function addresses and
 forged declarations are rejected. Direct `std::swap` of function pointers also
 uses the pinned generic overload after checking its instantiated move calls;
 qualified calls retain that overload even when the callback signature has an
-associated user swap. Same-type callback-pointer `std::exchange` checks the
-selected pinned move and forward calls before returning the old pointer; both
-lvalue and rvalue replacements are supported. Source specializations remain
-rejected. The pinned fixed-size C array overload of `std::swap` supports mutable
+associated user swap. Callback-pointer `std::exchange` checks the selected
+pinned move and forward calls before returning the old pointer. It accepts
+same-type lvalue and rvalue replacements, `nullptr`, and mutable `nullptr_t`
+lvalues with the selected null-to-pointer conversion. Source specializations
+remain rejected.
+The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested
 pointer and fixed-array layers. Enum leaves and pointers that reach an enum or

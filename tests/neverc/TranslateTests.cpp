@@ -26074,7 +26074,18 @@ int main() {
     return 3;
   N::Callback left = N::one, right = N::two;
   N::Callback saved = std::exchange(left, right);
-  return saved(N::Arg{5}) == 6 && left(N::Arg{5}) == 7 ? 0 : 4;
+  if (saved(N::Arg{5}) != 6 || left(N::Arg{5}) != 7)
+    return 4;
+  Callback cleared = std::exchange(first, nullptr);
+  if (cleared(5) != 6 || first != nullptr)
+    return 5;
+  first = two;
+  decltype(nullptr) empty = nullptr;
+  Callback cleared_again = std::exchange(first, empty);
+  if (cleared_again(5) != 7 || first != nullptr)
+    return 6;
+  N::Callback nested_old = std::exchange(left, nullptr);
+  return nested_old(N::Arg{5}) == 7 && left == nullptr ? 0 : 7;
 }
 )cpp");
   auto Result =
@@ -26626,6 +26637,17 @@ template<> Callback& forward<Callback&>(Callback& value) noexcept {
 }
 } }
 int f() { Callback a = one, b = two; return std::exchange(a, b) == one; }
+)cpp",
+       "TR0201"},
+      {"callback-null-exchange-forward-specialization",
+       R"cpp(#include <utility>
+int one(int value) { return value + 1; }
+using Callback = int (*)(int);
+namespace std { inline namespace __1 {
+template<> decltype(nullptr)&& forward<decltype(nullptr)>(decltype(nullptr)& value)
+    noexcept { return static_cast<decltype(nullptr)&&>(value); }
+} }
+int f() { Callback slot = one; return std::exchange(slot, nullptr) == one; }
 )cpp",
        "TR0201"},
       {"record-pair-comparison",

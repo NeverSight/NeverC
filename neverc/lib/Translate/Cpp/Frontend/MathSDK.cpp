@@ -13929,12 +13929,19 @@ static bool approvedUtilityCallbackExchange(const State &S,
       !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference))
     return false;
   const auto Replacement = Arguments->get(1).getAsType();
-  if (!Context.hasSameType(Replacement, Type) &&
-      !Context.hasSameType(Replacement, Reference))
+  if (Replacement->isRValueReferenceType())
     return false;
-  const auto ReplacementReference = Context.hasSameType(Replacement, Reference)
-                                        ? Reference
-                                        : Context.getRValueReferenceType(Type);
+  const auto ReplacementType = Replacement->isLValueReferenceType()
+                                   ? Replacement->getPointeeType()
+                                   : Replacement;
+  if (ReplacementType.hasQualifiers() ||
+      (!Context.hasSameType(ReplacementType, Type) &&
+       !ReplacementType->isNullPtrType()))
+    return false;
+  const auto ReplacementReference =
+      Replacement->isLValueReferenceType()
+          ? Context.getLValueReferenceType(ReplacementType)
+          : Context.getRValueReferenceType(ReplacementType);
   if (!Context.hasSameType(Function->getParamDecl(1)->getType(),
                            ReplacementReference))
     return false;
@@ -13953,6 +13960,10 @@ static bool approvedUtilityCallbackExchange(const State &S,
       Assignment ? dyn_cast_or_null<CallExpr>(
                        functionalInvokeStrippedExpression(Assignment->getRHS()))
                  : nullptr;
+  const auto *NullConversion =
+      Assignment && ReplacementType->isNullPtrType()
+          ? dyn_cast<ImplicitCastExpr>(Assignment->getRHS())
+          : nullptr;
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
   const auto *Returned =
       Return ? dyn_cast_or_null<DeclRefExpr>(
@@ -13964,8 +13975,13 @@ static bool approvedUtilityCallbackExchange(const State &S,
          Assignment && Assignment->getOpcode() == BO_Assign &&
          functionalInvokeParameterReference(Assignment->getLHS(),
                                             Function->getParamDecl(0)) &&
+         (!ReplacementType->isNullPtrType() ||
+          (NullConversion &&
+           NullConversion->getCastKind() == CK_NullToPointer &&
+           Context.hasSameType(NullConversion->getType(), Type))) &&
          utilitySwapPointerAdapter(S, SM, Forward, Function->getParamDecl(1),
-                                   Type, Replacement, true, Context) &&
+                                   ReplacementType, Replacement, true,
+                                   Context) &&
          Returned && Returned->getDecl() == Old;
 }
 
@@ -28003,8 +28019,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((utilityScalar(Context, Object->getPointeeType()) &&
           utilityScalar(Context, Value->getPointeeType())) ||
          (Object->getPointeeType()->isFunctionPointerType() &&
-          Context.hasSameType(Object->getPointeeType(),
-                              Value->getPointeeType()) &&
+          (Context.hasSameType(Object->getPointeeType(),
+                               Value->getPointeeType()) ||
+           Value->getPointeeType()->isNullPtrType()) &&
           approvedUtilityCallbackExchange(
               S, SM, Function, Object->getPointeeType(), Context))) &&
         Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&
