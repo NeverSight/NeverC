@@ -27352,6 +27352,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         CallbackFirst && AlgorithmCallbackRangeParameter(1) && CallbackSecond &&
         utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
                                     (*CallbackSecond)->getPointeeType());
+    const unsigned PredicateIndex = Call->getNumArgs() == 5 ? 4 : 3;
+    const bool CallbackPredicate =
+        CallbackDefault && Call->getNumArgs() >= 4 &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(PredicateIndex, 0, 0) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(PredicateIndex, 0, 2);
     const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
     const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
     const bool RecordDefault =
@@ -27382,6 +27387,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (ScalarFirst && ScalarLast && ScalarSecond &&
           AlgorithmRangeBinaryPredicateParameter(3, 0, 2))
         return UtilityOperation::AlgorithmIsPermutation;
+      if (CallbackPredicate)
+        return UtilityOperation::AlgorithmIsPermutation;
     }
     if (Call->getNumArgs() == 5 && AlgorithmRecordRangeParameter(0) &&
         AlgorithmRecordRangeParameter(1) && AlgorithmRecordRangeParameter(2) &&
@@ -27399,6 +27406,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()) &&
         AlgorithmRangeBinaryPredicateParameter(4, 0, 2))
+      return UtilityOperation::AlgorithmIsPermutation;
+    if (Call->getNumArgs() == 5 && CallbackPredicate &&
+        AlgorithmCallbackRangeParameter(3) &&
+        Same(Function->getParamDecl(2)->getType(),
+             Function->getParamDecl(3)->getType()))
       return UtilityOperation::AlgorithmIsPermutation;
   }
   const bool UnaryPredicateQuery =

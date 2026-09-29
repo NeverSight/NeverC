@@ -2111,6 +2111,12 @@ wrapped ranges of one exact trivial source-record type when their checked
 predicate is `bool(const Record&, const Record&)`. The callback receives the
 original elements for comparisons within the first range and against the
 second range. Unequal bounded lengths and empty ranges invoke no callback.
+These predicate forms also accept independent const or mutable raw or
+authenticated wrapped ranges of one exact function-pointer element type,
+including `noexcept` pointers. Their predicate takes two values of that type
+by value and returns `bool`. It counts equivalence-class multiplicities
+without invoking the pointed-to functions; unequal bounded lengths and empty
+ranges make no predicate calls.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept raw scalar

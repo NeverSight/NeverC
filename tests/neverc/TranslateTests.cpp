@@ -59192,6 +59192,131 @@ TEST_F(TranslateTest, CoreV2CallbackBoundQueriesRejectInvalidForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackIsPermutationPredicateRuns) {
+  const auto Source = tmpFile("callback-is-permutation-predicate.cpp");
+  const auto Output = tmpFile("callback-is-permutation-predicate.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int a(int x) { ++calls; return x + 1; }
+int b(int x) { ++calls; return x + 2; }
+int c(int x) { ++calls; return x + 3; }
+int d(int x) { ++calls; return x + 4; }
+int e(int x) { ++calls; return x + 5; }
+int f(int x) { ++calls; return x + 6; }
+int quiet(int x) noexcept { ++calls; return x + 7; }
+int silent(int x) noexcept { ++calls; return x + 8; }
+int rank(Callback value) {
+  return value == a || value == b ? 1 : value == c || value == d ? 2 :
+         value == e ? 3 : 4;
+}
+bool same(Callback left, Callback right) {
+  ++checks;
+  return rank(left) == rank(right);
+}
+bool safe_same(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return left == right;
+}
+int main() {
+  const std::array<Callback, 5> first{{a, b, c, c, e}};
+  const Callback second[]{c, a, d, b, e};
+  int first_effects = 0, last_effects = 0;
+  int second_effects = 0, predicate_effects = 0;
+  if (!std::is_permutation((++first_effects, first.cbegin()),
+                           (++last_effects, first.cend()),
+                           (++second_effects, second),
+                           (++predicate_effects, same)) ||
+      first_effects != 1 || last_effects != 1 || second_effects != 1 ||
+      predicate_effects != 1 || checks == 0 || calls != 0)
+    return 1;
+  const std::array<Callback, 5> wrapped_second{{c, a, d, b, e}};
+  checks = 0;
+  if (!std::is_permutation(first.cbegin(), first.cend(),
+                           wrapped_second.cbegin(), wrapped_second.cend(),
+                           same) ||
+      checks == 0 || calls != 0)
+    return 2;
+  const Callback different[]{c, a, d, b, f};
+  checks = 0;
+  if (std::is_permutation(first.cbegin(), first.cend(), different,
+                          different + 5, same) ||
+      checks == 0 || calls != 0)
+    return 3;
+  checks = 0;
+  if (std::is_permutation(first.cbegin(), first.cend(), second,
+                          second + 4, same) ||
+      checks != 0 || calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 3> safe_first{{quiet, silent, quiet}};
+  const NoexceptCallback safe_second[]{silent, quiet, quiet};
+  checks = 0;
+  if (!std::is_permutation(safe_first.cbegin(), safe_first.cend(),
+                           safe_second, safe_second + 3, safe_same) ||
+      checks == 0 || calls != 0)
+    return 5;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  if (!std::is_permutation(empty.cbegin(), empty.cend(), empty.cbegin(),
+                           empty.cend(), same) ||
+      !std::is_permutation(empty.cbegin(), empty.cend(), second, same) ||
+      checks != 0 || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-is-permutation-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackIsPermutationRejectsInvalidPredicates) {
+  const struct {
+    const char *Name;
+    const char *Predicate;
+  } Cases[] = {
+      {"non-bool-result",
+       "int same(Callback left, Callback right) { return left == right; }"},
+      {"reference-parameters",
+       "bool same(const Callback &left, const Callback &right) { "
+       "return left == right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-is-permutation-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-is-permutation-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Predicate +
+                  "\nint main() { const Callback first[]{one, two}; "
+                  "const Callback second[]{two, one}; "
+                  "return std::is_permutation(first, first + 2, second, "
+                  "second + 2, same) ? 0 : 1; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
