@@ -27257,6 +27257,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/all_of.h" && Name == "all_of") ||
       (Origin->Path == "__algorithm/any_of.h" && Name == "any_of") ||
       (Origin->Path == "__algorithm/none_of.h" && Name == "none_of");
+  bool CallbackUnaryQuery = false;
+  if (UnaryPredicateQuery && Call->getNumArgs() == 3) {
+    const auto First = AlgorithmCallbackRangeParameter(0);
+    const auto *Predicate = AlgorithmCallbackPrototype(2);
+    CallbackUnaryQuery =
+        First && AlgorithmCallbackRangeParameter(1) && Predicate &&
+        Predicate->getNumParams() == 1 &&
+        Predicate->getReturnType()->isBooleanType() &&
+        utilityCallbackEqualityType(Context, (*First)->getPointeeType(),
+                                    Predicate->getParamType(0));
+  }
   if (UnaryPredicateQuery && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
@@ -27265,7 +27276,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeUnaryPredicateParameter(2, 0)) ||
        (AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
-        AlgorithmRecordRangeUnaryPredicateParameter(2, 0))) &&
+        AlgorithmRecordRangeUnaryPredicateParameter(2, 0)) ||
+       CallbackUnaryQuery) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Name == "find_if" &&
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))

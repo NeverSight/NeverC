@@ -57443,6 +57443,89 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPredicateQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-predicate-queries.cpp");
+  const auto Output = tmpFile("callback-predicate-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int quiet(int x) noexcept { ++calls; return x + 3; }
+bool is_one(Callback value) { ++checks; return value == one; }
+bool is_quiet(NoexceptCallback value) { ++checks; return value == quiet; }
+int main() {
+  const std::array<Callback, 4> values{{nullptr, one, two, one}};
+  int bounds = 0, predicates = 0;
+  auto first = std::find_if((++bounds, values.cbegin()), values.cend(),
+                            (++predicates, is_one));
+  if (first != values.cbegin() + 1 || bounds != 1 || predicates != 1 ||
+      checks != 2 || calls != 0)
+    return 1;
+  checks = 0;
+  if (std::find_if_not(values.cbegin() + 1, values.cend(), is_one) !=
+          values.cbegin() + 2 ||
+      checks != 2 || calls != 0)
+    return 2;
+  checks = 0;
+  if (std::count_if(values.cbegin(), values.cend(), is_one) != 2 ||
+      checks != 4 || calls != 0)
+    return 3;
+  checks = 0;
+  if (std::all_of(values.cbegin() + 1, values.cend(), is_one) ||
+      checks != 2 || calls != 0)
+    return 4;
+  checks = 0;
+  if (!std::any_of(values.cbegin(), values.cend(), is_one) ||
+      checks != 2 || calls != 0)
+    return 5;
+  checks = 0;
+  if (!std::none_of(values.cbegin(), values.cbegin() + 1, is_one) ||
+      checks != 1 || calls != 0)
+    return 6;
+  checks = 0;
+  if (std::none_of(values.cbegin(), values.cend(), is_one) ||
+      checks != 2 || calls != 0)
+    return 7;
+  checks = 0;
+  if (std::find_if(values.cbegin(), values.cbegin(), is_one) != values.cbegin() ||
+      std::count_if(values.cbegin(), values.cbegin(), is_one) != 0 ||
+      !std::all_of(values.cbegin(), values.cbegin(), is_one) ||
+      std::any_of(values.cbegin(), values.cbegin(), is_one) ||
+      !std::none_of(values.cbegin(), values.cbegin(), is_one) ||
+      checks != 0 || calls != 0)
+    return 8;
+  const Callback raw[]{one, two};
+  checks = 0;
+  if (std::find_if(raw, raw + 2, is_one) != raw || checks != 1 || calls != 0)
+    return 9;
+  const std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  checks = 0;
+  if (std::count_if(safe.cbegin(), safe.cend(), is_quiet) != 2 ||
+      checks != 3 || calls != 0)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-predicate-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackIsPermutationRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-is-permutation.cpp");
   const auto Output = tmpFile("callback-is-permutation.nc");

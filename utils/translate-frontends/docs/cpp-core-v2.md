@@ -2126,6 +2126,11 @@ first decisive result; `count_if` visits the whole range and returns the target
 Empty ranges preserve the standard `all_of`/`none_of` true and
 `any_of` false identities without invoking the predicate. Reference parameters,
 non-boolean results and callable objects stay outside this boundary.
+These six queries also accept raw or authenticated wrapped ranges of one exact
+function-pointer element type, including `noexcept` pointers, when the checked
+predicate takes that same pointer type by value and returns `bool`. Each
+inspected element is passed as a pointer value without calling its function;
+the usual stopping points, empty-range identities and iterator results apply.
 
 The exact `std::copy_if`, `std::remove_if`, `std::remove_copy_if`,
 `std::replace_if` and `std::replace_copy_if` templates use the same checked
