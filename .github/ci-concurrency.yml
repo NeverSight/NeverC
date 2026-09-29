@@ -9,6 +9,8 @@
 #   (unset)                       same as true
 #
 # build-gki-kernels.yml is excluded: manual multi-hour jobs keep cancel disabled.
+# cancel-closed-pr-runs.yml groups by PR: its pull_request_target runs all share
+# the base ref. It cancels a closed PR's runs regardless of this variable.
 
 group: ${{ github.workflow }}-${{ github.ref }}
 cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}

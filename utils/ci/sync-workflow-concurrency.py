@@ -44,6 +44,8 @@ CUSTOM_GROUP = {
     "network-protocol-fuzz.yml": "network-protocol-fuzz-${{ github.ref }}",
     "tls-protocol-fuzz.yml": "tls-protocol-fuzz-${{ github.ref }}",
     "merge-fuzz.yml": "merge-fuzz-${{ github.ref }}",
+    # A runtime-only replay of an earlier static run must not cancel full runs.
+    "vbs-enclave.yml": "${{ github.workflow }}-${{ github.ref }}-${{ inputs.static_run_id || 'full' }}",
 }
 
 AUTOMATIC_EVENTS = {"push", "pull_request", "pull_request_target", "schedule"}

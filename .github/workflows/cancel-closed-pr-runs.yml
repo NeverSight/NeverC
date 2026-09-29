@@ -1,0 +1,74 @@
+name: Cancel Closed Pull Request Runs
+
+# Per-ref concurrency only cancels a run when a newer commit arrives, so a
+# merged or closed PR would keep its last runs queued or running after dev has
+# moved on. pull_request_target gives fork PRs the same write token; this
+# workflow never checks out or executes pull-request code.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+# Every pull_request_target run shares the base ref, so the shared per-ref block
+# would let one PR's cleanup cancel another's. Group by PR instead.
+concurrency:
+  group: cancel-closed-pr-runs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cancel:
+    name: Cancel the closed pull request's runs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      # Branch names are untrusted input; they only reach gh through env.
+      - name: Cancel queued and running pull-request runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          SELF_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # A reopened PR has live runs again; leave them alone.
+          state=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq .state)
+          if [ "$state" != closed ]; then
+            echo "PR #$PR_NUMBER is $state again; nothing to cancel."
+            exit 0
+          fi
+          # Workflows also run on pushes to every branch. Once the PR is merged,
+          # the base branch supersedes the head branch's run for the merged
+          # commit; a later push to that branch starts its own run and is kept.
+          # Default-setup CodeQL runs are keyed by the pull ref.
+          ids=$(
+            gh api --paginate -X GET "repos/$GH_REPO/actions/runs" \
+              -f branch="$HEAD_REF" -f per_page=100 \
+              --jq '.workflow_runs[] | select(.status != "completed"
+                and .head_repository.full_name == env.HEAD_REPO
+                and (.event == "pull_request" or (.event == "push"
+                  and env.MERGED == "true" and .head_sha == env.HEAD_SHA))) | .id'
+            gh api --paginate -X GET "repos/$GH_REPO/actions/runs" \
+              -f branch="refs/pull/$PR_NUMBER/head" -f per_page=100 \
+              --jq '.workflow_runs[] | select(.status != "completed") | .id'
+          )
+          failed=0
+          for id in $ids; do
+            [ "$id" = "$SELF_RUN_ID" ] && continue
+            if gh api -X POST "repos/$GH_REPO/actions/runs/$id/cancel" --silent; then
+              echo "Cancelled run $id"
+            elif [ "$(gh api "repos/$GH_REPO/actions/runs/$id" --jq .status)" = completed ]; then
+              echo "Run $id completed before it could be cancelled"
+            else
+              echo "::error::Could not cancel run $id"
+              failed=1
+            fi
+          done
+          exit "$failed"
