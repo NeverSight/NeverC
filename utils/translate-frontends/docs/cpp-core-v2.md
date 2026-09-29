@@ -2656,6 +2656,14 @@ The checked `bool(const Record&, const Record&)` comparator also accepts those
 writable trivial records, preserving stable ordering without requiring
 `operator<`.
 
+The checked comparator overload of `std::inplace_merge` also accepts writable
+raw or authenticated wrapped ranges of one exact function-pointer element
+type, including `noexcept` pointers. The comparator takes two pointer values
+by value and returns `bool`. Distinct pointer values that compare equivalent
+retain their original order across both sorted halves. Iterator and
+comparator arguments are evaluated once; an empty half makes no comparisons,
+and the pointed-to functions are not invoked.
+
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic, enum or complete
 object-pointer element boundary. They

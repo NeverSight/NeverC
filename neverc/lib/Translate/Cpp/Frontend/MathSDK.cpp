@@ -27056,6 +27056,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(2)->getType()) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 4 && CallbackFirst &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeParameter(2) &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(3, 0, 0);
     const auto ScalarFirst = AlgorithmRangePointerParameter(0);
     const auto ScalarMiddle = AlgorithmRangePointerParameter(1);
     const auto ScalarLast = AlgorithmRangePointerParameter(2);
@@ -27076,7 +27083,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmWritableRecordRangeParameter(1) &&
         AlgorithmWritableRecordRangeParameter(2) &&
         AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0);
-    if (Scalar || RecordDefault || RecordComparator)
+    if (Scalar || RecordDefault || RecordComparator || CallbackComparator)
       return UtilityOperation::AlgorithmInplaceMerge;
   }
   if (Origin->Path == "__algorithm/partial_sort.h" && Name == "partial_sort" &&

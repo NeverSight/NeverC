@@ -57928,6 +57928,128 @@ TEST_F(TranslateTest, CoreV2CallbackStableSortRejectsUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackInplaceMergeRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-inplace-merge.cpp");
+  const auto Output = tmpFile("callback-inplace-merge.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int four(int x) { ++calls; return x + 4; }
+int five(int x) { ++calls; return x + 5; }
+int six(int x) { ++calls; return x + 6; }
+int quiet(int x) noexcept { ++calls; return x + 7; }
+int silent(int x) noexcept { ++calls; return x + 8; }
+int muted(int x) noexcept { ++calls; return x + 9; }
+bool high(Callback value) {
+  return value == four || value == five || value == six;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return high(left) < high(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return high(left) > high(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == silent) < (right == silent);
+}
+int main() {
+  std::array<Callback, 8> values{{one, two, four, five,
+                                  three, one, six, four}};
+  int firstEffects = 0, middleEffects = 0, lastEffects = 0;
+  int comparatorEffects = 0;
+  std::inplace_merge((++firstEffects, values.begin()),
+                     (++middleEffects, values.begin() + 4),
+                     (++lastEffects, values.end()),
+                     (++comparatorEffects, before));
+  if (firstEffects != 1 || middleEffects != 1 || lastEffects != 1 ||
+      comparatorEffects != 1 || checks == 0 || calls != 0 ||
+      values[0] != one || values[1] != two || values[2] != three ||
+      values[3] != one || values[4] != four || values[5] != five ||
+      values[6] != six || values[7] != four)
+    return 1;
+  Callback raw[]{four, five, one, two, six, four, three, one};
+  checks = 0;
+  std::inplace_merge(raw, raw + 4, raw + 8, after);
+  if (checks == 0 || calls != 0 || raw[0] != four || raw[1] != five ||
+      raw[2] != six || raw[3] != four || raw[4] != one ||
+      raw[5] != two || raw[6] != three || raw[7] != one)
+    return 2;
+  std::array<NoexceptCallback, 5> safe{{quiet, muted, silent,
+                                         quiet, silent}};
+  checks = 0;
+  std::inplace_merge(safe.begin(), safe.begin() + 3,
+                     safe.end(), safe_before);
+  if (checks == 0 || calls != 0 || safe[0] != quiet ||
+      safe[1] != muted || safe[2] != quiet ||
+      safe[3] != silent || safe[4] != silent)
+    return 3;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  checks = 0;
+  std::inplace_merge(empty.begin(), empty.begin(), empty.end(), before);
+  std::inplace_merge(single.begin(), single.begin(), single.end(), before);
+  std::inplace_merge(single.begin(), single.end(), single.end(), before);
+  if (single[0] != one || checks != 0 || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-inplace-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackInplaceMergeRejectsUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-inplace-merge-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-inplace-merge-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Comparator +
+                  "\nint main() { Callback values[]{two, one}; "
+                  "std::inplace_merge(values, values + 1, values + 2, before); "
+                  "return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
