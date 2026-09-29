@@ -26076,6 +26076,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto Input = AlgorithmRangePointerParameter(0);
+    const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
+    if (Call->getNumArgs() == 2 && CallbackInput &&
+        AlgorithmCallbackRangeParameter(1) &&
+        !(*CallbackInput)->getPointeeType().isConstQualified())
+      return UtilityOperation::AlgorithmUnique;
     if (Call->getNumArgs() == 2 && AlgorithmWritableRecordRangeParameter(0) &&
         AlgorithmRecordEqualityRangeParameter(0) &&
         AlgorithmRecordEqualityRangeParameter(1))

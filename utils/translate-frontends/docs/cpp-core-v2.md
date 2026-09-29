@@ -1849,6 +1849,11 @@ authenticated writable wrapped scalar ranges, with `unique_copy` accepting
 independent raw or wrapped inputs and writable outputs. Both return the
 matching iterator type, preserve empty and single-element behavior, and apply
 their existing checked equality, predicate and output conversion rules.
+Default `std::unique` also accepts writable raw or authenticated wrapped ranges
+of one exact function-pointer element type, including `noexcept` pointers. It
+compacts adjacent equal pointer values without invoking their functions and
+returns the original raw or wrapped iterator type. Empty and single-element
+ranges retain their usual end position.
 The value-based `remove`, `remove_copy`, `replace` and `replace_copy` forms
 also admit authenticated wrapped scalar ranges. Copying forms accept mixed raw
 and wrapped inputs or writable outputs, and returned positions keep the public

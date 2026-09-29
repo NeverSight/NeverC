@@ -57235,6 +57235,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackUniqueRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-unique.cpp");
+  const auto Output = tmpFile("callback-unique.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  std::array<Callback, 8> values{{one, one, nullptr, nullptr,
+                                  two, one, one, three}};
+  int firstEffects = 0, lastEffects = 0;
+  auto end = std::unique((++firstEffects, values.begin()),
+                         (++lastEffects, values.end()));
+  if (end != values.begin() + 5 || firstEffects != 1 || lastEffects != 1 ||
+      values[0] != one || values[1] != nullptr || values[2] != two ||
+      values[3] != one || values[4] != three || calls != 0)
+    return 1;
+  Callback raw[]{nullptr, nullptr, one, one, two};
+  if (std::unique(raw, raw + 5) != raw + 3 || raw[0] != nullptr ||
+      raw[1] != one || raw[2] != two || calls != 0)
+    return 2;
+  std::array<NoexceptCallback, 5> safe{{quiet, quiet, nullptr, nullptr, quiet}};
+  if (std::unique(safe.begin(), safe.end()) != safe.begin() + 3 ||
+      safe[0] != quiet || safe[1] != nullptr || safe[2] != quiet ||
+      calls != 0)
+    return 3;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  if (std::unique(empty.begin(), empty.end()) != empty.end() ||
+      std::unique(single.begin(), single.end()) != single.end() ||
+      single[0] != one || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-unique" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
