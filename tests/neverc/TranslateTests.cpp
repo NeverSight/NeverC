@@ -57702,6 +57702,73 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPartitionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-partition.cpp");
+  const auto Output = tmpFile("callback-partition.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int quiet(int x) noexcept { ++calls; return x + 3; }
+bool is_one(Callback value) { ++checks; return value == one; }
+bool is_quiet(NoexceptCallback value) { ++checks; return value == quiet; }
+int main() {
+  std::array<Callback, 5> values{{nullptr, one, two, one, nullptr}};
+  int firstEffects = 0, lastEffects = 0, predicateEffects = 0;
+  auto point = std::partition((++firstEffects, values.begin()),
+                               (++lastEffects, values.end()),
+                               (++predicateEffects, is_one));
+  if (firstEffects != 1 || lastEffects != 1 || predicateEffects != 1 ||
+      point != values.begin() + 2 || values[0] != one || values[1] != one ||
+      checks != 5 || calls != 0)
+    return 1;
+  int nulls = 0, twos = 0;
+  for (auto current = point; current != values.end(); ++current) {
+    nulls += *current == nullptr;
+    twos += *current == two;
+  }
+  if (nulls != 2 || twos != 1)
+    return 2;
+  Callback all[]{one, one};
+  Callback none[]{nullptr, two};
+  checks = 0;
+  if (std::partition(all, all + 2, is_one) != all + 2 ||
+      std::partition(none, none + 2, is_one) != none ||
+      all[0] != one || none[0] != nullptr || checks != 4 || calls != 0)
+    return 3;
+  std::array<NoexceptCallback, 4> safe{{nullptr, quiet, nullptr, quiet}};
+  checks = 0;
+  auto safePoint = std::partition(safe.begin(), safe.end(), is_quiet);
+  if (safePoint != safe.begin() + 2 || safe[0] != quiet || safe[1] != quiet ||
+      safe[2] != nullptr || safe[3] != nullptr || checks != 4 || calls != 0)
+    return 4;
+  std::array<Callback, 0> empty{};
+  checks = 0;
+  if (std::partition(empty.begin(), empty.end(), is_one) != empty.end() ||
+      checks != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-partition" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackPartitionQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-partition-queries.cpp");
   const auto Output = tmpFile("callback-partition-queries.nc");

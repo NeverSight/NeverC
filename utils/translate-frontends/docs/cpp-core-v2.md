@@ -2199,6 +2199,11 @@ that pointer type by value. They pass pointer values without invoking the
 pointed-to functions. `partition_point` requires an already partitioned range
 and returns the original raw or wrapped iterator form; both operations skip
 predicate calls on empty ranges.
+`std::partition` also accepts writable raw or authenticated wrapped ranges of
+one exact function-pointer element type with the same checked by-value `bool`
+predicate. It swaps pointer values without invoking their functions, returns
+the original raw or wrapped boundary iterator, and does not promise order
+within either partition. Empty ranges make no predicate calls or writes.
 
 The exact `std::for_each`, `std::for_each_n`, unary and binary
 `std::transform`, `std::generate` and `std::generate_n` templates accept checked
