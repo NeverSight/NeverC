@@ -56033,6 +56033,69 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackEqualRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-equal.cpp");
+  const auto Output = tmpFile("callback-equal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 4> left{{one, nullptr, two, one}};
+  std::array<Callback, 4> right{{one, nullptr, two, one}};
+  int firstEffects = 0, lastEffects = 0, secondEffects = 0;
+  if (!std::equal((++firstEffects, left.begin()),
+                  (++lastEffects, left.end()),
+                  (++secondEffects, right.begin())) ||
+      firstEffects != 1 || lastEffects != 1 || secondEffects != 1 ||
+      calls != 0)
+    return 1;
+  const auto &view = left;
+  if (!std::equal(view.cbegin(), view.cend(), right.begin(), right.end()) ||
+      calls != 0)
+    return 2;
+  right[2] = one;
+  if (std::equal(left.begin(), left.end(), right.begin()) ||
+      std::equal(view.cbegin(), view.cend(), right.begin(), right.end()))
+    return 3;
+  right[2] = two;
+  if (std::equal(view.cbegin(), view.cend(), right.begin(), right.end() - 1))
+    return 4;
+  std::array<Callback, 0> empty{};
+  if (!std::equal(empty.begin(), empty.end(), right.begin()) ||
+      !std::equal(empty.begin(), empty.end(), empty.begin(), empty.end()) ||
+      std::equal(empty.begin(), empty.end(), right.begin(), right.end()))
+    return 5;
+  std::array<NoexceptCallback, 2> safeLeft{{safe, nullptr}};
+  std::array<NoexceptCallback, 2> safeRight{{safe, nullptr}};
+  if (!std::equal(safeLeft.begin(), safeLeft.end(), safeRight.begin()) ||
+      !std::equal(safeLeft.begin(), safeLeft.end(), safeRight.begin(),
+                  safeRight.end()) ||
+      calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-equal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordEqualRun) {
   const auto Source = tmpFile("source-record-equal.cpp");
   const auto Output = tmpFile("source-record-equal.nc");

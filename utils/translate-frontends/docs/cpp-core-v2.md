@@ -1866,6 +1866,12 @@ original element addresses in input order. Bounded forms check their two
 random-access lengths before invoking the callback, as the pinned libc++
 implementation does.
 
+The default three- and four-iterator `std::equal` forms also compare raw or
+authenticated wrapped ranges of the same function-pointer element type,
+including `noexcept` pointers. Const range elements are accepted. They compare
+pointer values without calling the functions; mixed callback signatures and
+function-pointer predicates for these ranges remain outside this boundary.
+
 The three- and four-iterator `std::equal` overloads also accept those wrapped
 ranges on either side, including a wrapped range compared with a raw scalar
 pointer range. Default equality retains the checked common scalar type and

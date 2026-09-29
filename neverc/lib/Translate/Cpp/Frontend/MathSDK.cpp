@@ -23820,6 +23820,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Wrapped->IteratorType;
     return std::nullopt;
   };
+  auto AlgorithmCallbackRangeParameter =
+      [&](unsigned Index) -> std::optional<QualType> {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return std::nullopt;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Same(Call->getArg(Index)->getType(), Parameter))
+      return std::nullopt;
+    auto Pointer = Parameter;
+    if (!utilityObjectPointer(Context, Pointer)) {
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      if (!Wrapped)
+        return std::nullopt;
+      Pointer = Wrapped->IteratorType;
+    }
+    return utilityObjectPointer(Context, Pointer) &&
+                   utilityCallbackEqualityType(Context,
+                                               Pointer->getPointeeType(),
+                                               Pointer->getPointeeType())
+               ? std::optional<QualType>(Pointer)
+               : std::nullopt;
+  };
   auto AlgorithmRecordRangeParameter =
       [&](unsigned Index) -> std::optional<QualType> {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
@@ -25465,9 +25487,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                  Function->getParamDecl(3)->getType()))))
         return UtilityOperation::AlgorithmEqual;
     }
-    const auto First = AlgorithmRangePointerParameter(0);
-    const auto Last = AlgorithmRangePointerParameter(1);
-    const auto Second = AlgorithmRangePointerParameter(2);
+    auto First = AlgorithmRangePointerParameter(0);
+    auto Last = AlgorithmRangePointerParameter(1);
+    auto Second = AlgorithmRangePointerParameter(2);
+    if (!First)
+      First = AlgorithmCallbackRangeParameter(0);
+    if (!Last)
+      Last = AlgorithmCallbackRangeParameter(1);
+    if (!Second)
+      Second = AlgorithmCallbackRangeParameter(2);
     if (First && Last && Second) {
       const auto FirstElement = (*First)->getPointeeType();
       const auto SecondElement = (*Second)->getPointeeType();
@@ -25480,6 +25508,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                         OO_EqualEqual) &&
           utilityScalarComparisonType(Context, FirstElement, SecondElement,
                                       false).has_value();
+      const bool CallbackElements =
+          utilityCallbackEqualityType(Context, FirstElement, SecondElement)
+              .has_value();
       auto Predicate = [&](unsigned Index) {
         const auto *Prototype = AlgorithmCallbackPrototype(Index);
         return Prototype && Prototype->getNumParams() == 2 &&
@@ -25489,11 +25520,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                utilityScalarDirectConversion(Context, SecondElement,
                                              Prototype->getParamType(1));
       };
-      if (Call->getNumArgs() == 3 && DefaultElements)
+      if (Call->getNumArgs() == 3 && (DefaultElements || CallbackElements))
         return UtilityOperation::AlgorithmEqual;
       if (Call->getNumArgs() == 4) {
-        const auto SecondLast = AlgorithmRangePointerParameter(3);
-        if (DefaultElements && SecondLast &&
+        auto SecondLast = AlgorithmRangePointerParameter(3);
+        if (!SecondLast)
+          SecondLast = AlgorithmCallbackRangeParameter(3);
+        if ((DefaultElements || CallbackElements) && SecondLast &&
             Same(Function->getParamDecl(2)->getType(),
                  Function->getParamDecl(3)->getType()))
           return UtilityOperation::AlgorithmEqual;
