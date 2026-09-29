@@ -8233,14 +8233,18 @@ class FunctionLowering {
                                   json::Object(Position), PointerType, L),
                            L);
       };
-      const auto Initialize = labelName(), SelectPivot = labelName();
+      const auto CheckLength = labelName(), Initialize = labelName();
+      const auto SelectPivot = labelName();
       const auto Partition = labelName(), Classify = labelName();
       const auto CheckHigher = labelName(), MoveLow = labelName();
       const auto MoveHigh = labelName(), Equal = labelName();
       const auto Partitioned = labelName(), CheckRight = labelName();
       const auto NarrowLeft = labelName(), NarrowRight = labelName();
       const auto End = labelName();
-      branch(binary("!=", Nth, Last, "bool", L), Initialize, End, L);
+      branch(binary("!=", Nth, Last, "bool", L), CheckLength, End, L);
+      label(CheckLength, L);
+      branch(binary(">", Length, quantity(1, DifferenceType, L), "bool", L),
+             Initialize, End, L);
       label(Initialize, L);
       assign(Left, quantity(0, DifferenceType, L), L);
       assign(Right, Length, L);

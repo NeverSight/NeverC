@@ -2585,6 +2585,15 @@ Its checked comparator overload also accepts those writable trivial records
 through `bool(const Record&, const Record&)`, including comparisons with the
 retained pivot, without requiring `operator<`.
 
+The checked comparator overload of `std::nth_element` also accepts writable
+raw or authenticated wrapped ranges of one exact function-pointer element
+type, including `noexcept` pointers. The comparator takes two pointer values
+by value and returns `bool`. The selected element has its sorted rank, and
+the two sides satisfy the comparator partition without a full-order promise.
+Equivalent values terminate directly. Iterator and comparator arguments are
+evaluated once; `nth == last` and single-element ranges make no comparisons,
+and pointed-to functions are not invoked.
+
 `std::sort` also accepts authenticated `std::__wrap_iter<T*>` ranges for the
 same writable scalar element and comparison boundary. This includes mutable
 `std::vector<T>` iterators. The iterator arguments are evaluated once, then

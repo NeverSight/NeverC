@@ -58322,6 +58322,149 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackNthElementRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-nth-element.cpp");
+  const auto Output = tmpFile("callback-nth-element.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return rank(left) > rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : left == silent ? 2 : 0) <
+         (right == quiet ? 1 : right == silent ? 2 : 0);
+}
+int main() {
+  std::array<Callback, 7> values{{two, one, three, nullptr,
+                                  two, one, three}};
+  int firstEffects = 0, nthEffects = 0, lastEffects = 0;
+  int comparatorEffects = 0;
+  std::nth_element((++firstEffects, values.begin()),
+                   (++nthEffects, values.begin() + 3),
+                   (++lastEffects, values.end()),
+                   (++comparatorEffects, before));
+  if (firstEffects != 1 || nthEffects != 1 || lastEffects != 1 ||
+      comparatorEffects != 1 || checks == 0 || calls != 0 ||
+      values[3] != two)
+    return 1;
+  for (int i = 0; i < 3; ++i)
+    if (rank(values[i]) > rank(values[3]))
+      return 2;
+  for (int i = 4; i < 7; ++i)
+    if (rank(values[i]) < rank(values[3]))
+      return 3;
+  int counts[4]{};
+  for (Callback value : values)
+    ++counts[rank(value)];
+  if (counts[0] != 1 || counts[1] != 2 ||
+      counts[2] != 2 || counts[3] != 2)
+    return 4;
+  Callback raw[]{one, three, nullptr, two, three};
+  checks = 0;
+  std::nth_element(raw, raw + 2, raw + 5, after);
+  if (checks == 0 || calls != 0 || raw[2] != two)
+    return 5;
+  for (int i = 0; i < 2; ++i)
+    if (rank(raw[i]) < rank(raw[2]))
+      return 6;
+  for (int i = 3; i < 5; ++i)
+    if (rank(raw[i]) > rank(raw[2]))
+      return 7;
+  std::array<NoexceptCallback, 5> safe{{silent, quiet, nullptr,
+                                         silent, quiet}};
+  checks = 0;
+  std::nth_element(safe.begin(), safe.begin() + 2,
+                   safe.end(), safe_before);
+  if (checks == 0 || calls != 0 || safe[2] != quiet ||
+      safe[0] == silent || safe[1] == silent ||
+      safe[3] == nullptr || safe[4] == nullptr)
+    return 8;
+  std::array<Callback, 6> equivalent{{one, one, one, one, one, one}};
+  checks = 0;
+  std::nth_element(equivalent.begin(), equivalent.begin() + 3,
+                   equivalent.end(), before);
+  if (checks == 0 || calls != 0 || equivalent[3] != one)
+    return 9;
+  Callback untouched[]{three, one, two};
+  checks = 0;
+  std::nth_element(untouched, untouched + 3, untouched + 3, before);
+  if (untouched[0] != three || untouched[1] != one ||
+      untouched[2] != two || checks != 0 || calls != 0)
+    return 10;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  std::nth_element(empty.begin(), empty.end(), empty.end(), before);
+  std::nth_element(single.begin(), single.begin(), single.end(), before);
+  if (single[0] != one || checks != 0 || calls != 0)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-nth-element" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackNthElementRejectsUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-nth-element-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-nth-element-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Comparator +
+                  "\nint main() { Callback values[]{two, one}; "
+                  "std::nth_element(values, values + 1, values + 2, before); "
+                  "return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
