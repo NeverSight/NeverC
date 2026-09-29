@@ -43872,6 +43872,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmInitializerListComparatorExtremaRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-list-comparator-extrema.cpp");
+  const auto Output = tmpFile("algorithm-list-comparator-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls = 0;
+bool greater(long left, double right) {
+  ++calls;
+  return left > right;
+}
+bool less_decade(int left, int right) {
+  ++calls;
+  return left / 10 < right / 10;
+}
+int main() {
+  if (std::min({2, 5, 3}, greater) != 5 || calls != 2)
+    return 1;
+  calls = 0;
+  if (std::max({2, 5, 3}, greater) != 2 || calls != 2)
+    return 2;
+  calls = 0;
+  if (std::max({11, 12, 5}, less_decade) != 11 || calls != 2)
+    return 3;
+  calls = 0;
+  int effects = 0;
+  if (std::min({7}, (++effects, greater)) != 7 ||
+      effects != 1 || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-list-comparator-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
   struct Rejection {
     const char *Name;

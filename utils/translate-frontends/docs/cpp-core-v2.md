@@ -2188,8 +2188,12 @@ The exact one-argument `std::min(initializer_list<T>)` and
 elements. They scan the authenticated initializer-list backing array once,
 return a copy of the first equivalent minimum or maximum, and perform no
 runtime libc++ call. The source must provide a nonempty list, as required by
-these overloads. Comparator-taking and record-valued list overloads remain
-outside this boundary.
+these overloads. The two-argument list overloads also accept a checked
+Boolean function-pointer comparator with directly convertible by-value scalar
+parameters. The callback is captured once, called for each element after the
+first in the pinned comparison order, and not called for a singleton list.
+Reference-parameter callbacks and record-valued list overloads remain outside
+this boundary.
 
 The corresponding three-argument `std::min`, `std::max` and `std::minmax`,
 four-argument `std::clamp`, and three-argument `std::minmax_element` overloads

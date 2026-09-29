@@ -26131,19 +26131,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
        (Origin->Path == "__algorithm/max.h" && Name == "max")) &&
-      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
-      Call->isPRValue()) {
+      (Call->getNumArgs() == 1 || Call->getNumArgs() == 2) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue()) {
     const auto List = approvedUtilityInitializerListRecord(
         S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto *Comparator =
+        Call->getNumArgs() == 2 ? AlgorithmCallbackPrototype(1) : nullptr;
     if (List &&
         Same(Function->getParamDecl(0)->getType(),
              Context.getRecordType(List->Record)) &&
         Same(Function->getReturnType(), List->ElementType) &&
         Same(Call->getType(), List->ElementType) &&
-        utilityScalarComparisonType(Context, List->ElementType,
-                                    List->ElementType, true) &&
-        !utilityEnumHasSourceOperator(S, SM, Context, List->ElementType,
-                                      OO_Less))
+        ((Call->getNumArgs() == 1 &&
+          utilityScalarComparisonType(Context, List->ElementType,
+                                      List->ElementType, true) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, List->ElementType,
+                                        OO_Less)) ||
+         (Comparator && Comparator->getNumParams() == 2 &&
+          Comparator->getReturnType()->isBooleanType() &&
+          utilityScalarDirectConversion(Context, List->ElementType,
+                                        Comparator->getParamType(0)) &&
+          utilityScalarDirectConversion(Context, List->ElementType,
+                                        Comparator->getParamType(1)))))
       return Name == "min" ? UtilityOperation::AlgorithmMin
                            : UtilityOperation::AlgorithmMax;
   }

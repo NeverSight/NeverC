@@ -6990,12 +6990,11 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmMin:
     case UtilityOperation::AlgorithmMax: {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMin;
-      if (Call->getNumArgs() == 1) {
-        auto List = InitializerListFor(Call->getArg(0)->getType());
-        if (!List)
-          reject(L, "algorithm initializer-list extremum",
-                 "The selected std::initializer_list layout is unavailable.");
+      if (auto List = InitializerListFor(Call->getArg(0)->getType())) {
         auto Value = snapshot(expression(Call->getArg(0)), L);
+        std::optional<Expression> Comparator;
+        if (Call->getNumArgs() == 2)
+          Comparator = snapshot(expression(Call->getArg(1)), L);
         auto Candidate =
             snapshot(fieldStorage(json::Object(Value), List->Begin, L), L);
         auto Size = snapshot(fieldStorage(std::move(Value), List->Size, L), L);
@@ -7017,12 +7016,15 @@ class FunctionLowering {
             binary("!=", json::Object(Current), json::Object(End), "bool", L),
             Compare, Finish, L);
         label(Compare, L);
-        branch(binary("<",
-                      Minimum ? dereference(json::Object(Current), L)
-                              : dereference(json::Object(Candidate), L),
-                      Minimum ? dereference(json::Object(Candidate), L)
-                              : dereference(json::Object(Current), L),
-                      "bool", L),
+        auto Left = Minimum ? dereference(json::Object(Current), L)
+                            : dereference(json::Object(Candidate), L);
+        auto Right = Minimum ? dereference(json::Object(Candidate), L)
+                             : dereference(json::Object(Current), L);
+        branch(Comparator
+                   ? emitBinaryPredicate(json::Object(*Comparator),
+                                         Call->getArg(1)->getType(),
+                                         std::move(Left), std::move(Right), L)
+                   : binary("<", std::move(Left), std::move(Right), "bool", L),
                Select, Next, L);
         label(Select, L);
         assign(Candidate, json::Object(Current), L);

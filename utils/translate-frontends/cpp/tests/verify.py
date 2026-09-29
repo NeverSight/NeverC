@@ -12094,6 +12094,26 @@ extern "C" int algorithm_list_extrema() {
           'template<> int min<int>(initializer_list<int>){return 0;}}'
           'int f(){return std::min({1,2});}',
           "TR0201", profile="cpp-core-v2", sdk=True)
+    algorithm_list_comparator_source = """\
+#include <algorithm>
+extern "C" int algorithm_list_comparator(bool (*compare)(long, double)) {
+  return std::min({3, 1, 2}, compare) +
+         std::max({3, 1, 2}, compare);
+}
+"""
+    for target in sdk_targets:
+        result = check("v2-algorithm-list-comparator-" + target,
+                       algorithm_list_comparator_source,
+                       profile="cpp-core-v2", target=target, sdk=True)
+        nodes = list(walk(result["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], result
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 2, result
+    check("v2-algorithm-list-comparator-reference",
+          '#include <algorithm>\nbool compare(const int&a,const int&b)'
+          '{return a<b;}int f(){return std::min({1,2},compare);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-extrema-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}',
           profile="cpp-core-v2", sdk=True)
