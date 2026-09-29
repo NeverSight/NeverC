@@ -26237,6 +26237,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2NativeAssociatedPointerArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-associated-pointer-array-swap.cpp");
+  const auto Output = tmpFile("native-associated-pointer-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace N {
+enum class E { one, two };
+struct R { int value; };
+}
+int main() {
+  N::E one = N::E::one, two = N::E::two;
+  N::E *first[2]{&one, &two}, *second[2]{&two, &one};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0] != &two || first[1] != &one ||
+      second[0] != &one || second[1] != &two)
+    return 1;
+  N::R red{1}, blue{2};
+  const N::R *grid[2][2]{{&red, &blue}, {&blue, &red}};
+  const N::R *other[2][2]{{&blue, &red}, {&red, &blue}};
+  std::swap(grid, other);
+  if (grid[0][0] != &blue || grid[0][1] != &red ||
+      grid[1][0] != &red || grid[1][1] != &blue ||
+      other[0][0] != &red || other[1][1] != &red)
+    return 2;
+  N::R *head = &red, *tail = &blue;
+  N::R **deep_first[1]{&head}, **deep_second[1]{&tail};
+  std::swap(deep_first, deep_second);
+  return deep_first[0] == &tail && deep_second[0] == &head ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("native-associated-pointer-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26301,9 +26348,20 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "R a[1][2]{{{1},{2}}},b[1][2]{{{3},{4}}};"
        "std::swap(a,b);return a[0][0].n;}",
        "TR0203"},
-      {"pointer-array-swap",
-       "#include <utility>\nstruct R{};int f(){R *a[2]{},*b[2]{};"
+      {"adl-pointer-array-swap",
+       "#include <utility>\nnamespace N{struct R{};"
+       "void swap(R*&,R*&);}int f(){N::R *a[2]{},*b[2]{};"
        "std::swap(a,b);return a[0]==b[0];}",
+       "TR0203"},
+      {"adl-enum-pointer-array-swap",
+       "#include <utility>\nnamespace N{enum E{a,b};"
+       "void swap(E*&,E*&);}int f(){N::E *a[1]{},*b[1]{};"
+       "std::swap(a,b);return a[0]==b[0];}",
+       "TR0203"},
+      {"adl-nested-pointer-array-swap",
+       "#include <utility>\nnamespace N{struct R{};"
+       "void swap(R*&,R*&);}int f(){N::R *a[1][2]{},*b[1][2]{};"
+       "std::swap(a,b);return a[0][0]==b[0][0];}",
        "TR0203"},
       {"adl-enum-array-swap",
        "#include <utility>\nnamespace N{enum E{a,b};"

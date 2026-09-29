@@ -13425,7 +13425,7 @@ static bool utilitySwapTrivialBody(const State &S, const SourceManager &SM,
   return true;
 }
 
-static bool approvedUtilityNativeArrayEnumSwap(
+static bool approvedUtilityNativeArrayAssociatedSwap(
     const State &S, const SourceManager &SM, const FunctionDecl *Function,
     QualType Current, const ASTContext &Context, unsigned Depth = 0) {
   if (!Function || Current.isNull() || Depth > 8 ||
@@ -13441,8 +13441,8 @@ static bool approvedUtilityNativeArrayEnumSwap(
     return false;
   const auto *Array = Context.getAsConstantArrayType(Current);
   if (!Array)
-    return Current->isEnumeralType() && utilityScalar(Context, Current) &&
-           Arguments->size() == 1 &&
+    return (Current->isEnumeralType() || Current->isPointerType()) &&
+           utilityScalar(Context, Current) && Arguments->size() == 1 &&
            Arguments->get(0).getKind() == TemplateArgument::Type &&
            Context.hasSameType(Arguments->get(0).getAsType(), Current) &&
            utilitySwapTrivialBody(S, SM, Body, Current, Context);
@@ -13470,8 +13470,8 @@ static bool approvedUtilityNativeArrayEnumSwap(
          Call->getArg(0)->isLValue() && Call->getArg(1)->isLValue() &&
          Context.hasSameType(Call->getArg(0)->getType(), Element) &&
          Context.hasSameType(Call->getArg(1)->getType(), Element) &&
-         approvedUtilityNativeArrayEnumSwap(S, SM, Call->getDirectCallee(),
-                                            Element, Context, Depth + 1);
+         approvedUtilityNativeArrayAssociatedSwap(
+             S, SM, Call->getDirectCallee(), Element, Context, Depth + 1);
 }
 
 std::optional<UtilityOwnedSwapOperations>
@@ -27945,8 +27945,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Element.isNull() && !Element.isConstQualified() &&
           !Element.isVolatileQualified() && utilityScalar(Context, Element) &&
           (Associated->isBuiltinType() ||
-           (Element->isEnumeralType() &&
-            approvedUtilityNativeArrayEnumSwap(
+           ((Associated->isEnumeralType() || Associated->isRecordType()) &&
+            approvedUtilityNativeArrayAssociatedSwap(
                 S, SM, Function, Left->getPointeeType(), Context))))
         return UtilityOperation::NativeArraySwap;
       if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
