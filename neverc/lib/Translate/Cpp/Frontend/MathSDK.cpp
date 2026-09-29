@@ -25570,10 +25570,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         const auto *Prototype = AlgorithmCallbackPrototype(Index);
         return Prototype && Prototype->getNumParams() == 2 &&
                Prototype->getReturnType()->isBooleanType() &&
-               utilityScalarDirectConversion(Context, FirstElement,
-                                             Prototype->getParamType(0)) &&
-               utilityScalarDirectConversion(Context, SecondElement,
-                                             Prototype->getParamType(1));
+               ((utilityScalarDirectConversion(Context, FirstElement,
+                                               Prototype->getParamType(0)) &&
+                 utilityScalarDirectConversion(Context, SecondElement,
+                                               Prototype->getParamType(1))) ||
+                (CallbackElements &&
+                 AlgorithmCallbackRangeBinaryPredicateParameter(Index, 0,
+                                                                2)));
       };
       if (Call->getNumArgs() == 3 && (DefaultElements || CallbackElements))
         return UtilityOperation::AlgorithmEqual;
@@ -25588,9 +25591,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Predicate(3))
           return UtilityOperation::AlgorithmEqual;
       }
-      if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(3) &&
+      if (Call->getNumArgs() == 5 &&
+          (AlgorithmRangePointerParameter(3) ||
+           AlgorithmCallbackRangeParameter(3)) &&
           Same(Function->getParamDecl(2)->getType(),
-               Function->getParamDecl(3)->getType()) && Predicate(4))
+               Function->getParamDecl(3)->getType()) &&
+          Predicate(4))
         return UtilityOperation::AlgorithmEqual;
     }
   }
@@ -26400,10 +26406,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         const auto *Prototype = AlgorithmCallbackPrototype(Index);
         return Prototype && Prototype->getNumParams() == 2 &&
                Prototype->getReturnType()->isBooleanType() &&
-               utilityScalarDirectConversion(Context, FirstElement,
-                                             Prototype->getParamType(0)) &&
-               utilityScalarDirectConversion(Context, SecondElement,
-                                             Prototype->getParamType(1));
+               ((utilityScalarDirectConversion(Context, FirstElement,
+                                               Prototype->getParamType(0)) &&
+                 utilityScalarDirectConversion(Context, SecondElement,
+                                               Prototype->getParamType(1))) ||
+                (CallbackElements &&
+                 AlgorithmCallbackRangeBinaryPredicateParameter(Index, 0,
+                                                                2)));
       };
       if (Call->getNumArgs() == 3 && (DefaultElements || CallbackElements))
         return UtilityOperation::AlgorithmMismatch;
@@ -26418,7 +26427,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Predicate(3))
           return UtilityOperation::AlgorithmMismatch;
       }
-      if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(3) &&
+      if (Call->getNumArgs() == 5 &&
+          (AlgorithmRangePointerParameter(3) ||
+           AlgorithmCallbackRangeParameter(3)) &&
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()) &&
           Predicate(4))

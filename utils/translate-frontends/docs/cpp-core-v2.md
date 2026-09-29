@@ -1950,8 +1950,8 @@ implementation does.
 The default three- and four-iterator `std::equal` forms also compare raw or
 authenticated wrapped ranges of the same function-pointer element type,
 including `noexcept` pointers. Const range elements are accepted. They compare
-pointer values without calling the functions; mixed callback signatures and
-function-pointer predicates for these ranges remain outside this boundary.
+pointer values without calling the functions; mixed callback signatures
+remain outside this boundary.
 
 The three- and four-iterator `std::equal` overloads also accept those wrapped
 ranges on either side, including a wrapped range compared with a raw scalar
@@ -1976,6 +1976,13 @@ preserves each input's raw or wrapped iterator type.
 The predicate forms also accept two independently typed exact trivial
 source-record ranges through the same checked const-reference callback and
 return each range's original raw or wrapped iterator position.
+The checked predicate forms of `std::equal` and `std::mismatch` also accept
+independent const or mutable raw or authenticated wrapped ranges of one exact
+function-pointer element type, including `noexcept` pointers. Their predicate
+takes the two pointer values by value and returns `bool`. Bounded `equal`
+checks lengths before calling it; bounded `mismatch` stops at either end and
+returns both original iterator forms. The pointed-to functions are not
+invoked, and empty ranges make no predicate calls.
 
 Default `std::adjacent_find` accepts raw or authenticated wrapped scalar
 ranges, and exact source-owned trivial record ranges under the same selected

@@ -59317,6 +59317,158 @@ TEST_F(TranslateTest, CoreV2CallbackIsPermutationRejectsInvalidPredicates) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackEqualAndMismatchPredicatesRun) {
+  const auto Source = tmpFile("callback-equal-mismatch-predicates.cpp");
+  const auto Output = tmpFile("callback-equal-mismatch-predicates.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int a(int x) { ++calls; return x + 1; }
+int b(int x) { ++calls; return x + 2; }
+int c(int x) { ++calls; return x + 3; }
+int d(int x) { ++calls; return x + 4; }
+int e(int x) { ++calls; return x + 5; }
+int f(int x) { ++calls; return x + 6; }
+int quiet(int x) noexcept { ++calls; return x + 7; }
+int silent(int x) noexcept { ++calls; return x + 8; }
+int rank(Callback value) {
+  return value == a || value == b ? 1 : value == c || value == d ? 2 :
+         value == e ? 3 : 4;
+}
+bool same(Callback left, Callback right) {
+  ++checks;
+  return rank(left) == rank(right);
+}
+bool safe_same(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return left == right;
+}
+int main() {
+  const std::array<Callback, 4> first{{a, c, c, e}};
+  const Callback second[]{b, d, c, e};
+  int first_effects = 0, last_effects = 0;
+  int second_effects = 0, predicate_effects = 0;
+  if (!std::equal((++first_effects, first.cbegin()),
+                   (++last_effects, first.cend()),
+                   (++second_effects, second),
+                   (++predicate_effects, same)) ||
+      first_effects != 1 || last_effects != 1 || second_effects != 1 ||
+      predicate_effects != 1 || checks == 0 || calls != 0)
+    return 1;
+  checks = 0;
+  if (!std::equal(first.cbegin(), first.cend(), second, second + 4, same) ||
+      checks == 0 || calls != 0)
+    return 2;
+  checks = 0;
+  auto matched = std::mismatch(first.cbegin(), first.cend(), second, same);
+  if (matched.first != first.cend() || matched.second != second + 4 ||
+      checks == 0 || calls != 0)
+    return 3;
+  matched = std::mismatch(first.cbegin(), first.cend(), second, second + 4,
+                          same);
+  if (matched.first != first.cend() || matched.second != second + 4 ||
+      calls != 0)
+    return 4;
+  const Callback different[]{b, d, f, e};
+  checks = 0;
+  if (std::equal(first.cbegin(), first.cend(), different, same) ||
+      checks == 0 || calls != 0)
+    return 5;
+  auto unequal = std::mismatch(first.cbegin(), first.cend(), different,
+                                different + 4, same);
+  if (unequal.first != first.cbegin() + 2 ||
+      unequal.second != different + 2 || calls != 0)
+    return 6;
+  checks = 0;
+  if (std::equal(first.cbegin(), first.cend(), second, second + 3, same) ||
+      checks != 0 || calls != 0)
+    return 7;
+  auto short_match = std::mismatch(first.cbegin(), first.cend(), second,
+                                    second + 3, same);
+  if (short_match.first != first.cbegin() + 3 ||
+      short_match.second != second + 3 || checks == 0 || calls != 0)
+    return 8;
+  const std::array<NoexceptCallback, 2> safe_first{{quiet, silent}};
+  const NoexceptCallback safe_second[]{quiet, silent};
+  checks = 0;
+  if (!std::equal(safe_first.cbegin(), safe_first.cend(), safe_second,
+                   safe_second + 2, safe_same))
+    return 9;
+  auto safe_match = std::mismatch(safe_first.cbegin(), safe_first.cend(),
+                                   safe_second, safe_same);
+  if (safe_match.first != safe_first.cend() ||
+      safe_match.second != safe_second + 2 || checks == 0 || calls != 0)
+    return 10;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  if (!std::equal(empty.cbegin(), empty.cend(), empty.cbegin(),
+                   empty.cend(), same) ||
+      std::equal(empty.cbegin(), empty.cend(), second, second + 1, same))
+    return 11;
+  auto empty_match = std::mismatch(empty.cbegin(), empty.cend(), second,
+                                    second + 1, same);
+  if (empty_match.first != empty.cend() ||
+      empty_match.second != second || checks != 0 || calls != 0)
+    return 12;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-equal-mismatch-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackEqualAndMismatchRejectInvalidPredicates) {
+  const struct {
+    const char *Name;
+    const char *Predicate;
+  } Cases[] = {
+      {"non-bool-result",
+       "int same(Callback left, Callback right) { return left == right; }"},
+      {"reference-parameters",
+       "bool same(const Callback &left, const Callback &right) { "
+       "return left == right; }"}};
+  for (const char *Algorithm : {"equal", "mismatch"}) {
+    for (const auto &Case : Cases) {
+      SCOPED_TRACE(Algorithm);
+      SCOPED_TRACE(Case.Name);
+      const auto Source = tmpFile(std::string("callback-") + Algorithm + "-" +
+                                  Case.Name + ".cpp");
+      const auto Output = tmpFile(std::string("callback-") + Algorithm + "-" +
+                                  Case.Name + ".nc");
+      writeFile(Source,
+                std::string("#include <algorithm>\n"
+                            "using Callback = int (*)(int);\n"
+                            "int one(int x) { return x + 1; }\n"
+                            "int two(int x) { return x + 2; }\n") +
+                    Case.Predicate +
+                    "\nint main() { const Callback first[]{one}; "
+                    "const Callback second[]{two}; "
+                    "std::" + Algorithm +
+                    "(first, first + 1, second, second + 1, same); "
+                    "return 0; }\n");
+      expectCode(
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+          "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
