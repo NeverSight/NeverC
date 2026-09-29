@@ -13875,8 +13875,8 @@ approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
   return true;
 }
 
-// Every range-adapter edge must preserve the same native pointer. The SDK
-// provenance check includes source redeclarations and explicit specializations.
+// A selected pointer move/forward call must preserve the same native pointer.
+// The SDK provenance check includes source redeclarations and specializations.
 static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
                                       const Expr *Expression,
                                       const ParmVarDecl *Parameter,
@@ -13904,6 +13904,69 @@ static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
          (Result->isLValueReferenceType() ? Call->isLValue()
                                           : Call->isXValue()) &&
          functionalInvokeParameterReference(Call->getArg(0), Parameter);
+}
+
+// The pinned exchange body selects move and forward independently; prove both
+// instantiated calls before replacing them with a direct callback-value write.
+static bool approvedUtilityCallbackExchange(const State &S,
+                                            const SourceManager &SM,
+                                            const FunctionDecl *Function,
+                                            QualType Type,
+                                            const ASTContext &Context) {
+  if (!Function || Type.isNull() || !Type->isFunctionPointerType() ||
+      !utilitySwapSDKFunction(S, SM, Function, "exchange",
+                              "__utility/exchange.h") ||
+      Function->getNumParams() != 2 ||
+      !Context.hasSameType(Function->getReturnType(), Type))
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto Reference = Context.getLValueReferenceType(Type);
+  if (!Arguments || Arguments->size() != 2 || !Body || Body->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference))
+    return false;
+  const auto Replacement = Arguments->get(1).getAsType();
+  if (!Context.hasSameType(Replacement, Type) &&
+      !Context.hasSameType(Replacement, Reference))
+    return false;
+  const auto ReplacementReference = Context.hasSameType(Replacement, Reference)
+                                        ? Reference
+                                        : Context.getRValueReferenceType(Type);
+  if (!Context.hasSameType(Function->getParamDecl(1)->getType(),
+                           ReplacementReference))
+    return false;
+  auto Statement = Body->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Old = Declaration && Declaration->isSingleDecl()
+                        ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
+                        : nullptr;
+  const auto *Move =
+      Old && Old->getInit()
+          ? dyn_cast_or_null<CallExpr>(
+                functionalInvokeStrippedExpression(Old->getInit()))
+          : nullptr;
+  const auto *Assignment = dyn_cast<BinaryOperator>(*Statement++);
+  const auto *Forward =
+      Assignment ? dyn_cast_or_null<CallExpr>(
+                       functionalInvokeStrippedExpression(Assignment->getRHS()))
+                 : nullptr;
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Returned =
+      Return ? dyn_cast_or_null<DeclRefExpr>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  return Old && Context.hasSameType(Old->getType(), Type) &&
+         utilitySwapPointerAdapter(S, SM, Move, Function->getParamDecl(0), Type,
+                                   Reference, false, Context) &&
+         Assignment && Assignment->getOpcode() == BO_Assign &&
+         functionalInvokeParameterReference(Assignment->getLHS(),
+                                            Function->getParamDecl(0)) &&
+         utilitySwapPointerAdapter(S, SM, Forward, Function->getParamDecl(1),
+                                   Type, Replacement, true, Context) &&
+         Returned && Returned->getDecl() == Old;
 }
 
 static bool utilitySwapPointerTemplate(const FunctionDecl *Function,
@@ -27937,8 +28000,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Object->isLValueReferenceType() && Value->isReferenceType() &&
         !Object->getPointeeType().isConstQualified() &&
         !Object->getPointeeType().isVolatileQualified() &&
-        utilityScalar(Context, Object->getPointeeType()) &&
-        utilityScalar(Context, Value->getPointeeType()) &&
+        ((utilityScalar(Context, Object->getPointeeType()) &&
+          utilityScalar(Context, Value->getPointeeType())) ||
+         (Object->getPointeeType()->isFunctionPointerType() &&
+          Context.hasSameType(Object->getPointeeType(),
+                              Value->getPointeeType()) &&
+          approvedUtilityCallbackExchange(
+              S, SM, Function, Object->getPointeeType(), Context))) &&
         Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), Value->getPointeeType()) &&
         Same(Call->getType(), Object->getPointeeType()) &&

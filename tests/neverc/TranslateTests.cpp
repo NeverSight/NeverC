@@ -26044,6 +26044,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackExchangeRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-exchange.cpp");
+  const auto Output = tmpFile("callback-exchange.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+using Callback = int (*)(int);
+namespace N {
+struct Arg { int value; };
+int one(Arg value) { return value.value + 1; }
+int two(Arg value) { return value.value + 2; }
+using Callback = int (*)(Arg);
+}
+int main() {
+  Callback first = one, second = two;
+  int first_reads = 0, second_reads = 0;
+  Callback old = std::exchange((++first_reads, first),
+                               (++second_reads, second));
+  if (first_reads != 1 || second_reads != 1 ||
+      old(5) != 6 || first(5) != 7 || second(5) != 7)
+    return 1;
+  Callback previous = std::exchange(first, Callback{one});
+  if (previous(5) != 7 || first(5) != 6)
+    return 2;
+  Callback self = std::exchange(first, first);
+  if (self(5) != 6 || first(5) != 6)
+    return 3;
+  N::Callback left = N::one, right = N::two;
+  N::Callback saved = std::exchange(left, right);
+  return saved(N::Arg{5}) == 6 && left(N::Arg{5}) == 7 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-exchange" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityCompositePairsRunAtBothOptimizations) {
   const auto Source = tmpFile("utility-composite-pair.cpp");
   const auto Output = tmpFile("utility-composite-pair.nc");
@@ -26567,6 +26613,19 @@ template<> Callback&& move<Callback&>(Callback& value) noexcept {
 }
 } }
 int f() { Callback a = one, b = one; std::swap(a, b); return a == b; }
+)cpp",
+       "TR0201"},
+      {"callback-exchange-forward-specialization",
+       R"cpp(#include <utility>
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+using Callback = int (*)(int);
+namespace std { inline namespace __1 {
+template<> Callback& forward<Callback&>(Callback& value) noexcept {
+  return value;
+}
+} }
+int f() { Callback a = one, b = two; return std::exchange(a, b) == one; }
 )cpp",
        "TR0201"},
       {"record-pair-comparison",
