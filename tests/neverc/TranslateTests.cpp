@@ -26090,11 +26090,20 @@ int main() {
   Callback function_old = std::exchange(first, two);
   if (function_old(5) != 6 || first(5) != 7)
     return 8;
+  const Callback immutable = one;
+  Callback const_old = std::exchange(first, immutable);
+  if (const_old(5) != 7 || first(5) != 6 || immutable(5) != 6)
+    return 9;
   N::Callback nested_old = std::exchange(left, nullptr);
   if (nested_old(N::Arg{5}) != 7 || left != nullptr)
-    return 9;
+    return 10;
   N::Callback nested_empty = std::exchange(left, N::one);
-  return nested_empty == nullptr && left(N::Arg{5}) == 6 ? 0 : 10;
+  const N::Callback nested_immutable = N::two;
+  N::Callback nested_const_old = std::exchange(left, nested_immutable);
+  return nested_empty == nullptr && nested_const_old(N::Arg{5}) == 6 &&
+                 left(N::Arg{5}) == 7 && nested_immutable(N::Arg{5}) == 7
+             ? 0
+             : 11;
 }
 )cpp");
   auto Result =

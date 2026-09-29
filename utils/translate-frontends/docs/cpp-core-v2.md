@@ -188,7 +188,8 @@ uses the pinned generic overload after checking its instantiated move calls;
 qualified calls retain that overload even when the callback signature has an
 associated user swap. Callback-pointer `std::exchange` checks the selected
 pinned move and forward calls before returning the old pointer. It accepts
-same-type lvalue and rvalue replacements, `nullptr`, and mutable `nullptr_t`
+same-type lvalue and rvalue replacements, const callback-pointer lvalues with
+the selected lvalue-to-rvalue conversion, `nullptr`, and mutable `nullptr_t`
 lvalues with the selected null-to-pointer conversion. A named function of the
 exact callback signature is also accepted when the selected assignment uses
 function-to-pointer decay. Source specializations remain rejected.

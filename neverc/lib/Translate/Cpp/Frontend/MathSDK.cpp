@@ -13934,12 +13934,16 @@ static bool approvedUtilityCallbackExchange(const State &S,
   const auto ReplacementType = Replacement->isLValueReferenceType()
                                    ? Replacement->getPointeeType()
                                    : Replacement;
+  const bool ConstPointerReplacement =
+      Replacement->isLValueReferenceType() &&
+      Context.hasSameType(ReplacementType, Type.withConst());
   const bool FunctionReplacement =
       Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type->getPointeeType());
-  if (ReplacementType.hasQualifiers() ||
+  if ((ReplacementType.hasQualifiers() && !ConstPointerReplacement) ||
       (!Context.hasSameType(ReplacementType, Type) &&
-       !ReplacementType->isNullPtrType() && !FunctionReplacement))
+       !ReplacementType->isNullPtrType() && !FunctionReplacement &&
+       !ConstPointerReplacement))
     return false;
   const auto ReplacementReference =
       Replacement->isLValueReferenceType()
@@ -13964,7 +13968,8 @@ static bool approvedUtilityCallbackExchange(const State &S,
                        functionalInvokeStrippedExpression(Assignment->getRHS()))
                  : nullptr;
   const auto *ValueConversion =
-      Assignment && (ReplacementType->isNullPtrType() || FunctionReplacement)
+      Assignment && (ReplacementType->isNullPtrType() || FunctionReplacement ||
+                     ConstPointerReplacement)
           ? dyn_cast<ImplicitCastExpr>(Assignment->getRHS())
           : nullptr;
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
@@ -13985,6 +13990,10 @@ static bool approvedUtilityCallbackExchange(const State &S,
          (!FunctionReplacement ||
           (ValueConversion &&
            ValueConversion->getCastKind() == CK_FunctionToPointerDecay &&
+           Context.hasSameType(ValueConversion->getType(), Type))) &&
+         (!ConstPointerReplacement ||
+          (ValueConversion &&
+           ValueConversion->getCastKind() == CK_LValueToRValue &&
            Context.hasSameType(ValueConversion->getType(), Type))) &&
          utilitySwapPointerAdapter(S, SM, Forward, Function->getParamDecl(1),
                                    ReplacementType, Replacement, true,
@@ -28027,6 +28036,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           utilityScalar(Context, Value->getPointeeType())) ||
          (Object->getPointeeType()->isFunctionPointerType() &&
           (Context.hasSameType(Object->getPointeeType(),
+                               Value->getPointeeType()) ||
+           Context.hasSameType(Object->getPointeeType().withConst(),
                                Value->getPointeeType()) ||
            Value->getPointeeType()->isNullPtrType() ||
            Context.hasSameType(
