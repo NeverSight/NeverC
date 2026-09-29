@@ -1766,6 +1766,14 @@ their raw-pointer forms. Returned output positions retain the original
 iterator type, with the final pointer wrapped back into the pinned iterator
 record when needed. Empty counts and ranges, overlapping forward or backward
 copies, and iterator argument evaluation retain their existing behavior.
+
+The exact `std::copy` form also accepts raw or authenticated wrapped ranges of
+function-pointer elements when the input and writable output have the same
+function-pointer value type, including `noexcept` signatures. Const input
+elements are accepted. It copies pointer values without invoking the functions.
+Other callback transfer algorithms and mixed callback signatures remain
+outside this boundary.
+
 Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
 record elements with a selected supported copy assignment. Their pinned public
 and internal fill bodies, pointer iterator category, count conversion, loop and

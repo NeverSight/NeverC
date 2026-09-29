@@ -25557,7 +25557,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool Record = AlgorithmRecordRangeParameter(0) &&
                         AlgorithmRecordRangeParameter(1) &&
                         AlgorithmTransferRecordRangeParameters(0, 2);
-    if (!Scalar && !Record)
+    const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackLast = AlgorithmCallbackRangeParameter(1);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
+    const bool Callback =
+        Origin->Path == "__algorithm/copy.h" && Name == "copy" &&
+        CallbackInput && CallbackLast && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
+                                    (*CallbackOutput)->getPointeeType());
+    if (!Scalar && !Record && !Callback)
       return std::nullopt;
     if (Origin->Path == "__algorithm/copy.h" && Name == "copy")
       return UtilityOperation::AlgorithmCopy;
