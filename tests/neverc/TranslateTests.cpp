@@ -43421,6 +43421,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackFillRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-fill.cpp");
+  const auto Output = tmpFile("callback-fill.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 4> values{{one, nullptr, two, one}};
+  Callback replacement = two;
+  int firstEffects = 0, lastEffects = 0, valueEffects = 0;
+  std::fill((++firstEffects, values.begin() + 1),
+            (++lastEffects, values.end()),
+            (++valueEffects, replacement));
+  if (firstEffects != 1 || lastEffects != 1 || valueEffects != 1 ||
+      values[0] != one || values[1] != two || values[2] != two ||
+      values[3] != two || calls != 0)
+    return 1;
+  Callback raw[2]{one, nullptr};
+  std::fill(raw, raw + 2, replacement);
+  if (raw[0] != two || raw[1] != two)
+    return 2;
+  std::array<Callback, 3> aliased{{one, two, nullptr}};
+  std::fill(aliased.begin(), aliased.end(), aliased[1]);
+  if (aliased[0] != two || aliased[1] != two || aliased[2] != two)
+    return 3;
+  std::array<Callback, 0> empty{};
+  std::fill(empty.begin(), empty.end(), replacement);
+  NoexceptCallback safeReplacement = safe;
+  std::array<NoexceptCallback, 2> safeValues{{nullptr, nullptr}};
+  std::fill(safeValues.begin(), safeValues.end(), safeReplacement);
+  if (safeValues[0] != safe || safeValues[1] != safe || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-fill" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");

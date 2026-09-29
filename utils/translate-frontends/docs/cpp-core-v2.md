@@ -1796,6 +1796,12 @@ forms and `noexcept` signatures. It returns the advanced second iterator, or
 the original second iterator for an empty first range, without invoking the
 functions.
 
+The exact `std::fill` form also accepts writable raw or authenticated wrapped
+ranges of function-pointer elements and a value of the same function-pointer
+type, including `noexcept` signatures. The value reference stays bound during
+the loop, including when it names an element in the range. Empty ranges perform
+no assignments, and filling never invokes the pointed-to function.
+
 Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
 record elements with a selected supported copy assignment. Their pinned public
 and internal fill bodies, pointer iterator category, count conversion, loop and

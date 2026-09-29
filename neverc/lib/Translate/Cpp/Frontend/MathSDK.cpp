@@ -23990,6 +23990,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Value->getPointeeType(),
                                          (*Output)->getPointeeType());
   };
+  auto AlgorithmTransferCallbackValueParameter = [&](unsigned ValueIndex,
+                                                     unsigned OutputIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Output = AlgorithmCallbackRangeParameter(OutputIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Output && !(*Output)->getPointeeType().isConstQualified() &&
+           Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           utilityCallbackEqualityType(Context,
+                                       Call->getArg(ValueIndex)->getType(),
+                                       Value->getPointeeType()) &&
+           utilityCallbackEqualityType(Context, Value->getPointeeType(),
+                                       (*Output)->getPointeeType());
+  };
   auto AlgorithmTransferParameters = [&](unsigned InputIndex,
                                          unsigned OutputIndex) {
     if (!AlgorithmPointerParameter(InputIndex) ||
@@ -25593,6 +25609,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto First = AlgorithmRangePointerParameter(0);
     const auto Last = AlgorithmRangePointerParameter(1);
     if (First && Last && AlgorithmTransferRangeValueParameter(2, 0))
+      return UtilityOperation::AlgorithmFill;
+    if (AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmTransferCallbackValueParameter(2, 0))
       return UtilityOperation::AlgorithmFill;
     if (!Function->getParamDecl(0)->getType()->isPointerType() &&
         AlgorithmWritableRecordRangeParameter(0) &&
