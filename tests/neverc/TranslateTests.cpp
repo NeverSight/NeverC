@@ -57702,6 +57702,96 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPartitionCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-partition-copy.cpp");
+  const auto Output = tmpFile("callback-partition-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+bool selected(Callback value) {
+  ++checks;
+  return value == one || value == three;
+}
+bool safe_selected(NoexceptCallback value) {
+  ++checks;
+  return value == quiet || value == silent;
+}
+int main() {
+  const std::array<Callback, 6> input{{two, one, nullptr, three, two, one}};
+  std::array<Callback, 6> yes{}, no{};
+  int firstEffects = 0, lastEffects = 0, yesEffects = 0;
+  int noEffects = 0, predicateEffects = 0;
+  auto ends = std::partition_copy((++firstEffects, input.cbegin()),
+      (++lastEffects, input.cend()), (++yesEffects, yes.begin()),
+      (++noEffects, no.begin()), (++predicateEffects, selected));
+  if (firstEffects != 1 || lastEffects != 1 || yesEffects != 1 ||
+      noEffects != 1 || predicateEffects != 1 ||
+      ends.first != yes.begin() + 3 || ends.second != no.begin() + 3 ||
+      yes[0] != one || yes[1] != three || yes[2] != one ||
+      no[0] != two || no[1] != nullptr || no[2] != two ||
+      input[0] != two || input[1] != one || checks != 6 || calls != 0)
+    return 1;
+  Callback rawInput[]{two, one, three};
+  Callback rawYes[3]{}, rawNo[3]{};
+  checks = 0;
+  auto rawEnds = std::partition_copy(rawInput, rawInput + 3,
+                                     rawYes, rawNo, selected);
+  if (rawEnds.first != rawYes + 2 || rawEnds.second != rawNo + 1 ||
+      rawYes[0] != one || rawYes[1] != three || rawNo[0] != two ||
+      checks != 3 || calls != 0)
+    return 2;
+  checks = 0;
+  auto mixedEnds = std::partition_copy(input.cbegin(), input.cend(),
+                                       rawYes, no.begin(), selected);
+  if (mixedEnds.first != rawYes + 3 || mixedEnds.second != no.begin() + 3 ||
+      rawYes[0] != one || rawYes[1] != three || rawYes[2] != one ||
+      no[0] != two || no[1] != nullptr || no[2] != two ||
+      checks != 6 || calls != 0)
+    return 3;
+  const std::array<NoexceptCallback, 4> safeInput{{nullptr, quiet, silent,
+                                                    nullptr}};
+  std::array<NoexceptCallback, 4> safeYes{}, safeNo{};
+  checks = 0;
+  auto safeEnds = std::partition_copy(safeInput.cbegin(), safeInput.cend(),
+      safeYes.begin(), safeNo.begin(), safe_selected);
+  if (safeEnds.first != safeYes.begin() + 2 ||
+      safeEnds.second != safeNo.begin() + 2 || safeYes[0] != quiet ||
+      safeYes[1] != silent || safeNo[0] != nullptr ||
+      safeNo[1] != nullptr || checks != 4 || calls != 0)
+    return 4;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  auto emptyEnds = std::partition_copy(empty.cbegin(), empty.cend(),
+                                       yes.begin(), no.begin(), selected);
+  if (emptyEnds.first != yes.begin() || emptyEnds.second != no.begin() ||
+      checks != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-partition-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackStablePartitionRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-stable-partition.cpp");
   const auto Output = tmpFile("callback-stable-partition.nc");

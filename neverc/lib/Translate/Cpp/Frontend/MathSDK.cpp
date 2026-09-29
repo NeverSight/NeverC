@@ -27591,6 +27591,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/partition_copy.h" &&
       Name == "partition_copy" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    const auto TrueOutput = AlgorithmCallbackRangeParameter(2);
+    const auto FalseOutput = AlgorithmCallbackRangeParameter(3);
+    if (Input && AlgorithmCallbackRangeParameter(1) && TrueOutput &&
+        FalseOutput && !(*TrueOutput)->getPointeeType().isConstQualified() &&
+        !(*FalseOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*Input)->getPointeeType(),
+                                    (*TrueOutput)->getPointeeType()) &&
+        utilityCallbackEqualityType(Context, (*Input)->getPointeeType(),
+                                    (*FalseOutput)->getPointeeType()) &&
+        AlgorithmCallbackRangeUnaryPredicateParameter(4, 0)) {
+      auto Pair = approvedUtilityPairRecord(
+          S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+      if (Pair &&
+          Same(Pair->First->getType(), Function->getParamDecl(2)->getType()) &&
+          Same(Pair->Second->getType(), Function->getParamDecl(3)->getType()))
+        return UtilityOperation::AlgorithmPartitionCopy;
+    }
+  }
+  if (Origin->Path == "__algorithm/partition_copy.h" &&
+      Name == "partition_copy" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       AlgorithmTransferRangeParameters(0, 2) &&
       AlgorithmTransferRangeParameters(0, 3) &&

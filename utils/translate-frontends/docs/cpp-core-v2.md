@@ -2208,6 +2208,12 @@ within either partition. Empty ranges make no predicate calls or writes.
 checked by-value predicate. It shifts pointer values without invoking their
 functions, preserves relative order in both partitions, and returns the
 original raw or wrapped boundary iterator. Empty ranges remain unchanged.
+`std::partition_copy` accepts const or mutable raw or wrapped function-pointer
+input ranges and two separate writable raw or wrapped outputs of the same exact
+pointer type, including `noexcept` pointers. Its checked by-value predicate
+selects the destination without invoking the pointed-to functions. Both output
+groups retain input order, and the returned pair retains each output iterator's
+raw or wrapped form. Empty input leaves both outputs unadvanced.
 
 The exact `std::for_each`, `std::for_each_n`, unary and binary
 `std::transform`, `std::generate` and `std::generate_n` templates accept checked
