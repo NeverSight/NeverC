@@ -58187,6 +58187,141 @@ TEST_F(TranslateTest, CoreV2CallbackPartialSortRejectsUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPartialSortCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-partial-sort-copy.cpp");
+  const auto Output = tmpFile("callback-partial-sort-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return rank(left) > rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : left == silent ? 2 : 0) <
+         (right == quiet ? 1 : right == silent ? 2 : 0);
+}
+int main() {
+  const std::array<Callback, 7> input{{two, one, three, nullptr,
+                                       two, one, three}};
+  std::array<Callback, 4> output{};
+  int firstEffects = 0, lastEffects = 0, outputEffects = 0;
+  int outputLastEffects = 0, comparatorEffects = 0;
+  auto end = std::partial_sort_copy(
+      (++firstEffects, input.cbegin()), (++lastEffects, input.cend()),
+      (++outputEffects, output.begin()),
+      (++outputLastEffects, output.end()), (++comparatorEffects, before));
+  if (end != output.end() || firstEffects != 1 || lastEffects != 1 ||
+      outputEffects != 1 || outputLastEffects != 1 ||
+      comparatorEffects != 1 || checks == 0 || calls != 0 ||
+      output[0] != nullptr || output[1] != one ||
+      output[2] != one || output[3] != two || input[0] != two)
+    return 1;
+  const Callback raw[]{two, one, three, nullptr, three};
+  Callback rawOutput[3]{};
+  checks = 0;
+  if (std::partial_sort_copy(raw, raw + 5, rawOutput,
+                             rawOutput + 3, after) != rawOutput + 3 ||
+      checks == 0 || calls != 0 || rawOutput[0] != three ||
+      rawOutput[1] != three || rawOutput[2] != two)
+    return 2;
+  const std::array<NoexceptCallback, 5> safe{{silent, quiet, nullptr,
+                                               silent, quiet}};
+  NoexceptCallback safeOutput[3]{};
+  checks = 0;
+  if (std::partial_sort_copy(safe.cbegin(), safe.cend(), safeOutput,
+                             safeOutput + 3, safe_before) != safeOutput + 3 ||
+      checks == 0 || calls != 0 || safeOutput[0] != nullptr ||
+      safeOutput[1] != quiet || safeOutput[2] != quiet)
+    return 3;
+  const std::array<Callback, 2> shortInput{{two, one}};
+  std::array<Callback, 4> largeOutput{{three, three, three, three}};
+  checks = 0;
+  if (std::partial_sort_copy(shortInput.cbegin(), shortInput.cend(),
+                             largeOutput.begin(), largeOutput.end(), before) !=
+          largeOutput.begin() + 2 ||
+      largeOutput[0] != one || largeOutput[1] != two ||
+      largeOutput[2] != three || largeOutput[3] != three || calls != 0)
+    return 4;
+  const std::array<Callback, 0> empty{};
+  std::array<Callback, 0> emptyOutput{};
+  checks = 0;
+  if (std::partial_sort_copy(empty.cbegin(), empty.cend(),
+                             largeOutput.begin(), largeOutput.end(), before) !=
+          largeOutput.begin() ||
+      std::partial_sort_copy(input.cbegin(), input.cend(),
+                             emptyOutput.begin(), emptyOutput.end(), before) !=
+          emptyOutput.begin() ||
+      checks != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-partial-sort-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2CallbackPartialSortCopyRejectsUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("callback-partial-sort-copy-") +
+                                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-partial-sort-copy-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Comparator +
+                  "\nint main() { const Callback input[]{two, one}; "
+                  "Callback output[1]{}; std::partial_sort_copy(input, "
+                  "input + 2, output, output + 1, before); return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");

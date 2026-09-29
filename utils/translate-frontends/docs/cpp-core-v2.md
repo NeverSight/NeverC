@@ -2566,6 +2566,15 @@ Its scalar comparator overload admits the same wrapped or raw range forms
 when both input-to-output and output-heap comparisons pass the checked
 function-pointer or standard comparison-object boundaries.
 
+The checked comparator overload of `std::partial_sort_copy` also accepts a
+const or mutable raw or authenticated wrapped input range and a writable raw
+or authenticated wrapped output range of the same exact function-pointer
+element type, including `noexcept` pointers. The comparator takes two pointer
+values by value and returns `bool`. It returns the advanced output iterator,
+copies at most the output capacity in sorted order, and does not invoke the
+pointed-to functions. All arguments are evaluated once; empty input or output
+makes no comparisons.
+
 Default `std::nth_element` accepts the same writable source-record ranges.
 Its three-way partition compares current elements with a retained trivial
 record pivot by const reference and swaps complete values. Equivalent values

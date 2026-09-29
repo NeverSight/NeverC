@@ -27135,6 +27135,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 5 && CallbackInput &&
+        AlgorithmCallbackRangeParameter(1) && CallbackOutput &&
+        AlgorithmCallbackRangeParameter(3) &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
+                                    (*CallbackOutput)->getPointeeType()) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(4, 0, 2) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(4, 2, 2);
     const bool RawScalar =
         AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
         AlgorithmTransferParameters(0, 2) && AlgorithmPointerParameter(3) &&
@@ -27179,7 +27190,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRecordRangeBinaryPredicateParameter(4, 0, 2) &&
         AlgorithmRecordRangeBinaryPredicateParameter(4, 2, 2);
     if (RawScalar || WrappedScalarDefault || WrappedScalarComparator ||
-        Record || RecordComparator)
+        Record || RecordComparator || CallbackComparator)
       return UtilityOperation::AlgorithmPartialSortCopy;
   }
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&
