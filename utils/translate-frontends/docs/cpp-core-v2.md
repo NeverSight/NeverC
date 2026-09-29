@@ -2810,6 +2810,13 @@ authenticated wrapped ranges of one exact trivial source-record type through
 `bool(const Record&, const Record&)`. The callback sees original elements in
 both comparison directions, and empty ranges invoke no callback. No source
 `operator<` is required for these calls.
+Their checked comparator overloads also accept independent const or mutable
+raw or authenticated wrapped ranges of one exact function-pointer element
+type, including `noexcept` pointers. The comparator takes two pointer values
+by value and returns `bool`. Lexicographical comparison preserves prefix
+ordering, and inclusion counts equivalent values with their multiplicity.
+Empty ranges invoke no comparator, and the pointed-to functions are not
+invoked.
 
 Default `std::is_sorted` and `std::is_sorted_until` likewise accept exact
 trivial source-record pointer or authenticated wrapped ranges with that unique

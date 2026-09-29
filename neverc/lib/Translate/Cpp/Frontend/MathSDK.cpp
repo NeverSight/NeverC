@@ -26586,8 +26586,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        (*PredicateSecond)->getPointeeType()) &&
         AlgorithmRecordRangeBinaryPredicateParameter(4, 0, 2) &&
         AlgorithmRecordRangeBinaryPredicateParameter(4, 2, 0);
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 5 && CallbackFirst && CallbackSecond &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeParameter(3) &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackSecond)->getPointeeType()) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(4, 0, 2) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(4, 2, 0);
     if ((Call->getNumArgs() == 4 && (ScalarDefault || RecordDefault)) ||
-        ScalarComparator || RecordComparator ||
+        ScalarComparator || RecordComparator || CallbackComparator ||
         (Call->getNumArgs() == 5 && AlgorithmPointerParameter(0) &&
          AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
          AlgorithmPointerParameter(3) &&

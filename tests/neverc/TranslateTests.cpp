@@ -58891,6 +58891,155 @@ TEST_F(TranslateTest, CoreV2CallbackSetOperationsRejectInvalidComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackOrderedQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-ordered-queries.cpp");
+  const auto Output = tmpFile("callback-ordered-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int a(int x) { ++calls; return x + 1; }
+int b(int x) { ++calls; return x + 2; }
+int c(int x) { ++calls; return x + 3; }
+int d(int x) { ++calls; return x + 4; }
+int e(int x) { ++calls; return x + 5; }
+int quiet(int x) noexcept { ++calls; return x + 6; }
+int silent(int x) noexcept { ++calls; return x + 7; }
+int rank(Callback value) {
+  return value == a || value == b ? 1 : value == c ? 2 :
+         value == d ? 3 : 4;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet) > (right == quiet);
+}
+int main() {
+  const std::array<Callback, 3> left{{a, c, e}};
+  const Callback right[]{b, d, e};
+  int first_effects = 0, last_effects = 0, second_effects = 0;
+  int second_last_effects = 0, comparator_effects = 0;
+  if (!std::lexicographical_compare(
+          (++first_effects, left.cbegin()),
+          (++last_effects, left.cend()), (++second_effects, right),
+          (++second_last_effects, right + 3),
+          (++comparator_effects, before)) ||
+      first_effects != 1 || last_effects != 1 || second_effects != 1 ||
+      second_last_effects != 1 || comparator_effects != 1 || checks == 0 ||
+      calls != 0)
+    return 1;
+  checks = 0;
+  if (std::lexicographical_compare(right, right + 3, left.cbegin(),
+                                   left.cend(), before) ||
+      checks == 0 || calls != 0)
+    return 2;
+  const Callback equivalent[]{b, c, e};
+  if (std::lexicographical_compare(left.cbegin(), left.cend(), equivalent,
+                                   equivalent + 3, before) ||
+      std::lexicographical_compare(equivalent, equivalent + 3,
+                                   left.cbegin(), left.cend(), before) ||
+      calls != 0)
+    return 3;
+  if (!std::lexicographical_compare(left.cbegin(), left.cbegin() + 2,
+                                    left.cbegin(), left.cend(), before) ||
+      calls != 0)
+    return 4;
+  const std::array<Callback, 5> superset{{a, b, c, c, e}};
+  const Callback subset[]{b, c, c};
+  checks = 0;
+  if (!std::includes(superset.cbegin(), superset.cend(), subset,
+                     subset + 3, before) ||
+      checks == 0 || calls != 0)
+    return 5;
+  const Callback too_many[]{b, a, b};
+  if (std::includes(superset.cbegin(), superset.cend(), too_many,
+                    too_many + 3, before) || calls != 0)
+    return 6;
+  const Callback missing[]{d};
+  if (std::includes(superset.cbegin(), superset.cend(), missing,
+                    missing + 1, before) || calls != 0)
+    return 7;
+  const std::array<NoexceptCallback, 3> safe_superset{{quiet, quiet, silent}};
+  const NoexceptCallback safe_subset[]{quiet, silent};
+  checks = 0;
+  if (!std::lexicographical_compare(safe_subset, safe_subset + 1,
+                                     safe_subset + 1, safe_subset + 2,
+                                     safe_before) ||
+      !std::includes(safe_superset.cbegin(), safe_superset.cend(),
+                     safe_subset, safe_subset + 2, safe_before) ||
+      checks == 0 || calls != 0)
+    return 8;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  if (!std::lexicographical_compare(empty.cbegin(), empty.cend(),
+                                     right, right + 3, before) ||
+      std::lexicographical_compare(right, right + 3, empty.cbegin(),
+                                   empty.cend(), before) ||
+      !std::includes(empty.cbegin(), empty.cend(), empty.cbegin(),
+                     empty.cend(), before) ||
+      std::includes(empty.cbegin(), empty.cend(), right, right + 1,
+                    before) ||
+      checks != 0 || calls != 0)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-ordered-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackOrderedQueriesRejectInvalidComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const char *Algorithm : {"lexicographical_compare", "includes"}) {
+    for (const auto &Case : Cases) {
+      SCOPED_TRACE(Algorithm);
+      SCOPED_TRACE(Case.Name);
+      const auto Source = tmpFile(std::string("callback-") + Algorithm + "-" +
+                                  Case.Name + ".cpp");
+      const auto Output = tmpFile(std::string("callback-") + Algorithm + "-" +
+                                  Case.Name + ".nc");
+      writeFile(Source,
+                std::string("#include <algorithm>\n"
+                            "using Callback = int (*)(int);\n"
+                            "int one(int x) { return x + 1; }\n"
+                            "int two(int x) { return x + 2; }\n") +
+                    Case.Comparator +
+                    "\nint main() { const Callback first[]{one}; "
+                    "const Callback second[]{two}; return std::" +
+                    Algorithm + "(first, first + 1, second, second + 1, "
+                                "before) ? 0 : 1; }\n");
+      expectCode(
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+          "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
