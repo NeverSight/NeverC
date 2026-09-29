@@ -2631,6 +2631,14 @@ scalar ranges retain the default and checked comparator forms. The checked
 trivial records, preserving stable ordering without requiring `operator<`.
 Other unsupported callables remain rejected.
 
+The checked comparator overload of `std::stable_sort` also accepts writable
+raw or authenticated wrapped ranges of one exact function-pointer element
+type, including `noexcept` pointers. The comparator takes two pointer values
+by value and returns `bool`. The merge retains the input order of distinct
+pointer values that compare equivalent, without invoking the pointed-to
+functions. Iterator and comparator arguments are evaluated once; empty and
+single-element ranges make no comparisons.
+
 The exact `std::inplace_merge` overloads reuse the same stable in-place merge
 for two adjacent, already ordered writable ranges. Default ordering also
 accepts raw or authenticated wrapped ranges of those exact trivial source

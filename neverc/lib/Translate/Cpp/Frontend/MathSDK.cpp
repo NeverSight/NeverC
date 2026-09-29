@@ -27021,6 +27021,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 3 && CallbackFirst &&
+        AlgorithmCallbackRangeParameter(1) &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0);
     const auto ScalarFirst = AlgorithmRangePointerParameter(0);
     const auto ScalarLast = AlgorithmRangePointerParameter(1);
     const bool Scalar =
@@ -27037,7 +27043,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() == 3 && AlgorithmWritableRecordRangeParameter(0) &&
         AlgorithmWritableRecordRangeParameter(1) &&
         AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0);
-    if (Scalar || RecordDefault || RecordComparator)
+    if (Scalar || RecordDefault || RecordComparator || CallbackComparator)
       return UtilityOperation::AlgorithmStableSort;
   }
   if (Origin->Path == "__algorithm/inplace_merge.h" &&

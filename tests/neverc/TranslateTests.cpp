@@ -57811,6 +57811,123 @@ TEST_F(TranslateTest, CoreV2CallbackSortRejectsUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackStableSortRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-stable-sort.cpp");
+  const auto Output = tmpFile("callback-stable-sort.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int four(int x) { ++calls; return x + 4; }
+int five(int x) { ++calls; return x + 5; }
+int six(int x) { ++calls; return x + 6; }
+int quiet(int x) noexcept { ++calls; return x + 7; }
+int silent(int x) noexcept { ++calls; return x + 8; }
+int muted(int x) noexcept { ++calls; return x + 9; }
+bool high(Callback value) {
+  return value == four || value == five || value == six;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return high(left) < high(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return high(left) > high(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == silent) < (right == silent);
+}
+int main() {
+  std::array<Callback, 8> values{{four, one, five, two,
+                                  six, three, one, four}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  std::stable_sort((++firstEffects, values.begin()),
+                   (++lastEffects, values.end()),
+                   (++comparatorEffects, before));
+  if (firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1 ||
+      checks == 0 || calls != 0 || values[0] != one ||
+      values[1] != two || values[2] != three || values[3] != one ||
+      values[4] != four || values[5] != five || values[6] != six ||
+      values[7] != four)
+    return 1;
+  Callback raw[]{one, four, two, five, three, six};
+  checks = 0;
+  std::stable_sort(raw, raw + 6, after);
+  if (checks == 0 || calls != 0 || raw[0] != four || raw[1] != five ||
+      raw[2] != six || raw[3] != one || raw[4] != two || raw[5] != three)
+    return 2;
+  std::array<NoexceptCallback, 5> safe{{silent, quiet, silent,
+                                         muted, quiet}};
+  checks = 0;
+  std::stable_sort(safe.begin(), safe.end(), safe_before);
+  if (checks == 0 || calls != 0 || safe[0] != quiet ||
+      safe[1] != muted || safe[2] != quiet ||
+      safe[3] != silent || safe[4] != silent)
+    return 3;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  checks = 0;
+  std::stable_sort(empty.begin(), empty.end(), before);
+  std::stable_sort(single.begin(), single.end(), before);
+  if (single[0] != one || checks != 0 || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackStableSortRejectsUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-stable-sort-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-stable-sort-") + Case.Name + ".nc");
+    writeFile(
+        Source,
+        std::string("#include <algorithm>\n"
+                    "using Callback = int (*)(int);\n"
+                    "int one(int x) { return x + 1; }\n"
+                    "int two(int x) { return x + 2; }\n") +
+            Case.Comparator +
+            "\nint main() { Callback values[]{two, one}; "
+            "std::stable_sort(values, values + 2, before); return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");
