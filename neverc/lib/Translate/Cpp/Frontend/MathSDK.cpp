@@ -27955,7 +27955,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Left->getPointeeType(), Right->getPointeeType()) &&
         Same(Call->getArg(0)->getType(), Left->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), Right->getPointeeType())) {
-      if (utilityScalar(Context, Left->getPointeeType()))
+      if (utilityScalar(Context, Left->getPointeeType()) ||
+          (Left->getPointeeType()->isFunctionPointerType() &&
+           approvedUtilityNativeArrayAssociatedSwap(
+               S, SM, Function, Left->getPointeeType(), Context)))
         return UtilityOperation::Swap;
       auto ArrayLeaf = [&](QualType Current) {
         uint64_t Elements = 1;

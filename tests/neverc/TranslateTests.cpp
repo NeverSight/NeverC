@@ -25997,6 +25997,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2DirectCallbackSwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("direct-callback-swap.cpp");
+  const auto Output = tmpFile("direct-callback-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+using Callback = int (*)(int);
+namespace N {
+struct Arg { int value; };
+int one(Arg value) { return value.value + 1; }
+int two(Arg value) { return value.value + 2; }
+using Callback = int (*)(Arg);
+int adl_calls;
+void swap(Callback&, Callback&) { ++adl_calls; }
+}
+int main() {
+  Callback left = one, right = two;
+  int left_reads = 0, right_reads = 0;
+  std::swap((++left_reads, left), (++right_reads, right));
+  if (left_reads != 1 || right_reads != 1 ||
+      left(5) != 7 || right(5) != 6)
+    return 1;
+  std::swap(left, left);
+  if (left(5) != 7)
+    return 2;
+  N::Callback first = N::one, second = N::two;
+  std::swap(first, second);
+  return N::adl_calls == 0 && first(N::Arg{5}) == 7 &&
+                 second(N::Arg{5}) == 6
+             ? 0
+             : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("direct-callback-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityCompositePairsRunAtBothOptimizations) {
   const auto Source = tmpFile("utility-composite-pair.cpp");
   const auto Output = tmpFile("utility-composite-pair.nc");
@@ -26500,6 +26547,28 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
       {"quoted", "#include \"utility\"\nint main(){return 0;}", "TR0201"},
       {"function-address",
        "#include <utility>\nauto f(){return &std::move<int>;}", "TR0201"},
+      {"direct-callback-swap-specialization",
+       R"cpp(#include <utility>
+int one(int value) { return value + 1; }
+using Callback = int (*)(int);
+namespace std { inline namespace __1 {
+template<> void swap<Callback>(Callback&, Callback&) noexcept {}
+} }
+int f() { Callback a = one, b = one; std::swap(a, b); return a == b; }
+)cpp",
+       "TR0201"},
+      {"direct-callback-move-specialization",
+       R"cpp(#include <utility>
+int one(int value) { return value + 1; }
+using Callback = int (*)(int);
+namespace std { inline namespace __1 {
+template<> Callback&& move<Callback&>(Callback& value) noexcept {
+  return static_cast<Callback&&>(value);
+}
+} }
+int f() { Callback a = one, b = one; std::swap(a, b); return a == b; }
+)cpp",
+       "TR0201"},
       {"record-pair-comparison",
        "#include <utility>\nstruct R{int n;};bool operator==(const R&a,"
        "const R&b){return a.n==b.n;}int f(){std::pair<R,int> a{{1},2},"
@@ -26585,8 +26654,9 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "TR0203"},
       {"adl-callback-array-swap",
        "#include <utility>\nnamespace N{struct R{int n;};"
-       "int one(R);int two(R);using Callback=int(*)(R);"
-       "void swap(Callback&,Callback&);}int f(){"
+       "int one(R r){return r.n+1;}int two(R r){return r.n+2;}"
+       "using Callback=int(*)(R);"
+       "void swap(Callback&,Callback&){} }int f(){"
        "N::Callback a[1]{N::one},b[1]{N::two};"
        "std::swap(a,b);return a[0]==N::two;}",
        "TR0203"},
