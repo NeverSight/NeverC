@@ -13906,6 +13906,20 @@ static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
          functionalInvokeParameterReference(Call->getArg(0), Parameter);
 }
 
+static bool utilityNoexceptCallbackFunction(QualType Pointer, QualType Function,
+                                            const ASTContext &Context) {
+  const auto *Prototype = Function->getAs<FunctionProtoType>();
+  if (!Pointer->isFunctionPointerType() || !Prototype ||
+      !Prototype->isNothrow())
+    return false;
+  auto Plain = Prototype->getExtProtoInfo();
+  Plain.ExceptionSpec = FunctionProtoType::ExceptionSpecInfo(EST_None);
+  return Context.hasSameType(Context.getFunctionType(Prototype->getReturnType(),
+                                                     Prototype->getParamTypes(),
+                                                     Plain),
+                             Pointer->getPointeeType());
+}
+
 // The pinned exchange body selects move and forward independently; prove both
 // instantiated calls before replacing them with a direct callback-value write.
 static bool approvedUtilityCallbackExchange(const State &S,
@@ -13945,11 +13959,14 @@ static bool approvedUtilityCallbackExchange(const State &S,
   const bool FunctionReplacement =
       Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type->getPointeeType());
+  const bool NoexceptFunctionReplacement =
+      Replacement->isLValueReferenceType() &&
+      utilityNoexceptCallbackFunction(Type, ReplacementType, Context);
   if ((ReplacementType.hasQualifiers() && !ConstPointerReplacement &&
        !ConstNullReplacement) ||
       (!Context.hasSameType(ReplacementType, Type) &&
        !ReplacementType->isNullPtrType() && !FunctionReplacement &&
-       !ConstPointerReplacement))
+       !NoexceptFunctionReplacement && !ConstPointerReplacement))
     return false;
   const auto ReplacementReference =
       Replacement->isLValueReferenceType()
@@ -13975,8 +13992,12 @@ static bool approvedUtilityCallbackExchange(const State &S,
                  : nullptr;
   const auto *ValueConversion =
       Assignment && (ReplacementType->isNullPtrType() || FunctionReplacement ||
-                     ConstPointerReplacement)
+                     NoexceptFunctionReplacement || ConstPointerReplacement)
           ? dyn_cast<ImplicitCastExpr>(Assignment->getRHS())
+          : nullptr;
+  const auto *NoexceptDecay =
+      ValueConversion && NoexceptFunctionReplacement
+          ? dyn_cast<ImplicitCastExpr>(ValueConversion->getSubExpr())
           : nullptr;
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
   const auto *Returned =
@@ -13997,6 +14018,13 @@ static bool approvedUtilityCallbackExchange(const State &S,
           (ValueConversion &&
            ValueConversion->getCastKind() == CK_FunctionToPointerDecay &&
            Context.hasSameType(ValueConversion->getType(), Type))) &&
+         (!NoexceptFunctionReplacement ||
+          (ValueConversion && ValueConversion->getCastKind() == CK_NoOp &&
+           Context.hasSameType(ValueConversion->getType(), Type) &&
+           NoexceptDecay &&
+           NoexceptDecay->getCastKind() == CK_FunctionToPointerDecay &&
+           Context.hasSameType(NoexceptDecay->getType(),
+                               Context.getPointerType(ReplacementType)))) &&
          (!ConstPointerReplacement ||
           (ValueConversion &&
            ValueConversion->getCastKind() == CK_LValueToRValue &&
@@ -28046,9 +28074,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameType(Object->getPointeeType().withConst(),
                                Value->getPointeeType()) ||
            Value->getPointeeType()->isNullPtrType() ||
-           Context.hasSameType(
-               Value->getPointeeType(),
-               Object->getPointeeType()->getPointeeType())) &&
+           Context.hasSameType(Value->getPointeeType(),
+                               Object->getPointeeType()->getPointeeType()) ||
+           utilityNoexceptCallbackFunction(Object->getPointeeType(),
+                                           Value->getPointeeType(), Context)) &&
           approvedUtilityCallbackExchange(
               S, SM, Function, Object->getPointeeType(), Context))) &&
         Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&
