@@ -2782,6 +2782,11 @@ static bool utilityArrayStorableValue(const State &S, const SourceManager &SM,
                                      const ASTContext &Context, QualType Type) {
   if (utilityArrayValue(S, SM, Context, Type))
     return true;
+  if (!Type.isNull() && !Type.isVolatileQualified() &&
+      !Type.isRestrictQualified() &&
+      Type.getAddressSpace() == LangAS::Default &&
+      Type->isFunctionPointerType())
+    return true;
   Type = Type.getUnqualifiedType();
   const auto *Record = Type->getAsCXXRecordDecl();
   if (!Record)

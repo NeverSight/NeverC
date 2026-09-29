@@ -34527,6 +34527,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayCallbackStorageRunsAtBothOptimizations) {
+  const auto Source = tmpFile("array-callback-storage.cpp");
+  const auto Output = tmpFile("array-callback-storage.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+int three(int value) noexcept { return value + 3; }
+int main() {
+  std::array<Callback, 2> values{{one, two}};
+  if (values.size() != 2 || values.empty() || values[0](5) != 6 ||
+      values.front()(5) != 6 || values.back()(5) != 7 ||
+      std::get<1>(values)(5) != 7 || values.data()[0](5) != 6)
+    return 1;
+  const auto copied = values;
+  if (copied[0](5) != 6 || copied.cbegin()[1](5) != 7)
+    return 2;
+  std::array<Callback, 2> assigned{{nullptr, nullptr}};
+  assigned = values;
+  if (assigned[0](5) != 6 || assigned[1](5) != 7)
+    return 3;
+  std::array<NoexceptCallback, 1> safe{{three}};
+  if (safe[0](5) != 8)
+    return 4;
+  std::array<Callback, 0> empty{};
+  if (empty.size() != 0 || !empty.empty() || empty.data() != nullptr)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-callback-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayComposesTrivialRecordsAndNestedArrays) {
   const auto Source = tmpFile("array-composition.cpp");
   const auto Output = tmpFile("array-composition.nc");
@@ -34806,10 +34853,9 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
       {"zero-subscript",
        "#include <array>\nint main(){std::array<int,0>a{};return a[0];}",
        "TR0203"},
-      {"nontrivial-element-copy",
-       "#include <array>\nstruct R{int n;explicit R(int v):n(v){}"
-       "R(const R&o):n(o.n){}~R(){}};int main(){"
-       "std::array<R,2>a{{R(1),R(2)}};std::array<R,2>b=a;return b[0].n;}",
+      {"callback-element-fill",
+       "#include <array>\nusing F=int(*)(int);int f(int n){return n;}\n"
+       "int main(){std::array<F,1>a{{f}};a.fill(f);return 0;}",
        "TR0203"},
       {"record-comparison",
        "#include <array>\nstruct R{int n;};bool operator==(const R&a,const "

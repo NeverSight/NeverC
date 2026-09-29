@@ -582,11 +582,19 @@ alignment attribute, size and ABI alignment must exactly match one `T` object.
 The protocol exposes that inaccessible storage as one synthetic `T` carrier so
 the generated record preserves the native size and alignment without exposing
 or operating on libc++ internals. `T` may be an admitted integral or enum
-scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function object
-pointer, a source-owned standard-layout record with checked construction and
-destruction, or another admitted `std::array`; `N` is limited to 65536. Record
+scalar up to 64 bits, `float`, `double`, `nullptr_t`, a non-function object
+pointer, an admitted ordinary function pointer, a source-owned standard-layout
+record with checked construction and destruction, or another admitted
+`std::array`; `N` is limited to 65536. Record
 elements may have nontrivial constructors or destructors. Nested arrays and
 record arrays retain their recursive field layout and ordinary aggregate access.
+
+Function-pointer elements use the existing checked callback signature and
+storage representation. Aggregate initialization, trivial copy and assignment,
+size and empty queries, data and forward iterator access, indexed access,
+`front`, `back` and `get` retain the callback type, including `noexcept`
+signatures and zero-length arrays. Callback-element `fill`, swap and array
+comparisons still require separate operation lowering.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range
