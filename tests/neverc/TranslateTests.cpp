@@ -26340,6 +26340,46 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2NativeTrivialRecordArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-trivial-record-array-swap.cpp");
+  const auto Output = tmpFile("native-trivial-record-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace N { struct R { int value; }; }
+int main() {
+  N::R first[2]{{1}, {2}}, second[2]{{3}, {4}};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0].value != 3 || first[1].value != 4 ||
+      second[0].value != 1 || second[1].value != 2)
+    return 1;
+  N::R grid[2][2]{{{5}, {6}}, {{7}, {8}}};
+  N::R other[2][2]{{{9}, {10}}, {{11}, {12}}};
+  std::swap(grid, other);
+  if (grid[0][0].value != 9 || grid[0][1].value != 10 ||
+      grid[1][0].value != 11 || grid[1][1].value != 12 ||
+      other[0][0].value != 5 || other[1][1].value != 8)
+    return 2;
+  std::swap(grid, grid);
+  return grid[0][0].value == 9 && grid[1][1].value == 12 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("native-trivial-record-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26394,15 +26434,22 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "std::pair<const int*,int>s(&n,2);"
        "std::pair<int*,long>d(nullptr,0L);d=s;return d.second;}",
        "TR0202"},
-      {"record-array-swap",
-       "#include <utility>\nstruct R{int n;};int f(){"
-       "R a[2]{{1},{2}},b[2]{{3},{4}};"
+      {"adl-record-array-swap",
+       "#include <utility>\nnamespace N{struct R{int n;};"
+       "void swap(R&,R&);}int f(){"
+       "N::R a[2]{{1},{2}},b[2]{{3},{4}};"
        "std::swap(a,b);return a[0].n;}",
        "TR0203"},
-      {"nested-record-array-swap",
-       "#include <utility>\nstruct R{int n;};int f(){"
-       "R a[1][2]{{{1},{2}}},b[1][2]{{{3},{4}}};"
+      {"adl-nested-record-array-swap",
+       "#include <utility>\nnamespace N{struct R{int n;};"
+       "void swap(R&,R&);}int f(){"
+       "N::R a[1][2]{{{1},{2}}},b[1][2]{{{3},{4}}};"
        "std::swap(a,b);return a[0][0].n;}",
+       "TR0203"},
+      {"nontrivial-record-array-swap",
+       "#include <utility>\nnamespace N{struct R{int n;R()=default;"
+       "R(R&&)=default;R&operator=(R&& other){n=other.n;return *this;}};}"
+       "int f(){N::R a[1]{},b[1]{};std::swap(a,b);return a[0].n;}",
        "TR0203"},
       {"adl-pointer-array-swap",
        "#include <utility>\nnamespace N{struct R{};"

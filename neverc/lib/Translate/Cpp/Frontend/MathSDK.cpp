@@ -13425,6 +13425,19 @@ static bool utilitySwapTrivialBody(const State &S, const SourceManager &SM,
   return true;
 }
 
+static bool utilityNativeArrayTrivialRecord(const State &S,
+                                            const SourceManager &SM,
+                                            QualType Type,
+                                            const ASTContext &Context) {
+  const auto *Record = Type.isNull() || Type.hasQualifiers()
+                           ? nullptr
+                           : Type->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  return Record && S.owns(SM, Record->getLocation()) &&
+         utilityArrayValue(S, SM, Context, Type) &&
+         utilityArrayTriviallyAssignable(Context, Type);
+}
+
 static bool approvedUtilityNativeArrayAssociatedSwap(
     const State &S, const SourceManager &SM, const FunctionDecl *Function,
     QualType Current, const ASTContext &Context, unsigned Depth = 0) {
@@ -13440,12 +13453,17 @@ static bool approvedUtilityNativeArrayAssociatedSwap(
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference))
     return false;
   const auto *Array = Context.getAsConstantArrayType(Current);
-  if (!Array)
-    return (Current->isEnumeralType() || Current->isPointerType()) &&
-           utilityScalar(Context, Current) && Arguments->size() == 1 &&
+  if (!Array) {
+    const bool Scalar =
+        (Current->isEnumeralType() || Current->isPointerType()) &&
+        utilityScalar(Context, Current);
+    const bool Record =
+        utilityNativeArrayTrivialRecord(S, SM, Current, Context);
+    return (Scalar || Record) && Arguments->size() == 1 &&
            Arguments->get(0).getKind() == TemplateArgument::Type &&
            Context.hasSameType(Arguments->get(0).getAsType(), Current) &&
            utilitySwapTrivialBody(S, SM, Body, Current, Context);
+  }
   const auto Element = Array->getElementType();
   if (Arguments->size() != 3 ||
       Arguments->get(0).getKind() != TemplateArgument::Type ||
@@ -27950,7 +27968,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           break;
       }
       if (!Element.isNull() && !Element.isConstQualified() &&
-          !Element.isVolatileQualified() && utilityScalar(Context, Element) &&
+          !Element.isVolatileQualified() &&
+          (utilityScalar(Context, Element) ||
+           utilityNativeArrayTrivialRecord(S, SM, Element, Context)) &&
           (Associated->isBuiltinType() ||
            ((Associated->isEnumeralType() || Associated->isRecordType()) &&
             approvedUtilityNativeArrayAssociatedSwap(
