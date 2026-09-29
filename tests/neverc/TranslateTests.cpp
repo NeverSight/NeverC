@@ -57702,6 +57702,85 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackMinmaxElementRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-minmax-element.cpp");
+  const auto Output = tmpFile("callback-minmax-element.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : 2) < (right == quiet ? 1 : 2);
+}
+int main() {
+  const std::array<Callback, 6> values{{two, one, three, one, three, two}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  auto positions = std::minmax_element((++firstEffects, values.cbegin()),
+      (++lastEffects, values.cend()), (++comparatorEffects, before));
+  if (positions.first != values.cbegin() + 1 ||
+      positions.second != values.cbegin() + 4 || checks != 7 || calls != 0 ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1)
+    return 1;
+  Callback raw[]{three, one, three};
+  checks = 0;
+  auto rawPositions = std::minmax_element(raw, raw + 3, before);
+  if (rawPositions.first != raw + 1 || rawPositions.second != raw + 2 ||
+      checks != 3 || calls != 0)
+    return 2;
+  const std::array<NoexceptCallback, 4> safe{{quiet, silent, quiet, silent}};
+  checks = 0;
+  auto safePositions = std::minmax_element(safe.cbegin(), safe.cend(),
+                                            safe_before);
+  if (safePositions.first != safe.cbegin() ||
+      safePositions.second != safe.cbegin() + 3 || checks != 4 || calls != 0)
+    return 3;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  auto emptyPositions = std::minmax_element(empty.cbegin(), empty.cend(),
+                                              before);
+  if (emptyPositions.first != empty.cend() ||
+      emptyPositions.second != empty.cend() || checks != 0 || calls != 0)
+    return 4;
+  const std::array<Callback, 1> single{{one}};
+  checks = 0;
+  auto singlePositions = std::minmax_element(single.cbegin(), single.cend(),
+                                               before);
+  if (singlePositions.first != single.cbegin() ||
+      singlePositions.second != single.cbegin() || checks != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-minmax-element" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackSortedRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-sorted.cpp");
   const auto Output = tmpFile("callback-sorted.nc");

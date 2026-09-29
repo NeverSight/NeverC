@@ -26851,6 +26851,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          (AlgorithmRecordRangeParameter(0) &&
           AlgorithmRecordRangeParameter(1) &&
           AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0)) ||
+         (AlgorithmCallbackRangeParameter(0) &&
+          AlgorithmCallbackRangeParameter(1) &&
+          AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0)) ||
          MinmaxElementSourceObject)))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);

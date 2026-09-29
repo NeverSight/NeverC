@@ -2356,6 +2356,10 @@ element type, including `noexcept` pointers. The comparator takes two values of
 that pointer type and returns `bool`; it is evaluated once and compares pointer
 values without invoking their functions. Both scans retain the first tied
 extremum, and empty or single-element ranges make no comparator calls.
+`std::minmax_element` accepts the same checked function-pointer comparator and
+const or mutable raw or authenticated wrapped input range. It returns a pair of
+the original iterator type, selecting the first tied minimum and last tied
+maximum. Empty ranges return two end iterators without comparisons.
 
 The comparator overloads of `std::is_sorted` and `std::is_sorted_until` also
 accept authenticated typed or transparent empty standard `<functional>`
