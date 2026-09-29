@@ -7271,7 +7271,9 @@ class FunctionLowering {
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
-      if (Call->getNumArgs() == 3) {
+      if (ListResult && Call->getNumArgs() == 2) {
+        Comparator = snapshot(expression(Call->getArg(1)), L);
+      } else if (!ListResult && Call->getNumArgs() == 3) {
         const auto Element = RangePointer->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator) {
@@ -7295,9 +7297,10 @@ class FunctionLowering {
           return emitBinaryCallable(*SourceComparator, std::move(Left),
                                     std::move(Right), L);
         if (Comparator)
-          return emitBinaryPredicate(json::Object(*Comparator),
-                                     Call->getArg(2)->getType(),
-                                     std::move(Left), std::move(Right), L);
+          return emitBinaryPredicate(
+              json::Object(*Comparator),
+              Call->getArg(ListResult ? 1 : 2)->getType(), std::move(Left),
+              std::move(Right), L);
         if (ListResult)
           return binary("<", std::move(Left), std::move(Right), "bool", L);
         return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);

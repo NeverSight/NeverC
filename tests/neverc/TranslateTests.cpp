@@ -43958,6 +43958,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmInitializerListMinmaxComparatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-list-minmax-comparator.cpp");
+  const auto Output = tmpFile("algorithm-list-minmax-comparator.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls = 0;
+bool greater(long left, double right) {
+  ++calls;
+  return left > right;
+}
+bool less_decade(int left, int right) {
+  ++calls;
+  return left / 10 < right / 10;
+}
+int main() {
+  auto reversed = std::minmax({3, 1, 5, 5, 1, 2}, greater);
+  if (reversed.first != 5 || reversed.second != 1 || calls != 7)
+    return 1;
+  calls = 0;
+  auto tied = std::minmax({11, 12, 5, 5, 11, 12}, less_decade);
+  if (tied.first != 5 || tied.second != 12 || calls != 7)
+    return 2;
+  calls = 0;
+  int effects = 0;
+  auto singleton = std::minmax({7}, (++effects, greater));
+  if (singleton.first != 7 || singleton.second != 7 ||
+      effects != 1 || calls != 0)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-list-minmax-comparator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
   struct Rejection {
     const char *Name;

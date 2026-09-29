@@ -12133,6 +12133,28 @@ extern "C" int algorithm_list_minmax() {
           'bool operator<(const R&a,const R&b){return a.n<b.n;}'
           'int f(){return std::minmax({R{1},R{2}}).first.n;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+    algorithm_list_minmax_comparator_source = """\
+#include <algorithm>
+extern "C" int algorithm_list_minmax_comparator(
+    bool (*compare)(long, double)) {
+  auto values = std::minmax({3, 1, 5, 5, 1, 2}, compare);
+  return values.first + values.second;
+}
+"""
+    for target in sdk_targets:
+        result = check("v2-algorithm-list-minmax-comparator-" + target,
+                       algorithm_list_minmax_comparator_source,
+                       profile="cpp-core-v2", target=target, sdk=True)
+        nodes = list(walk(result["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], result
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 6, result
+    check("v2-algorithm-list-minmax-comparator-reference",
+          '#include <algorithm>\nbool compare(const int&a,const int&b)'
+          '{return a<b;}'
+          'int f(){return std::minmax({1,2},compare).first;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-extrema-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}',
           profile="cpp-core-v2", sdk=True)

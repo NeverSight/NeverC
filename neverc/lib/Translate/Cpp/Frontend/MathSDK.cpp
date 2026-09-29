@@ -26212,22 +26212,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          approvedDirectAlgorithmSourceComparator(S, SM, Call, Context)))))
     return UtilityOperation::AlgorithmClamp;
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
-      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
-      Call->isPRValue()) {
+      (Call->getNumArgs() == 1 || Call->getNumArgs() == 2) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue()) {
     const auto List = approvedUtilityInitializerListRecord(
         S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
     const auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    const auto *Comparator =
+        Call->getNumArgs() == 2 ? AlgorithmCallbackPrototype(1) : nullptr;
     if (List && Pair &&
         Same(Function->getParamDecl(0)->getType(),
              Context.getRecordType(List->Record)) &&
         Same(Call->getType(), Function->getReturnType()) &&
         Same(Pair->First->getType(), List->ElementType) &&
         Same(Pair->Second->getType(), List->ElementType) &&
-        utilityScalarComparisonType(Context, List->ElementType,
-                                    List->ElementType, true) &&
-        !utilityEnumHasSourceOperator(S, SM, Context, List->ElementType,
-                                      OO_Less))
+        ((Call->getNumArgs() == 1 &&
+          utilityScalarComparisonType(Context, List->ElementType,
+                                      List->ElementType, true) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, List->ElementType,
+                                        OO_Less)) ||
+         (Comparator && Comparator->getNumParams() == 2 &&
+          Comparator->getReturnType()->isBooleanType() &&
+          utilityScalarDirectConversion(Context, List->ElementType,
+                                        Comparator->getParamType(0)) &&
+          utilityScalarDirectConversion(Context, List->ElementType,
+                                        Comparator->getParamType(1)))))
       return UtilityOperation::AlgorithmMinmaxList;
   }
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
