@@ -2162,6 +2162,14 @@ takes that pointer type by value and returns `bool`; selection copies pointer
 values without invoking their functions. They preserve the input and return
 the advanced output iterator, including its wrapped form. Empty inputs return
 the unadvanced output and make no predicate calls.
+`std::replace_if` and `std::replace_copy_if` likewise accept one exact
+function-pointer element type, including `noexcept` pointers. Their checked
+predicate takes that pointer type by value, and the new value is an exact
+const reference. In-place replacement requires a writable raw or wrapped
+range; copying accepts a const raw or wrapped input and a separate writable
+raw or wrapped output. The new value reference is reread at each selected
+element, including after a predicate changes its referent. Empty inputs make
+no predicate calls or writes.
 
 The exact `std::is_partitioned`, `std::partition`, `std::stable_partition`,
 `std::partition_copy` and `std::partition_point` templates use that predicate

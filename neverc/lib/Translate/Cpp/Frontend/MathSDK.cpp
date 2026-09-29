@@ -27401,6 +27401,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceIf;
+  if (Origin->Path == "__algorithm/replace_if.h" && Name == "replace_if" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    if (Input && !(*Input)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeUnaryPredicateParameter(2, 0) &&
+        AlgorithmTransferCallbackValueParameter(3, 0))
+      return UtilityOperation::AlgorithmReplaceIf;
+  }
   if (Origin->Path == "__algorithm/replace_copy_if.h" &&
       Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&
@@ -27413,6 +27426,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceCopyIf;
+  if (Origin->Path == "__algorithm/replace_copy_if.h" &&
+      Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    const auto Output = AlgorithmCallbackRangeParameter(2);
+    if (Input && AlgorithmCallbackRangeParameter(1) && Output &&
+        !(*Output)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*Input)->getPointeeType(),
+                                    (*Output)->getPointeeType()) &&
+        AlgorithmCallbackRangeUnaryPredicateParameter(3, 0) &&
+        AlgorithmTransferCallbackValueParameter(4, 2))
+      return UtilityOperation::AlgorithmReplaceCopyIf;
+  }
   if (Origin->Path == "__algorithm/replace_copy_if.h" &&
       Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&

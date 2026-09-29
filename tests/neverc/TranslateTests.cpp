@@ -56693,6 +56693,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPredicateReplaceRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-predicate-replace.cpp");
+  const auto Output = tmpFile("callback-predicate-replace.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+Callback replacement;
+NoexceptCallback safeReplacement;
+bool is_two(Callback value) {
+  ++checks;
+  if (checks == 3) replacement = three;
+  return value == two;
+}
+bool is_quiet(NoexceptCallback value) noexcept {
+  ++checks;
+  return value == quiet;
+}
+int main() {
+  std::array<Callback, 4> values{{one, two, two, two}};
+  replacement = one;
+  int firstEffects = 0, lastEffects = 0;
+  int predicateEffects = 0, valueEffects = 0;
+  std::replace_if((++firstEffects, values.begin()),
+                   (++lastEffects, values.end()),
+                   (++predicateEffects, is_two),
+                   (++valueEffects, replacement));
+  if (firstEffects != 1 || lastEffects != 1 || predicateEffects != 1 ||
+      valueEffects != 1 || values[0] != one || values[1] != one ||
+      values[2] != three || values[3] != three ||
+      checks != 4 || calls != 0)
+    return 1;
+  const std::array<Callback, 4> source{{one, two, nullptr, two}};
+  std::array<Callback, 4> output{};
+  replacement = one;
+  checks = 0;
+  auto outEnd = std::replace_copy_if(source.cbegin(), source.cend(),
+                                      output.begin(), is_two, replacement);
+  if (outEnd != output.end() || output[0] != one || output[1] != one ||
+      output[2] != nullptr || output[3] != three ||
+      source[1] != two || checks != 4 || calls != 0)
+    return 2;
+  const Callback rawSource[]{two, one, two};
+  Callback rawOutput[3]{};
+  replacement = nullptr;
+  checks = 0;
+  if (std::replace_copy_if(rawSource, rawSource + 3, rawOutput,
+                            is_two, replacement) != rawOutput + 3 ||
+      rawOutput[0] != nullptr || rawOutput[1] != one ||
+      rawOutput[2] != three || checks != 3 || calls != 0)
+    return 3;
+  std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  safeReplacement = nullptr;
+  checks = 0;
+  std::replace_if(safe.begin(), safe.end(), is_quiet, safeReplacement);
+  if (safe[0] != nullptr || safe[1] != nullptr || safe[2] != nullptr ||
+      checks != 3 || calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 2> safeSource{{quiet, nullptr}};
+  NoexceptCallback safeOutput[2]{};
+  checks = 0;
+  if (std::replace_copy_if(safeSource.cbegin(), safeSource.cend(),
+                            safeOutput, is_quiet, safeReplacement) !=
+          safeOutput + 2 ||
+      safeOutput[0] != nullptr || safeOutput[1] != nullptr ||
+      checks != 2 || calls != 0)
+    return 5;
+  std::array<Callback, 0> empty{};
+  checks = 0;
+  std::replace_if(empty.begin(), empty.end(), is_two, replacement);
+  if (std::replace_copy_if(empty.cbegin(), empty.cend(), rawOutput,
+                            is_two, replacement) != rawOutput ||
+      checks != 0 || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-predicate-replace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackPredicateCopyRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-predicate-copy.cpp");
   const auto Output = tmpFile("callback-predicate-copy.nc");
