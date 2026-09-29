@@ -15149,6 +15149,49 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringCopyNRunsAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-copy-n.cpp");
+  const auto Output = tmpFile("cstring-copy-n.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  const char source[5]{'a', static_cast<char>(0x80), 0, 'z', 0};
+  char destination[8]{'L', 'x', 'x', 'x', 'x', 'x', 'R', 0};
+  int destination_effects = 0, source_effects = 0, count_effects = 0;
+  char *copied = std::strncpy((++destination_effects, destination + 1),
+                              (++source_effects, source), (++count_effects, 5));
+  if (copied != destination + 1 || destination_effects != 1 ||
+      source_effects != 1 || count_effects != 1 || destination[0] != 'L' ||
+      destination[1] != 'a' ||
+      static_cast<unsigned char>(destination[2]) != 0x80 ||
+      destination[3] != 0 || destination[4] != 0 || destination[5] != 0 ||
+      destination[6] != 'R')
+    return 1;
+  const char short_source[2]{'b', 'c'};
+  char truncated[4]{'x', 'x', 'Q', 0};
+  if (std::strncpy(truncated, short_source, 2) != truncated ||
+      truncated[0] != 'b' || truncated[1] != 'c' || truncated[2] != 'Q')
+    return 2;
+  char untouched[3]{'X', 'Y', 0};
+  if (std::strncpy(untouched, source, 0) != untouched ||
+      untouched[0] != 'X' || untouched[1] != 'Y')
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-copy-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CMemoryWritesRunAtBothOptimizations) {
   const auto Source = tmpFile("cmemory-writes.cpp");
   const auto Output = tmpFile("cmemory-writes.nc");
@@ -15288,9 +15331,13 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
        "#include <cstring>\nint main(){char "
        "s[3]{};::strcpy(s,\"x\");return 0;}",
        "TR0203"},
-      {"unsupported-strncpy",
+      {"global-strncpy",
        "#include <cstring>\nint main(){char "
-       "s[3]{};std::strncpy(s,\"x\",2);return 0;}",
+       "s[3]{};::strncpy(s,\"x\",2);return 0;}",
+       "TR0203"},
+      {"unsupported-strcat",
+       "#include <cstring>\nint main(){char "
+       "s[3]{};std::strcat(s,\"x\");return 0;}",
        "TR0203"},
       {"quoted-header", "#include \"cstring\"\nint main(){return 0;}",
        "TR0201"}};

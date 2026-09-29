@@ -2967,6 +2967,63 @@ class FunctionLowering {
       label(End, L);
       return Destination;
     }
+    case UtilityOperation::CStringCopyN: {
+      const auto DestinationType = type(Call->getType(), L);
+      const auto SourceType = type(Call->getArg(1)->getType(), L);
+      const auto CountType = type(Call->getArg(2)->getType(), L);
+      const auto CharacterType = type(A.Context.CharTy, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Destination = snapshot(expression(Call->getArg(0)), L);
+      auto Source = snapshot(expression(Call->getArg(1)), L);
+      auto Remaining = snapshot(expression(Call->getArg(2)), L);
+      auto Cursor = snapshot(json::Object(Destination), L);
+      const auto Check = labelName(), Copy = labelName();
+      const auto AdvanceSource = labelName(), CheckPadding = labelName();
+      const auto Pad = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", json::Object(Remaining), quantity(0, CountType, L),
+                    "bool", L),
+             Copy, End, L);
+      label(Copy, L);
+      auto Byte = snapshot(dereference(json::Object(Source), L), L);
+      assign(dereference(json::Object(Cursor), L), json::Object(Byte), L);
+      assign(Remaining,
+             binary("-", json::Object(Remaining), quantity(1, CountType, L),
+                    CountType, L),
+             L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    DestinationType, L),
+             L);
+      branch(binary("==", cast(json::Object(Byte), "u8", L),
+                    quantity(0, "u8", L), "bool", L),
+             CheckPadding, AdvanceSource, L);
+      label(AdvanceSource, L);
+      assign(Source,
+             binary("+", json::Object(Source), quantity(1, DifferenceType, L),
+                    SourceType, L),
+             L);
+      jump(Check, L);
+      label(CheckPadding, L);
+      branch(binary("!=", json::Object(Remaining), quantity(0, CountType, L),
+                    "bool", L),
+             Pad, End, L);
+      label(Pad, L);
+      assign(dereference(json::Object(Cursor), L),
+             quantity(0, CharacterType, L), L);
+      assign(Remaining,
+             binary("-", json::Object(Remaining), quantity(1, CountType, L),
+                    CountType, L),
+             L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    DestinationType, L),
+             L);
+      jump(CheckPadding, L);
+      label(End, L);
+      return Destination;
+    }
     case UtilityOperation::CStringMemoryCopy:
     case UtilityOperation::CStringMemoryMove:
     case UtilityOperation::CStringMemorySet: {

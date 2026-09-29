@@ -20206,14 +20206,18 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::CStringMemoryCompare;
   const auto MutableBytePointer = Context.getPointerType(Context.VoidTy);
   const auto MutableCharacter = Context.getPointerType(Context.CharTy);
-  if (Name == "strcpy" && Function->getNumParams() == 2 &&
+  if ((Name == "strcpy" || Name == "strncpy") &&
+      Function->getNumParams() == (Name == "strcpy" ? 2u : 3u) &&
       Context.hasSameUnqualifiedType(Function->getParamDecl(0)->getType(),
                                      MutableCharacter) &&
       Context.hasSameUnqualifiedType(Function->getParamDecl(1)->getType(),
                                      Character) &&
+      (Name == "strcpy" ||
+       Same(Function->getParamDecl(2)->getType(), Context.getSizeType())) &&
       Same(Function->getReturnType(), MutableCharacter) &&
       Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::CStringCopy;
+    return Name == "strcpy" ? UtilityOperation::CStringCopy
+                            : UtilityOperation::CStringCopyN;
   if (InlineFind && Function->getNumParams() == (MemoryFind ? 3u : 2u) &&
       (Same(Function->getParamDecl(0)->getType(),
             MemoryFind ? BytePointer : Character) ||
