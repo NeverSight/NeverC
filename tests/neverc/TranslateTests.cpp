@@ -57702,6 +57702,77 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackStablePartitionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-stable-partition.cpp");
+  const auto Output = tmpFile("callback-stable-partition.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+bool selected(Callback value) {
+  ++checks;
+  return value == one || value == three;
+}
+bool safe_selected(NoexceptCallback value) {
+  ++checks;
+  return value == quiet || value == silent;
+}
+int main() {
+  std::array<Callback, 6> values{{two, one, nullptr, three, two, one}};
+  int firstEffects = 0, lastEffects = 0, predicateEffects = 0;
+  auto point = std::stable_partition((++firstEffects, values.begin()),
+                                      (++lastEffects, values.end()),
+                                      (++predicateEffects, selected));
+  if (firstEffects != 1 || lastEffects != 1 || predicateEffects != 1 ||
+      point != values.begin() + 3 || values[0] != one ||
+      values[1] != three || values[2] != one || values[3] != two ||
+      values[4] != nullptr || values[5] != two || checks != 6 || calls != 0)
+    return 1;
+  Callback raw[]{two, one, three};
+  checks = 0;
+  if (std::stable_partition(raw, raw + 3, selected) != raw + 2 ||
+      raw[0] != one || raw[1] != three || raw[2] != two ||
+      checks != 3 || calls != 0)
+    return 2;
+  std::array<NoexceptCallback, 4> safe{{nullptr, quiet, silent, nullptr}};
+  checks = 0;
+  auto safePoint = std::stable_partition(safe.begin(), safe.end(),
+                                          safe_selected);
+  if (safePoint != safe.begin() + 2 || safe[0] != quiet ||
+      safe[1] != silent || safe[2] != nullptr || safe[3] != nullptr ||
+      checks != 4 || calls != 0)
+    return 3;
+  std::array<Callback, 0> empty{};
+  checks = 0;
+  if (std::stable_partition(empty.begin(), empty.end(), selected) !=
+          empty.end() ||
+      checks != 0 || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-stable-partition" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackPartitionRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-partition.cpp");
   const auto Output = tmpFile("callback-partition.nc");

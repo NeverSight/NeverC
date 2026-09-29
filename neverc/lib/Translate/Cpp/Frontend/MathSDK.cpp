@@ -27549,6 +27549,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/stable_partition.h" &&
       Name == "stable_partition" && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    if (Input && !(*Input)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeUnaryPredicateParameter(2, 0))
+      return UtilityOperation::AlgorithmStablePartition;
+  }
+  if (Origin->Path == "__algorithm/stable_partition.h" &&
+      Name == "stable_partition" && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
