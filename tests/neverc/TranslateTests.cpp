@@ -26190,6 +26190,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeEnumArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-enum-array-swap.cpp");
+  const auto Output = tmpFile("native-enum-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <cstddef>
+namespace N { enum class Color : unsigned char { red = 1, blue = 2 }; }
+int main() {
+  N::Color first[2]{N::Color::red, N::Color::blue};
+  N::Color second[2]{N::Color::blue, N::Color::red};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0] != N::Color::blue || first[1] != N::Color::red ||
+      second[0] != N::Color::red || second[1] != N::Color::blue)
+    return 1;
+  N::Color grid[2][2]{{N::Color::red, N::Color::red},
+                      {N::Color::blue, N::Color::blue}};
+  N::Color other[2][2]{{N::Color::blue, N::Color::red},
+                       {N::Color::red, N::Color::blue}};
+  std::swap(grid, other);
+  if (grid[0][0] != N::Color::blue || grid[0][1] != N::Color::red ||
+      grid[1][0] != N::Color::red || grid[1][1] != N::Color::blue ||
+      other[0][0] != N::Color::red || other[1][1] != N::Color::blue)
+    return 2;
+  std::byte bytes[2]{std::byte{1}, std::byte{2}};
+  std::byte others[2]{std::byte{3}, std::byte{4}};
+  std::swap(bytes, others);
+  return bytes[0] == std::byte{3} && bytes[1] == std::byte{4} &&
+                 others[0] == std::byte{1} && others[1] == std::byte{2}
+             ? 0
+             : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("native-enum-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26262,6 +26309,11 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "#include <utility>\nnamespace N{enum E{a,b};"
        "void swap(E&,E&);}int f(){N::E a[1]{N::a},b[1]{N::b};"
        "std::swap(a,b);return a[0];}",
+       "TR0203"},
+      {"adl-nested-enum-array-swap",
+       "#include <utility>\nnamespace N{enum E{a,b};"
+       "void swap(E&,E&);}int f(){N::E a[1][2]{{N::a,N::b}},"
+       "b[1][2]{{N::b,N::a}};std::swap(a,b);return a[0][0];}",
        "TR0203"},
       {"ambiguous-type-get",
        "#include <utility>\nint f(){std::pair<int,int>p{1,2};"

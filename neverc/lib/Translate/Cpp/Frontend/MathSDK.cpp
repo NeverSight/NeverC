@@ -13425,6 +13425,55 @@ static bool utilitySwapTrivialBody(const State &S, const SourceManager &SM,
   return true;
 }
 
+static bool approvedUtilityNativeArrayEnumSwap(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    QualType Current, const ASTContext &Context, unsigned Depth = 0) {
+  if (!Function || Current.isNull() || Depth > 8 ||
+      !utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h") ||
+      Function->getNumParams() != 2 || !Function->getReturnType()->isVoidType())
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto Reference = Context.getLValueReferenceType(Current);
+  if (!Arguments || !Body ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference))
+    return false;
+  const auto *Array = Context.getAsConstantArrayType(Current);
+  if (!Array)
+    return Current->isEnumeralType() && utilityScalar(Context, Current) &&
+           Arguments->size() == 1 &&
+           Arguments->get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(Arguments->get(0).getAsType(), Current) &&
+           utilitySwapTrivialBody(S, SM, Body, Current, Context);
+  const auto Element = Array->getElementType();
+  if (Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Element) ||
+      Arguments->get(1).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Arguments->get(1).getIntegralType(),
+                           Context.getSizeType()) ||
+      Arguments->get(1).getAsIntegral().getLimitedValue(65537) !=
+          Array->getSize().getLimitedValue(65537) ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Arguments->get(2).getIntegralType(),
+                           Context.IntTy) ||
+      Arguments->get(2).getAsIntegral() != 0 || Body->size() != 1)
+    return false;
+  const auto *Loop = dyn_cast<ForStmt>(*Body->body_begin());
+  const auto *LoopBody =
+      Loop ? dyn_cast<CompoundStmt>(Loop->getBody()) : nullptr;
+  const auto *Call = LoopBody && LoopBody->size() == 1
+                         ? dyn_cast<CallExpr>(*LoopBody->body_begin())
+                         : nullptr;
+  return Call && Call->getNumArgs() == 2 && Call->getType()->isVoidType() &&
+         Call->getArg(0)->isLValue() && Call->getArg(1)->isLValue() &&
+         Context.hasSameType(Call->getArg(0)->getType(), Element) &&
+         Context.hasSameType(Call->getArg(1)->getType(), Element) &&
+         approvedUtilityNativeArrayEnumSwap(S, SM, Call->getDirectCallee(),
+                                            Element, Context, Depth + 1);
+}
+
 std::optional<UtilityOwnedSwapOperations>
 approvedUtilityOwnedSwap(const State &S, const SourceManager &SM,
                          const FunctionDecl *Function, QualType Type,
@@ -27894,8 +27943,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                          .getCanonicalType()
                          .getUnqualifiedType();
       if (!Element.isNull() && !Element.isConstQualified() &&
-          !Element.isVolatileQualified() && Associated->isBuiltinType() &&
-          utilityScalar(Context, Element))
+          !Element.isVolatileQualified() && utilityScalar(Context, Element) &&
+          (Associated->isBuiltinType() ||
+           (Element->isEnumeralType() &&
+            approvedUtilityNativeArrayEnumSwap(
+                S, SM, Function, Left->getPointeeType(), Context))))
         return UtilityOperation::NativeArraySwap;
       if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
                                    Context))
