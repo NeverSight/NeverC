@@ -2907,6 +2907,14 @@ Their checked comparator overloads also accept an exact
 `operator<`. Comparisons receive original range elements and the live key by
 reference in each required direction; raw or authenticated wrapped iterator
 results retain their original form.
+The checked comparator overloads of these four queries also accept const or
+mutable raw or authenticated wrapped ranges and a const reference key of one
+exact function-pointer element type, including `noexcept` pointers. The
+comparator takes two pointer values by value and returns `bool`; both
+comparison directions are checked. Bounds return the original iterator form,
+and `equal_range` returns a pair of that form. Equal keys preserve duplicate
+runs, missing keys retain their insertion position, and empty ranges make no
+comparisons. The pointed-to functions are never invoked.
 
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable

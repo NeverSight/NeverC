@@ -59040,6 +59040,158 @@ TEST_F(TranslateTest, CoreV2CallbackOrderedQueriesRejectInvalidComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackBoundQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-bound-queries.cpp");
+  const auto Output = tmpFile("callback-bound-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int a(int x) { ++calls; return x + 1; }
+int b(int x) { ++calls; return x + 2; }
+int c(int x) { ++calls; return x + 3; }
+int d(int x) { ++calls; return x + 4; }
+int e(int x) { ++calls; return x + 5; }
+int quiet(int x) noexcept { ++calls; return x + 6; }
+int silent(int x) noexcept { ++calls; return x + 7; }
+int rank(Callback value) {
+  return value == a || value == b ? 1 : value == c ? 2 :
+         value == d ? 3 : 4;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet) > (right == quiet);
+}
+int main() {
+  const std::array<Callback, 5> values{{a, b, c, c, e}};
+  const Callback raw_values[]{a, b, c, c, e};
+  const Callback key = c;
+  const Callback missing = d;
+  int first_effects = 0, last_effects = 0;
+  int key_effects = 0, comparator_effects = 0;
+  auto lower = std::lower_bound(
+      (++first_effects, values.cbegin()),
+      (++last_effects, values.cend()), (++key_effects, key),
+      (++comparator_effects, before));
+  if (lower != values.cbegin() + 2 || first_effects != 1 ||
+      last_effects != 1 || key_effects != 1 || comparator_effects != 1 ||
+      checks == 0 || calls != 0)
+    return 1;
+  checks = 0;
+  if (std::upper_bound(raw_values, raw_values + 5, key, before) !=
+          raw_values + 4 ||
+      checks == 0 || calls != 0)
+    return 2;
+  checks = 0;
+  if (!std::binary_search(values.cbegin(), values.cend(), key, before) ||
+      checks == 0 || calls != 0)
+    return 3;
+  checks = 0;
+  auto equal = std::equal_range(values.cbegin(), values.cend(), key, before);
+  if (equal.first != values.cbegin() + 2 ||
+      equal.second != values.cbegin() + 4 || checks == 0 || calls != 0)
+    return 4;
+  checks = 0;
+  if (std::lower_bound(raw_values, raw_values + 5, missing, before) !=
+          raw_values + 4 ||
+      std::upper_bound(raw_values, raw_values + 5, missing, before) !=
+          raw_values + 4 ||
+      std::binary_search(raw_values, raw_values + 5, missing, before) ||
+      calls != 0)
+    return 5;
+  auto absent = std::equal_range(raw_values, raw_values + 5, missing, before);
+  if (absent.first != raw_values + 4 || absent.second != raw_values + 4 ||
+      calls != 0)
+    return 6;
+  const std::array<NoexceptCallback, 3> safe{{quiet, quiet, silent}};
+  const NoexceptCallback safe_key = quiet;
+  checks = 0;
+  if (std::lower_bound(safe.cbegin(), safe.cend(), safe_key, safe_before) !=
+          safe.cbegin() ||
+      std::upper_bound(safe.cbegin(), safe.cend(), safe_key, safe_before) !=
+          safe.cbegin() + 2 ||
+      !std::binary_search(safe.cbegin(), safe.cend(), safe_key, safe_before) ||
+      checks == 0 || calls != 0)
+    return 7;
+  auto safe_equal = std::equal_range(safe.cbegin(), safe.cend(), safe_key,
+                                     safe_before);
+  if (safe_equal.first != safe.cbegin() ||
+      safe_equal.second != safe.cbegin() + 2 || calls != 0)
+    return 8;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  if (std::lower_bound(empty.cbegin(), empty.cend(), key, before) !=
+          empty.cend() ||
+      std::upper_bound(empty.cbegin(), empty.cend(), key, before) !=
+          empty.cend() ||
+      std::binary_search(empty.cbegin(), empty.cend(), key, before))
+    return 9;
+  auto empty_equal = std::equal_range(empty.cbegin(), empty.cend(), key,
+                                      before);
+  if (empty_equal.first != empty.cend() ||
+      empty_equal.second != empty.cend() || checks != 0 || calls != 0)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-bound-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackBoundQueriesRejectInvalidForms) {
+  const struct {
+    const char *Name;
+    const char *Value;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result", "Callback key = one;",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters", "Callback key = one;",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"},
+      {"mixed-noexcept-value", "NoexceptCallback key = safe;",
+       "bool before(Callback left, Callback right) { return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-bound-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-bound-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "using NoexceptCallback = int (*)(int) noexcept;\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n"
+                          "int safe(int x) noexcept { return x + 3; }\n") +
+                  Case.Comparator + "\nint main() { " + Case.Value +
+                  " const Callback first[]{one, two}; "
+                  "auto found = std::equal_range(first, first + 2, key, "
+                  "before); return found.first == first ? 0 : 1; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");

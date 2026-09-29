@@ -23926,6 +23926,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                           Value->getPointeeType());
   };
+  auto AlgorithmCallbackRangeValueParameter = [&](unsigned ValueIndex,
+                                                  unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Pointer = AlgorithmCallbackRangeParameter(IteratorIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Pointer && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           utilityCallbackEqualityType(Context,
+                                       Call->getArg(ValueIndex)->getType(),
+                                       Value->getPointeeType()) &&
+           utilityCallbackEqualityType(Context, (*Pointer)->getPointeeType(),
+                                       Value->getPointeeType());
+  };
   auto AlgorithmRecordEqualityValueParameter = [&](unsigned ValueIndex,
                                                    unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -25832,7 +25847,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRecordOrderedRangeParameter(1) &&
         AlgorithmRecordOrderedValueParameter(2, 0)) ||
        (AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
-        AlgorithmRecordRangeValueParameter(2, 0))) &&
+        AlgorithmRecordRangeValueParameter(2, 0)) ||
+       (AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeValueParameter(2, 0))) &&
       Same(Call->getType(), Function->getReturnType())) {
     const bool Default = Call->getNumArgs() == 3;
     const bool ForwardComparator =
@@ -25844,13 +25862,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool RecordComparator =
         Call->getNumArgs() == 4 && AlgorithmRecordRangeValueParameter(2, 0) &&
         AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 4 &&
+        AlgorithmCallbackRangeValueParameter(2, 0) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(3, 0, 0);
     if (!((Default && ((AlgorithmOrderedRangeParameter(0) &&
                         AlgorithmOrderedRangeValueParameter(2, 0)) ||
                        AlgorithmRecordOrderedValueParameter(2, 0))) ||
           (Name == "lower_bound" && (ForwardComparator || RecordComparator)) ||
           (Name == "upper_bound" && (ReverseComparator || RecordComparator)) ||
           (Name == "binary_search" &&
-           ((ForwardComparator && ReverseComparator) || RecordComparator))))
+           ((ForwardComparator && ReverseComparator) || RecordComparator)) ||
+          CallbackComparator))
       return std::nullopt;
     if (Name == "binary_search") {
       if (Function->getReturnType()->isBooleanType())
@@ -26516,11 +26539,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRecordOrderedRangeParameter(1) &&
         AlgorithmRecordOrderedValueParameter(2, 0)) ||
        (AlgorithmRecordRangeParameter(0) && AlgorithmRecordRangeParameter(1) &&
-        AlgorithmRecordRangeValueParameter(2, 0))) &&
+        AlgorithmRecordRangeValueParameter(2, 0)) ||
+       (AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeValueParameter(2, 0))) &&
       Same(Call->getType(), Function->getReturnType())) {
     const bool RecordComparator =
         Call->getNumArgs() == 4 && AlgorithmRecordRangeValueParameter(2, 0) &&
         AlgorithmRecordRangeBinaryPredicateParameter(3, 0, 0);
+    const bool CallbackComparator =
+        Call->getNumArgs() == 4 &&
+        AlgorithmCallbackRangeValueParameter(2, 0) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(3, 0, 0);
     if (!((Call->getNumArgs() == 3 &&
            ((AlgorithmOrderedRangeParameter(0) &&
              AlgorithmOrderedRangeValueParameter(2, 0)) ||
@@ -26528,7 +26558,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           (Call->getNumArgs() == 4 &&
            AlgorithmRangeComparisonValueParameter(3, 0, 2, false) &&
            AlgorithmRangeComparisonValueParameter(3, 0, 2, true)) ||
-          RecordComparator))
+          RecordComparator || CallbackComparator))
       return std::nullopt;
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
