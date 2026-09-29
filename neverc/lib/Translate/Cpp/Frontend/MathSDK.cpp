@@ -25934,6 +25934,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemove;
+  if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCallbackRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmTransferCallbackValueParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemove;
   if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmRecordEqualityRangeParameter(0) &&

@@ -56693,6 +56693,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackRemoveRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-remove.cpp");
+  const auto Output = tmpFile("callback-remove.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  std::array<Callback, 6> values{{one, two, nullptr, two, three, two}};
+  Callback needle = two;
+  int firstEffects = 0, lastEffects = 0, valueEffects = 0;
+  auto end = std::remove((++firstEffects, values.begin()),
+                         (++lastEffects, values.end()),
+                         (++valueEffects, needle));
+  if (firstEffects != 1 || lastEffects != 1 || valueEffects != 1 ||
+      end != values.begin() + 3 || values[0] != one ||
+      values[1] != nullptr || values[2] != three || calls != 0)
+    return 1;
+  Callback raw[4]{two, one, two, three};
+  Callback rawNeedle = two;
+  Callback *rawEnd = std::remove(raw, raw + 4, rawNeedle);
+  if (rawEnd != raw + 2 || raw[0] != one || raw[1] != three || calls != 0)
+    return 2;
+  std::array<Callback, 4> alias{{one, two, one, three}};
+  auto aliasEnd = std::remove(alias.begin(), alias.end(), alias[0]);
+  if (aliasEnd != alias.begin() + 3 || alias[0] != two ||
+      alias[1] != one || alias[2] != three || calls != 0)
+    return 3;
+  std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  NoexceptCallback safeNeedle = quiet;
+  auto safeEnd = std::remove(safe.begin(), safe.end(), safeNeedle);
+  if (safeEnd != safe.begin() + 1 || safe[0] != nullptr || calls != 0)
+    return 4;
+  std::array<Callback, 0> empty{};
+  if (std::remove(empty.begin(), empty.end(), needle) != empty.end() ||
+      calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-remove" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");

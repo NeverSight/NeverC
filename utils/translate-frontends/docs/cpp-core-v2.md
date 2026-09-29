@@ -1854,6 +1854,11 @@ also admit authenticated wrapped scalar ranges. Copying forms accept mixed raw
 and wrapped inputs or writable outputs, and returned positions keep the public
 iterator type. Their heterogeneous equality common type and direct output or
 replacement conversion rules remain in force.
+Value-based `std::remove` also accepts raw or authenticated wrapped writable
+ranges of one exact function-pointer element type, including `noexcept`
+pointers. Its value must have that same pointer type. It compares pointer
+values without calling the functions, retains the value reference as elements
+move, and returns the matching raw or wrapped iterator.
 `rotate_copy` likewise accepts authenticated raw or wrapped scalar input and
 writable output ranges with checked direct conversion, preserving the output
 iterator type and empty-range result.
