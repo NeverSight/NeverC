@@ -26221,7 +26221,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                         AlgorithmTransferRangeParameters(0, 2);
     const bool Record = AlgorithmRecordRangeParameter(0) &&
                         AlgorithmTransferRecordRangeParameters(0, 2);
-    if (Scalar || Record)
+    const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
+    const bool Callback =
+        CallbackInput && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
+                                    (*CallbackOutput)->getPointeeType());
+    if (Scalar || Record || Callback)
       return UtilityOperation::AlgorithmCopyN;
   }
   if (Origin->Path == "__algorithm/iter_swap.h" && Name == "iter_swap" &&

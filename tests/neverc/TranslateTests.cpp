@@ -43116,6 +43116,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackCopyNRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-copy-n.cpp");
+  const auto Output = tmpFile("callback-copy-n.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+enum Count : unsigned int { three = 3 };
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 4> source{{one, nullptr, two, one}};
+  const auto &view = source;
+  std::array<Callback, 5> output{};
+  int inputEffects = 0, countEffects = 0, outputEffects = 0;
+  auto end = std::copy_n((++inputEffects, view.cbegin()),
+                         (++countEffects, Count::three),
+                         (++outputEffects, output.begin() + 1));
+  if (end != output.begin() + 4 || inputEffects != 1 || countEffects != 1 ||
+      outputEffects != 1 || output[0] != nullptr || output[1] != one ||
+      output[2] != nullptr || output[3] != two || output[4] != nullptr ||
+      calls != 0)
+    return 1;
+  Callback rawOutput[2]{};
+  if (std::copy_n(view.cbegin() + 2, 2, rawOutput) != rawOutput + 2 ||
+      rawOutput[0] != two || rawOutput[1] != one)
+    return 2;
+  if (std::copy_n(source.data(), 2, output.begin() + 3) !=
+          output.end() ||
+      output[3] != one || output[4] != nullptr)
+    return 3;
+  if (std::copy_n(view.cbegin(), 0, output.begin()) != output.begin() ||
+      output[0] != nullptr)
+    return 4;
+  std::array<NoexceptCallback, 2> safeSource{{safe, nullptr}};
+  std::array<NoexceptCallback, 2> safeOutput{};
+  if (std::copy_n(safeSource.begin(), 2, safeOutput.begin()) !=
+          safeOutput.end() ||
+      safeOutput[0] != safe || safeOutput[1] != nullptr || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-copy-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");

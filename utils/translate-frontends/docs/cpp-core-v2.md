@@ -1767,14 +1767,16 @@ iterator type, with the final pointer wrapped back into the pinned iterator
 record when needed. Empty counts and ranges, overlapping forward or backward
 copies, and iterator argument evaluation retain their existing behavior.
 
-The exact `std::copy`, three-iterator `std::move`, `std::copy_backward` and
-`std::move_backward` forms also accept raw or authenticated wrapped ranges of
-function-pointer elements when the input and writable output have the same
-function-pointer value type, including `noexcept` signatures. Const input
-elements are accepted. They transfer pointer values without invoking the
-functions. The backward forms preserve right-overlap behavior and return the
-beginning of the destination range. Other callback transfer algorithms and
-mixed callback signatures remain outside this boundary.
+The exact `std::copy`, `std::copy_n`, three-iterator `std::move`,
+`std::copy_backward` and `std::move_backward` forms also accept raw or
+authenticated wrapped ranges of function-pointer elements when the input and
+writable output have the same function-pointer value type, including `noexcept`
+signatures. Const input elements are accepted. They transfer pointer values
+without invoking the functions. `copy_n` accepts the checked integral or
+unscoped-enum count and returns the original output position for zero count.
+The backward forms preserve right-overlap behavior and return the beginning of
+the destination range. Other callback transfer algorithms and mixed callback
+signatures remain outside this boundary.
 
 Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
 record elements with a selected supported copy assignment. Their pinned public
