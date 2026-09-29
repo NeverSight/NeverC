@@ -2803,7 +2803,7 @@ static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
                                             QualType Type) {
   if (Type.isConstQualified())
     return false;
-  if (utilityScalar(Context, Type))
+  if (utilityScalar(Context, Type) || Type->isFunctionPointerType())
     return true;
   const auto *Record = Type->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;

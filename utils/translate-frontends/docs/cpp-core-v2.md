@@ -593,8 +593,10 @@ Function-pointer elements use the existing checked callback signature and
 storage representation. Aggregate initialization, trivial copy and assignment,
 size and empty queries, data and forward iterator access, indexed access,
 `front`, `back` and `get` retain the callback type, including `noexcept`
-signatures and zero-length arrays. Callback-element `fill`, swap and array
-comparisons still require separate operation lowering.
+signatures and zero-length arrays. Member `fill` captures its callback argument
+once before assigning each element; a zero-length array evaluates the argument
+without writing storage. Callback-element swap and array comparisons still
+require separate operation lowering.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range
