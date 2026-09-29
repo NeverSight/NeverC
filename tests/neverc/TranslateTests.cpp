@@ -34623,6 +34623,61 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayCallbackSwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("array-callback-swap.cpp");
+  const auto Output = tmpFile("array-callback-swap.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+int three(int value) noexcept { return value + 3; }
+int four(int value) noexcept { return value + 4; }
+int main() {
+  std::array<Callback, 2> left{{one, nullptr}}, right{{two, one}};
+  int leftEffects = 0, rightEffects = 0;
+  (++leftEffects, left).swap((++rightEffects, right));
+  if (leftEffects != 1 || rightEffects != 1 || left[0](5) != 7 ||
+      left[1](5) != 6 || right[0](5) != 6 || right[1] != nullptr)
+    return 1;
+  std::swap(left, right);
+  if (left[0](5) != 6 || left[1] != nullptr || right[0](5) != 7 ||
+      right[1](5) != 6)
+    return 2;
+  left.swap(left);
+  if (left[0](5) != 6 || left[1] != nullptr)
+    return 3;
+  std::array<NoexceptCallback, 1> safeLeft{{three}}, safeRight{{four}};
+  safeLeft.swap(safeRight);
+  if (safeLeft[0](5) != 9 || safeRight[0](5) != 8)
+    return 4;
+  std::swap(safeLeft, safeRight);
+  if (safeLeft[0](5) != 8 || safeRight[0](5) != 9)
+    return 5;
+  std::array<Callback, 0> emptyLeft{}, emptyRight{};
+  emptyLeft.swap(emptyRight);
+  std::swap(emptyLeft, emptyRight);
+  if (emptyLeft.data() != nullptr || emptyRight.data() != nullptr)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-callback-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayComposesTrivialRecordsAndNestedArrays) {
   const auto Source = tmpFile("array-composition.cpp");
   const auto Output = tmpFile("array-composition.nc");
@@ -34902,9 +34957,12 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
       {"zero-subscript",
        "#include <array>\nint main(){std::array<int,0>a{};return a[0];}",
        "TR0203"},
-      {"callback-element-swap",
-       "#include <array>\nusing F=int(*)(int);int f(int n){return n;}\n"
-       "int main(){std::array<F,1>a{{f}},b{{f}};a.swap(b);return 0;}",
+      {"callback-adl-element-swap",
+       "#include <array>\nnamespace N{struct A{int n;};using F=int(*)(A);"
+       "int f(A a){return a.n;}int effects;"
+       "void swap(F& a,F& b){++effects;F old=a;a=b;b=old;}}"
+       "int main(){std::array<N::F,1>a{{N::f}},b{{N::f}};"
+       "a.swap(b);return N::effects;}",
        "TR0203"},
       {"record-comparison",
        "#include <array>\nstruct R{int n;};bool operator==(const R&a,const "

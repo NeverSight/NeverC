@@ -595,8 +595,10 @@ size and empty queries, data and forward iterator access, indexed access,
 `front`, `back` and `get` retain the callback type, including `noexcept`
 signatures and zero-length arrays. Member `fill` captures its callback argument
 once before assigning each element; a zero-length array evaluates the argument
-without writing storage. Callback-element swap and array comparisons still
-require separate operation lowering.
+without writing storage. Member `swap` and free `std::swap` authenticate the
+selected SDK element swap before exchanging callbacks, including `noexcept`
+signatures and zero-length arrays. A source-owned swap selected through ADL is
+rejected. Callback-array comparisons still require separate operation lowering.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range

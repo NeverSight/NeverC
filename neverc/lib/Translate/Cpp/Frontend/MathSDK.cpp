@@ -13784,7 +13784,8 @@ approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
         return true;
       }
     }
-    return utilityPairAssignableValue(S, SM, Context, Type) &&
+    return (utilityPairAssignableValue(S, SM, Context, Type) ||
+            Type->isFunctionPointerType()) &&
            utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
   }
 
