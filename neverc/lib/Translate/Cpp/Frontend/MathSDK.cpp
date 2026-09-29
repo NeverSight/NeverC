@@ -26959,6 +26959,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    if (Call->getNumArgs() == 3 && CallbackFirst &&
+        AlgorithmCallbackRangeParameter(1) &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified() &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmSort;
     const auto Iterator = Function->getParamDecl(0)->getType();
     const bool Raw = utilityObjectPointer(Context, Iterator) &&
                      Same(Call->getArg(0)->getType(), Iterator) &&

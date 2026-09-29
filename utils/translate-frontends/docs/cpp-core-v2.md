@@ -2599,6 +2599,13 @@ objects for complete object pointers. Its checked heap lowering applies the
 selected scalar `operator()` operation directly, preserving the object
 argument's single evaluation and the comparator's ordering.
 
+The checked comparator overload of `std::sort` also accepts writable raw or
+authenticated wrapped ranges of one exact function-pointer element type,
+including `noexcept` pointers. The comparator takes two pointer values by
+value and returns `bool`; heap sorting moves those values without invoking
+their pointed-to functions. Iterator and comparator arguments are evaluated
+once. Empty and single-element ranges make no comparator calls.
+
 The comparator overloads of `std::partial_sort`, `std::partial_sort_copy` and
 `std::nth_element` accept these authenticated typed or transparent standard
 comparison objects on arithmetic scalars. `partial_sort_copy` separately
