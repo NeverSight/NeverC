@@ -13937,10 +13937,16 @@ static bool approvedUtilityCallbackExchange(const State &S,
   const bool ConstPointerReplacement =
       Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type.withConst());
+  const bool ConstNullReplacement =
+      Replacement->isLValueReferenceType() &&
+      ReplacementType->isNullPtrType() &&
+      Context.hasSameType(ReplacementType,
+                          ReplacementType.getUnqualifiedType().withConst());
   const bool FunctionReplacement =
       Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type->getPointeeType());
-  if ((ReplacementType.hasQualifiers() && !ConstPointerReplacement) ||
+  if ((ReplacementType.hasQualifiers() && !ConstPointerReplacement &&
+       !ConstNullReplacement) ||
       (!Context.hasSameType(ReplacementType, Type) &&
        !ReplacementType->isNullPtrType() && !FunctionReplacement &&
        !ConstPointerReplacement))

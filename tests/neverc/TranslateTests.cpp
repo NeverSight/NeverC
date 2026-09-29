@@ -26094,16 +26094,23 @@ int main() {
   Callback const_old = std::exchange(first, immutable);
   if (const_old(5) != 7 || first(5) != 6 || immutable(5) != 6)
     return 9;
+  const decltype(nullptr) const_empty = nullptr;
+  Callback const_cleared = std::exchange(first, const_empty);
+  if (const_cleared(5) != 6 || first != nullptr)
+    return 10;
   N::Callback nested_old = std::exchange(left, nullptr);
   if (nested_old(N::Arg{5}) != 7 || left != nullptr)
-    return 10;
+    return 11;
   N::Callback nested_empty = std::exchange(left, N::one);
   const N::Callback nested_immutable = N::two;
   N::Callback nested_const_old = std::exchange(left, nested_immutable);
+  const decltype(nullptr) nested_const_empty = nullptr;
+  N::Callback nested_const_cleared = std::exchange(left, nested_const_empty);
   return nested_empty == nullptr && nested_const_old(N::Arg{5}) == 6 &&
-                 left(N::Arg{5}) == 7 && nested_immutable(N::Arg{5}) == 7
+                 nested_const_cleared(N::Arg{5}) == 7 && left == nullptr &&
+                 nested_immutable(N::Arg{5}) == 7
              ? 0
-             : 11;
+             : 12;
 }
 )cpp");
   auto Result =
