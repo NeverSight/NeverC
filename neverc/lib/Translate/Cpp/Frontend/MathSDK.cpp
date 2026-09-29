@@ -27486,6 +27486,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
       return UtilityOperation::AlgorithmPartitionPoint;
   }
+  if (PointerPartitionQuery && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCallbackRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmCallbackRangeUnaryPredicateParameter(2, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "is_partitioned" && Function->getReturnType()->isBooleanType())
+      return UtilityOperation::AlgorithmIsPartitioned;
+    if (Name == "partition_point" &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmPartitionPoint;
+  }
   if (Origin->Path == "__algorithm/partition.h" && Name == "partition" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmWritableRecordRangeParameter(0) &&

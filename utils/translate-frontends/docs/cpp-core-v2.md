@@ -2192,6 +2192,13 @@ authenticated `std::pair`. `partition_point` accepts a range already partitioned
 by the predicate and uses logarithmic bisection. Empty ranges return their input
 or output iterators without invoking the predicate, and all arguments are
 evaluated and retained once.
+`std::is_partitioned` and `std::partition_point` also accept const or mutable
+raw or authenticated wrapped ranges of one exact function-pointer element
+type, including `noexcept` pointers, with a checked `bool` predicate taking
+that pointer type by value. They pass pointer values without invoking the
+pointed-to functions. `partition_point` requires an already partitioned range
+and returns the original raw or wrapped iterator form; both operations skip
+predicate calls on empty ranges.
 
 The exact `std::for_each`, `std::for_each_n`, unary and binary
 `std::transform`, `std::generate` and `std::generate_n` templates accept checked
