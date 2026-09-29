@@ -841,6 +841,7 @@ enum class UtilityOperation {
   AlgorithmMax,
   AlgorithmClamp,
   AlgorithmMinmax,
+  AlgorithmMinmaxList,
   AlgorithmMinmaxElement,
   AlgorithmIsHeap,
   AlgorithmIsHeapUntil,

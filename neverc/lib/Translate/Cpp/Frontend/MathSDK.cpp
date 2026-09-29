@@ -26212,6 +26212,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          approvedDirectAlgorithmSourceComparator(S, SM, Call, Context)))))
     return UtilityOperation::AlgorithmClamp;
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (List && Pair &&
+        Same(Function->getParamDecl(0)->getType(),
+             Context.getRecordType(List->Record)) &&
+        Same(Call->getType(), Function->getReturnType()) &&
+        Same(Pair->First->getType(), List->ElementType) &&
+        Same(Pair->Second->getType(), List->ElementType) &&
+        utilityScalarComparisonType(Context, List->ElementType,
+                                    List->ElementType, true) &&
+        !utilityEnumHasSourceOperator(S, SM, Context, List->ElementType,
+                                      OO_Less))
+      return UtilityOperation::AlgorithmMinmaxList;
+  }
+  if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       (AlgorithmReferenceParameter(0) ||

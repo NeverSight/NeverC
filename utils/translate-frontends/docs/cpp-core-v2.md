@@ -2195,6 +2195,13 @@ first in the pinned comparison order, and not called for a singleton list.
 Reference-parameter callbacks and record-valued list overloads remain outside
 this boundary.
 
+The exact default `std::minmax(initializer_list<T>)` overload accepts the same
+ordered scalar elements and returns an authenticated `std::pair<T, T>` by value.
+It scans the nonempty list with the pinned pairwise comparison scheme, selecting
+the first minimum and last maximum before copying their values into the pair.
+The list expression is evaluated once. Its comparator-taking and record-valued
+overloads remain outside this boundary.
+
 The corresponding three-argument `std::min`, `std::max` and `std::minmax`,
 four-argument `std::clamp`, and three-argument `std::minmax_element` overloads
 use the checked comparator boundary above. Scalar reference algorithms retain

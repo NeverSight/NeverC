@@ -7243,16 +7243,36 @@ class FunctionLowering {
       label(End, L);
       return Place;
     }
+    case UtilityOperation::AlgorithmMinmaxList:
     case UtilityOperation::AlgorithmMinmaxElement: {
-      auto FirstRange = AlgorithmRangeValue(0);
-      auto LastRange = AlgorithmRangeValue(1);
-      auto First = std::move(FirstRange.first);
-      auto Last = std::move(LastRange.first);
+      const bool ListResult =
+          Operation == UtilityOperation::AlgorithmMinmaxList;
+      Expression First, Last;
+      QualType RangePointer;
+      if (ListResult) {
+        auto List = InitializerListFor(Call->getArg(0)->getType());
+        if (!List)
+          reject(L, "algorithm minmax initializer list",
+                 "The selected std::initializer_list layout is unavailable.");
+        auto Value = snapshot(expression(Call->getArg(0)), L);
+        First = snapshot(fieldStorage(json::Object(Value), List->Begin, L), L);
+        auto Size = snapshot(fieldStorage(std::move(Value), List->Size, L), L);
+        RangePointer = List->Begin->getType();
+        Last = snapshot(binary("+", json::Object(First), std::move(Size),
+                               type(RangePointer, L), L),
+                        L);
+      } else {
+        auto FirstRange = AlgorithmRangeValue(0);
+        auto LastRange = AlgorithmRangeValue(1);
+        First = std::move(FirstRange.first);
+        Last = std::move(LastRange.first);
+        RangePointer = FirstRange.second;
+      }
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       std::optional<CapturedAlgorithmPredicate> SourceComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = FirstRange.second->getPointeeType();
+        const auto Element = RangePointer->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator) {
           if (const auto *Method = approvedMinmaxElementSourceComparator(
@@ -7278,13 +7298,15 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
                                      std::move(Left), std::move(Right), L);
+        if (ListResult)
+          return binary("<", std::move(Left), std::move(Right), "bool", L);
         return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);
       };
       auto Minimum = snapshot(json::Object(First), L);
       auto Maximum = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(FirstRange.second, L);
+      const auto PointerType = type(RangePointer, L);
       auto Next = temporary(PointerType, L);
       auto Lower = temporary(PointerType, L);
       auto Upper = temporary(PointerType, L);
@@ -7381,18 +7403,28 @@ class FunctionLowering {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Pair)
-        reject(L, "algorithm minmax_element",
+        reject(L,
+               ListResult ? "algorithm minmax initializer list"
+                          : "algorithm minmax_element",
                "The selected std::pair layout is unavailable.");
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(Call->getType(), L);
       if (Place.getString("type") != type(Call->getType(), L))
-        reject(L, "algorithm minmax_element",
-               "The std::minmax_element destination type differs from its "
-               "result.");
-      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 0),
-             Minimum, L);
-      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 0),
-             Maximum, L);
+        reject(L,
+               ListResult ? "algorithm minmax initializer list"
+                          : "algorithm minmax_element",
+               "The selected minmax destination type differs from its result.");
+      if (ListResult) {
+        assign(fieldStorage(json::Object(Place), Pair->First, L),
+               dereference(std::move(Minimum), L), L);
+        assign(fieldStorage(json::Object(Place), Pair->Second, L),
+               dereference(std::move(Maximum), L), L);
+      } else {
+        assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 0),
+               Minimum, L);
+        assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 0),
+               Maximum, L);
+      }
       return Place;
     }
     case UtilityOperation::AlgorithmIsHeap:

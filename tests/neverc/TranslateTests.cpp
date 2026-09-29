@@ -43918,6 +43918,46 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmInitializerListMinmaxRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-list-minmax.cpp");
+  const auto Output = tmpFile("algorithm-list-minmax.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  auto values = std::minmax({3, 1, 5, 5, 1, 2});
+  if (values.first != 1 || values.second != 5)
+    return 1;
+  auto singleton = std::minmax({7});
+  if (singleton.first != 7 || singleton.second != 7)
+    return 2;
+  auto reversed = std::minmax({9, -2});
+  if (reversed.first != -2 || reversed.second != 9)
+    return 3;
+  auto decimals = std::minmax({2.5, 1.5, 3.5});
+  if (decimals.first != 1.5 || decimals.second != 3.5)
+    return 4;
+  std::initializer_list<int> stored{4, 2, 6};
+  int effects = 0;
+  auto copied = std::minmax((++effects, stored));
+  if (effects != 1 || copied.first != 2 || copied.second != 6)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-list-minmax" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
   struct Rejection {
     const char *Name;
