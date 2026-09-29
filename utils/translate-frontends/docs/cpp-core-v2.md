@@ -1968,6 +1968,11 @@ The default comparison forms also accept two raw or wrapped ranges of the same
 source-owned trivial record type with a uniquely selected Boolean `operator==`.
 They compare original elements without copies, stop at the first mismatch or
 bounded end, and return both positions in that same authenticated pair.
+Default three- and four-iterator `std::mismatch` also accept raw or authenticated
+wrapped ranges of one exact function-pointer element type, including `noexcept`
+pointers. The algorithm compares pointer values without invoking functions;
+the bounded form stops at either range end, and the returned `std::pair`
+preserves each input's raw or wrapped iterator type.
 The predicate forms also accept two independently typed exact trivial
 source-record ranges through the same checked const-reference callback and
 return each range's original raw or wrapped iterator position.

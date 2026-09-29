@@ -57364,6 +57364,85 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackMismatchRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-mismatch.cpp");
+  const auto Output = tmpFile("callback-mismatch.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  const std::array<Callback, 5> left{{one, two, nullptr, three, one}};
+  const Callback right[]{one, two, three, three, one};
+  int firstEffects = 0, lastEffects = 0;
+  int secondEffects = 0, secondLastEffects = 0;
+  auto bounded = std::mismatch((++firstEffects, left.cbegin()),
+                                (++lastEffects, left.cend()),
+                                (++secondEffects, right),
+                                (++secondLastEffects, right + 5));
+  if (bounded.first != left.cbegin() + 2 || bounded.second != right + 2 ||
+      firstEffects != 1 || lastEffects != 1 || secondEffects != 1 ||
+      secondLastEffects != 1 || calls != 0)
+    return 1;
+  auto unbounded = std::mismatch(left.cbegin(), left.cend(), right);
+  if (unbounded.first != left.cbegin() + 2 || unbounded.second != right + 2 ||
+      calls != 0)
+    return 2;
+  const Callback shortRight[]{one, two};
+  auto shortResult = std::mismatch(left.cbegin(), left.cend(), shortRight,
+                                    shortRight + 2);
+  if (shortResult.first != left.cbegin() + 2 ||
+      shortResult.second != shortRight + 2 || calls != 0)
+    return 3;
+  const Callback rawLeft[]{one, two};
+  const std::array<Callback, 2> wrappedRight{{one, three}};
+  auto mixed = std::mismatch(rawLeft, rawLeft + 2, wrappedRight.cbegin(),
+                              wrappedRight.cend());
+  if (mixed.first != rawLeft + 1 ||
+      mixed.second != wrappedRight.cbegin() + 1 || calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  const NoexceptCallback safeRight[]{quiet, quiet, quiet};
+  auto safeMismatch = std::mismatch(safe.cbegin(), safe.cend(), safeRight);
+  if (safeMismatch.first != safe.cbegin() + 1 ||
+      safeMismatch.second != safeRight + 1 || calls != 0)
+    return 5;
+  const Callback same[]{one, two, nullptr};
+  auto equal = std::mismatch(left.cbegin(), left.cbegin() + 3, same,
+                              same + 3);
+  if (equal.first != left.cbegin() + 3 || equal.second != same + 3 ||
+      calls != 0)
+    return 6;
+  const std::array<Callback, 0> empty{};
+  auto emptyResult = std::mismatch(empty.cbegin(), empty.cend(), right,
+                                   right + 5);
+  if (emptyResult.first != empty.cend() || emptyResult.second != right ||
+      calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-mismatch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");

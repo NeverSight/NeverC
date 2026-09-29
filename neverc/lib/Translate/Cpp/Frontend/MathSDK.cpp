@@ -26274,9 +26274,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    const auto First = AlgorithmRangePointerParameter(0);
-    const auto Last = AlgorithmRangePointerParameter(1);
-    const auto Second = AlgorithmRangePointerParameter(2);
+    auto First = AlgorithmRangePointerParameter(0);
+    auto Last = AlgorithmRangePointerParameter(1);
+    auto Second = AlgorithmRangePointerParameter(2);
+    if (!First)
+      First = AlgorithmCallbackRangeParameter(0);
+    if (!Last)
+      Last = AlgorithmCallbackRangeParameter(1);
+    if (!Second)
+      Second = AlgorithmCallbackRangeParameter(2);
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&
@@ -26331,6 +26337,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                         OO_EqualEqual) &&
           utilityScalarComparisonType(Context, FirstElement, SecondElement,
                                       false).has_value();
+      const bool CallbackElements =
+          utilityCallbackEqualityType(Context, FirstElement, SecondElement)
+              .has_value();
       auto Predicate = [&](unsigned Index) {
         const auto *Prototype = AlgorithmCallbackPrototype(Index);
         return Prototype && Prototype->getNumParams() == 2 &&
@@ -26340,10 +26349,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                utilityScalarDirectConversion(Context, SecondElement,
                                              Prototype->getParamType(1));
       };
-      if (Call->getNumArgs() == 3 && DefaultElements)
+      if (Call->getNumArgs() == 3 && (DefaultElements || CallbackElements))
         return UtilityOperation::AlgorithmMismatch;
       if (Call->getNumArgs() == 4) {
-        if (DefaultElements && AlgorithmRangePointerParameter(3) &&
+        auto SecondLast = AlgorithmRangePointerParameter(3);
+        if (!SecondLast)
+          SecondLast = AlgorithmCallbackRangeParameter(3);
+        if ((DefaultElements || CallbackElements) && SecondLast &&
             Same(Function->getParamDecl(2)->getType(),
                  Function->getParamDecl(3)->getType()))
           return UtilityOperation::AlgorithmMismatch;
