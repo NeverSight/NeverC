@@ -2011,13 +2011,14 @@ Their checked function-pointer predicate overloads also accept two
 independently typed exact trivial source-record ranges. The callback receives
 each original element through its matching `const Record&` parameter, returns
 `bool`, and preserves the first-range raw or wrapped result type.
-Default `std::search` and `std::find_end` also accept two raw or authenticated
-wrapped ranges of one exact function-pointer element type, including `noexcept`
-pointers. They compare pointer values without invoking the functions, support
-either range in raw or wrapped form, and preserve the first-range iterator type.
-`search` returns the first match, while `find_end` returns the last. Empty
-patterns return the first iterator for `search` and the last for `find_end`;
-unsuccessful searches return the last iterator.
+Default `std::search`, `std::find_end` and `std::find_first_of` also accept two
+raw or authenticated wrapped ranges of one exact function-pointer element type,
+including `noexcept` pointers. They compare pointer values without invoking
+the functions, support either range in raw or wrapped form, and preserve the
+first-range iterator type. `search` returns the first matching subsequence,
+`find_end` the last, and `find_first_of` the first input element equal to any
+choice. Empty patterns return the first iterator for `search` and the last for
+`find_end`; empty choices and unsuccessful searches return the last iterator.
 Checked function-pointer predicate overloads of `search`, `find_end` and
 `find_first_of` accept independent raw or authenticated wrapped scalar ranges,
 including different directly convertible element types.

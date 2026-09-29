@@ -57160,6 +57160,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackFindFirstOfRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-find-first-of.cpp");
+  const auto Output = tmpFile("callback-find-first-of.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int four(int x) { ++calls; return x + 4; }
+int quiet(int x) noexcept { ++calls; return x + 5; }
+int main() {
+  const std::array<Callback, 5> values{{one, nullptr, two, one, three}};
+  const Callback choices[]{three, two};
+  int firstEffects = 0, lastEffects = 0;
+  int choiceEffects = 0, choiceLastEffects = 0;
+  auto found = std::find_first_of((++firstEffects, values.cbegin()),
+                                   (++lastEffects, values.cend()),
+                                   (++choiceEffects, choices),
+                                   (++choiceLastEffects, choices + 2));
+  if (found != values.cbegin() + 2 || firstEffects != 1 || lastEffects != 1 ||
+      choiceEffects != 1 || choiceLastEffects != 1 || calls != 0)
+    return 1;
+  const Callback nullChoice[]{nullptr};
+  if (std::find_first_of(values.cbegin(), values.cend(), nullChoice,
+                         nullChoice + 1) != values.cbegin() + 1 ||
+      std::find_first_of(values.cbegin(), values.cend(), values.cbegin() + 3,
+                         values.cend()) != values.cbegin() ||
+      calls != 0)
+    return 2;
+  const Callback missing[]{four};
+  if (std::find_first_of(values.cbegin(), values.cend(), missing,
+                         missing + 1) != values.cend() ||
+      std::find_first_of(values.cbegin(), values.cend(), choices,
+                         choices) != values.cend() ||
+      calls != 0)
+    return 3;
+  const Callback raw[]{one, nullptr, two, three};
+  const std::array<Callback, 1> wrappedChoices{{two}};
+  if (std::find_first_of(raw, raw + 4, wrappedChoices.cbegin(),
+                         wrappedChoices.cend()) != raw + 2 ||
+      calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  const NoexceptCallback safeChoice[]{nullptr};
+  if (std::find_first_of(safe.cbegin(), safe.cend(), safeChoice,
+                         safeChoice + 1) != safe.cbegin() + 1 ||
+      calls != 0)
+    return 5;
+  const std::array<Callback, 0> empty{};
+  if (std::find_first_of(empty.cbegin(), empty.cend(), choices,
+                         choices + 2) != empty.cend() ||
+      calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-find-first-of" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
