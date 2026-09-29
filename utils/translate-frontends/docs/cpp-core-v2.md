@@ -1859,6 +1859,10 @@ ranges of one exact function-pointer element type, including `noexcept`
 pointers. Its value must have that same pointer type. It compares pointer
 values without calling the functions, retains the value reference as elements
 move, and returns the matching raw or wrapped iterator.
+`std::remove_copy` accepts the same exact function-pointer equality boundary
+with const or mutable raw or wrapped input and a separate writable raw or
+wrapped output. It retains the value reference while copying nonmatching
+pointers, and returns the advanced output iterator. The input remains intact.
 `rotate_copy` likewise accepts authenticated raw or wrapped scalar input and
 writable output ranges with checked direct conversion, preserving the output
 iterator type and empty-range result.

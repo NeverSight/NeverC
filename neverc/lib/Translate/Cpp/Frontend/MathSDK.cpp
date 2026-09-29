@@ -25966,6 +25966,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemoveCopy;
+  if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCallbackRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = *AlgorithmCallbackRangeParameter(0);
+    const auto Output = AlgorithmCallbackRangeParameter(2);
+    const auto Value = Function->getParamDecl(3)->getType();
+    if (Output && !(*Output)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, Input->getPointeeType(),
+                                    (*Output)->getPointeeType()) &&
+        Value->isLValueReferenceType() &&
+        Value->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, Call->getArg(3)->getType(),
+                                    Value->getPointeeType()) &&
+        utilityCallbackEqualityType(Context, Input->getPointeeType(),
+                                    Value->getPointeeType()))
+      return UtilityOperation::AlgorithmRemoveCopy;
+  }
   if (Origin->Path == "__algorithm/replace.h" && Name == "replace" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       AlgorithmWritableRecordRangeParameter(0) &&
