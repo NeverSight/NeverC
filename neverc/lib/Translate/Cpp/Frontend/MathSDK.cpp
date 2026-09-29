@@ -13461,7 +13461,7 @@ static bool approvedUtilityNativeArrayAssociatedSwap(
     }
     const bool Scalar =
         (Current->isEnumeralType() || Current->isPointerType()) &&
-        utilityScalar(Context, Current);
+        (utilityScalar(Context, Current) || Current->isFunctionPointerType());
     const bool Record =
         utilityNativeArrayTrivialRecord(S, SM, Current, Context);
     return (Scalar || Record) && Arguments->size() == 1 &&
@@ -27972,6 +27972,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       auto Element = ArrayLeaf(Left->getPointeeType());
       // Each array overload calls swap unqualified. Built-in leaves and pointer
       // or fixed-array chains ending in a built-in type have no ADL candidate.
+      // Function pointers may have associated types from their signatures, so
+      // authenticate the selected element swap even for callback arrays.
       auto Associated = Element.isNull()
                             ? QualType()
                             : Element.getCanonicalType().getUnqualifiedType();
@@ -27989,9 +27991,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Element.isNull() && !Element.isConstQualified() &&
           !Element.isVolatileQualified() &&
           (utilityScalar(Context, Element) ||
+           Element->isFunctionPointerType() ||
            utilityNativeArrayTrivialRecord(S, SM, Element, Context)) &&
           (Associated->isBuiltinType() ||
-           ((Associated->isEnumeralType() || Associated->isRecordType()) &&
+           ((Element->isFunctionPointerType() || Associated->isEnumeralType() ||
+             Associated->isRecordType()) &&
             approvedUtilityNativeArrayAssociatedSwap(
                 S, SM, Function, Left->getPointeeType(), Context))))
         return UtilityOperation::NativeArraySwap;

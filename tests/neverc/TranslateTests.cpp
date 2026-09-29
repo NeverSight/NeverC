@@ -26380,6 +26380,45 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeCallbackArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-callback-array-swap.cpp");
+  const auto Output = tmpFile("native-callback-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int one(int value) { return value + 1; }
+int two(int value) { return value + 2; }
+using Callback = int (*)(int);
+int main() {
+  Callback first[2]{one, two}, second[2]{two, one};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0](5) != 7 || first[1](5) != 6 ||
+      second[0](5) != 6 || second[1](5) != 7)
+    return 1;
+  Callback grid[2][1]{{one}, {two}}, other[2][1]{{two}, {one}};
+  std::swap(grid, other);
+  if (grid[0][0](5) != 7 || grid[1][0](5) != 6 ||
+      other[0][0](5) != 6 || other[1][0](5) != 7)
+    return 2;
+  std::swap(first, first);
+  return first[0](5) == 7 && first[1](5) == 6 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("native-callback-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NativeOwnedRecordArraySwapCallsSelectedOperations) {
   const auto Source = tmpFile("native-owned-record-array-swap.cpp");
   const auto Output = tmpFile("native-owned-record-array-swap.nc");
@@ -26543,6 +26582,13 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "void swap(R (*&)[2],R (*&)[2]);}int f(){N::R rows[2][2]{};"
        "N::R (*a[1])[2]{&rows[0]},(*b[1])[2]{&rows[1]};"
        "std::swap(a,b);return a[0]==&rows[1];}",
+       "TR0203"},
+      {"adl-callback-array-swap",
+       "#include <utility>\nnamespace N{struct R{int n;};"
+       "int one(R);int two(R);using Callback=int(*)(R);"
+       "void swap(Callback&,Callback&);}int f(){"
+       "N::Callback a[1]{N::one},b[1]{N::two};"
+       "std::swap(a,b);return a[0]==N::two;}",
        "TR0203"},
       {"adl-enum-array-swap",
        "#include <utility>\nnamespace N{enum E{a,b};"

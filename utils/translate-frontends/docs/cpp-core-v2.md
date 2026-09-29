@@ -189,8 +189,10 @@ forged declarations are rejected. The pinned fixed-size C array overload of
 reaches a built-in type through nested pointer and fixed-array layers. Enum
 leaves and pointers that reach an enum or record through those layers are also
 supported when every instantiated element call selects the pinned generic
-scalar `std::swap`. Source-owned standard-layout record leaves require that
-same selection. Trivial records use element-wise value exchange; admitted
+scalar `std::swap`. Function-pointer leaves use the same selection check because
+their parameter and return types can introduce ADL swap candidates.
+Source-owned standard-layout record leaves require that selection too.
+Trivial records use element-wise value exchange; admitted
 nontrivial records invoke their selected move constructor, two move assignments
 and temporary destructor for each element. User ADL swaps and specializations
 remain rejected. Each array expression is evaluated once, and elements are
