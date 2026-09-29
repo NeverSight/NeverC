@@ -43041,6 +43041,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackBackwardTransferRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-backward.cpp");
+  const auto Output = tmpFile("callback-backward.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 3> source{{one, nullptr, two}};
+  const auto &view = source;
+  std::array<Callback, 4> output{};
+  int firstEffects = 0, lastEffects = 0, outputEffects = 0;
+  auto start = std::copy_backward((++firstEffects, view.cbegin()),
+                                  (++lastEffects, view.cend()),
+                                  (++outputEffects, output.end()));
+  if (start != output.begin() + 1 || firstEffects != 1 || lastEffects != 1 ||
+      outputEffects != 1 || output[0] != nullptr || output[1] != one ||
+      output[2] != nullptr || output[3] != two || calls != 0)
+    return 1;
+  std::array<Callback, 4> shifted{{one, nullptr, two, nullptr}};
+  if (std::copy_backward(shifted.begin(), shifted.begin() + 3,
+                         shifted.end()) != shifted.begin() + 1 ||
+      shifted[0] != one || shifted[1] != one || shifted[2] != nullptr ||
+      shifted[3] != two)
+    return 2;
+  std::array<Callback, 4> moved{};
+  if (std::move_backward(source.begin(), source.end(), moved.end()) !=
+          moved.begin() + 1 ||
+      moved[0] != nullptr || moved[1] != one || moved[2] != nullptr ||
+      moved[3] != two || source[0] != one || source[1] != nullptr ||
+      source[2] != two)
+    return 3;
+  std::array<Callback, 4> moveShifted{{one, nullptr, two, nullptr}};
+  if (std::move_backward(moveShifted.begin(), moveShifted.begin() + 3,
+                         moveShifted.end()) != moveShifted.begin() + 1 ||
+      moveShifted[0] != one || moveShifted[1] != one ||
+      moveShifted[2] != nullptr || moveShifted[3] != two)
+    return 4;
+  if (std::copy_backward(source.begin(), source.begin(), output.end()) !=
+          output.end() ||
+      std::move_backward(source.begin(), source.begin(), output.end()) !=
+          output.end())
+    return 5;
+  std::array<NoexceptCallback, 2> safeSource{{safe, nullptr}};
+  std::array<NoexceptCallback, 3> safeOutput{};
+  if (std::copy_backward(safeSource.begin(), safeSource.end(),
+                         safeOutput.end()) != safeOutput.begin() + 1 ||
+      safeOutput[1] != safe || safeOutput[2] != nullptr ||
+      std::move_backward(safeSource.begin(), safeSource.end(),
+                         safeOutput.end()) != safeOutput.begin() + 1 ||
+      safeOutput[1] != safe || safeOutput[2] != nullptr || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-backward" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");

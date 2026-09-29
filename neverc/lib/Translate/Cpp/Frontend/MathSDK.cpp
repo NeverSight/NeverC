@@ -25562,7 +25562,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
     const bool Callback =
         ((Origin->Path == "__algorithm/copy.h" && Name == "copy") ||
-         (Origin->Path == "__algorithm/move.h" && Name == "move")) &&
+         (Origin->Path == "__algorithm/move.h" && Name == "move") ||
+         (Origin->Path == "__algorithm/copy_backward.h" &&
+          Name == "copy_backward") ||
+         (Origin->Path == "__algorithm/move_backward.h" &&
+          Name == "move_backward")) &&
         CallbackInput && CallbackLast && CallbackOutput &&
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
