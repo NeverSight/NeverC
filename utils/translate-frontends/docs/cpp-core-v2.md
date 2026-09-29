@@ -2601,6 +2601,10 @@ pointer and wrapped ranges. Exact same-type trivial source records use one
 uniquely selected const member, hidden-friend, or enclosing-namespace free
 Boolean equality operator. Each comparison receives the original range element
 by reference.
+The default forms also accept two raw or authenticated wrapped ranges of one
+exact function-pointer element type, including `noexcept` pointers. They count
+equal pointer values without invoking functions; the four-iterator form rejects
+unequal lengths before reading elements, and empty ranges are permutations.
 Their checked binary-predicate overloads use the scalar predicate boundary above
 and also admit heterogeneous scalar ranges, including enum ranges, or the exact
 same-type trivial source-record boundary with both parameters as `const&`. The

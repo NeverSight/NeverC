@@ -27195,6 +27195,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             S, SM, Context, (*ScalarSecond)->getPointeeType(), OO_EqualEqual) &&
         utilityScalarComparisonType(Context, (*ScalarFirst)->getPointeeType(),
                                     (*ScalarSecond)->getPointeeType(), false);
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
+    const bool CallbackDefault =
+        CallbackFirst && AlgorithmCallbackRangeParameter(1) && CallbackSecond &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackSecond)->getPointeeType());
     const auto RecordFirst = AlgorithmRecordEqualityRangeParameter(0);
     const auto RecordSecond = AlgorithmRecordEqualityRangeParameter(2);
     const bool RecordDefault =
@@ -27202,13 +27208,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RecordSecond &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordSecond)->getPointeeType());
-    const bool DefaultElements = ScalarDefault || RecordDefault;
+    const bool DefaultElements =
+        ScalarDefault || RecordDefault || CallbackDefault;
     if (Call->getNumArgs() == 3 && DefaultElements)
       return UtilityOperation::AlgorithmIsPermutation;
     if (Call->getNumArgs() == 4) {
       if (DefaultElements &&
           ((ScalarDefault && AlgorithmRangePointerParameter(3)) ||
-           (RecordDefault && AlgorithmRecordEqualityRangeParameter(3))) &&
+           (RecordDefault && AlgorithmRecordEqualityRangeParameter(3)) ||
+           (CallbackDefault && AlgorithmCallbackRangeParameter(3))) &&
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmIsPermutation;

@@ -57443,6 +57443,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackIsPermutationRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-is-permutation.cpp");
+  const auto Output = tmpFile("callback-is-permutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  const std::array<Callback, 6> first{{one, two, nullptr, two, one, three}};
+  const Callback second[]{two, one, three, nullptr, one, two};
+  int firstEffects = 0, lastEffects = 0;
+  int secondEffects = 0, secondLastEffects = 0;
+  bool same = std::is_permutation((++firstEffects, first.cbegin()),
+                                   (++lastEffects, first.cend()),
+                                   (++secondEffects, second),
+                                   (++secondLastEffects, second + 6));
+  if (!same || firstEffects != 1 || lastEffects != 1 ||
+      secondEffects != 1 || secondLastEffects != 1 || calls != 0)
+    return 1;
+  if (!std::is_permutation(first.cbegin(), first.cend(), second) || calls != 0)
+    return 2;
+  const Callback different[]{one, two, nullptr, two, three, three};
+  if (std::is_permutation(first.cbegin(), first.cend(), different,
+                          different + 6) ||
+      calls != 0)
+    return 3;
+  const Callback shortSecond[]{two, one, three, nullptr, one};
+  if (std::is_permutation(first.cbegin(), first.cend(), shortSecond,
+                          shortSecond + 5) ||
+      calls != 0)
+    return 4;
+  const std::array<Callback, 6> wrappedSecond{{two, one, three,
+                                                nullptr, one, two}};
+  if (!std::is_permutation(second, second + 6, wrappedSecond.cbegin(),
+                            wrappedSecond.cend()) ||
+      calls != 0)
+    return 5;
+  const std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  const NoexceptCallback safeSecond[]{nullptr, quiet, quiet};
+  const NoexceptCallback safeWrong[]{quiet, nullptr, nullptr};
+  if (!std::is_permutation(safe.cbegin(), safe.cend(), safeSecond,
+                            safeSecond + 3) ||
+      std::is_permutation(safe.cbegin(), safe.cend(), safeWrong,
+                           safeWrong + 3) ||
+      calls != 0)
+    return 6;
+  const std::array<Callback, 0> empty{};
+  if (!std::is_permutation(empty.cbegin(), empty.cend(), second) ||
+      !std::is_permutation(empty.cbegin(), empty.cend(), second, second) ||
+      calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-is-permutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
