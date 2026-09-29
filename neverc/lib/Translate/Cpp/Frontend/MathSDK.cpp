@@ -25561,7 +25561,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallbackLast = AlgorithmCallbackRangeParameter(1);
     const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
     const bool Callback =
-        Origin->Path == "__algorithm/copy.h" && Name == "copy" &&
+        ((Origin->Path == "__algorithm/copy.h" && Name == "copy") ||
+         (Origin->Path == "__algorithm/move.h" && Name == "move")) &&
         CallbackInput && CallbackLast && CallbackOutput &&
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),

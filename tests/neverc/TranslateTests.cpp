@@ -42984,6 +42984,63 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackMoveRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-move.cpp");
+  const auto Output = tmpFile("callback-move.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 3> source{{one, nullptr, two}};
+  std::array<Callback, 4> output{};
+  int firstEffects = 0, lastEffects = 0, outputEffects = 0;
+  auto end = std::move((++firstEffects, source.begin()),
+                       (++lastEffects, source.end()),
+                       (++outputEffects, output.begin() + 1));
+  if (end != output.end() || firstEffects != 1 || lastEffects != 1 ||
+      outputEffects != 1 || output[0] != nullptr || output[1] != one ||
+      output[2] != nullptr || output[3] != two || source[0] != one ||
+      source[1] != nullptr || source[2] != two || calls != 0)
+    return 1;
+  const auto &view = source;
+  std::array<Callback, 3> fromConst{};
+  if (std::move(view.cbegin(), view.cend(), fromConst.begin()) !=
+          fromConst.end() ||
+      fromConst[0] != one || fromConst[1] != nullptr || fromConst[2] != two)
+    return 2;
+  std::array<Callback, 0> empty{};
+  if (std::move(empty.begin(), empty.end(), output.begin()) != output.begin())
+    return 3;
+  std::array<NoexceptCallback, 2> safeSource{{safe, nullptr}};
+  std::array<NoexceptCallback, 2> safeOutput{};
+  if (std::move(safeSource.begin(), safeSource.end(), safeOutput.begin()) !=
+          safeOutput.end() ||
+      safeOutput[0] != safe || safeOutput[1] != nullptr || calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");
