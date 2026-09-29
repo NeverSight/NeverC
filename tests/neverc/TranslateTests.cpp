@@ -58739,6 +58739,158 @@ TEST_F(TranslateTest, CoreV2CallbackMergeRejectsUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackSetOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-set-operations.cpp");
+  const auto Output = tmpFile("callback-set-operations.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int a(int x) { ++calls; return x + 1; }
+int b(int x) { ++calls; return x + 2; }
+int c(int x) { ++calls; return x + 3; }
+int d(int x) { ++calls; return x + 4; }
+int e(int x) { ++calls; return x + 5; }
+int f(int x) { ++calls; return x + 6; }
+int quiet(int x) noexcept { ++calls; return x + 7; }
+int silent(int x) noexcept { ++calls; return x + 8; }
+int rank(Callback value) {
+  return value == a || value == b ? 1 : value == c || value == d ? 2 :
+         value == e ? 3 : 4;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet) > (right == quiet);
+}
+int main() {
+  const std::array<Callback, 5> first{{a, b, c, c, e}};
+  const Callback raw_first[]{a, b, c, c, e};
+  const std::array<Callback, 4> second{{b, d, c, f}};
+  const Callback raw_second[]{b, d, c, f};
+  std::array<Callback, 9> wrapped_output{};
+  Callback raw_output[9]{};
+  int first_effects = 0, last_effects = 0, second_effects = 0;
+  int second_last_effects = 0, output_effects = 0, comparator_effects = 0;
+  auto union_end = std::set_union(
+      (++first_effects, first.cbegin()), (++last_effects, first.cend()),
+      (++second_effects, raw_second),
+      (++second_last_effects, raw_second + 4),
+      (++output_effects, wrapped_output.begin()),
+      (++comparator_effects, before));
+  if (union_end != wrapped_output.begin() + 6 || first_effects != 1 ||
+      last_effects != 1 || second_effects != 1 ||
+      second_last_effects != 1 || output_effects != 1 ||
+      comparator_effects != 1 || checks == 0 || calls != 0 ||
+      wrapped_output[0] != a || wrapped_output[1] != b ||
+      wrapped_output[2] != c || wrapped_output[3] != c ||
+      wrapped_output[4] != e || wrapped_output[5] != f)
+    return 1;
+  checks = 0;
+  auto intersection_end = std::set_intersection(
+      raw_first, raw_first + 5, second.cbegin(), second.cend(),
+      raw_output, before);
+  if (intersection_end != raw_output + 3 || checks == 0 || calls != 0 ||
+      raw_output[0] != a || raw_output[1] != c || raw_output[2] != c)
+    return 2;
+  checks = 0;
+  auto difference_end = std::set_difference(
+      raw_first, raw_first + 5, raw_second, raw_second + 4,
+      wrapped_output.begin(), before);
+  if (difference_end != wrapped_output.begin() + 2 || checks == 0 ||
+      calls != 0 || wrapped_output[0] != b || wrapped_output[1] != e)
+    return 3;
+  checks = 0;
+  auto symmetric_end = std::set_symmetric_difference(
+      first.cbegin(), first.cend(), second.cbegin(), second.cend(),
+      raw_output, before);
+  if (symmetric_end != raw_output + 3 || checks == 0 || calls != 0 ||
+      raw_output[0] != b || raw_output[1] != e || raw_output[2] != f)
+    return 4;
+  const std::array<NoexceptCallback, 3> safe_first{{quiet, quiet, silent}};
+  const NoexceptCallback safe_second[]{quiet, silent, silent};
+  std::array<NoexceptCallback, 4> safe_output{};
+  checks = 0;
+  if (std::set_union(safe_first.cbegin(), safe_first.cend(),
+                     safe_second, safe_second + 3,
+                     safe_output.begin(), safe_before) != safe_output.end() ||
+      checks == 0 || calls != 0 || safe_output[0] != quiet ||
+      safe_output[1] != quiet || safe_output[2] != silent ||
+      safe_output[3] != silent)
+    return 5;
+  const std::array<Callback, 0> empty{};
+  Callback untouched[]{f};
+  checks = 0;
+  if (std::set_union(empty.cbegin(), empty.cend(), empty.cbegin(),
+                     empty.cend(), untouched, before) != untouched ||
+      untouched[0] != f || checks != 0 || calls != 0)
+    return 6;
+  Callback tail[4]{};
+  if (std::set_union(empty.cbegin(), empty.cend(), raw_second,
+                     raw_second + 4, tail, before) != tail + 4 ||
+      checks != 0 || calls != 0 || tail[0] != b || tail[1] != d ||
+      tail[2] != c || tail[3] != f)
+    return 7;
+  if (std::set_difference(empty.cbegin(), empty.cend(), raw_second,
+                          raw_second + 4, untouched, before) != untouched ||
+      checks != 0 || calls != 0 || untouched[0] != f)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-set-operations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackSetOperationsRejectInvalidComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-set-union-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-set-union-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Comparator +
+                  "\nint main() { const Callback first[]{one}; "
+                  "const Callback second[]{two}; Callback output[2]{}; "
+                  "std::set_union(first, first + 1, second, second + 1, "
+                  "output, before); return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");

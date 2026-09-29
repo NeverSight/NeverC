@@ -26618,8 +26618,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
     const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
     const auto CallbackOutput = AlgorithmCallbackRangeParameter(4);
-    const bool CallbackMerge =
-        Name == "merge" && Call->getNumArgs() == 6 && CallbackFirst &&
+    const bool CallbackOrderedOutput =
+        Call->getNumArgs() == 6 && CallbackFirst &&
         AlgorithmCallbackRangeParameter(1) && CallbackSecond &&
         AlgorithmCallbackRangeParameter(3) && CallbackOutput &&
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
@@ -26682,7 +26682,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRecordRangeBinaryPredicateParameter(5, 0, 2) &&
         AlgorithmRecordRangeBinaryPredicateParameter(5, 2, 0);
     if (!RawScalar && !WrappedScalarDefault && !WrappedScalarComparator &&
-        !Record && !RecordComparator && !CallbackMerge)
+        !Record && !RecordComparator && !CallbackOrderedOutput)
       return std::nullopt;
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;
