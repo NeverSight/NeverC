@@ -1988,6 +1988,10 @@ ranges and exact source-owned trivial record ranges under the selected Boolean
 comparisons, returns the first run of the requested length, and wraps the
 result when the input is wrapped. Zero and non-positive count behavior keeps
 the existing fast path. Predicate overloads retain checked scalar callbacks.
+The default form also accepts const or mutable raw or authenticated wrapped
+ranges of one exact function-pointer element type, including `noexcept`
+pointers. Its value has that same pointer type; equality compares pointers
+without invoking them and preserves the value reference and iterator form.
 Checked function-pointer predicate overloads also accept authenticated
 wrapped scalar ranges and keep the wrapped result position.
 They additionally admit exact trivial source-record raw or wrapped ranges and

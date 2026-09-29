@@ -26215,7 +26215,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          Value->getPointeeType()) &&
           Context.hasSameUnqualifiedType(Call->getArg(3)->getType(),
                                          Value->getPointeeType());
-      if (ScalarValue || RecordValue)
+      const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+      const bool CallbackValue =
+          CallbackFirst && AlgorithmCallbackRangeParameter(1) &&
+          Value->isLValueReferenceType() &&
+          Value->getPointeeType().isConstQualified() &&
+          utilityCallbackEqualityType(Context, Call->getArg(3)->getType(),
+                                      Value->getPointeeType()) &&
+          utilityCallbackEqualityType(Context,
+                                      (*CallbackFirst)->getPointeeType(),
+                                      Value->getPointeeType());
+      if (ScalarValue || RecordValue || CallbackValue)
         return UtilityOperation::AlgorithmSearchN;
     }
     if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(0) &&

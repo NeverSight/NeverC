@@ -56951,6 +56951,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackSearchNRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-search-n.cpp");
+  const auto Output = tmpFile("callback-search-n.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  const std::array<Callback, 7> values{{one, two, two, nullptr, two, two, three}};
+  Callback needle = two;
+  int firstEffects = 0, lastEffects = 0, countEffects = 0, valueEffects = 0;
+  auto found = std::search_n((++firstEffects, values.cbegin()),
+                             (++lastEffects, values.cend()),
+                             (++countEffects, 2), (++valueEffects, needle));
+  if (firstEffects != 1 || lastEffects != 1 || countEffects != 1 ||
+      valueEffects != 1 || found != values.cbegin() + 1 || calls != 0)
+    return 1;
+  if (std::search_n(values.cbegin(), values.cend(), 3, needle) != values.cend() ||
+      std::search_n(values.cbegin(), values.cend(), 0, needle) != values.cbegin() ||
+      std::search_n(values.cbegin(), values.cend(), 1, values[3]) !=
+          values.cbegin() + 3 || calls != 0)
+    return 2;
+  const Callback raw[]{nullptr, one, one, two};
+  Callback rawNeedle = one;
+  if (std::search_n(raw, raw + 4, 2, rawNeedle) != raw + 1 ||
+      std::search_n(raw, raw + 4, 3, rawNeedle) != raw + 4 || calls != 0)
+    return 3;
+  const std::array<NoexceptCallback, 3> safe{{quiet, quiet, nullptr}};
+  NoexceptCallback safeNeedle = quiet;
+  if (std::search_n(safe.cbegin(), safe.cend(), 2, safeNeedle) !=
+          safe.cbegin() || calls != 0)
+    return 4;
+  const std::array<Callback, 0> empty{};
+  if (std::search_n(empty.cbegin(), empty.cend(), 1, needle) != empty.cend() ||
+      std::search_n(empty.cbegin(), empty.cend(), 0, needle) != empty.cbegin() ||
+      calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-search-n" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
