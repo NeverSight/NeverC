@@ -43834,6 +43834,44 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmInitializerListExtremaRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-list-extrema.cpp");
+  const auto Output = tmpFile("algorithm-list-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  if (std::min({3, 1, 2}) != 1 || std::max({3, 1, 2}) != 3)
+    return 1;
+  if (std::min({7}) != 7 || std::max({7}) != 7)
+    return 2;
+  if (std::min({-3, -1, -2}) != -3 ||
+      std::max({-3, -1, -2}) != -1)
+    return 3;
+  if (std::min({2.5, 1.5, 3.5}) != 1.5 ||
+      std::max({2.5, 1.5, 3.5}) != 3.5)
+    return 4;
+  unsigned char small = 2;
+  unsigned char large = 4;
+  if (std::min({small, large}) != 2 ||
+      std::max({small, large}) != 4)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-list-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
   struct Rejection {
     const char *Name;

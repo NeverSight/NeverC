@@ -12071,6 +12071,29 @@ extern "C" int algorithm_extrema(const int *first, const int *last,
         check("v2-algorithm-extrema-" + target,
               algorithm_extrema_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    algorithm_list_extrema_source = """\
+#include <algorithm>
+extern "C" int algorithm_list_extrema() {
+  return std::min({3, 1, 2}) + std::max({3, 1, 2});
+}
+"""
+    for target in sdk_targets:
+        result = check("v2-algorithm-list-extrema-" + target,
+                       algorithm_list_extrema_source, profile="cpp-core-v2",
+                       target=target, sdk=True)
+        assert not [node for node in walk(result["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], result
+    check("v2-algorithm-list-extrema-record",
+          '#include <algorithm>\nstruct R{int n;};'
+          'bool operator<(const R&a,const R&b){return a.n<b.n;}'
+          'int f(){return std::min({R{1},R{2}}).n;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-list-extrema-specialization",
+          '#include <algorithm>\nnamespace std {'
+          'template<> int min<int>(initializer_list<int>){return 0;}}'
+          'int f(){return std::min({1,2});}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-extrema-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}',
           profile="cpp-core-v2", sdk=True)

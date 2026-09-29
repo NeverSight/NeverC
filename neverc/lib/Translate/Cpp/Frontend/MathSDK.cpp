@@ -26131,6 +26131,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
        (Origin->Path == "__algorithm/max.h" && Name == "max")) &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (List &&
+        Same(Function->getParamDecl(0)->getType(),
+             Context.getRecordType(List->Record)) &&
+        Same(Function->getReturnType(), List->ElementType) &&
+        Same(Call->getType(), List->ElementType) &&
+        utilityScalarComparisonType(Context, List->ElementType,
+                                    List->ElementType, true) &&
+        !utilityEnumHasSourceOperator(S, SM, Context, List->ElementType,
+                                      OO_Less))
+      return Name == "min" ? UtilityOperation::AlgorithmMin
+                           : UtilityOperation::AlgorithmMax;
+  }
+  if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
+       (Origin->Path == "__algorithm/max.h" && Name == "max")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isLValue() &&
       (AlgorithmReferenceParameter(0) ||

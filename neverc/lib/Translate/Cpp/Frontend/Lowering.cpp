@@ -6990,6 +6990,53 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmMin:
     case UtilityOperation::AlgorithmMax: {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMin;
+      if (Call->getNumArgs() == 1) {
+        auto List = InitializerListFor(Call->getArg(0)->getType());
+        if (!List)
+          reject(L, "algorithm initializer-list extremum",
+                 "The selected std::initializer_list layout is unavailable.");
+        auto Value = snapshot(expression(Call->getArg(0)), L);
+        auto Candidate =
+            snapshot(fieldStorage(json::Object(Value), List->Begin, L), L);
+        auto Size = snapshot(fieldStorage(std::move(Value), List->Size, L), L);
+        const auto PointerType = type(List->Begin->getType(), L);
+        auto Current = snapshot(
+            binary("+", json::Object(Candidate),
+                   quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                   PointerType, L),
+            L);
+        auto End = snapshot(binary("+", json::Object(Candidate),
+                                   std::move(Size), PointerType, L),
+                            L);
+        const auto Check = labelName(), Compare = labelName();
+        const auto Select = labelName(), Next = labelName();
+        const auto Finish = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(
+            binary("!=", json::Object(Current), json::Object(End), "bool", L),
+            Compare, Finish, L);
+        label(Compare, L);
+        branch(binary("<",
+                      Minimum ? dereference(json::Object(Current), L)
+                              : dereference(json::Object(Candidate), L),
+                      Minimum ? dereference(json::Object(Candidate), L)
+                              : dereference(json::Object(Current), L),
+                      "bool", L),
+               Select, Next, L);
+        label(Select, L);
+        assign(Candidate, json::Object(Current), L);
+        jump(Next, L);
+        label(Next, L);
+        assign(Current,
+               binary("+", json::Object(Current),
+                      quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                      PointerType, L),
+               L);
+        jump(Check, L);
+        label(Finish, L);
+        return snapshot(dereference(std::move(Candidate), L), L);
+      }
       auto LeftAddress =
           snapshot(bind(Call->getArg(0),
                         Call->getDirectCallee()->getParamDecl(0)->getType()),

@@ -2183,6 +2183,14 @@ the two argument referents on every pointer width. `minmax_element` returns an
 authenticated pointer pair, selects the first minimum and last maximum, and
 uses pairwise comparisons after its initial elements.
 
+The exact one-argument `std::min(initializer_list<T>)` and
+`std::max(initializer_list<T>)` overloads also accept admitted ordered scalar
+elements. They scan the authenticated initializer-list backing array once,
+return a copy of the first equivalent minimum or maximum, and perform no
+runtime libc++ call. The source must provide a nonempty list, as required by
+these overloads. Comparator-taking and record-valued list overloads remain
+outside this boundary.
+
 The corresponding three-argument `std::min`, `std::max` and `std::minmax`,
 four-argument `std::clamp`, and three-argument `std::minmax_element` overloads
 use the checked comparator boundary above. Scalar reference algorithms retain
