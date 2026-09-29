@@ -57702,6 +57702,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackExtremaRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-extrema.cpp");
+  const auto Output = tmpFile("callback-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int silent(int x) noexcept { ++calls; return x + 5; }
+int rank(Callback value) {
+  return value == one ? 1 : value == two ? 2 : value == three ? 3 : 0;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return rank(left) < rank(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == quiet ? 1 : 2) < (right == quiet ? 1 : 2);
+}
+int main() {
+  const std::array<Callback, 5> values{{two, one, three, one, three}};
+  int firstEffects = 0, lastEffects = 0, comparatorEffects = 0;
+  auto lowest = std::min_element((++firstEffects, values.cbegin()),
+      (++lastEffects, values.cend()), (++comparatorEffects, before));
+  if (lowest != values.cbegin() + 1 || checks != 4 || calls != 0 ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1)
+    return 1;
+  firstEffects = lastEffects = comparatorEffects = checks = 0;
+  auto highest = std::max_element((++firstEffects, values.cbegin()),
+      (++lastEffects, values.cend()), (++comparatorEffects, before));
+  if (highest != values.cbegin() + 2 || checks != 4 || calls != 0 ||
+      firstEffects != 1 || lastEffects != 1 || comparatorEffects != 1)
+    return 2;
+  Callback raw[]{two, three, one};
+  checks = 0;
+  if (std::min_element(raw, raw + 3, before) != raw + 2 ||
+      std::max_element(raw, raw + 3, before) != raw + 1 ||
+      checks != 4 || calls != 0)
+    return 3;
+  const std::array<NoexceptCallback, 3> safe{{quiet, silent, quiet}};
+  checks = 0;
+  if (std::min_element(safe.cbegin(), safe.cend(), safe_before) !=
+          safe.cbegin() ||
+      std::max_element(safe.cbegin(), safe.cend(), safe_before) !=
+          safe.cbegin() + 1 ||
+      checks != 4 || calls != 0)
+    return 4;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  if (std::min_element(empty.cbegin(), empty.cend(), before) != empty.cend() ||
+      std::max_element(empty.cbegin(), empty.cend(), before) != empty.cend() ||
+      checks != 0 || calls != 0)
+    return 5;
+  const std::array<Callback, 1> single{{one}};
+  checks = 0;
+  if (std::min_element(single.cbegin(), single.cend(), before) !=
+          single.cbegin() ||
+      std::max_element(single.cbegin(), single.cend(), before) !=
+          single.cbegin() ||
+      checks != 0 || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackPartitionCopyRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-partition-copy.cpp");
   const auto Output = tmpFile("callback-partition-copy.nc");

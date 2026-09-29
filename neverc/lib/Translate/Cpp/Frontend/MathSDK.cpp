@@ -24396,6 +24396,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                            Prototype->getParamType(0))
                    .has_value();
       };
+  auto AlgorithmCallbackRangeBinaryPredicateParameter =
+      [&](unsigned PredicateIndex, unsigned LeftIteratorIndex,
+          unsigned RightIteratorIndex) {
+        const auto Left = AlgorithmCallbackRangeParameter(LeftIteratorIndex);
+        const auto Right = AlgorithmCallbackRangeParameter(RightIteratorIndex);
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        return Left && Right && Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityCallbackEqualityType(Context, (*Left)->getPointeeType(),
+                                           Prototype->getParamType(0)) &&
+               utilityCallbackEqualityType(Context, (*Right)->getPointeeType(),
+                                           Prototype->getParamType(1));
+      };
   auto AlgorithmRecordRangeUnaryPredicateParameter =
       [&](unsigned PredicateIndex, unsigned IteratorIndex) {
         const auto Iterator = AlgorithmRecordRangeParameter(IteratorIndex);
@@ -25782,6 +25795,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                    S, SM, Call, (*Range)->getPointeeType(), Context)
              : approvedMinElementSourceComparator(
                    S, SM, Call, (*Range)->getPointeeType(), Context));
+    const bool CallbackComparator =
+        Call->getNumArgs() == 3 && AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0);
     if (!((Call->getNumArgs() == 2 &&
            ((AlgorithmRangePointerParameter(0) &&
              AlgorithmRangePointerParameter(1) &&
@@ -25795,7 +25812,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             (AlgorithmRecordRangeParameter(0) &&
              AlgorithmRecordRangeParameter(1) &&
              AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0)))) ||
-          SourceObject))
+          SourceObject || CallbackComparator))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;
