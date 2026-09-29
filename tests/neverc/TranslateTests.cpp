@@ -56693,6 +56693,98 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackPredicateCopyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-predicate-copy.cpp");
+  const auto Output = tmpFile("callback-predicate-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+bool is_two(Callback value) { ++checks; return value == two; }
+bool is_quiet(NoexceptCallback value) noexcept {
+  ++checks;
+  return value == quiet;
+}
+int main() {
+  const std::array<Callback, 6> source{{one, two, nullptr, two, three, two}};
+  std::array<Callback, 6> output{};
+  int firstEffects = 0, lastEffects = 0;
+  int outputEffects = 0, predicateEffects = 0;
+  auto end = std::copy_if((++firstEffects, source.cbegin()),
+                           (++lastEffects, source.cend()),
+                           (++outputEffects, output.begin()),
+                           (++predicateEffects, is_two));
+  if (firstEffects != 1 || lastEffects != 1 || outputEffects != 1 ||
+      predicateEffects != 1 || end != output.begin() + 3 ||
+      output[0] != two || output[1] != two || output[2] != two ||
+      source[0] != one || source[2] != nullptr || checks != 6 || calls != 0)
+    return 1;
+  checks = 0;
+  auto kept = std::remove_copy_if(source.cbegin(), source.cend(),
+                                   output.begin(), is_two);
+  if (kept != output.begin() + 3 || output[0] != one ||
+      output[1] != nullptr || output[2] != three ||
+      checks != 6 || calls != 0)
+    return 2;
+  Callback rawOutput[6]{};
+  checks = 0;
+  if (std::copy_if(source.cbegin(), source.cend(), rawOutput, is_two) !=
+          rawOutput + 3 ||
+      rawOutput[0] != two || rawOutput[2] != two || checks != 6 || calls != 0)
+    return 3;
+  const Callback rawInput[]{one, two, nullptr, three};
+  checks = 0;
+  if (std::remove_copy_if(rawInput, rawInput + 4, output.begin(), is_two) !=
+          output.begin() + 3 ||
+      output[0] != one || output[1] != nullptr || output[2] != three ||
+      checks != 4 || calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 4> safe{{quiet, nullptr, quiet, nullptr}};
+  NoexceptCallback safeOutput[4]{};
+  checks = 0;
+  if (std::copy_if(safe.cbegin(), safe.cend(), safeOutput, is_quiet) !=
+          safeOutput + 2 ||
+      safeOutput[0] != quiet || safeOutput[1] != quiet ||
+      checks != 4 || calls != 0)
+    return 5;
+  checks = 0;
+  if (std::remove_copy_if(safe.cbegin(), safe.cend(), safeOutput, is_quiet) !=
+          safeOutput + 2 ||
+      safeOutput[0] != nullptr || safeOutput[1] != nullptr ||
+      checks != 4 || calls != 0)
+    return 6;
+  const std::array<Callback, 0> empty{};
+  checks = 0;
+  if (std::copy_if(empty.cbegin(), empty.cend(), rawOutput, is_two) !=
+          rawOutput ||
+      std::remove_copy_if(empty.cbegin(), empty.cend(), output.begin(),
+                           is_two) != output.begin() ||
+      checks != 0 || calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-predicate-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackRemoveIfRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-remove-if.cpp");
   const auto Output = tmpFile("callback-remove-if.nc");

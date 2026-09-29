@@ -27327,6 +27327,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return Name == "copy_if" ? UtilityOperation::AlgorithmCopyIf
                              : UtilityOperation::AlgorithmRemoveCopyIf;
+  if (PredicateCopy && Call->getNumArgs() == 4 &&
+      Function->getNumParams() == 4 && Call->isPRValue() &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    const auto Output = AlgorithmCallbackRangeParameter(2);
+    if (Input && AlgorithmCallbackRangeParameter(1) && Output &&
+        !(*Output)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*Input)->getPointeeType(),
+                                    (*Output)->getPointeeType()) &&
+        AlgorithmCallbackRangeUnaryPredicateParameter(3, 0))
+      return Name == "copy_if" ? UtilityOperation::AlgorithmCopyIf
+                               : UtilityOperation::AlgorithmRemoveCopyIf;
+  }
   if (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmWritableRecordRangeParameter(0) &&

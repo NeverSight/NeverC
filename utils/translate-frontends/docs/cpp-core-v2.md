@@ -2155,6 +2155,13 @@ pointers. Its checked predicate takes that same pointer type by value and
 returns `bool`. Each element is inspected once without invoking the pointed-to
 function; retained pointers keep their relative order, and the result has the
 input iterator's original raw or wrapped form.
+`std::copy_if` and `std::remove_copy_if` also accept const or mutable raw or
+authenticated wrapped function-pointer input ranges and a separate writable
+raw or wrapped output of the same exact pointer type. Their checked predicate
+takes that pointer type by value and returns `bool`; selection copies pointer
+values without invoking their functions. They preserve the input and return
+the advanced output iterator, including its wrapped form. Empty inputs return
+the unadvanced output and make no predicate calls.
 
 The exact `std::is_partitioned`, `std::partition`, `std::stable_partition`,
 `std::partition_copy` and `std::partition_point` templates use that predicate
