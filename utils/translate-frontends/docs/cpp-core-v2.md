@@ -1784,6 +1784,12 @@ wrapped ranges of function-pointer elements, including `noexcept` signatures.
 It swaps pointer values without invoking the functions and leaves empty and
 single-element ranges unchanged. Const callback elements remain rejected.
 
+The exact `std::iter_swap` form also exchanges writable raw or authenticated
+wrapped positions of the same function-pointer type, including mixed iterator
+forms and `noexcept` signatures. Both iterator arguments are evaluated once;
+swapping a position with itself preserves its pointer value without invoking
+the function.
+
 Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
 record elements with a selected supported copy assignment. Their pinned public
 and internal fill bodies, pointer iterator category, count conversion, loop and

@@ -26251,6 +26251,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Second = AlgorithmRangePointerParameter(1);
     const auto RecordFirst = AlgorithmWritableRecordRangeParameter(0);
     const auto RecordSecond = AlgorithmWritableRecordRangeParameter(1);
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackSecond = AlgorithmCallbackRangeParameter(1);
     const bool Scalar =
         First && Second &&
         utilityAlgorithmWritableScalarPointer(Context, *First) &&
@@ -26261,7 +26263,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RecordFirst && RecordSecond &&
         Context.hasSameUnqualifiedType((*RecordFirst)->getPointeeType(),
                                        (*RecordSecond)->getPointeeType());
-    if (Scalar || Record)
+    const bool Callback =
+        CallbackFirst && CallbackSecond &&
+        !(*CallbackFirst)->getPointeeType().isConstQualified() &&
+        !(*CallbackSecond)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackSecond)->getPointeeType());
+    if (Scalar || Record || Callback)
       return UtilityOperation::AlgorithmIterSwap;
   }
   if (Origin->Path == "__algorithm/rotate.h" && Name == "rotate" &&

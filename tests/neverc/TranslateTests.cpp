@@ -43301,6 +43301,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackIterSwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-iter-swap.cpp");
+  const auto Output = tmpFile("callback-iter-swap.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int main() {
+  std::array<Callback, 3> left{{one, nullptr, two}};
+  std::array<Callback, 2> right{{two, nullptr}};
+  int leftEffects = 0, rightEffects = 0;
+  std::iter_swap((++leftEffects, left.begin()),
+                 (++rightEffects, right.begin() + 1));
+  if (leftEffects != 1 || rightEffects != 1 || left[0] != nullptr ||
+      right[1] != one || calls != 0)
+    return 1;
+  std::iter_swap(left.begin() + 1, right.data());
+  if (left[1] != two || right[0] != nullptr)
+    return 2;
+  std::iter_swap(left.begin() + 2, left.begin() + 2);
+  if (left[2] != two)
+    return 3;
+  Callback raw[2]{one, nullptr};
+  std::iter_swap(raw, raw + 1);
+  if (raw[0] != nullptr || raw[1] != one)
+    return 4;
+  std::array<NoexceptCallback, 1> safeLeft{{safe}};
+  std::array<NoexceptCallback, 1> safeRight{{nullptr}};
+  std::iter_swap(safeLeft.begin(), safeRight.begin());
+  if (safeLeft[0] != nullptr || safeRight[0] != safe || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-iter-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");
