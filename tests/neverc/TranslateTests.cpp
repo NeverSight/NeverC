@@ -26284,6 +26284,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativePointerToArraySwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("native-pointer-to-array-swap.cpp");
+  const auto Output = tmpFile("native-pointer-to-array-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace N {
+enum class E { one, two };
+struct R { int value; };
+}
+int main() {
+  int numbers[2][2]{{1, 2}, {3, 4}};
+  using NumberRow = int[2];
+  NumberRow *first[2]{&numbers[0], &numbers[1]};
+  NumberRow *second[2]{&numbers[1], &numbers[0]};
+  int first_effects = 0, second_effects = 0;
+  std::swap((++first_effects, first), (++second_effects, second));
+  if (first_effects != 1 || second_effects != 1 ||
+      first[0] != &numbers[1] || first[1] != &numbers[0] ||
+      second[0] != &numbers[0] || second[1] != &numbers[1])
+    return 1;
+  N::E colors[2][2]{{N::E::one, N::E::two},
+                    {N::E::two, N::E::one}};
+  using ColorRow = N::E[2];
+  ColorRow *color_first[2]{&colors[0], &colors[1]};
+  ColorRow *color_second[2]{&colors[1], &colors[0]};
+  std::swap(color_first, color_second);
+  if (color_first[0] != &colors[1] || color_first[1] != &colors[0] ||
+      color_second[0] != &colors[0] || color_second[1] != &colors[1])
+    return 2;
+  N::R records[2][2]{{{1}, {2}}, {{3}, {4}}};
+  using RecordRow = N::R[2];
+  RecordRow *record_first[1][2]{{&records[0], &records[1]}};
+  RecordRow *record_second[1][2]{{&records[1], &records[0]}};
+  std::swap(record_first, record_second);
+  return record_first[0][0] == &records[1] &&
+                 record_first[0][1] == &records[0] &&
+                 record_second[0][0] == &records[0] &&
+                 record_second[0][1] == &records[1]
+             ? 0
+             : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("native-pointer-to-array-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -26362,6 +26418,12 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "#include <utility>\nnamespace N{struct R{};"
        "void swap(R*&,R*&);}int f(){N::R *a[1][2]{},*b[1][2]{};"
        "std::swap(a,b);return a[0][0]==b[0][0];}",
+       "TR0203"},
+      {"adl-pointer-to-array-swap",
+       "#include <utility>\nnamespace N{struct R{};"
+       "void swap(R (*&)[2],R (*&)[2]);}int f(){N::R rows[2][2]{};"
+       "N::R (*a[1])[2]{&rows[0]},(*b[1])[2]{&rows[1]};"
+       "std::swap(a,b);return a[0]==&rows[1];}",
        "TR0203"},
       {"adl-enum-array-swap",
        "#include <utility>\nnamespace N{enum E{a,b};"

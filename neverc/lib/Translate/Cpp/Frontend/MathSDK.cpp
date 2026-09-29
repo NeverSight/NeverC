@@ -27934,14 +27934,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       };
       auto Element = ArrayLeaf(Left->getPointeeType());
       // Each array overload calls swap unqualified. Built-in leaves and pointer
-      // chains ending in a built-in type cannot add an ADL swap candidate.
+      // or fixed-array chains ending in a built-in type have no ADL candidate.
       auto Associated = Element.isNull()
                             ? QualType()
                             : Element.getCanonicalType().getUnqualifiedType();
-      while (!Associated.isNull() && Associated->isPointerType())
-        Associated = Associated->getPointeeType()
-                         .getCanonicalType()
-                         .getUnqualifiedType();
+      while (!Associated.isNull()) {
+        if (Associated->isPointerType())
+          Associated = Associated->getPointeeType()
+                           .getCanonicalType()
+                           .getUnqualifiedType();
+        else if (const auto *Array = Context.getAsConstantArrayType(Associated))
+          Associated =
+              Array->getElementType().getCanonicalType().getUnqualifiedType();
+        else
+          break;
+      }
       if (!Element.isNull() && !Element.isConstQualified() &&
           !Element.isVolatileQualified() && utilityScalar(Context, Element) &&
           (Associated->isBuiltinType() ||

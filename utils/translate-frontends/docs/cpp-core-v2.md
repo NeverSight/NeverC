@@ -185,13 +185,14 @@ reference and assignment operations. The selected function must be the exact
 pinned libc++ declaration and must be called directly; function addresses and
 forged declarations are rejected. The pinned fixed-size C array overload of
 `std::swap` is supported for mutable fixed arrays up to eight dimensions and
-65,536 total elements when each leaf is a built-in scalar or a pointer whose
-pointee chain ends in a built-in type. Enum leaves and pointers whose pointee
-chain ends in an enum or record are also supported when every instantiated
-element call selects the pinned generic scalar `std::swap`; user ADL swaps and
-specializations remain rejected. Each array expression is evaluated once, and
-elements are swapped in nested index order. Arrays of records and volatile or
-const leaves remain outside this boundary.
+65,536 total elements when each leaf is a built-in scalar or a pointer that
+reaches a built-in type through nested pointer and fixed-array layers. Enum
+leaves and pointers that reach an enum or record through those layers are also
+supported when every instantiated element call selects the pinned generic
+scalar `std::swap`; user ADL swaps and specializations remain rejected. Each
+array expression is evaluated once, and elements are swapped in nested index
+order. Arrays of records and volatile or const leaves remain outside this
+boundary.
 Exact generic `std::swap` of a source-owned nontrivial standard-layout record
 also invokes the selected supported move constructor and two move assignments,
 then destroys the temporary. Both arguments are evaluated once, including
