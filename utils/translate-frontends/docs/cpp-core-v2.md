@@ -1863,6 +1863,10 @@ move, and returns the matching raw or wrapped iterator.
 with const or mutable raw or wrapped input and a separate writable raw or
 wrapped output. It retains the value reference while copying nonmatching
 pointers, and returns the advanced output iterator. The input remains intact.
+`std::replace` accepts writable raw or wrapped ranges of one exact
+function-pointer element type. Both old and new values must have that pointer
+type, including its `noexcept` qualification. It compares pointer values
+without invoking them and rereads both value references at each match.
 `rotate_copy` likewise accepts authenticated raw or wrapped scalar input and
 writable output ranges with checked direct conversion, preserving the output
 iterator type and empty-range result.

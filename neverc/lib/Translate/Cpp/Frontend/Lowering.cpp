@@ -5975,6 +5975,10 @@ class FunctionLowering {
       auto Common = utilityScalarComparisonType(
           A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(OldIndex)->getType(), false);
+      if (!Common)
+        Common = utilityCallbackEqualityType(
+            A.Context, CurrentRange.second->getPointeeType(),
+            Call->getArg(OldIndex)->getType());
       if (!Common && !SourceComparison)
         reject(L, "algorithm replace",
                "The range element and old value have no equality common type.");

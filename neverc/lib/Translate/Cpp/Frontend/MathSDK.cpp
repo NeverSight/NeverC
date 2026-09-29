@@ -26011,6 +26011,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplace;
+  if (Origin->Path == "__algorithm/replace.h" && Name == "replace" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCallbackRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmTransferCallbackValueParameter(2, 0) &&
+      AlgorithmTransferCallbackValueParameter(3, 0) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplace;
   if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
       Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
       Call->isPRValue() && AlgorithmRecordEqualityRangeParameter(0) &&

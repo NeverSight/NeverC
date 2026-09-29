@@ -56821,6 +56821,62 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackReplaceRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-replace.cpp");
+  const auto Output = tmpFile("callback-replace.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int quiet(int x) noexcept { ++calls; return x + 4; }
+int main() {
+  Callback raw[5]{one, two, nullptr, two, three};
+  Callback oldValue = two, newValue = one;
+  int firstEffects = 0, lastEffects = 0, oldEffects = 0, newEffects = 0;
+  std::replace((++firstEffects, raw), (++lastEffects, raw + 5),
+               (++oldEffects, oldValue), (++newEffects, newValue));
+  if (firstEffects != 1 || lastEffects != 1 || oldEffects != 1 ||
+      newEffects != 1 || raw[0] != one || raw[1] != one ||
+      raw[2] != nullptr || raw[3] != one || raw[4] != three || calls != 0)
+    return 1;
+  std::array<Callback, 4> alias{{one, two, one, three}};
+  std::replace(alias.begin(), alias.end(), alias[0], alias[1]);
+  if (alias[0] != two || alias[1] != two || alias[2] != one ||
+      alias[3] != three || calls != 0)
+    return 2;
+  std::array<NoexceptCallback, 3> safe{{quiet, nullptr, quiet}};
+  NoexceptCallback safeOld = quiet, safeNew = nullptr;
+  std::replace(safe.begin(), safe.end(), safeOld, safeNew);
+  if (safe[0] != nullptr || safe[1] != nullptr || safe[2] != nullptr ||
+      calls != 0)
+    return 3;
+  std::array<Callback, 0> empty{};
+  std::replace(empty.begin(), empty.end(), oldValue, newValue);
+  if (calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-replace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordFindAndCountRun) {
   const auto Source = tmpFile("source-record-find-count.cpp");
   const auto Output = tmpFile("source-record-find-count.nc");
