@@ -43241,6 +43241,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackReverseRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-reverse.cpp");
+  const auto Output = tmpFile("callback-reverse.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls = 0;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int three(int n) { ++calls; return n + 3; }
+int four(int n) { ++calls; return n + 4; }
+int safe(int n) noexcept { ++calls; return n + 5; }
+int main() {
+  std::array<Callback, 5> values{{one, nullptr, two, three, four}};
+  int firstEffects = 0, lastEffects = 0;
+  std::reverse((++firstEffects, values.begin()),
+               (++lastEffects, values.end()));
+  if (firstEffects != 1 || lastEffects != 1 || values[0] != four ||
+      values[1] != three || values[2] != two || values[3] != nullptr ||
+      values[4] != one || calls != 0)
+    return 1;
+  std::reverse(values.begin() + 1, values.end() - 1);
+  if (values[0] != four || values[1] != nullptr || values[2] != two ||
+      values[3] != three || values[4] != one)
+    return 2;
+  Callback raw[4]{one, nullptr, two, three};
+  std::reverse(raw, raw + 4);
+  if (raw[0] != three || raw[1] != two || raw[2] != nullptr ||
+      raw[3] != one)
+    return 3;
+  std::array<Callback, 0> empty{};
+  std::reverse(empty.begin(), empty.end());
+  std::array<Callback, 1> single{{one}};
+  std::reverse(single.begin(), single.end());
+  if (single[0] != one)
+    return 4;
+  std::array<NoexceptCallback, 2> safeValues{{safe, nullptr}};
+  std::reverse(safeValues.begin(), safeValues.end());
+  if (safeValues[0] != nullptr || safeValues[1] != safe || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-reverse" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-mutation.cpp");

@@ -25679,10 +25679,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto First = AlgorithmRangePointerParameter(0);
     const auto Last = AlgorithmRangePointerParameter(1);
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackLast = AlgorithmCallbackRangeParameter(1);
     if ((First && Last &&
          utilityAlgorithmWritableScalarPointer(Context, *First)) ||
         (AlgorithmWritableRecordRangeParameter(0) &&
-         AlgorithmWritableRecordRangeParameter(1)))
+         AlgorithmWritableRecordRangeParameter(1)) ||
+        (CallbackFirst && CallbackLast &&
+         !(*CallbackFirst)->getPointeeType().isConstQualified()))
       return UtilityOperation::AlgorithmReverse;
   }
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&

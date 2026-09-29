@@ -1779,6 +1779,11 @@ and return the beginning of the destination range; `reverse_copy` writes the
 reversed sequence and returns its output end. Other callback transfer
 algorithms and mixed callback signatures remain outside this boundary.
 
+The exact `std::reverse` form also accepts writable raw or authenticated
+wrapped ranges of function-pointer elements, including `noexcept` signatures.
+It swaps pointer values without invoking the functions and leaves empty and
+single-element ranges unchanged. Const callback elements remain rejected.
+
 Raw-pointer `std::fill` and `std::fill_n` also admit source-owned standard-layout
 record elements with a selected supported copy assignment. Their pinned public
 and internal fill bodies, pointer iterator category, count conversion, loop and
