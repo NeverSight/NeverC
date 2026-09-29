@@ -58600,6 +58600,145 @@ TEST_F(TranslateTest, CoreV2CallbackPermutationsRejectUnapprovedComparators) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackMergeRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-merge.cpp");
+  const auto Output = tmpFile("callback-merge.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int four(int x) { ++calls; return x + 4; }
+int five(int x) { ++calls; return x + 5; }
+int six(int x) { ++calls; return x + 6; }
+int quiet(int x) noexcept { ++calls; return x + 7; }
+int silent(int x) noexcept { ++calls; return x + 8; }
+int muted(int x) noexcept { ++calls; return x + 9; }
+bool high(Callback value) {
+  return value == four || value == five || value == six;
+}
+bool before(Callback left, Callback right) {
+  ++checks;
+  return high(left) < high(right);
+}
+bool after(Callback left, Callback right) {
+  ++checks;
+  return high(left) > high(right);
+}
+bool safe_before(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return (left == silent) < (right == silent);
+}
+int main() {
+  const std::array<Callback, 4> first{{one, two, four, five}};
+  const Callback second[]{three, one, six, four};
+  std::array<Callback, 8> output{};
+  int firstEffects = 0, firstLastEffects = 0;
+  int secondEffects = 0, secondLastEffects = 0;
+  int outputEffects = 0, comparatorEffects = 0;
+  auto end = std::merge(
+      (++firstEffects, first.cbegin()),
+      (++firstLastEffects, first.cend()),
+      (++secondEffects, second), (++secondLastEffects, second + 4),
+      (++outputEffects, output.begin()), (++comparatorEffects, before));
+  if (end != output.end() || firstEffects != 1 || firstLastEffects != 1 ||
+      secondEffects != 1 || secondLastEffects != 1 || outputEffects != 1 ||
+      comparatorEffects != 1 || checks == 0 || calls != 0 ||
+      output[0] != one || output[1] != two || output[2] != three ||
+      output[3] != one || output[4] != four || output[5] != five ||
+      output[6] != six || output[7] != four || first[0] != one ||
+      second[0] != three)
+    return 1;
+  const Callback rawFirst[]{four, five, one, two};
+  const Callback rawSecond[]{six, four, three, one};
+  Callback rawOutput[8]{};
+  checks = 0;
+  if (std::merge(rawFirst, rawFirst + 4, rawSecond, rawSecond + 4,
+                 rawOutput, after) != rawOutput + 8 ||
+      checks == 0 || calls != 0 || rawOutput[0] != four ||
+      rawOutput[1] != five || rawOutput[2] != six ||
+      rawOutput[3] != four || rawOutput[4] != one ||
+      rawOutput[5] != two || rawOutput[6] != three ||
+      rawOutput[7] != one)
+    return 2;
+  const std::array<NoexceptCallback, 3> safeFirst{{quiet, muted, silent}};
+  const NoexceptCallback safeSecond[]{quiet, silent};
+  NoexceptCallback safeOutput[5]{};
+  checks = 0;
+  if (std::merge(safeFirst.cbegin(), safeFirst.cend(),
+                 safeSecond, safeSecond + 2, safeOutput, safe_before) !=
+          safeOutput + 5 ||
+      checks == 0 || calls != 0 || safeOutput[0] != quiet ||
+      safeOutput[1] != muted || safeOutput[2] != quiet ||
+      safeOutput[3] != silent || safeOutput[4] != silent)
+    return 3;
+  const std::array<Callback, 0> empty{};
+  Callback untouched[]{three};
+  checks = 0;
+  if (std::merge(empty.cbegin(), empty.cend(), empty.cbegin(),
+                 empty.cend(), untouched, before) != untouched ||
+      untouched[0] != three || checks != 0 || calls != 0)
+    return 4;
+  const std::array<Callback, 1> single{{one}};
+  if (std::merge(single.cbegin(), single.cend(), empty.cbegin(),
+                 empty.cend(), untouched, before) != untouched + 1 ||
+      untouched[0] != one || checks != 0 || calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackMergeRejectsUnapprovedComparators) {
+  const struct {
+    const char *Name;
+    const char *Comparator;
+  } Cases[] = {
+      {"non-bool-result",
+       "int before(Callback left, Callback right) { return left != right; }"},
+      {"reference-parameters",
+       "bool before(const Callback &left, const Callback &right) { "
+       "return left != right; }"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-merge-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-merge-") + Case.Name + ".nc");
+    writeFile(Source,
+              std::string("#include <algorithm>\n"
+                          "using Callback = int (*)(int);\n"
+                          "int one(int x) { return x + 1; }\n"
+                          "int two(int x) { return x + 2; }\n") +
+                  Case.Comparator +
+                  "\nint main() { const Callback first[]{one}; "
+                  "const Callback second[]{two}; Callback output[2]{}; "
+                  "std::merge(first, first + 1, second, second + 1, output, "
+                  "before); return 0; }\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackHeapMutationsRunAtBothOptimizations) {
   const auto Source = tmpFile("callback-heap-mutations.cpp");
   const auto Output = tmpFile("callback-heap-mutations.nc");

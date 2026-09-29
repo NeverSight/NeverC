@@ -26615,6 +26615,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
+    const auto CallbackSecond = AlgorithmCallbackRangeParameter(2);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(4);
+    const bool CallbackMerge =
+        Name == "merge" && Call->getNumArgs() == 6 && CallbackFirst &&
+        AlgorithmCallbackRangeParameter(1) && CallbackSecond &&
+        AlgorithmCallbackRangeParameter(3) && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackSecond)->getPointeeType()) &&
+        utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
+                                    (*CallbackOutput)->getPointeeType()) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(5, 0, 2) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(5, 2, 0);
     const bool RawScalar =
         AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
         AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
@@ -26668,7 +26682,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRecordRangeBinaryPredicateParameter(5, 0, 2) &&
         AlgorithmRecordRangeBinaryPredicateParameter(5, 2, 0);
     if (!RawScalar && !WrappedScalarDefault && !WrappedScalarComparator &&
-        !Record && !RecordComparator)
+        !Record && !RecordComparator && !CallbackMerge)
       return std::nullopt;
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;

@@ -2783,6 +2783,15 @@ Their comparator overloads admit the same scalar range forms after checking
 both input comparison directions with a Boolean function pointer or
 authenticated standard comparison object.
 
+The checked comparator overload of `std::merge` also accepts two const or
+mutable raw or authenticated wrapped ranges and a writable raw or wrapped
+output range of one exact function-pointer element type, including `noexcept`
+pointers. The comparator takes two pointer values by value and returns `bool`.
+Equivalent values from the first range precede those from the second; the
+advanced output iterator is returned. All arguments are evaluated once, an
+empty input pair makes no comparisons, and the pointed-to functions are not
+invoked.
+
 Default `std::lexicographical_compare` and `std::includes` also accept
 independent authenticated mutable or const wrapped iterators, mixed with raw
 pointer ranges. Exact same-type trivial source-record ranges use one uniquely
