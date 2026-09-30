@@ -15252,7 +15252,9 @@ utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
     if (!Cast)
       break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+                                       Cast->getType()) &&
+        !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
+                                     Cast->getType()))
       return nullptr;
     Argument = Cast->getSubExpr();
   }
@@ -18817,7 +18819,16 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     PairResult = Context.getRecordType(Pair->Record);
   }
   const auto Pointer = Function->getParamDecl(0)->getType();
-  if (!utilityAlgorithmScalarPointer(Context, Pointer) ||
+  const bool CallbackElements =
+      !SDKObject && (Find || FindNot || None || All || Any || Count) &&
+      utilityObjectPointer(Context, Pointer) &&
+      utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                  Pointer->getPointeeType());
+  auto InputConversion = [&](QualType From, QualType To) {
+    return utilityScalarDirectConversion(Context, From, To) ||
+           (CallbackElements && utilityCallbackEqualityType(Context, From, To));
+  };
+  if ((!utilityAlgorithmScalarPointer(Context, Pointer) && !CallbackElements) ||
       !Context.hasSameType(Pointer, Function->getParamDecl(1)->getType()) ||
       !Context.hasSameType(Pointer, Call->getArg(0)->getType()) ||
       !Context.hasSameType(Pointer, Call->getArg(1)->getType()) ||
@@ -18965,8 +18976,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   }
   const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
                                          : Method->getParamDecl(0)->getType();
-  if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                     ArgumentType))
+  if (!InputConversion(Pointer->getPointeeType(), ArgumentType))
     return std::nullopt;
   if (!Composed && !Remove && !PartitionPoint) {
     const Expr *Argument = Invocation->getArg(1);
@@ -18982,8 +18992,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
       if (!Cast)
         break;
-      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                         Cast->getType()))
+      if (!InputConversion(Cast->getSubExpr()->getType(), Cast->getType()))
         return std::nullopt;
       Argument = Cast->getSubExpr();
     }

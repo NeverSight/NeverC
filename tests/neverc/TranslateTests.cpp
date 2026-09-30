@@ -50646,6 +50646,198 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackPredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-predicate-objects.cpp");
+  const auto Output = tmpFile("algorithm-callback-predicate-objects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <cstddef>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, factories, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+void reset() { calls = trace = state_trace = 0; }
+bool observed(int count, int order, int state) {
+  return calls == count && trace == order && state_trace == state;
+}
+struct Match {
+  const Match *self;
+  Callback needle;
+  int local_calls;
+  bool inverse, copied;
+  Match(Callback target, bool inverted, bool expects_copy)
+      : self(this), needle(target), local_calls(0), inverse(inverted),
+        copied(expects_copy) { ++constructed; }
+  bool operator()(Callback value) & {
+    if ((self == this) == copied) ++bad_receiver;
+    ++calls;
+    trace = trace * 10 + (value == nullptr ? 0 : value == one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    bool selected = value == needle;
+    return inverse ? !selected : selected;
+  }
+  bool operator()(Callback) const & { bad_receiver += 100; return false; }
+};
+Match make(Callback needle, bool inverse) {
+  ++factories;
+  return Match(needle, inverse, false);
+}
+struct SafeMatch {
+  NoexceptCallback needle;
+  int local_calls;
+  bool operator()(NoexceptCallback value) & noexcept {
+    ++calls;
+    trace = trace * 10 + (value == safe_one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    return value == needle;
+  }
+  bool operator()(NoexceptCallback) const & noexcept {
+    bad_receiver += 100;
+    return false;
+  }
+};
+int main() {
+  const Callback input[]{nullptr, one, two, one};
+  const Match caller(two, false, true);
+  int first_effects = 0, last_effects = 0, object_effects = 0;
+  if (std::find_if((++first_effects, input), (++last_effects, input + 4),
+                   (++object_effects, caller)) != input + 2 ||
+      !observed(3, 12, 123) || first_effects != 1 || last_effects != 1 ||
+      object_effects != 1 || caller.local_calls || constructed != 1) return 1;
+  reset();
+  if (std::find_if_not(input, input + 4, caller) != input || !observed(1, 0, 1))
+    return 2;
+  reset();
+  if (std::none_of(input, input + 4, caller) || !observed(3, 12, 123)) return 3;
+  reset();
+  if (std::all_of(input, input + 4, caller) || !observed(1, 0, 1)) return 4;
+  reset();
+  if (!std::any_of(input, input + 4, caller) || !observed(3, 12, 123)) return 5;
+  reset();
+  auto total = std::count_if(input, input + 4, caller);
+  static_assert(__is_same(decltype(total), std::ptrdiff_t));
+  if (total != 1 || !observed(4, 121, 1234) || caller.local_calls) return 6;
+  reset();
+  if (std::count_if(input, input + 4, make(one, false)) != 2 ||
+      !observed(4, 121, 1234)) return 7;
+  reset();
+  if (!std::all_of(input, input + 4, make(three, true)) ||
+      !observed(4, 121, 1234)) return 8;
+  reset();
+  if (std::any_of(input, input + 4, make(three, false)) ||
+      !observed(4, 121, 1234)) return 9;
+  reset();
+  if (!std::none_of(input, input + 4, make(three, false)) ||
+      !observed(4, 121, 1234)) return 10;
+  reset();
+  if (std::find_if(input, input + 4, make(three, false)) != input + 4 ||
+      !observed(4, 121, 1234)) return 11;
+  reset();
+  if (std::find_if_not(input, input + 4, make(three, true)) != input + 4 ||
+      !observed(4, 121, 1234) || factories != 6 || constructed != 7) return 12;
+  reset();
+  if (std::find_if(input, input, make(one, false)) != input ||
+      std::find_if_not(input, input, make(one, false)) != input ||
+      !std::none_of(input, input, make(one, false)) ||
+      !std::all_of(input, input, make(one, false)) ||
+      std::any_of(input, input, make(one, false)) ||
+      std::count_if(input, input, make(one, false)) != 0 || !observed(0, 0, 0) ||
+      factories != 12 || constructed != 13) return 13;
+  NoexceptCallback safe[]{safe_one, safe_two, safe_one};
+  const SafeMatch safe_caller{safe_two, 0};
+  reset();
+  if (std::find_if(safe, safe + 3, safe_caller) != safe + 1 ||
+      !observed(2, 12, 12)) return 14;
+  reset();
+  if (std::find_if_not(safe, safe + 3, safe_caller) != safe ||
+      !observed(1, 1, 1)) return 15;
+  reset();
+  if (std::none_of(safe, safe + 3, safe_caller) || !observed(2, 12, 12)) return 16;
+  reset();
+  if (std::all_of(safe, safe + 3, safe_caller) || !observed(1, 1, 1)) return 17;
+  reset();
+  if (!std::any_of(safe, safe + 3, safe_caller) || !observed(2, 12, 12)) return 18;
+  reset();
+  if (std::count_if(safe, safe + 3, safe_caller) != 1 ||
+      !observed(3, 121, 123) || safe_caller.local_calls || caller.local_calls)
+    return 19;
+  return pointed_calls || bad_receiver ? 20 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-callback-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackPredicateObjectsRequireExactTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *Definition;
+    const char *Input;
+    const char *Object;
+  };
+  const Rejection Cases[] = {
+      {"reference",
+       "struct F { bool operator()(const Callback&) & { return true; } };",
+       "input", "F{}"},
+      {"noexcept-conversion",
+       "struct F { bool operator()(Callback) & { return true; } };", "safe",
+       "F{}"},
+      {"bool-conversion",
+       "struct F { bool operator()(bool) & { return true; } };", "input",
+       "F{}"},
+      {"method-template",
+       "struct F { template<class T> bool operator()(T) & { return true; } };",
+       "input", "F{}"},
+      {"non-bool-result",
+       "struct F { int operator()(Callback) & { return 1; } };", "input",
+       "F{}"},
+      {"sdk-object", "", "input", "std::logical_not<Callback>{}"},
+  };
+  for (const auto &Case : Cases) {
+    for (const std::string &Algorithm : {"find_if", "count_if"}) {
+      const std::string Name = std::string(Case.Name) + "-" + Algorithm;
+      SCOPED_TRACE(Name);
+      const auto Source = tmpFile(Name + "-callback-predicate-object.cpp");
+      const auto Output = tmpFile(Name + "-callback-predicate-object.nc");
+      writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) +
+                            R"cpp(
+int main() {
+  Callback input[]{one, one};
+  NoexceptCallback safe[]{safe_one, safe_one};
+)cpp" + "std::" + Algorithm +
+                            "(" + Case.Input + ", " + Case.Input + " + 2, " +
+                            Case.Object + ");\nreturn 0;\n}\n");
+      expectCode(translate(Source,
+                           {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmUnaryPredicateObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-callable-unary-state.cpp");
   const auto Output = tmpFile("algorithm-callable-unary-state.nc");

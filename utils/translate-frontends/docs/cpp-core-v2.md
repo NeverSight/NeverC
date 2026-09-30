@@ -3096,6 +3096,15 @@ additional predicate or element copy is introduced. `count_if` retains the
 pinned policy, alias and pointer `iterator_traits` chain and uses the target's
 signed pointer-difference carrier for its counter and result. It visits the
 whole range, while `all_of` and `any_of` preserve their decisive short circuit.
+These six query forms also accept raw ranges of exact function-pointer
+elements, including `noexcept` pointer types and const element storage, through
+a source predicate object whose selected operator takes that pointer type by
+value and returns `bool`. Pointer signatures must match exactly; reference
+parameters, pointer-type conversions and conversions to `bool` remain rejected.
+The same loop, helper and identity-projection proofs apply. One by-value object
+retains its state across visits, and empty ranges initialize it without calls.
+The translator passes pointer values without invoking their targets. SDK
+function objects retain their scalar input boundary.
 The replacement algorithms authenticate the exact conditional stores and
 iterator increments. `replace_if` writes through a mutable scalar input pointer;
 `replace_copy_if` accepts a separate writable scalar output with checked direct
