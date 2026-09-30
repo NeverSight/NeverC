@@ -5696,6 +5696,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
+  std::map<const MemberExpr *, const CallExpr *>
+      AuthenticatedVectorEndpointReferences;
   struct AlgorithmCallableSource {
     const FunctionDecl *Algorithm;
     // A null method denotes a separately authenticated SDK operation.
@@ -8371,6 +8373,36 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                         AlgorithmCallableSource{Function, Method})
                   : std::nullopt;
   }
+  const CXXMethodDecl *vectorEndpointSource(const CallExpr *Call) {
+    const auto Operation =
+        approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+    if (!Operation || (*Operation != UtilityOperation::VectorBegin &&
+                       *Operation != UtilityOperation::VectorEnd))
+      return nullptr;
+    const auto *Method =
+        dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+    const auto *Prototype =
+        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!isa<CXXMemberCallExpr>(Call) || !Method || !Prototype ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() || !Method->getDefinition())
+      return nullptr;
+    auto Pinned = [&](const FunctionDecl *Function) {
+      if (!Function || Function->getTemplateSpecializationKind() ==
+                           TSK_ExplicitSpecialization)
+        return false;
+      for (const auto *Declaration : Function->redecls())
+        if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+          return false;
+      return !Function->getDefinition() ||
+             approvedStandardSDKDeclaration(A.S, A.Sources,
+                                            Function->getDefinition());
+    };
+    if (!Pinned(Method) || !Pinned(Method->getTemplateInstantiationPattern(
+                               /*ForDefinition=*/true)))
+      return nullptr;
+    return Method;
+  }
   void collectOperationSource(const Stmt *S) {
     if (const auto *List = dyn_cast_or_null<InitListExpr>(S))
       if (auto Found = ZeroArrayStorageSources.find(List);
@@ -8386,11 +8418,23 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // even a trivial destructor and then omit the binding expression entirely.
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
+      const FunctionDecl *AuthenticatedVectorEndpoint = nullptr;
       std::optional<AlgorithmCallableSource> AuthenticatedAlgorithm;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
         const auto *Function = Call->getDirectCallee();
         const auto *Prototype =
             Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+        if (const auto *Method = vectorEndpointSource(Call))
+          if (const auto *Reference =
+                  dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+              Reference && Reference->getMemberDecl() == Method) {
+            auto [Entry, Inserted] =
+                AuthenticatedVectorEndpointReferences.emplace(Reference, Call);
+            if (Inserted)
+              A.chargeExpansion(1, Call->getExprLoc());
+            if (Entry->second == Call)
+              AuthenticatedVectorEndpoint = Method;
+          }
         // The public algorithm has no written exception specification. Its
         // exact descriptor supplies the SDK signature/body, not a blanket
         // exemption for other references to the same function declaration.
@@ -8435,6 +8479,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (auto Found = AuthenticatedProjectionGetReferences.find(Reference);
             Found != AuthenticatedProjectionGetReferences.end())
           AuthenticatedProjectionGet = Found->second->getDirectCallee();
+      } else if (const auto *Reference = dyn_cast<MemberExpr>(S)) {
+        if (auto Found = AuthenticatedVectorEndpointReferences.find(Reference);
+            Found != AuthenticatedVectorEndpointReferences.end())
+          AuthenticatedVectorEndpoint = Found->second->getDirectCallee();
       }
       auto Dependency = [&](const Stmt *Source) {
         operationExpressionDependency(Source);
@@ -8461,6 +8509,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // Result/argument types, caller expressions and written template
         // arguments still complete through their ordinary source traversal.
         if (Function == AuthenticatedProjectionGet)
+          return;
+        // This exact endpoint call supplies its pinned SDK signature and body.
+        // Receiver expressions, written types and arguments remain source
+        // roots.
+        if (Function == AuthenticatedVectorEndpoint)
           return;
         if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Function);
             Destructor &&

@@ -2475,8 +2475,17 @@ For these two source-object scans, folded `decltype`, `sizeof`, `alignof` and
 runtime specialization on admitted scalar, record or exact function-pointer
 elements, including wrapped iterators supplied as source function parameters.
 The pinned wrapper layout, trivial copies and implicit destruction are
-authenticated. Direct vector endpoint calls inside result queries remain
-outside this boundary.
+authenticated. Result queries also accept direct mutable or const vector
+`begin`, `end`, `cbegin` and `cend` calls on vector references supplied as source
+function parameters, with an already materialized pinned member body, including
+as the endpoints of these scans. Authentication belongs to the exact member
+call and reference; receiver expressions, factory defaults and written type or
+template source remain checked. These unevaluated calls
+preserve the iterator type and fixed `noexcept` value without evaluating their
+receiver. Locally constructed vector receivers still require unsupported
+container construction and destruction source closure. Query-only endpoint
+bodies, member addresses and other vector operations also remain outside this
+query boundary.
 The selected source call operator requires a completed, emitted body;
 its original signatures and exception specification, the range and object
 expressions, written template arguments, constructor and factory defaults

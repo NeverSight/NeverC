@@ -66596,6 +66596,168 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("vector-endpoint-result-queries.cpp");
+  const auto Output = tmpFile("vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+int objects, constructed, factories, called;
+int initial() { ++constructed; return 0; }
+struct Less {
+  int visits;
+  Less(int n = initial()) : visits(n) {}
+  bool operator()(long long left, double right) & noexcept {
+    ++visits; ++called; return left < right;
+  }
+};
+Less make() { ++factories; return Less(); }
+using Vector = std::vector<short>;
+using Iterator = Vector::iterator;
+using ConstIterator = Vector::const_iterator;
+Vector &select(Vector &v, int = 0) noexcept { ++objects; return v; }
+const Vector &select(const Vector &v, int = 0) noexcept { ++objects; return v; }
+Vector &throwing(Vector &v) { ++objects; return v; }
+int verify(Vector &values) {
+  const auto &view = values;
+  auto minimum = std::min_element(select(values).begin(), select(values).end(), make());
+  auto maximum = std::max_element(select(view).begin(), select(view).end(), make());
+  auto const_minimum = std::min_element(select(view).cbegin(), select(view).cend(), make());
+  auto const_maximum = std::max_element(select(values).cbegin(), select(values).cend(), make());
+  if (minimum != values.begin() + 1 || maximum != view.begin() + 2 ||
+      const_minimum != view.begin() + 1 || const_maximum != view.begin() + 2 ||
+      objects != 8 || constructed != 4 || factories != 4 || called != 12)
+    return 1;
+  using Begin = decltype(select(values).begin());
+  using End = decltype(select(values).end());
+  using ConstBegin = decltype(select(view).begin());
+  using ConstEnd = decltype(select(view).end());
+  static_assert(__is_same(Begin, Iterator));
+  static_assert(__is_same(End, Iterator));
+  static_assert(__is_same(ConstBegin, ConstIterator));
+  static_assert(__is_same(ConstEnd, ConstIterator));
+  static_assert(__is_same(decltype(select(values).cbegin()), ConstIterator));
+  static_assert(__is_same(decltype(select(values).cend()), ConstIterator));
+  static_assert(__is_same(decltype(select(view).cbegin()), ConstIterator));
+  static_assert(__is_same(decltype(select(view).cend()), ConstIterator));
+  static_assert(sizeof(select(values).begin()) == sizeof(short *));
+  static_assert(alignof(decltype(select(view).cend())) == alignof(short *));
+  static_assert(noexcept(select(values).begin()));
+  static_assert(noexcept(select(values).end()));
+  static_assert(noexcept(select(view).begin()));
+  static_assert(noexcept(select(view).end()));
+  static_assert(noexcept(select(values).cbegin()));
+  static_assert(noexcept(select(values).cend()));
+  static_assert(noexcept(select(view).cbegin()));
+  static_assert(noexcept(select(view).cend()));
+  static_assert(!noexcept(throwing(values).begin()));
+  static_assert(__is_same(decltype((select(values), values).end()), Iterator));
+  using Minimum = decltype(std::min_element(select(values).begin(), select(values).end(), make()));
+  static_assert(__is_same(Minimum, Iterator));
+  static_assert(__is_same(decltype(std::max_element(select(view).begin(), select(view).end(), make())), ConstIterator));
+  static_assert(__is_same(decltype(std::min_element(select(view).cbegin(), select(view).cend(), make())), ConstIterator));
+  static_assert(!noexcept(std::max_element(select(values).cbegin(), select(values).cend(), make())));
+  return objects == 8 && constructed == 4 && factories == 4 && called == 12 ? 0 : 2;
+}
+int main() { Vector values{3, 1, 4, 1}; return verify(values); }
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"query-without-body", R"cpp(
+int f(Vector &v) { static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"different-endpoint", R"cpp(
+int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype(v.end()), Iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"different-specialization", R"cpp(
+int f(Vector &v, std::vector<short> &other) { auto first = v.begin(); static_assert(__is_same(decltype(other.begin()), std::vector<short>::iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"different-const-endpoint", R"cpp(
+int f(Vector &v, const Vector &view) { auto first = v.begin(); static_assert(__is_same(decltype(view.begin()), Vector::const_iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"constructed-vector-receiver", R"cpp(
+int f() { Vector v{3, 1, 4}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"receiver-source", R"cpp(
+int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-default-source", R"cpp(
+Vector &select(Vector &v, int = (sizeof(long double), 0)) { return v; }
+int f(Vector &v) { auto first = select(v, 0).begin(); static_assert(__is_same(decltype(select(v).begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-noexcept-source", R"cpp(
+Vector &select(Vector &v) noexcept(sizeof(long double) > 0) { return v; }
+int f(Vector &v) { auto first = select(v).begin(); static_assert(noexcept(select(v).begin())); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-object-alias", R"cpp(
+int object; template<auto> using Erased = Vector;
+int f(Erased<&object> &v) { auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"public-member-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::iterator vector<int>::begin() noexcept { return {}; } } }
+int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"member-address-after-call", R"cpp(
+int f(Vector &v) { auto first = v.begin(); using Pointer = Iterator (Vector::*)() noexcept; using Source = decltype(static_cast<Pointer>(&Vector::begin)); static_assert(__is_same(Source, Pointer)); return 0; }
+)cpp",
+       "TR0201"},
+      {"unrelated-member", R"cpp(
+int f(Vector &v) { auto first = v.begin(); auto data = v.data(); static_assert(__is_same(decltype(v.data()), int *)); return 0; }
+)cpp",
+       "TR0201"},
+      {"unrelated-reverse-endpoint", R"cpp(
+int f(Vector &v) { auto first = v.begin(); auto reversed = v.rbegin(); static_assert(__is_same(decltype(v.rbegin()), Vector::reverse_iterator)); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("vector-endpoint-query-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("vector-endpoint-query-") + Case.Name + ".nc");
+    writeFile(Source, "#include <vector>\nusing Vector = std::vector<int>; "
+                      "using Iterator = Vector::iterator;\n" +
+                          std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmExtremaObjectResultQueriesRequireSource) {
   const struct {
     const char *Name, *Source, *Code;
