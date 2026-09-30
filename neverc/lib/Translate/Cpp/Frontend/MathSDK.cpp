@@ -16909,7 +16909,15 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
   const bool SDKObject =
       Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
-  if (!utilityAlgorithmScalarPointer(Context, Pointer) ||
+  const bool CallbackElements =
+      !SDKObject && utilityObjectPointer(Context, Pointer) &&
+      utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                  Pointer->getPointeeType());
+  auto InputConversion = [&](QualType From, QualType To) {
+    return utilityScalarDirectConversion(Context, From, To) ||
+           (CallbackElements && utilityCallbackEqualityType(Context, From, To));
+  };
+  if ((!utilityAlgorithmScalarPointer(Context, Pointer) && !CallbackElements) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Count) ||
       !Context.hasSameType(Call->getArg(2)->getType(), Object) ||
@@ -17043,8 +17051,7 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
     const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
     if (!Cast)
       break;
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+    if (!InputConversion(Cast->getSubExpr()->getType(), Cast->getType()))
       return std::nullopt;
     ElementArgument = Cast->getSubExpr();
   }
@@ -17088,8 +17095,7 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
   }
   const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
                                          : Method->getParamDecl(0)->getType();
-  if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                     ArgumentType))
+  if (!InputConversion(Pointer->getPointeeType(), ArgumentType))
     return std::nullopt;
   return UtilityAlgorithmPredicateCall{UtilityOperation::AlgorithmForEachN,
                                        Function,
@@ -17119,7 +17125,15 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
   const bool SDKObject =
       Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
-  if (!utilityAlgorithmScalarPointer(Context, Pointer) ||
+  const bool CallbackElements =
+      !SDKObject && utilityObjectPointer(Context, Pointer) &&
+      utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                  Pointer->getPointeeType());
+  auto InputConversion = [&](QualType From, QualType To) {
+    return utilityScalarDirectConversion(Context, From, To) ||
+           (CallbackElements && utilityCallbackEqualityType(Context, From, To));
+  };
+  if ((!utilityAlgorithmScalarPointer(Context, Pointer) && !CallbackElements) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Pointer) ||
@@ -17216,8 +17230,7 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
     const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
     if (!Cast)
       break;
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+    if (!InputConversion(Cast->getSubExpr()->getType(), Cast->getType()))
       return std::nullopt;
     ElementArgument = Cast->getSubExpr();
   }
@@ -17260,8 +17273,7 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
   }
   const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
                                          : Method->getParamDecl(0)->getType();
-  if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                     ArgumentType))
+  if (!InputConversion(Pointer->getPointeeType(), ArgumentType))
     return std::nullopt;
   return UtilityAlgorithmPredicateCall{UtilityOperation::AlgorithmForEach,
                                        Function,

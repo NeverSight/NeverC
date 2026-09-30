@@ -50026,6 +50026,194 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackForEachObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-for-each-objects.cpp");
+  const auto Output = tmpFile("algorithm-callback-for-each-objects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int visits, trace, state_trace, factories, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int observe(Callback value, int local_calls) {
+  int rank = value == one ? 1 : 2;
+  ++visits;
+  trace = trace * 10 + rank;
+  state_trace = state_trace * 10 + local_calls;
+  return rank;
+}
+struct Accumulate {
+  int sum, local_calls;
+  const Accumulate *original;
+  void operator()(Callback value) & {
+    if (this == original) ++bad_receiver;
+    sum += observe(value, ++local_calls);
+  }
+  void operator()(Callback) const & { bad_receiver += 100; }
+};
+Accumulate make(int n) { ++factories; return {n, 0, nullptr}; }
+struct Constructed {
+  const Constructed *self;
+  int local_calls;
+  long sum;
+  Constructed() : self(this), local_calls(0), sum(10) { ++constructed; }
+  int operator()(Callback value) & {
+    if (self != this) ++bad_receiver;
+    int rank = observe(value, ++local_calls);
+    sum += rank;
+    return rank + local_calls;
+  }
+};
+struct SafeSink {
+  int sum, local_calls;
+  long operator()(NoexceptCallback value) & noexcept {
+    int rank = value == safe_one ? 1 : 2;
+    ++visits;
+    trace = trace * 10 + rank;
+    state_trace = state_trace * 10 + ++local_calls;
+    sum += rank;
+    return sum;
+  }
+  long operator()(NoexceptCallback) const & noexcept {
+    bad_receiver += 100;
+    return -100;
+  }
+};
+int count_calls;
+short count(short n) { ++count_calls; return n; }
+enum Amount : unsigned char { two_items = 2 };
+int main() {
+  const Callback input[]{one, two, one};
+  Callback mutable_input[]{two, one, two};
+  Accumulate caller{7, 0, nullptr};
+  caller.original = &caller;
+  int first_effects = 0, last_effects = 0, object_effects = 0;
+  Accumulate result = std::for_each((++first_effects, input),
+                                    (++last_effects, input + 3),
+                                    (++object_effects, caller));
+  if (result.sum != 11 || result.local_calls != 3 || caller.sum != 7 ||
+      caller.local_calls || visits != 3 || trace != 121 || state_trace != 123 ||
+      first_effects != 1 || last_effects != 1 || object_effects != 1) return 1;
+  result = std::for_each(input, input, make(9));
+  if (result.sum != 9 || result.local_calls || visits != 3 || factories != 1)
+    return 2;
+  trace = state_trace = 0;
+  result = std::for_each(input, input + 2, make(9));
+  if (result.sum != 12 || result.local_calls != 2 || visits != 5 ||
+      trace != 12 || state_trace != 12 || factories != 2) return 3;
+  trace = state_trace = first_effects = object_effects = 0;
+  if (std::for_each_n((++first_effects, mutable_input), count(3),
+                      (++object_effects, caller)) != mutable_input + 3 ||
+      caller.sum != 7 || caller.local_calls || visits != 8 || trace != 212 ||
+      state_trace != 123 || first_effects != 1 || object_effects != 1 ||
+      count_calls != 1) return 4;
+  if (std::for_each_n(input, 0, make(1)) != input ||
+      std::for_each_n(input, count(-2), make(2)) != input || visits != 8 ||
+      factories != 4 || count_calls != 2) return 5;
+  trace = state_trace = 0;
+  if (std::for_each_n(mutable_input, two_items, make(0)) != mutable_input + 2 ||
+      visits != 10 || trace != 21 || state_trace != 12 || factories != 5)
+    return 6;
+  trace = state_trace = 0;
+  Constructed constructed_result = std::for_each(input, input + 2, Constructed{});
+  if (constructed_result.sum != 13 || constructed_result.local_calls != 2 ||
+      visits != 12 || trace != 12 || state_trace != 12 || constructed != 1)
+    return 7;
+  constructed_result = std::for_each(input, input, Constructed{});
+  if (constructed_result.sum != 10 || constructed_result.local_calls ||
+      visits != 12 || constructed != 2) return 8;
+  if (std::for_each_n(input, 0, Constructed{}) != input ||
+      std::for_each_n(input, -1, Constructed{}) != input || visits != 12 ||
+      constructed != 4) return 9;
+  trace = state_trace = 0;
+  if (std::for_each_n(input, 2, Constructed{}) != input + 2 || visits != 14 ||
+      trace != 12 || state_trace != 12 || constructed != 5) return 10;
+  const NoexceptCallback safe[]{safe_two, safe_one};
+  SafeSink safe_caller{3, 0};
+  trace = state_trace = 0;
+  SafeSink safe_result = std::for_each(safe, safe + 2, safe_caller);
+  if (safe_result.sum != 6 || safe_result.local_calls != 2 ||
+      safe_caller.sum != 3 || safe_caller.local_calls || visits != 16 ||
+      trace != 21 || state_trace != 12) return 11;
+  trace = state_trace = 0;
+  if (std::for_each_n(safe, 2, safe_caller) != safe + 2 || visits != 18 ||
+      safe_caller.sum != 3 || safe_caller.local_calls || trace != 21 ||
+      state_trace != 12) return 12;
+  if (input[0] != one || mutable_input[0] != two || safe[1] != safe_one)
+    return 13;
+  return pointed_calls || bad_receiver ? 14 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-callback-for-each" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmCallbackForEachObjectsRequireExactTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *Definition;
+    const char *Input;
+    const char *Object;
+  };
+  const Rejection Cases[] = {
+      {"reference", "struct F { void operator()(const Callback&) & {} };",
+       "input", "F{}"},
+      {"noexcept-conversion", "struct F { void operator()(Callback) & {} };",
+       "safe", "F{}"},
+      {"bool-conversion", "struct F { void operator()(bool) & {} };", "input",
+       "F{}"},
+      {"method-template",
+       "struct F { template<class T> void operator()(T) & {} };", "input",
+       "F{}"},
+      {"sdk-object", "", "input", "std::logical_not<Callback>{}"},
+  };
+  for (const auto &Case : Cases) {
+    for (bool Counted : {false, true}) {
+      const std::string Name =
+          std::string(Case.Name) + (Counted ? "-counted" : "-range");
+      SCOPED_TRACE(Name);
+      const auto Source = tmpFile(Name + "-callback-for-each-object.cpp");
+      const auto Output = tmpFile(Name + "-callback-for-each-object.nc");
+      writeFile(
+          Source,
+          R"cpp(
+#include <algorithm>
+#include <functional>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) +
+              R"cpp(
+int main() {
+  Callback input[]{one, one};
+  NoexceptCallback safe[]{safe_one, safe_one};
+)cpp" + (Counted ? "std::for_each_n(" : "std::for_each(") +
+              Case.Input +
+              (Counted ? ", 2, " : ", " + std::string(Case.Input) + " + 2, ") +
+              Case.Object + ");\nreturn 0;\n}\n");
+      expectCode(translate(Source,
+                           {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2AlgorithmCallbackTransformObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-callback-transform-object.cpp");
   const auto Output = tmpFile("algorithm-callback-transform-object.nc");

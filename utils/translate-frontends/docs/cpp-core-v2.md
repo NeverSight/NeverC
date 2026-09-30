@@ -2351,6 +2351,14 @@ return. It copies the modified by-value callable into the result without
 changing the caller's object, including on empty ranges. Pinned typed or
 transparent `std::logical_not`, `std::negate` and integral `std::bit_not`
 objects use the same checked input conversion and return boundary.
+Both source-object forms also accept raw ranges of exact function-pointer
+elements passed by value to the selected operator, including `noexcept`
+pointer types and const element storage. Reference parameters, conversions
+between function-pointer types and conversions to `bool` remain rejected.
+The translator passes each pointer value without invoking its target. Empty
+ranges and non-positive `for_each_n` counts retain the by-value object without
+calling it; `for_each` returns that object's state and `for_each_n` returns
+the original iterator. SDK function objects retain their scalar input boundary.
 
 `generate` and `generate_n` accept source-owned, standard-layout, trivially
 copied generator objects with a defined non-template nullary call operator.
