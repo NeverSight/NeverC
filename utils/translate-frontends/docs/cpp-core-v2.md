@@ -1860,6 +1860,14 @@ raw or wrapped output. It compares pointer values without invoking functions,
 copies one value from each adjacent run, preserves the input, and returns the
 advanced output iterator. Empty and single-element inputs retain their expected
 output positions.
+Their checked predicate overloads accept the same exact function-pointer
+element type through `bool(Callback, Callback)`, including `noexcept` pointer
+elements. `unique` requires a writable raw or authenticated wrapped input;
+`unique_copy` accepts const input and a separate writable raw or wrapped output.
+The predicate expression is evaluated once; each comparison passes pointer
+values without a translator-generated call to the pointed-to functions. Empty
+and single-element ranges make no predicate calls, and both algorithms return
+the original iterator form.
 The value-based `remove`, `remove_copy`, `replace` and `replace_copy` forms
 also admit authenticated wrapped scalar ranges. Copying forms accept mixed raw
 and wrapped inputs or writable outputs, and returned positions keep the public

@@ -26160,9 +26160,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto Input = AlgorithmRangePointerParameter(0);
     const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
-    if (Call->getNumArgs() == 2 && CallbackInput &&
-        AlgorithmCallbackRangeParameter(1) &&
-        !(*CallbackInput)->getPointeeType().isConstQualified())
+    if (CallbackInput && AlgorithmCallbackRangeParameter(1) &&
+        !(*CallbackInput)->getPointeeType().isConstQualified() &&
+        (Call->getNumArgs() == 2 ||
+         (Call->getNumArgs() == 3 &&
+          AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0))))
       return UtilityOperation::AlgorithmUnique;
     if (Call->getNumArgs() == 2 && AlgorithmWritableRecordRangeParameter(0) &&
         AlgorithmRecordEqualityRangeParameter(0) &&
@@ -26195,11 +26197,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Input = AlgorithmRangePointerParameter(0);
     const auto CallbackInput = AlgorithmCallbackRangeParameter(0);
     const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
-    if (Call->getNumArgs() == 3 && CallbackInput &&
-        AlgorithmCallbackRangeParameter(1) && CallbackOutput &&
+    if (CallbackInput && AlgorithmCallbackRangeParameter(1) && CallbackOutput &&
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
-                                    (*CallbackOutput)->getPointeeType()))
+                                    (*CallbackOutput)->getPointeeType()) &&
+        (Call->getNumArgs() == 3 ||
+         (Call->getNumArgs() == 4 &&
+          AlgorithmCallbackRangeBinaryPredicateParameter(3, 0, 0))))
       return UtilityOperation::AlgorithmUniqueCopy;
     if (Call->getNumArgs() == 3 && AlgorithmRecordEqualityRangeParameter(0) &&
         AlgorithmRecordEqualityRangeParameter(1) &&

@@ -57858,6 +57858,133 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackUniquePredicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-unique-predicates.cpp");
+  const auto Output = tmpFile("callback-unique-predicates.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int safe_one(int x) noexcept { ++calls; return x + 1; }
+int safe_two(int x) noexcept { ++calls; return x + 2; }
+int group(Callback f) { return f == one || f == three ? 1 : f == two ? 2 : 0; }
+bool same_group(Callback left, Callback right) {
+  ++checks;
+  return group(left) == group(right);
+}
+bool same_safe(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return left == right;
+}
+int main() {
+  std::array<Callback, 7> values{{one, three, two, two, one, three, two}};
+  int firstEffects = 0, lastEffects = 0, predicateEffects = 0;
+  auto end = std::unique((++firstEffects, values.begin()),
+                         (++lastEffects, values.end()),
+                         (++predicateEffects, same_group));
+  if (end != values.begin() + 4 || values[0] != one || values[1] != two ||
+      values[2] != one || values[3] != two || firstEffects != 1 ||
+      lastEffects != 1 || predicateEffects != 1 || checks == 0 || calls != 0)
+    return 1;
+  const std::array<Callback, 7> source{{one, three, two, two,
+                                         one, three, two}};
+  std::array<Callback, 7> output{};
+  int inputEffects = 0, inputLastEffects = 0, outputEffects = 0;
+  int copyPredicateEffects = 0;
+  auto copyEnd = std::unique_copy((++inputEffects, source.cbegin()),
+                                  (++inputLastEffects, source.cend()),
+                                  (++outputEffects, output.begin()),
+                                  (++copyPredicateEffects, same_group));
+  if (copyEnd != output.begin() + 4 || output[0] != one || output[1] != two ||
+      output[2] != one || output[3] != two || source[1] != three ||
+      inputEffects != 1 || inputLastEffects != 1 || outputEffects != 1 ||
+      copyPredicateEffects != 1 || calls != 0)
+    return 2;
+  Callback raw[]{three, one, two, two};
+  if (std::unique(raw, raw + 4, same_group) != raw + 2 ||
+      raw[0] != three || raw[1] != two || calls != 0)
+    return 3;
+  const Callback rawInput[]{three, one, two, two};
+  std::array<Callback, 4> mixedOutput{};
+  if (std::unique_copy(rawInput, rawInput + 4, mixedOutput.begin(),
+                       same_group) != mixedOutput.begin() + 2 ||
+      mixedOutput[0] != three || mixedOutput[1] != two || calls != 0)
+    return 4;
+  std::array<NoexceptCallback, 4> safe{{safe_one, safe_one, safe_two,
+                                         safe_two}};
+  if (std::unique(safe.begin(), safe.end(), same_safe) != safe.begin() + 2 ||
+      safe[0] != safe_one || safe[1] != safe_two || calls != 0)
+    return 5;
+  const NoexceptCallback safeInput[]{safe_one, safe_one, safe_two, safe_two};
+  NoexceptCallback safeOutput[4]{};
+  if (std::unique_copy(safeInput, safeInput + 4, safeOutput, same_safe) !=
+          safeOutput + 2 ||
+      safeOutput[0] != safe_one || safeOutput[1] != safe_two || calls != 0)
+    return 6;
+  std::array<Callback, 0> empty{};
+  std::array<Callback, 1> single{{one}};
+  int emptyPredicateEffects = 0;
+  checks = 0;
+  if (std::unique(empty.begin(), empty.end(),
+                  (++emptyPredicateEffects, same_group)) != empty.end() ||
+      std::unique(single.begin(), single.end(), same_group) != single.end() ||
+      std::unique_copy(empty.begin(), empty.end(), output.begin(),
+                       same_group) != output.begin() ||
+      std::unique_copy(single.begin(), single.end(), output.begin(),
+                       same_group) != output.begin() + 1 ||
+      output[0] != one || emptyPredicateEffects != 1 || checks != 0 ||
+      calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-unique-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackUniquePredicatesRejectInvalidSignatures) {
+  for (const std::string &Name : {"unique", "unique_copy"}) {
+    for (const std::string &Predicate : {"wrong_result", "wrong_reference"}) {
+      SCOPED_TRACE(Name + ":" + Predicate);
+      const auto Source = tmpFile(Name + "-callback-" + Predicate + ".cpp");
+      const auto Output = tmpFile(Name + "-callback-" + Predicate + ".nc");
+      const std::string Invocation =
+          Name == "unique" ? "std::unique(values, values + 2, "
+                           : "std::unique_copy(values, values + 2, output, ";
+      writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+int one(int x) { return x + 1; }
+int wrong_result(Callback, Callback) { return 1; }
+bool wrong_reference(const Callback&, const Callback&) { return true; }
+int main() {
+  Callback values[]{one, one};
+  Callback output[2]{};
+  return )cpp" + Invocation + Predicate + ") != nullptr;\n}\n");
+      auto Result =
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+      EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+      EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackMismatchRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-mismatch.cpp");
   const auto Output = tmpFile("callback-mismatch.nc");
