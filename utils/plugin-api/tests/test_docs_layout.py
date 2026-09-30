@@ -49,6 +49,47 @@ class DocumentationLayoutTests(unittest.TestCase):
         nav.check_target(DOCS / "zh-CN/README.md", "bad anchor", "build.md#no-such-heading-123", report, set())
         self.assertTrue(report.failures)
 
+    def test_heading_slugs_preserve_literal_underscores(self):
+        cases = {
+            "Compile-time `<type_traits>`": "compile-time-type_traits",
+            "`std::initializer_list`": "stdinitializer_list",
+            "`std::string_view`": "stdstring_view",
+            "type_traits and string_view": "type_traits-and-string_view",
+            "foo_bar_baz": "foo_bar_baz",
+            "`code`_em_": "codeem",
+            r"\__em_": "_em",
+            "`_private`": "_private",
+            "``foo_`_bar``": "foo__bar",
+            r"\_literal\_": "_literal_",
+            "_unclosed": "_unclosed",
+            "unclosed_": "unclosed_",
+            "_emphasis_ and __strong__": "emphasis-and-strong",
+            "___both___": "both",
+            "_outer __inner__ text_": "outer-inner-text",
+            "_outer _inner_ text_": "outer-inner-text",
+            "__strong _emphasis___": "strong-emphasis",
+            "____strong____": "strong",
+            "___a!____!b": "a_b",
+            "_type_traits_": "type_traits",
+            "_use `type_traits`_": "use-type_traits",
+            "[`type_traits`](types.md)": "type_traits",
+            "[link](target.md)_em_": "linkem",
+            "![image](image.png)_em_": "imageem",
+            "**bold** and ~~deleted~~": "bold-and-deleted",
+        }
+        for heading, expected in cases.items():
+            with self.subTest(heading=heading):
+                self.assertEqual(nav.slug(heading), expected)
+
+    def test_heading_anchor_suffixes_preserve_underscores(self):
+        self.assertEqual(
+            nav.page_anchors(
+                "## Compile-time `<type_traits>`\n"
+                "## Compile-time `<type_traits>`\n"
+            ),
+            {"compile-time-type_traits": 0, "compile-time-type_traits-1": 1},
+        )
+
     def test_language_selector_requires_all_locales(self):
         page = DOCS / "zh-CN/build.md"
         text = page.read_text().replace(nav.bar_entry(page, "ja"), "missing-japanese.md")

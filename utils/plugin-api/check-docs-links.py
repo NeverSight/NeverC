@@ -376,12 +376,81 @@ def check_breadcrumb(page: Path, text: str, report: Report) -> None:
 _ANCHORS: dict[Path, dict[str, int | str]] = {}
 
 
+def strip_underscore_emphasis(text: str) -> str:
+    """Remove paired emphasis delimiters without eating literal underscores."""
+    def punctuation(ch: str) -> bool:
+        # Literal placeholders stand in for punctuation-delimited text.
+        return (ch == "\x00" or unicodedata.category(ch).startswith("P")
+                or ch in "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+    # Each opener keeps its position, remaining length, closing flag and
+    # original run length (the rule of three uses the original lengths).
+    openers: list[tuple[int, int, bool, int]] = []
+    removed: set[int] = set()
+    for match in re.finditer(r"_+", text):
+        start, end = match.span()
+        before = text[start - 1] if start else " "
+        after = text[end] if end < len(text) else " "
+        left = (not after.isspace()
+                and (not punctuation(after)
+                     or before.isspace() or punctuation(before)))
+        right = (not before.isspace()
+                 and (not punctuation(before)
+                      or after.isspace() or punctuation(after)))
+        can_open = left and (not right or punctuation(before))
+        can_close = right and (not left or punctuation(after))
+        length = remaining = end - start
+        while can_close and remaining:
+            for index in range(len(openers) - 1, -1, -1):
+                at, count, also_closes, original = openers[index]
+                # CommonMark's rule of three for dual-purpose delimiters.
+                if ((also_closes or can_open) and (original + length) % 3 == 0
+                        and (original % 3 != 0 or length % 3 != 0)):
+                    continue
+                break
+            else:
+                break
+            used = 2 if count >= 2 and remaining >= 2 else 1
+            removed.update(range(at + count - used, at + count))
+            removed.update(range(start, start + used))
+            start += used
+            remaining -= used
+            # A completed span cannot leave unmatched openers inside it.
+            del openers[index + 1:]
+            if count == used:
+                openers.pop()
+            else:
+                openers[index] = (at, count - used, also_closes, original)
+        if can_open and remaining:
+            openers.append((start, remaining, can_close, length))
+    return "".join(ch for index, ch in enumerate(text) if index not in removed)
+
+
 def slug(text: str) -> str:
     """GitHub's heading anchor: drop inline formatting, lowercase, keep
     letters, numbers and marks, and turn spaces into hyphens."""
-    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    text = re.sub(r"[`*_~]", "", text).strip().lower()
+    # Code spans and escaped underscores are literal text, not emphasis.
+    # Protect them before looking for paired underscore delimiters; simply
+    # deleting every underscore also destroys names such as type_traits.
+    literals: list[str] = []
+
+    def literal(match: re.Match[str]) -> str:
+        value = match.group(1) if match.group(1) is not None else match.group(3)
+        literals.append(value)
+        return f"\x00{len(literals) - 1}\x00"
+
+    text = re.sub(
+        r"\\([\\`_])|(?<!`)(`+)(?!`)(.*?)(?<!`)\2(?!`)",
+        literal, text,
+    )
+    # Keep label boundaries until emphasis has been resolved.
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"[\1]", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"[\1]", text)
+    text = strip_underscore_emphasis(text)
+    text = re.sub(r"[`*~]", "", text)
+    text = re.sub(
+        r"\x00(\d+)\x00", lambda match: literals[int(match.group(1))], text
+    ).strip().lower()
     kept = [
         ch
         for ch in text
