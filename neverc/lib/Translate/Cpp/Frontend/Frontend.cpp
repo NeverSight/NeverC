@@ -1802,6 +1802,7 @@ static OperationTypeSourceKey operationTypeSourceKey(TypeLoc Location) {
 }
 struct OperationSourceDependencies {
   std::set<const FunctionDecl *> Definitions;
+  std::set<const CXXConstructorDecl *> VectorConstructors;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2694,11 +2695,96 @@ utilityInitializerListDestructionSource(Adapter &A,
 }
 
 static bool utilityVectorSourceElements(Adapter &A,
-                                        const UtilityVectorRecord &Vector) {
+                                        const UtilityVectorRecord &Vector,
+                                        unsigned Depth = 0) {
+  if (Depth >= 64)
+    return false;
   const auto *Element = Vector.ElementType->getAsCXXRecordDecl();
   Element = Element ? Element->getDefinition() : nullptr;
-  return !Vector.ElementType->isRecordType() ||
-         (Element && A.S.owns(A.Sources, Element->getLocation()));
+  if (!Vector.ElementType->isRecordType() ||
+      (Element && A.S.owns(A.Sources, Element->getLocation())))
+    return true;
+  const auto Nested =
+      approvedUtilityVectorRecord(A.S, A.Sources, Element, A.Context);
+  return Nested && utilityVectorSourceElements(A, *Nested, Depth + 1);
+}
+
+static const CXXConstructorDecl *
+utilityVectorElementConstructor(Adapter &A, const UtilityVectorRecord &Vector,
+                                bool Default) {
+  if (const auto *Constructor = Default ? Vector.DefaultElementConstructor
+                                        : Vector.CopyElementConstructor)
+    return Constructor;
+  const auto *Element = Vector.ElementType->getAsCXXRecordDecl();
+  Element = Element ? Element->getDefinition() : nullptr;
+  if (!Element)
+    return nullptr;
+  // Use only existing declarations. SDK construction can materialize an
+  // element operation, but a query must never manufacture that operation.
+  for (const auto *Candidate : Element->ctors()) {
+    A.chargeExpansion(1, Candidate->getLocation());
+    if (Candidate->isDeleted() || Candidate->isInvalidDecl() ||
+        Candidate->isVariadic())
+      continue;
+    if (Default
+            ? Candidate->isDefaultConstructor() && !Candidate->getNumParams()
+            : Candidate->isCopyConstructor() &&
+                  Candidate->getNumParams() == 1 &&
+                  A.Context.hasSameType(Candidate->getParamDecl(0)->getType(),
+                                        A.Context.getLValueReferenceType(
+                                            Vector.ElementType.withConst())))
+      return Candidate;
+  }
+  return nullptr;
+}
+
+static std::optional<UtilityVectorRecord>
+utilityNestedVectorConstructionSource(Adapter &A,
+                                      const CXXConstructorDecl *Constructor) {
+  const auto Vector = approvedUtilityVectorRecord(
+      A.S, A.Sources, Constructor ? Constructor->getParent() : nullptr,
+      A.Context);
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  const bool Default = Constructor && Constructor->isDefaultConstructor() &&
+                       !Constructor->getNumParams();
+  const bool Copy =
+      Vector && Constructor->isCopyConstructor() &&
+      Constructor->getNumParams() == 1 &&
+      A.Context.hasSameType(
+          Constructor->getParamDecl(0)->getType(),
+          A.Context.getLValueReferenceType(
+              A.Context.getRecordType(Vector->Record).withConst()));
+  const auto Origin = Constructor
+                          ? A.S.sdkFile(A.Sources, Constructor->getLocation())
+                          : std::nullopt;
+  if (!Vector || !utilityVectorSourceElements(A, *Vector) || !Prototype ||
+      !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "__vector/vector.h" || Constructor->isInvalidDecl() ||
+      Constructor->isDeleted() || Constructor->isVariadic() ||
+      Constructor->getAccess() != AS_public || !Constructor->getDefinition() ||
+      !(Default ? Prototype->isNothrow()
+                : Copy && Prototype->getExceptionSpecType() == EST_None))
+    return std::nullopt;
+  auto Pinned = [&](const FunctionDecl *Function) {
+    if (!Function ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return false;
+    }
+    return !Function->getDefinition() ||
+           approvedStandardSDKDeclaration(A.S, A.Sources,
+                                          Function->getDefinition());
+  };
+  if (!Pinned(Constructor) ||
+      !Pinned(Constructor->getTemplateInstantiationPattern(
+          /*ForDefinition=*/true)))
+    return std::nullopt;
+  return Vector;
 }
 
 static std::optional<UtilityVectorRecord>
@@ -3003,8 +3089,8 @@ public:
     // array's actual expressions retain their own element destruction source.
     if (utilityInitializerListDestructionSource(A, Record))
       return true;
-    // Storage release belongs to the pinned SDK destructor. Source-owned
-    // record elements must independently close their actual destruction source.
+    // Storage release belongs to each pinned SDK destructor. Nested vectors
+    // and source-owned records must close their actual element destruction.
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
       if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
         return destruction(Element, Depth + 1);
@@ -3042,6 +3128,31 @@ public:
     }
     return true;
   }
+  bool vectorConstruction(const CXXConstructorDecl *Constructor,
+                          unsigned Depth = 0) {
+    if (Depth >= 64)
+      return false;
+    const auto Vector = utilityNestedVectorConstructionSource(A, Constructor);
+    if (!Vector)
+      return false;
+    A.chargeExpansion(1, Constructor->getLocation());
+    // A nested vector's default constructor creates no elements, so it never
+    // selects a constructor for that vector's own elements.
+    if (Constructor->isDefaultConstructor() ||
+        !Vector->ElementType->isRecordType())
+      return true;
+    const auto *ElementConstructor = utilityVectorElementConstructor(
+        A, *Vector, Constructor->isDefaultConstructor());
+    if (!ElementConstructor)
+      return false;
+    if (approvedUtilityVectorRecord(A.S, A.Sources,
+                                    ElementConstructor->getParent(), A.Context))
+      return vectorConstruction(ElementConstructor, Depth + 1);
+    return ElementConstructor->isImplicit() ||
+                   defaultedDeclaration(ElementConstructor)
+               ? generatedOperation(ElementConstructor)
+               : defined(ElementConstructor);
+  }
   bool finish(SourceLocation L) {
     std::set<const OperationSourceDependencies *> Seen;
     while (!Work.empty()) {
@@ -3052,6 +3163,9 @@ public:
       A.chargeExpansion(1, L);
       for (const auto *Function : Dependencies->Definitions)
         if (!defined(Function))
+          return false;
+      for (const auto *Constructor : Dependencies->VectorConstructors)
+        if (!vectorConstruction(Constructor))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -8777,33 +8891,35 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           const bool Default =
               *VectorConstruction == UtilityVectorConstruction::Count;
           const auto *ElementConstructor =
-              Default ? Vector->DefaultElementConstructor
-                      : Vector->CopyElementConstructor;
-          if (!ElementConstructor) {
-            // Trivial source records use existing Sema declarations only. Do
-            // not instantiate a missing operation just to complete a query.
-            const auto *Element =
-                Vector->ElementType->getAsCXXRecordDecl()->getDefinition();
-            for (const auto *Candidate : Element->ctors()) {
-              A.chargeExpansion(1, Candidate->getLocation());
-              if (Candidate->isDeleted() || Candidate->isInvalidDecl() ||
-                  Candidate->isVariadic())
-                continue;
-              if (Default ? Candidate->isDefaultConstructor() &&
-                                !Candidate->getNumParams()
-                          : Candidate->isCopyConstructor() &&
-                                Candidate->getNumParams() == 1 &&
-                                A.Context.hasSameType(
-                                    Candidate->getParamDecl(0)->getType(),
-                                    A.Context.getLValueReferenceType(
-                                        Vector->ElementType.withConst()))) {
-                ElementConstructor = Candidate;
-                break;
-              }
-            }
-          }
+              utilityVectorElementConstructor(A, *Vector, Default);
           SDKConstruction &= ElementConstructor != nullptr;
-          if (ElementConstructor) {
+          // SDK vector elements hide their own selected operation in the
+          // library body. Retain its exact source and reach the source-owned
+          // leaf without traversing or inventing private SDK expressions.
+          unsigned Depth = 0;
+          while (ElementConstructor &&
+                 approvedUtilityVectorRecord(A.S, A.Sources,
+                                             ElementConstructor->getParent(),
+                                             A.Context)) {
+            const auto Nested =
+                utilityNestedVectorConstructionSource(A, ElementConstructor);
+            if (!Nested || Depth++ >= 64) {
+              SDKConstruction = false;
+              break;
+            }
+            for (auto *Dependencies : ActiveOperationSources)
+              if (Dependencies->VectorConstructors.insert(ElementConstructor)
+                      .second)
+                A.chargeExpansion(1, ElementConstructor->getLocation());
+            if (Default || !Nested->ElementType->isRecordType()) {
+              ElementConstructor = nullptr;
+              break;
+            }
+            ElementConstructor =
+                utilityVectorElementConstructor(A, *Nested, Default);
+            SDKConstruction &= ElementConstructor != nullptr;
+          }
+          if (SDKConstruction && ElementConstructor) {
             FunctionSource(ElementConstructor);
             if (ElementConstructor->isImplicit() ||
                 defaultedDeclaration(ElementConstructor)) {

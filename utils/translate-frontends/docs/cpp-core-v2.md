@@ -2478,7 +2478,8 @@ The pinned wrapper layout, trivial copies and implicit destruction are
 authenticated. Result queries also accept direct mutable or const vector
 `begin`, `end`, `cbegin` and `cend` calls on vector references supplied as source
 function parameters and on locally constructed vectors with admitted scalar,
-object-pointer or source-owned record elements. The endpoint requires an already
+object-pointer, source-owned record or nested vector elements. Nested vectors
+retain these same leaf-element restrictions. The endpoint requires an already
 materialized pinned member body, including when used as the endpoint of these
 scans. For local receivers, the exact admitted default, initializer-list, count,
 fill, copy, move or raw/wrapped range construction and the materialized SDK
@@ -2493,12 +2494,19 @@ selected element copy constructor, including its original signature, exception
 specification and completed source body or implicit/defaulted family proof.
 Empty default construction and buffer moves create no elements and require no
 unused element default or copy constructor, including for move-only records.
+Nested vector elements retain the exact materialized SDK default or copy
+constructor and its pinned declaration and definition source. Default
+construction creates an empty inner vector and requires no unused leaf
+constructor; copying follows the selected inner copy constructors recursively
+and checks the source-owned leaf operation. Destruction likewise checks each
+inner SDK destructor and the leaf record's complete destruction source.
 Authentication belongs to the exact member call and reference; receiver
 expressions, factory defaults and written type or template source remain checked.
 These unevaluated calls preserve the iterator type and fixed `noexcept` value
-without evaluating their receiver. Direct SDK record elements and nested-container
-elements still require their separate owning element source proof. Query-only
-constructor or endpoint bodies, member addresses and other vector operations
+without evaluating their receiver or performing an inner allocation, copy or
+destruction. Other direct SDK record elements, including string or unique-pointer
+leaves inside nested vectors, still require their separate owning element
+source proof. Query-only constructor or endpoint bodies, member addresses and other vector operations
 also remain outside this query boundary.
 The selected source call operator requires a completed, emitted body;
 its original signatures and exception specification, the range and object

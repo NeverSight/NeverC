@@ -66970,6 +66970,351 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2NestedVectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("nested-vector-endpoint-result-queries.cpp");
+  const auto Output = tmpFile("nested-vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, live, copied, moved, created, destroyed;
+int receivers, written, defaults;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+int seed() { ++defaults; return 1; }
+int value(int n = seed()) { ++written; return n; }
+struct Box {
+  int *value;
+  explicit Box(int n) : value(new int(n)) { ++live; ++created; }
+  Box(const Box &b) : value(new int(*b.value)) { ++live; ++copied; }
+  Box(Box &&b) noexcept : value(b.value) {
+    b.value = nullptr; ++live; ++moved;
+  }
+  ~Box() { delete value; --live; ++destroyed; }
+};
+struct MoveOnly {
+  int *value;
+  explicit MoveOnly(int n) : value(new int(n)) { ++live; ++created; }
+  MoveOnly(const MoveOnly &) = delete;
+  MoveOnly(MoveOnly &&b) noexcept : value(b.value) {
+    b.value = nullptr; ++live; ++moved;
+  }
+  ~MoveOnly() { delete value; --live; ++destroyed; }
+};
+using Row = std::vector<int>;
+using Rows = std::vector<Row>;
+using Cubes = std::vector<Rows>;
+using Boxes = std::vector<Box>;
+using BoxRows = std::vector<Boxes>;
+using Only = std::vector<MoveOnly>;
+using OnlyRows = std::vector<Only>;
+Rows &select(Rows &v) noexcept { ++receivers; return v; }
+const Rows &select(const Rows &v) noexcept { ++receivers; return v; }
+int check() {
+  Row source{value(3), value(), value(4)}, other{7, 2};
+  Rows values{source, other};
+  Rows empty;
+  Rows copy(values);
+  Rows move(static_cast<Rows &&>(copy));
+  Rows count(Size(2));
+  Rows fill(Size(2), source);
+  Row raw[] = {source, other};
+  Rows range(raw, raw + 2);
+  Rows wrapped(values.begin(), values.end());
+  const auto &view = values;
+  auto first = select(values).begin(), last = select(values).end();
+  auto const_first = select(view).begin(), const_last = select(view).end();
+  auto const_begin = values.cbegin(), const_end = values.cend();
+  auto view_begin = view.cbegin(), view_end = view.cend();
+  if (last - first != 2 || const_last - const_first != 2 ||
+      const_end - const_begin != 2 || view_end - view_begin != 2 ||
+      !empty.empty() || !copy.empty() || move[0][1] != 1 ||
+      !count[0].empty() || !count[1].empty() || fill[1][2] != 4 ||
+      range[1][0] != 7 || wrapped[0][1] != 1 ||
+      fill[0].data() == fill[1].data() || fill[0].data() == source.data() ||
+      values[0].data() == move[0].data() ||
+      values[0].data() == wrapped[0].data()) return 1;
+  Cubes cubes{values, fill};
+  Cubes cube_copy(cubes);
+  Cubes cube_move(static_cast<Cubes &&>(cube_copy));
+  Cubes cube_count(Size(2));
+  auto cube_first = cubes.begin(), cube_last = cubes.end();
+  if (cube_last - cube_first != 2 || cube_move[1][1][2] != 4 ||
+      cube_move[0][0].data() == cubes[0][0].data() ||
+      !cube_copy.empty() || !cube_count[1].empty()) return 2;
+  Boxes boxes{Box(8), Box(1)};
+  BoxRows box_rows{boxes, boxes};
+  BoxRows box_copy(box_rows);
+  BoxRows box_count(Size(2));
+  auto box_first = box_rows.begin(), box_last = box_rows.end();
+  if (box_last - box_first != 2 || *box_rows[1][0].value != 8 ||
+      box_rows[0][0].value == boxes[0].value ||
+      box_rows[0][0].value == box_copy[0][0].value ||
+      !box_count[1].empty()) return 3;
+  Only only;
+  only.push_back(MoveOnly(9));
+  OnlyRows only_empty;
+  OnlyRows only_rows(Size(2));
+  OnlyRows only_move(static_cast<OnlyRows &&>(only_rows));
+  auto only_first = only_move.begin(), only_last = only_move.end();
+  if (only_last - only_first != 2 || !(*only_first).empty() ||
+      !only_rows.empty() || !only_empty.empty() || *only[0].value != 9) return 4;
+  int left = 2, right = 5;
+  std::vector<int *> pointers{&left, &right};
+  std::vector<std::vector<int *>> pointer_rows{pointers};
+  auto pointer_first = pointer_rows.begin();
+  if ((*pointer_first)[1] != &right) return 5;
+  const int allocation_count = allocated, release_count = released;
+  const int live_count = live, copy_count = copied, move_count = moved;
+  const int construction_count = created, destruction_count = destroyed;
+  static_assert(__is_same(decltype(select(values).begin()), Rows::iterator));
+  static_assert(__is_same(decltype(select(values).end()), Rows::iterator));
+  static_assert(__is_same(decltype(select(view).begin()), Rows::const_iterator));
+  static_assert(__is_same(decltype(select(view).end()), Rows::const_iterator));
+  static_assert(__is_same(decltype(select(values).cbegin()), Rows::const_iterator));
+  static_assert(__is_same(decltype(select(values).cend()), Rows::const_iterator));
+  static_assert(__is_same(decltype(select(view).cbegin()), Rows::const_iterator));
+  static_assert(__is_same(decltype(select(view).cend()), Rows::const_iterator));
+  static_assert(sizeof(select(values).begin()) == sizeof(Row *));
+  static_assert(alignof(decltype(select(view).cend())) == alignof(Row *));
+  static_assert(noexcept(select(values).begin()));
+  static_assert(noexcept(select(view).end()));
+  static_assert(__is_same(decltype(empty.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(copy.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(move.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(count.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(fill.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(range.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(wrapped.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(Rows{Row{value(6)}}), Rows));
+  static_assert(sizeof(Rows{source, other}) == sizeof(Rows));
+  static_assert(noexcept(Rows()));
+  static_assert(noexcept(Rows(static_cast<Rows &&>(move))));
+  static_assert(!noexcept(Rows(values)));
+  static_assert(!noexcept(Rows(Size(2))));
+  static_assert(!noexcept(Rows(Size(2), source)));
+  static_assert(!noexcept(Rows(raw, raw + 2)));
+  static_assert(!noexcept(Rows(values.begin(), values.end())));
+  static_assert(__is_same(decltype(cubes.begin()), Cubes::iterator));
+  static_assert(__is_same(decltype(cube_move.begin()), Cubes::iterator));
+  static_assert(__is_same(decltype(cube_count.begin()), Cubes::iterator));
+  static_assert(!noexcept(Cubes(cubes)));
+  static_assert(__is_same(decltype(box_rows.begin()), BoxRows::iterator));
+  static_assert(__is_same(decltype(box_copy.begin()), BoxRows::iterator));
+  static_assert(__is_same(decltype(box_count.begin()), BoxRows::iterator));
+  static_assert(sizeof(BoxRows{boxes}) == sizeof(BoxRows));
+  static_assert(!noexcept(BoxRows(box_rows)));
+  static_assert(!noexcept(BoxRows(Size(2))));
+  static_assert(__is_same(decltype(only_rows.begin()), OnlyRows::iterator));
+  static_assert(__is_same(decltype(only_move.begin()), OnlyRows::iterator));
+  static_assert(noexcept(OnlyRows()));
+  static_assert(noexcept(OnlyRows(static_cast<OnlyRows &&>(only_move))));
+  static_assert(!noexcept(OnlyRows(Size(2))));
+  static_assert(__is_same(decltype(pointer_rows.begin()), std::vector<std::vector<int *>>::iterator));
+  return allocated == allocation_count && released == release_count &&
+         live == live_count && copied == copy_count && moved == move_count &&
+         created == construction_count && destroyed == destruction_count &&
+         receivers == 4 && written == 3 && defaults == 1 ? 0 : 6;
+}
+int main() {
+  int result = check();
+  return result ? result : live == 0 && allocated == released ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2NestedVectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"erased-leaf-alias", R"cpp(
+int object; template<auto> using Leaf = int;
+int f() { std::vector<std::vector<Leaf<&object>>> v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-row-alias", R"cpp(
+int object; template<auto> using Inner = Row;
+int f() { std::vector<Inner<&object>> v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-outer-alias", R"cpp(
+int object; template<auto> using Outer = Rows;
+int f() { Outer<&object> v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"deep-erased-alias", R"cpp(
+int object; template<auto> using Inner = Row;
+int f() { std::vector<std::vector<Inner<&object>>> v{{{1}}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"leaf-initializer-source", R"cpp(
+int f() { Rows v{{(sizeof(long double), 1)}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"count-source", R"cpp(
+int f() { Rows v((sizeof(long double), Size(2))); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"fill-member-source", R"cpp(
+int f() { Rows source{{1}}; Rows v(Size(2), source[0]); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"raw-range-bound", R"cpp(
+int f() { Row raw[(sizeof(long double), 2)] = {{1}, {2}}; Rows v(raw, raw + 2); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"receiver-source", R"cpp(
+int f() { Rows v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-default-source", R"cpp(
+Rows &select(Rows &v, int = (sizeof(long double), 0)) { return v; }
+int f() { Rows v{{1}}; auto first = select(v, 0).begin(); static_assert(__is_same(decltype(select(v).begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-noexcept-source", R"cpp(
+Rows &select(Rows &v) noexcept(sizeof(long double) > 0) { return v; }
+int f() { Rows v{{1}}; auto first = select(v).begin(); static_assert(noexcept(select(v).begin())); return 0; }
+)cpp",
+       "TR0201"},
+      {"leaf-record-bound", R"cpp(
+struct Item { int values[(sizeof(long double), 1)]; };
+int f() { std::vector<std::vector<Item>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-leaf-copy-noexcept", R"cpp(
+struct Box {
+ int *value;
+ explicit Box(int n) : value(new int(n)) {}
+ Box(const Box &b) noexcept(sizeof(long double) > 0) : value(new int(*b.value)) {}
+ Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+ ~Box() { delete value; }
+};
+using Boxes = std::vector<Box>; using BoxRows = std::vector<Boxes>;
+int f() { Boxes source{Box(1)}; BoxRows v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-leaf-copy-body", R"cpp(
+struct Box {
+ int *value;
+ explicit Box(int n) : value(new int(n)) {}
+ Box(const Box &b) : value(new int(*b.value)) { (void)sizeof(long double); }
+ Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+ ~Box() { delete value; }
+};
+using Boxes = std::vector<Box>; using BoxRows = std::vector<Boxes>;
+int f() { Boxes source{Box(1)}; BoxRows v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-leaf-destructor", R"cpp(
+struct Box {
+ int *value;
+ explicit Box(int n) : value(new int(n)) {}
+ Box(const Box &b) : value(new int(*b.value)) {}
+ Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+ ~Box() noexcept(sizeof(long double) > 0) { delete value; }
+};
+using Boxes = std::vector<Box>; using BoxRows = std::vector<Boxes>;
+int f() { Boxes source{Box(1)}; BoxRows v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"missing-leaf-copy", R"cpp(
+struct Box {
+ int *value;
+ explicit Box(int n) : value(new int(n)) {}
+ Box(const Box &);
+ Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+ ~Box() { delete value; }
+};
+using Boxes = std::vector<Box>; using BoxRows = std::vector<Boxes>;
+int f() { Boxes source; BoxRows v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"missing-leaf-destructor", R"cpp(
+struct Box {
+ int *value;
+ explicit Box(int n) : value(new int(n)) {}
+ Box(const Box &b) : value(new int(*b.value)) {}
+ Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+ ~Box();
+};
+using Boxes = std::vector<Box>; using BoxRows = std::vector<Boxes>;
+int f() { Boxes source; BoxRows v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"inner-default-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::vector() noexcept {} } }
+int f() { Rows v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"inner-copy-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::vector(const vector &) {} } }
+int f() { Row source{1}; Rows v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"inner-destructor-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::~vector() noexcept {} } }
+int f() { Rows v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-construction", R"cpp(
+int f() { Rows v; auto first = v.begin(); static_assert(__is_same(decltype(Rows{Row{1}}.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0203"},
+      {"different-endpoint", R"cpp(
+int f() { Rows v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.end()), decltype(first))); return 0; }
+)cpp",
+       "TR0203"},
+      {"sdk-string-leaf", R"cpp(
+int f() { std::vector<std::string> source{"value"}; std::vector<std::vector<std::string>> v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"sdk-unique-leaf", R"cpp(
+int f() { std::vector<std::vector<std::unique_ptr<int>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("nested-vector-endpoint-query-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("nested-vector-endpoint-query-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <vector>
+#include <string>
+#include <memory>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+using Row = std::vector<int>; using Rows = std::vector<Row>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2SourceRecordVectorEndpointResultQueriesRequireExactSource) {
   const struct {
     const char *Name, *Source, *Code;
@@ -67228,10 +67573,6 @@ int f() { Vector v{1}; auto first = v.begin(); static_assert(__is_same(decltype(
 int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype(Vector{1}.begin()), Iterator)); return 0; }
 )cpp",
        "TR0203"},
-      {"nested-vector-receiver", R"cpp(
-int f() { std::vector<Vector> v{{1}, {2}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), std::vector<Vector>::iterator)); return 0; }
-)cpp",
-       "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
