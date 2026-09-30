@@ -3102,6 +3102,136 @@ static bool utilityUniquePtrNullComparisonSource(Adapter &A,
 }
 
 static bool
+utilityUniquePtrEqualitySource(Adapter &A, const FunctionDecl *Function,
+                               const UtilityUniquePtrRecord &Left,
+                               const UtilityUniquePtrRecord &Right) {
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Function || isa<CXXMethodDecl>(Function) ||
+      Function->getOverloadedOperator() != OO_EqualEqual ||
+      !Function->getPrimaryTemplate() || Function->getNumParams() != 2 ||
+      !A.Context.hasSameType(Function->getReturnType(), A.Context.BoolTy) ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_None ||
+      Prototype->getNoexceptExpr() ||
+      !utilityUniquePtrFunctionSource(A, Function))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Equality = dyn_cast_or_null<BinaryOperator>(
+      Return && Return->getRetValue()
+          ? Return->getRetValue()->IgnoreParenImpCasts()
+          : nullptr);
+  if (!Equality || Equality->getOpcode() != BO_EQ || !Equality->isPRValue() ||
+      !A.Context.hasSameType(Equality->getType(), A.Context.BoolTy))
+    return false;
+  auto Getter = [&](unsigned Index, const Expr *Operand,
+                    const UtilityUniquePtrRecord &Owner) {
+    const auto *Member =
+        dyn_cast<CXXMemberCallExpr>(Operand->IgnoreParenImpCasts());
+    const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+    const auto *MemberPrototype =
+        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *Receiver =
+        Member ? Member->getImplicitObjectArgument() : nullptr;
+    const auto *Object =
+        Receiver ? dyn_cast<DeclRefExpr>(Receiver->IgnoreParenImpCasts())
+                 : nullptr;
+    const auto OwnerReference = A.Context.getLValueReferenceType(
+        A.Context.getConstType(A.Context.getRecordType(Owner.Record)));
+    return Member && Method && Object && MemberPrototype &&
+           !Member->getNumArgs() && Member->isPRValue() &&
+           Method->getIdentifier() && Method->getName() == "get" &&
+           !Method->isStatic() && Method->isConst() &&
+           !Method->getPrimaryTemplate() && !Method->getNumParams() &&
+           A.Context.hasSameType(Member->getType(), Owner.PointerType) &&
+           A.Context.hasSameType(Method->getReturnType(), Owner.PointerType) &&
+           A.Context.hasSameType(Function->getParamDecl(Index)->getType(),
+                                 OwnerReference) &&
+           Object->getDecl() == Function->getParamDecl(Index) &&
+           Method->getParent()->getCanonicalDecl() ==
+               Owner.Record->getCanonicalDecl() &&
+           MemberPrototype->getExceptionSpecType() == EST_BasicNoexcept &&
+           !MemberPrototype->getNoexceptExpr() &&
+           utilityUniquePtrFunctionSource(A, Method);
+  };
+  // The exact SDK equality reads both original parameters with their pinned
+  // getters. These borrowed observations select no private SDK traversal or
+  // owning cleanup and do not instantiate either member body.
+  return Getter(0, Equality->getLHS(), Left) &&
+         Getter(1, Equality->getRHS(), Right);
+}
+
+static bool utilityUniquePtrOwnerComparisonSource(Adapter &A,
+                                                  const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Function || isa<CXXMethodDecl>(Function) ||
+      (Function->getOverloadedOperator() != OO_EqualEqual &&
+       Function->getOverloadedOperator() != OO_ExclaimEqual) ||
+      !Function->getPrimaryTemplate() || !Reference ||
+      Reference->getDecl() != Function || !Prototype ||
+      Call->getNumArgs() != 2 || Function->getNumParams() != 2 ||
+      Prototype->getExceptionSpecType() != EST_None ||
+      Prototype->getNoexceptExpr())
+    return false;
+  const auto Kind = Function->getOverloadedOperator();
+  const auto Expected = Kind == OO_EqualEqual
+                            ? UtilityOperation::MemoryUniquePtrEqual
+                            : UtilityOperation::MemoryUniquePtrNotEqual;
+  if (approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected)
+    return false;
+  const auto Left = utilityUniquePtrSource(
+      A, Call->getArg(0)->getType()->getAsCXXRecordDecl());
+  const auto Right = utilityUniquePtrSource(
+      A, Call->getArg(1)->getType()->getAsCXXRecordDecl());
+  // Match the concrete pointer-comparison lowering's common element boundary.
+  if (!Left || !Right || Left->Deleter.Array != Right->Deleter.Array ||
+      !A.Context.hasSameUnqualifiedType(Left->ElementType, Right->ElementType))
+    return false;
+  if (Kind == OO_EqualEqual)
+    return utilityUniquePtrEqualitySource(A, Function, *Left, *Right);
+  if (!utilityUniquePtrFunctionSource(A, Function))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Negation = dyn_cast_or_null<UnaryOperator>(
+      Return && Return->getRetValue()
+          ? Return->getRetValue()->IgnoreParenImpCasts()
+          : nullptr);
+  const auto *Equality = dyn_cast_or_null<CXXOperatorCallExpr>(
+      Negation ? Negation->getSubExpr()->IgnoreParenImpCasts() : nullptr);
+  const auto *EqualFunction = Equality ? Equality->getDirectCallee() : nullptr;
+  const auto *EqualReference = dyn_cast_or_null<DeclRefExpr>(
+      Equality ? directFunctionReference(Equality) : nullptr);
+  if (!Negation || Negation->getOpcode() != UO_LNot ||
+      !A.Context.hasSameType(Negation->getType(), A.Context.BoolTy) ||
+      !Equality || Equality->getOperator() != OO_EqualEqual ||
+      Equality->getNumArgs() != 2 || !Equality->isPRValue() ||
+      !A.Context.hasSameType(Equality->getType(), A.Context.BoolTy) ||
+      !EqualFunction || !EqualReference ||
+      EqualReference->getDecl() != EqualFunction ||
+      operationCalleePrototype(Equality) !=
+          EqualFunction->getType()->getAs<FunctionProtoType>())
+    return false;
+  for (unsigned Index = 0; Index != 2; ++Index) {
+    const auto *Argument =
+        dyn_cast<DeclRefExpr>(Equality->getArg(Index)->IgnoreParenImpCasts());
+    if (!Argument || Argument->getDecl() != Function->getParamDecl(Index))
+      return false;
+  }
+  // Inequality must call this exact pinned equality specialization on its
+  // unchanged parameter pair, retaining both actual getter definitions.
+  return utilityUniquePtrEqualitySource(A, EqualFunction, *Left, *Right);
+}
+
+static bool
 utilityUniquePtrDeletionSource(Adapter &A,
                                const UtilityUniquePtrRecord &Owner) {
   // A custom callback requires its completed source definition separately.
@@ -3978,7 +4108,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const auto *Prototype = operationCalleePrototype(Call);
     if (utilityUniquePtrMemberSource(A, Call) ||
         utilityUniquePtrSwapSource(A, Call) ||
-        utilityUniquePtrNullComparisonSource(A, Call))
+        utilityUniquePtrNullComparisonSource(A, Call) ||
+        utilityUniquePtrOwnerComparisonSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return PrototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -9369,7 +9500,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             }
           }
         if (utilityUniquePtrSwapSource(A, Call) ||
-            utilityUniquePtrNullComparisonSource(A, Call))
+            utilityUniquePtrNullComparisonSource(A, Call) ||
+            utilityUniquePtrOwnerComparisonSource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
                   directFunctionReference(Call))) {
             auto [Entry, Inserted] =

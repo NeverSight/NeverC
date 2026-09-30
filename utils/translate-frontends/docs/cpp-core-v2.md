@@ -1413,10 +1413,38 @@ defaults, allocate no storage and invoke no construction, deletion or cleanup.
 Ordinary comparisons evaluate each operand once in an unspecified C++17 order.
 Missing result-query bodies, different overloads/specializations, source wrapper
 or selected Boolean-member replacements and independent function addresses
-remain rejected. Owner-to-owner and ordering comparisons, and explicit calls to
-the operator function, receive no new result-source authentication. Pure free
+remain rejected. Ordering comparisons and explicit calls to the operator
+function receive no new result-source authentication. Pure free
 comparison `noexcept` queries keep their existing signature-source boundary and
 need no unused wrapper body.
+
+The same result-source boundary also admits already materialized pinned C++17
+owner-to-owner `==` and `!=`. Both preserve a `bool` prvalue result and their
+potentially throwing signature, even though the exact getters are nonthrowing.
+Scalar and array owners must have the same unqualified element type and array
+kind; the two concrete owner/deleter types may differ, including admitted custom
+deleters, qualified pointees and bounded inner array extents. Const owners,
+source references and dereferenced exact raw owner pointers keep the ordinary
+runtime operand boundary, including its rejection of explicit owner xvalues.
+Both written operand expressions, aliases, original
+function signatures, exception specifications and selected source defaults
+retain their original source dependencies.
+The equality wrapper must compare the exact two parameter getters with built-in
+pointer equality. Each getter must select its matching owner's actual pinned
+definition and nonthrowing signature and read the wrapper's corresponding
+parameter. Inequality must negate a call to the exact pinned equality
+specialization on its unchanged parameter pair. Both free wrappers, their
+primaries, instantiation patterns and all redeclarations remain authenticated
+SDK source. This consumes the existing bodies without instantiating SDK code or
+traversing private calls as project source. Borrowed comparisons select no owner
+or pointee construction, deleter callback or destruction. Local owners and
+owning temporary/factory operands retain their separate allocation and lifetime
+source. Unevaluated queries preserve both pointers and invoke no operand,
+default, allocation, construction, deletion or cleanup. Ordinary comparisons
+evaluate both operands once in an unspecified C++17 order. Missing result-query
+bodies, different unmaterialized pairs/specializations, source comparison or
+selected-getter replacements, independent function addresses, ordering queries
+and explicit operator-function calls remain rejected.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
