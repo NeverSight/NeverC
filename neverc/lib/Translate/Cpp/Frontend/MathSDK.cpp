@@ -27987,6 +27987,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Input = AlgorithmCallbackRangeParameter(0);
     const auto ScalarOutput = AlgorithmRangePointerParameter(2);
     const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
+    const auto RecordOutput = AlgorithmWritableRecordRangeParameter(2);
     const auto *Callback = AlgorithmCallbackPrototype(3);
     const bool ScalarResult =
         Callback && ScalarOutput &&
@@ -27998,10 +27999,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, Callback->getReturnType(),
                                     (*CallbackOutput)->getPointeeType());
+    const bool RecordResult =
+        Callback && RecordOutput &&
+        Context.hasSameUnqualifiedType(Callback->getReturnType(),
+                                       (*RecordOutput)->getPointeeType());
     if (Input && Callback && Callback->getNumParams() == 1 &&
         utilityCallbackEqualityType(Context, (*Input)->getPointeeType(),
                                     Callback->getParamType(0)) &&
-        (ScalarResult || CallbackResult))
+        (ScalarResult || CallbackResult || RecordResult))
       return UtilityOperation::AlgorithmTransformUnary;
   }
   if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
@@ -28017,6 +28022,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto SecondScalar = AlgorithmRangePointerParameter(2);
     const auto ScalarOutput = AlgorithmRangePointerParameter(3);
     const auto CallbackOutput = AlgorithmCallbackRangeParameter(3);
+    const auto RecordOutput = AlgorithmWritableRecordRangeParameter(3);
     const auto *Callback = AlgorithmCallbackPrototype(4);
     const bool FirstRange =
         (FirstCallback && AlgorithmCallbackRangeParameter(1)) ||
@@ -28031,6 +28037,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, Callback->getReturnType(),
                                     (*CallbackOutput)->getPointeeType());
+    const bool RecordResult =
+        Callback && RecordOutput &&
+        Context.hasSameUnqualifiedType(Callback->getReturnType(),
+                                       (*RecordOutput)->getPointeeType());
     if (Callback && Callback->getNumParams() == 2 && FirstRange &&
         (FirstCallback || SecondCallback) &&
         ((FirstCallback && utilityCallbackEqualityType(
@@ -28045,7 +28055,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          (SecondScalar && utilityScalarDirectConversion(
                               Context, (*SecondScalar)->getPointeeType(),
                               Callback->getParamType(1)))) &&
-        (ScalarResult || CallbackResult))
+        (ScalarResult || CallbackResult || RecordResult))
       return UtilityOperation::AlgorithmTransformBinary;
   }
   if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&

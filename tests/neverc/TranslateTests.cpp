@@ -49514,6 +49514,132 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackToRecordTransformRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-to-record-transform.cpp");
+  const auto Output = tmpFile("callback-to-record-transform.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+struct Result { int code; int tag; };
+int pointed_calls;
+int calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+Result describe(Callback value) {
+  ++calls;
+  return value == one ? Result{1, 10} :
+         value == two ? Result{2, 20} : Result{3, 30};
+}
+Result combine(Callback left, Callback right) {
+  ++calls;
+  return {left == one ? 1 : 2, right == one ? 10 : 20};
+}
+Result with_scalar(Callback value, int tag) {
+  ++calls;
+  return {value == one ? 1 : 2, tag};
+}
+Result scalar_first(int tag, Callback value) {
+  ++calls;
+  return {value == one ? 1 : 2, tag};
+}
+Result describe_safe(NoexceptCallback value) {
+  ++calls;
+  return value == safe_one ? Result{1, 10} : Result{2, 20};
+}
+int main() {
+  Callback input[]{one, two, three};
+  Result output[3]{};
+  int first_effects = 0, last_effects = 0, output_effects = 0;
+  int callback_effects = 0;
+  if (std::transform((++first_effects, input),
+                     (++last_effects, input + 3),
+                     (++output_effects, output),
+                     (++callback_effects, describe)) != output + 3 ||
+      first_effects != 1 || last_effects != 1 || output_effects != 1 ||
+      callback_effects != 1 || calls != 3 || output[0].code != 1 ||
+      output[0].tag != 10 || output[1].code != 2 || output[1].tag != 20 ||
+      output[2].code != 3 || output[2].tag != 30 || pointed_calls != 0)
+    return 1;
+  Callback second[]{two, one, two};
+  calls = 0;
+  if (std::transform(input, input + 3, second, output, combine) != output + 3 ||
+      calls != 3 || output[0].code != 1 || output[0].tag != 20 ||
+      output[1].code != 2 || output[1].tag != 10 || output[2].tag != 20)
+    return 2;
+  short tags[]{11, 22, 33};
+  calls = 0;
+  if (std::transform(input, input + 3, tags, output, with_scalar) != output + 3 ||
+      calls != 3 || output[0].code != 1 || output[0].tag != 11 ||
+      output[1].code != 2 || output[1].tag != 22 || output[2].tag != 33)
+    return 3;
+  calls = 0;
+  if (std::transform(tags, tags + 3, input, output, scalar_first) != output + 3 ||
+      calls != 3 || output[0].code != 1 || output[0].tag != 11 ||
+      output[1].code != 2 || output[1].tag != 22 || output[2].tag != 33)
+    return 4;
+  NoexceptCallback safe[]{safe_one, safe_two};
+  calls = 0;
+  if (std::transform(safe, safe + 2, output, describe_safe) != output + 2 ||
+      calls != 2 || output[0].code != 1 || output[0].tag != 10 ||
+      output[1].code != 2 || output[1].tag != 20 || pointed_calls != 0)
+    return 5;
+  calls = 0;
+  if (std::transform(input, input, output, describe) != output ||
+      std::transform(input, input, second, output, combine) != output ||
+      calls != 0 || pointed_calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-to-record-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackToRecordTransformRejectsInexactResults) {
+  for (const std::string &CallbackName : {"by_reference", "by_conversion"}) {
+    SCOPED_TRACE(CallbackName);
+    const auto Source = tmpFile(CallbackName + "-callback-to-record.cpp");
+    const auto Output = tmpFile(CallbackName + "-callback-to-record.nc");
+    const std::string Second = CallbackName == "by_conversion" ? "input, " : "";
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+struct Result { int code; int tag; };
+struct Convertible {
+  int code;
+  operator Result() const { return {code, code * 10}; }
+};
+int one(int x) { return x + 1; }
+Result retained{7, 70};
+Result& by_reference(Callback) { return retained; }
+Convertible by_conversion(Callback, Callback) { return {3}; }
+int main() {
+  Callback input[]{one, one};
+  Result output[2]{};
+  return std::transform(input, input + 2, )cpp" +
+                          Second + "output, " + CallbackName +
+                          ") == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TransformToCallbackRunsAtBothOptimizations) {
   const auto Source = tmpFile("transform-to-callback.cpp");
   const auto Output = tmpFile("transform-to-callback.nc");
