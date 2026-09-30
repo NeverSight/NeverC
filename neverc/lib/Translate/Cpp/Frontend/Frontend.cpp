@@ -2665,6 +2665,67 @@ utilityWrapIteratorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   return Iterator;
 }
 
+static std::optional<UtilityInitializerListRecord>
+utilityInitializerListDestructionSource(Adapter &A,
+                                        const CXXRecordDecl *Record) {
+  const auto List =
+      approvedUtilityInitializerListRecord(A.S, A.Sources, Record, A.Context);
+  if (!List || List->Record->hasUserDeclaredDestructor())
+    return std::nullopt;
+  const auto *Destructor = List->Record->getDestructor();
+  if (!Destructor)
+    return List; // The view does not instantiate or destroy its elements.
+  for (const auto *Declaration : Destructor->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto *Method = cast<CXXDestructorDecl>(Declaration);
+    if (!Method->isImplicit() || !Method->isDefaulted() ||
+        !Method->isTrivial() || Method->isInvalidDecl() ||
+        Method->isDeleted() || Method->isVirtual() || Method->isVariadic() ||
+        Method->getNumParams() || Method->getAccess() != AS_public ||
+        Method->getTypeSourceInfo() ||
+        Method->getLexicalDeclContext() != Method->getParent() ||
+        Method->getParent()->getCanonicalDecl() !=
+            List->Record->getCanonicalDecl() ||
+        !approvedStandardSDKDeclaration(A.S, A.Sources, Method))
+      return std::nullopt;
+  }
+  return List;
+}
+
+static std::optional<UtilityVectorRecord>
+utilityScalarVectorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Vector =
+      approvedUtilityVectorRecord(A.S, A.Sources, Record, A.Context);
+  const auto *Destructor = Vector ? Vector->Record->getDestructor() : nullptr;
+  const auto *Prototype =
+      Destructor ? Destructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Vector || Vector->ElementType->isRecordType() || !Destructor ||
+      !Prototype || !Prototype->isNothrow() || Destructor->isInvalidDecl() ||
+      Destructor->isDeleted() || Destructor->isVirtual() ||
+      Destructor->isVariadic() || Destructor->getNumParams() ||
+      Destructor->getAccess() != AS_public || !Destructor->getDefinition() ||
+      !approvedUtilityVectorDestructor(A.S, A.Sources, Destructor, A.Context))
+    return std::nullopt;
+  auto Pinned = [&](const FunctionDecl *Function) {
+    if (!Function ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return false;
+    }
+    return !Function->getDefinition() ||
+           approvedStandardSDKDeclaration(A.S, A.Sources,
+                                          Function->getDefinition());
+  };
+  if (!Pinned(Destructor) ||
+      !Pinned(Destructor->getTemplateInstantiationPattern(
+          /*ForDefinition=*/true)))
+    return std::nullopt;
+  return Vector;
+}
+
 static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
     const FunctionProtoType *Prototype, const FunctionDecl *Function) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -2928,6 +2989,14 @@ public:
     }
     // The authenticated wrapper owns only a pointer, never its referent.
     if (utilityWrapIteratorDestructionSource(A, Record))
+      return true;
+    // The initializer-list view likewise borrows its backing array. That
+    // array's actual expressions retain their own element destruction source.
+    if (utilityInitializerListDestructionSource(A, Record))
+      return true;
+    // Scalar vectors free storage but do not invoke an element destructor.
+    // Record and nested-container elements need their separate owning proof.
+    if (utilityScalarVectorDestructionSource(A, Record))
       return true;
     if (!A.S.owns(A.Sources, Record->getLocation()))
       return false;
@@ -8286,6 +8355,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Iterator->IteratorType, false, Depth + 1);
           return;
         }
+        if (const auto List = approvedUtilityInitializerListRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // Authenticate the pointer/size view layout without borrowing its
+          // private SDK TypeLocs. The backing array remains an expression root.
+          Self(Self, List->Begin->getType(), false, Depth + 1);
+          Self(Self, List->Size->getType(), false, Depth + 1);
+          return;
+        }
         if (const auto Optional = approvedUtilityOptionalRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // Optional storage has the same pinned SDK boundary. In particular,
@@ -8517,7 +8594,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           return;
         if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Function);
             Destructor &&
-            utilityWrapIteratorDestructionSource(A, Destructor->getParent()))
+            (utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
+             utilityInitializerListDestructionSource(A,
+                                                     Destructor->getParent()) ||
+             utilityScalarVectorDestructionSource(A, Destructor->getParent())))
           return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
         // Its selected source operator retains ordinary signature and exception
@@ -8635,6 +8715,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Destroyed = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl();
       if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
         const auto *Constructor = Construction->getConstructor();
+        const auto Vector = approvedUtilityVectorRecord(
+            A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl(),
+            A.Context);
         bool SDKConstruction =
             approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                             A.Context)
@@ -8646,7 +8729,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                              A.Context) ||
             approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
                                                     Construction, A.Context)
-                .has_value();
+                .has_value() ||
+            (Vector && !Vector->ElementType->isRecordType() &&
+             approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
+                                               A.Context)
+                 .has_value());
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
             return false;

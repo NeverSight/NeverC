@@ -66681,6 +66681,194 @@ int main() { Vector values{3, 1, 4, 1}; return verify(values); }
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ConstructedVectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("constructed-vector-endpoint-result-queries.cpp");
+  const auto Output = tmpFile("constructed-vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, written, defaults, objects, constructed, called;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+short seed() { ++defaults; return 1; }
+short entry(short n = seed()) { ++written; return n; }
+int initial() { ++constructed; return 0; }
+struct Less {
+  int visits;
+  Less(int n = initial()) : visits(n) {}
+  bool operator()(long long left, double right) & noexcept {
+    ++visits; ++called; return left < right;
+  }
+};
+using Vector = std::vector<short>;
+using Iterator = Vector::iterator;
+using ConstIterator = Vector::const_iterator;
+Vector &select(Vector &v) noexcept { ++objects; return v; }
+const Vector &select(const Vector &v) noexcept { ++objects; return v; }
+int main() {
+  Vector values{entry(3), entry(), entry(4), entry()};
+  Vector empty;
+  Vector copied(values);
+  Vector moved(static_cast<Vector &&>(copied));
+  Vector counted(Size(3));
+  Vector filled(Size(3), entry(7));
+  short raw[] = {2, -1, 5};
+  Vector from_raw(raw, raw + 3);
+  Vector from_iterators(values.begin(), values.end());
+  const auto &view = values;
+  auto minimum = std::min_element(select(values).begin(), select(values).end(), Less{});
+  auto maximum = std::max_element(select(view).cbegin(), select(view).cend(), Less{});
+  auto const_first = view.begin(), const_last = view.end();
+  auto empty_first = empty.begin(), empty_last = empty.end();
+  int left = 2, right = 5;
+  std::vector<int *> pointers{&left, &right};
+  auto pointer_first = pointers.begin();
+  if (minimum != values.begin() + 1 || maximum != view.begin() + 2 ||
+      const_last - const_first != 4 || empty_first != empty_last ||
+      !copied.empty() || moved[1] != 1 || counted[0] != 0 || counted[2] != 0 ||
+      filled[0] != 7 || filled[2] != 7 || from_raw[1] != -1 ||
+      from_iterators[2] != 4 || *pointer_first != &left ||
+      written != 5 || defaults != 2 || objects != 4 || constructed != 2 || called != 6)
+    return 1;
+  const int allocations = allocated, releases = released;
+  static_assert(__is_same(decltype(select(values).begin()), Iterator));
+  static_assert(__is_same(decltype(select(values).end()), Iterator));
+  static_assert(__is_same(decltype(select(view).begin()), ConstIterator));
+  static_assert(__is_same(decltype(select(view).end()), ConstIterator));
+  static_assert(__is_same(decltype(select(values).cbegin()), ConstIterator));
+  static_assert(__is_same(decltype(select(view).cend()), ConstIterator));
+  static_assert(sizeof(select(values).begin()) == sizeof(short *));
+  static_assert(alignof(decltype(select(view).cend())) == alignof(short *));
+  static_assert(noexcept(select(values).begin()));
+  static_assert(noexcept(select(view).end()));
+  static_assert(__is_same(decltype(empty.begin()), Iterator));
+  static_assert(__is_same(decltype(copied.begin()), Iterator));
+  static_assert(__is_same(decltype(moved.begin()), Iterator));
+  static_assert(__is_same(decltype(counted.begin()), Iterator));
+  static_assert(__is_same(decltype(filled.begin()), Iterator));
+  static_assert(__is_same(decltype(from_raw.begin()), Iterator));
+  static_assert(__is_same(decltype(from_iterators.begin()), Iterator));
+  static_assert(__is_same(decltype(pointers.begin()), std::vector<int *>::iterator));
+  static_assert(__is_same(decltype(Vector{entry(8)}), Vector));
+  static_assert(sizeof(Vector{entry(8), entry(9)}) == sizeof(Vector));
+  static_assert(noexcept(Vector()));
+  static_assert(noexcept(Vector(static_cast<Vector &&>(moved))));
+  static_assert(!noexcept(Vector(values)));
+  static_assert(!noexcept(Vector{entry(9)}));
+  using Minimum = decltype(std::min_element(select(values).begin(), select(values).end(), Less{}));
+  static_assert(__is_same(Minimum, Iterator));
+  static_assert(__is_same(decltype(std::max_element(select(view).cbegin(), select(view).cend(), Less{})), ConstIterator));
+  static_assert(!noexcept(std::max_element(select(view).begin(), select(view).end(), Less{})));
+  return allocated == allocations && released == releases && written == 5 &&
+         defaults == 2 && objects == 4 && constructed == 2 && called == 6 ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("constructed-vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ConstructedVectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"initializer-element-source", R"cpp(
+int f() { Vector v{(sizeof(long double), 0)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"count-source", R"cpp(
+int f() { Vector v((sizeof(long double), Size(3))); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"fill-value-source", R"cpp(
+int f() { Vector v(Size(3), (sizeof(long double), 0)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"initializer-factory-default", R"cpp(
+int value(int = (sizeof(long double), 0)) { return 0; }
+int f() { Vector v{value()}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"initializer-factory-noexcept", R"cpp(
+int value() noexcept(sizeof(long double) > 0) { return 0; }
+int f() { Vector v{value()}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"raw-range-bound", R"cpp(
+int f() { int a[(sizeof(long double), 3)] = {}; Vector v(a, a + 3); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-receiver-alias", R"cpp(
+int object; template<auto> using Erased = Vector;
+int f() { Erased<&object> v{}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-element-alias", R"cpp(
+int object; template<auto> using Element = int;
+int f() { std::vector<Element<&object>> v{1}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"public-destructor-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::~vector() noexcept {} } }
+int f() { Vector v; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"public-default-constructor-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::vector() noexcept {} } }
+int f() { Vector v; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"public-list-constructor-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> vector<int>::vector(initializer_list<int>) {} } }
+int f() { Vector v{1}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-construction", R"cpp(
+int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype(Vector{1}.begin()), Iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"record-element-receiver", R"cpp(
+struct Item { int value; };
+int f() { std::vector<Item> v{{3}, {1}, {4}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), std::vector<Item>::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"nested-vector-receiver", R"cpp(
+int f() { std::vector<Vector> v{{1}, {2}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), std::vector<Vector>::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("constructed-vector-endpoint-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("constructed-vector-endpoint-query-") + Case.Name + ".nc");
+    writeFile(Source, "#include <vector>\nusing Size = decltype(sizeof(0)); "
+                      "using Vector = std::vector<int>; using Iterator = "
+                      "Vector::iterator;\n" +
+                          std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorEndpointResultQueriesRequireExactSource) {
   const struct {
     const char *Name, *Source, *Code;
@@ -66701,10 +66889,6 @@ int f(Vector &v, std::vector<short> &other) { auto first = v.begin(); static_ass
 int f(Vector &v, const Vector &view) { auto first = v.begin(); static_assert(__is_same(decltype(view.begin()), Vector::const_iterator)); return 0; }
 )cpp",
        "TR0203"},
-      {"constructed-vector-receiver", R"cpp(
-int f() { Vector v{3, 1, 4}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Iterator)); return 0; }
-)cpp",
-       "TR0201"},
       {"receiver-source", R"cpp(
 int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), Iterator)); return 0; }
 )cpp",
