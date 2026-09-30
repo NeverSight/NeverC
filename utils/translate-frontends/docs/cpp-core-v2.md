@@ -1277,6 +1277,31 @@ deleter call.
 Stateful, reference, non-raw-pointer, nontrivial, overloaded, ref-qualified and
 throwing custom deleters remain rejected.
 
+Result queries (`decltype`, `sizeof`, `alignof` and `noexcept`) admit the exact
+already materialized `unique_ptr` observation members: `get`, mutable/const
+`get_deleter`, `operator bool`, scalar `operator->`/`operator*` and array
+`operator[]`. Object, const-object and exact raw-pointer receivers retain the
+runtime member boundary and the original result type, including qualified
+pointees, source-owned objects and bounded inner array extents. The selected
+member definition, its instantiation pattern and all redeclarations must stay
+in the pinned SDK. Scalar dereference also authenticates its resolved
+`noexcept(*std::declval<pointer>())` metadata and the exact pinned `declval`
+specialization; it does not instantiate that helper's body. Getter, arrow and
+Boolean observations remain nonthrowing, while the pinned array subscript
+remains potentially throwing.
+Authentication belongs to the exact call and its selected reference. Written
+receiver types, aliases, original function signatures and exception
+specifications, receiver/index expressions and selected source defaults remain
+checked. Locally initialized owners and query temporaries retain their owning
+construction, allocation and cleanup source, including admitted `make_unique`
+factories and custom deleter callbacks. Borrowing an owner through a source
+reference or pointer selects no unused pointee constructor or owning cleanup.
+Unevaluated observations make no receiver, index, default-argument, factory,
+allocation, constructor, deleter or destruction calls. Query-only member
+bodies or different overloads/specializations, independent member addresses,
+and source SDK replacements remain rejected. Modifying members do not receive
+this observation-source authentication.
+
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
 array `T` may contain complete bounded inner extents. The

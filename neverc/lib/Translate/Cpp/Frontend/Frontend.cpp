@@ -2780,6 +2780,108 @@ static bool utilityUniquePtrElementConstructionSource(
          utilityUniquePtrFunctionSource(A, Constructor);
 }
 
+static std::optional<UtilityUniquePtrCall>
+utilityUniquePtrObservationSource(Adapter &A, const CallExpr *Call) {
+  const auto Info =
+      approvedUtilityUniquePtrCall(A.S, A.Sources, Call, A.Context);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Info || !Prototype || !directMethodReference(Call) ||
+      !utilityUniquePtrSource(A, Info->Owner.Record) ||
+      !utilityUniquePtrFunctionSource(A, Method))
+    return std::nullopt;
+  switch (Info->Operation) {
+  case UtilityUniquePtrOperation::Get:
+  case UtilityUniquePtrOperation::GetDeleter:
+  case UtilityUniquePtrOperation::Arrow:
+  case UtilityUniquePtrOperation::Boolean:
+    if (Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr())
+      return std::nullopt;
+    return Info;
+  case UtilityUniquePtrOperation::Subscript:
+    if (Prototype->getExceptionSpecType() != EST_None ||
+        Prototype->getNoexceptExpr())
+      return std::nullopt;
+    return Info;
+  case UtilityUniquePtrOperation::Dereference:
+    break;
+  default:
+    return std::nullopt;
+  }
+  // The pinned scalar dereference spells noexcept(*std::declval<pointer>()).
+  // Authenticate this exact SDK metadata, including the selected declval
+  // specialization, without manufacturing a project traversal or its body.
+  const auto *Exception = dyn_cast_or_null<CXXNoexceptExpr>(
+      Prototype->getNoexceptExpr()
+          ? Prototype->getNoexceptExpr()->IgnoreParenImpCasts()
+          : nullptr);
+  const auto *Dereference = dyn_cast_or_null<UnaryOperator>(
+      Exception ? Exception->getOperand()->IgnoreParenImpCasts() : nullptr);
+  // The noexcept keyword is spelled by __config's macro; its dereference
+  // operand is written in the unique_ptr member itself.
+  const auto Origin = Dereference
+                          ? A.S.sdkFile(A.Sources, Dereference->getExprLoc())
+                          : std::nullopt;
+  const auto *Value = dyn_cast_or_null<CallExpr>(
+      Dereference ? Dereference->getSubExpr()->IgnoreParenImpCasts() : nullptr);
+  const auto *Function = Value ? Value->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *ValuePrototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (Prototype->getExceptionSpecType() != EST_NoexceptTrue || !Exception ||
+      !Exception->getValue() || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "__memory/unique_ptr.h" || !Dereference ||
+      Dereference->getOpcode() != UO_Deref || !Dereference->isLValue() ||
+      !A.Context.hasSameType(Dereference->getType(), Info->Owner.ElementType) ||
+      !Value || Value->getNumArgs() || !Function ||
+      !Function->getIdentifier() || Function->getName() != "declval" ||
+      Function->getNumParams() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !A.Context.hasSameType(Arguments->get(0).getAsType(),
+                             Info->Owner.PointerType) ||
+      !Function->getReturnType()->isRValueReferenceType() ||
+      !A.Context.hasSameType(Function->getReturnType()->getPointeeType(),
+                             Info->Owner.PointerType) ||
+      !Value->isXValue() || !ValuePrototype ||
+      ValuePrototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      ValuePrototype->getNoexceptExpr())
+    return std::nullopt;
+  auto Pinned = [&](const FunctionDecl *Declaration) {
+    if (!Declaration || Declaration->isInvalidDecl() ||
+        Declaration->isDeleted() || Declaration->isVariadic() ||
+        Declaration->getTemplateSpecializationKind() ==
+            TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Redeclaration : Declaration->redecls()) {
+      A.chargeExpansion(1, Redeclaration->getLocation());
+      const auto Source = A.S.sdkFile(A.Sources, Redeclaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Redeclaration) ||
+          !Source || Source->Root != "libcxx" ||
+          Source->Path != "__utility/declval.h")
+        return false;
+    }
+    return !Declaration->getDefinition() ||
+           approvedStandardSDKDeclaration(A.S, A.Sources,
+                                          Declaration->getDefinition());
+  };
+  const auto *Primary = Function->getPrimaryTemplate();
+  if (!Primary || !Pinned(Function) ||
+      !Pinned(
+          Function->getTemplateInstantiationPattern(/*ForDefinition=*/true)))
+    return std::nullopt;
+  for (const auto *Declaration : Primary->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) ||
+        !Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl())))
+      return std::nullopt;
+  }
+  return Info;
+}
+
 static std::optional<UtilityUniquePtrRecord>
 utilityUniquePtrDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Owner = utilityUniquePtrSource(A, Record);
@@ -3633,6 +3735,9 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     // C++17 canCalleeThrow reads the actual callee expression type, even for a
     // direct call. A pointer conversion can erase noexcept from its declaration.
     const auto *Prototype = operationCalleePrototype(Call);
+    if (utilityUniquePtrObservationSource(A, Call))
+      return Prototype ==
+             Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return PrototypeSource(Prototype, Call->getDirectCallee()) &&
            (!RequiresExceptionSource || standardExceptionSpecification(Prototype)) &&
            (!Call->getDirectCallee() || ExceptionSource(Call->getDirectCallee()));
@@ -6239,6 +6344,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
+  std::map<const Expr *, const CallExpr *>
+      AuthenticatedUniquePtrObservationReferences;
   std::map<const DeclRefExpr *, const CallExpr *>
       AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
@@ -8986,6 +9093,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
       const FunctionDecl *AuthenticatedVectorEndpoint = nullptr;
+      const CallExpr *AuthenticatedUniquePtrObservation = nullptr;
       const CallExpr *AuthenticatedMakeUnique = nullptr;
       std::optional<AlgorithmCallableSource> AuthenticatedAlgorithm;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
@@ -9002,6 +9110,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               A.chargeExpansion(1, Call->getExprLoc());
             if (Entry->second == Call)
               AuthenticatedVectorEndpoint = Method;
+          }
+        if (utilityUniquePtrObservationSource(A, Call))
+          if (const auto *Reference = directMethodReference(Call)) {
+            auto [Entry, Inserted] =
+                AuthenticatedUniquePtrObservationReferences.emplace(Reference,
+                                                                    Call);
+            if (Inserted)
+              A.chargeExpansion(1, Call->getExprLoc());
+            if (Entry->second == Call)
+              AuthenticatedUniquePtrObservation = Call;
           }
         // The public algorithm has no written exception specification. Its
         // exact descriptor supplies the SDK signature/body, not a blanket
@@ -9056,6 +9174,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         }
       } else if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
+        if (auto Found =
+                AuthenticatedUniquePtrObservationReferences.find(Reference);
+            Found != AuthenticatedUniquePtrObservationReferences.end())
+          AuthenticatedUniquePtrObservation = Found->second;
         if (auto Found = AuthenticatedMakeUniqueReferences.find(Reference);
             Found != AuthenticatedMakeUniqueReferences.end())
           AuthenticatedMakeUnique = Found->second;
@@ -9066,6 +9188,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             Found != AuthenticatedProjectionGetReferences.end())
           AuthenticatedProjectionGet = Found->second->getDirectCallee();
       } else if (const auto *Reference = dyn_cast<MemberExpr>(S)) {
+        if (auto Found =
+                AuthenticatedUniquePtrObservationReferences.find(Reference);
+            Found != AuthenticatedUniquePtrObservationReferences.end())
+          AuthenticatedUniquePtrObservation = Found->second;
         if (auto Found = AuthenticatedVectorEndpointReferences.find(Reference);
             Found != AuthenticatedVectorEndpointReferences.end())
           AuthenticatedVectorEndpoint = Found->second->getDirectCallee();
@@ -9075,6 +9201,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       };
       auto Exception = [&](const FunctionProtoType *Prototype,
                            const FunctionDecl *Function) {
+        if (AuthenticatedUniquePtrObservation &&
+            Function == AuthenticatedUniquePtrObservation->getDirectCallee() &&
+            Prototype == Function->getType()->getAs<FunctionProtoType>())
+          return;
         if (const auto *Method = inferredOperationExceptionSource(A, Prototype, Function)) {
           for (auto *Dependencies : ActiveOperationSources) {
             const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
@@ -9100,6 +9230,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // Receiver expressions, written types and arguments remain source
         // roots.
         if (Function == AuthenticatedVectorEndpoint)
+          return;
+        // Only this exact observation supplies its SDK signature and resolved
+        // exception metadata. Receiver/argument source and owning temporaries
+        // still close through their ordinary dependencies.
+        if (AuthenticatedUniquePtrObservation &&
+            Function == AuthenticatedUniquePtrObservation->getDirectCallee())
           return;
         // The exact factory supplies the pinned SDK signature and body. Its
         // owning allocation, construction, defaults and cleanup close

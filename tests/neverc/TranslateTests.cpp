@@ -38289,6 +38289,297 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
 }
 
 TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrObservationResultQueriesRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("memory-unique-ptr-observation-result-queries.cpp");
+  const auto Output =
+      tmpFile("memory-unique-ptr-observation-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+int allocated, released, live, created, destroyed, receivers, arguments, defaults;
+int observed, array_observed;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Box {
+  int n;
+  explicit Box(int v = 4) noexcept(sizeof(int) > 0) : n(v) { ++live; ++created; }
+  ~Box() noexcept(sizeof(int) > 0) { --live; ++destroyed; }
+};
+struct Observe {
+  Observe() noexcept(sizeof(int) > 0) = default;
+  Observe(const Observe &) noexcept(sizeof(int) > 0) = default;
+  Observe(Observe &&) noexcept(sizeof(int) > 0) = default;
+  Observe &operator=(const Observe &) noexcept(sizeof(int) > 0) = default;
+  Observe &operator=(Observe &&) noexcept(sizeof(int) > 0) = default;
+  ~Observe() noexcept(sizeof(int) > 0) = default;
+  void operator()(Box *p) const noexcept(sizeof(int) > 0) { observed += p->n; }
+};
+struct ObserveArray {
+  void operator()(int *p) noexcept { array_observed += p[0] + p[1]; }
+};
+using Scalar = std::unique_ptr<int>;
+Scalar &select(Scalar &p, int = (++defaults, 1)) noexcept { ++receivers; return p; }
+Scalar *select(Scalar *p) noexcept { ++receivers; return p; }
+const Scalar *select(const Scalar *p) noexcept { ++receivers; return p; }
+int mark(int n = (++defaults, 6)) noexcept { ++arguments; return n; }
+Size index(int n = (++defaults, 1)) noexcept { ++arguments; return Size(n); }
+int borrow(std::unique_ptr<Box> &p, const std::unique_ptr<Box> *q) {
+  Box *a = p.get();
+  Box &b = *p;
+  const auto &d = q->get_deleter();
+  if (!q->operator bool() || q->operator->() != a || b.n != 5) return 1;
+  static_assert(__is_same(decltype(p.get()), Box *));
+  static_assert(__is_same(decltype(*p), Box &));
+  static_assert(__is_same(decltype(q->get_deleter()), const std::default_delete<Box> &));
+  static_assert(sizeof(p.operator->()) == sizeof(Box *));
+  static_assert(sizeof(*p) == sizeof(Box));
+  static_assert(noexcept(p.get()) && noexcept(*p) && noexcept(q->operator->()));
+  static_assert(noexcept(q->operator bool()) && noexcept(q->get_deleter()));
+  return 0;
+}
+int check() {
+  Scalar p(new int(3)), null(nullptr);
+  const Scalar &view = p;
+  Scalar *pointer = &p;
+  const Scalar *const_pointer = &view;
+  std::unique_ptr<const int> qualified(new const int(8));
+  std::unique_ptr<Box> box(new Box(5));
+  std::unique_ptr<Box[]> boxes(new Box[2]);
+  std::unique_ptr<int[][2]> matrix(new int[2][2]{});
+  matrix[Size(1)][1] = 7;
+  Box borrowed(9);
+  Observe deleter;
+  std::unique_ptr<Box, Observe> custom(&borrowed, deleter);
+  const auto &custom_view = custom;
+  int data[2] = {2, 6};
+  std::unique_ptr<int[], ObserveArray> custom_array(data);
+  const auto &array_view = custom_array;
+  const auto &array_deleter = array_view.get_deleter();
+  auto &mutable_array_deleter = custom_array.get_deleter();
+  auto &mutable_deleter = custom.get_deleter();
+  const auto &const_deleter = custom_view.get_deleter();
+  auto &standard_deleter = p.get_deleter();
+  const auto &const_standard_deleter = view.get_deleter();
+  auto &matrix_deleter = matrix.get_deleter();
+  if (borrow(box, &box) || *qualified != 8 || custom->n != 9 ||
+      (*custom).n != 9 || !custom || !custom_array || boxes[Size(0)].n != 4 ||
+      custom_array[index(1)] != 6 || select(p, 1).get() != p.get() ||
+      view.operator->() != p.get() ||
+      select(pointer)->get() != p.get() || select(const_pointer)->get() != p.get() ||
+      (*select(pointer)).get() != p.get() || !view.operator bool() || null.get()) return 2;
+  int factory = *std::make_unique<int>(mark(6));
+  int temporary = *Scalar(new int(mark(7)));
+  Box *custom_temporary = std::unique_ptr<Box, Observe>(&borrowed).get();
+  if (factory != 6 || temporary != 7 || custom_temporary != &borrowed || observed != 9) return 3;
+  int saved_allocated = allocated, saved_released = released, saved_created = created;
+  int saved_destroyed = destroyed, saved_receivers = receivers;
+  int saved_arguments = arguments, saved_defaults = defaults, saved_observed = observed;
+  using Get = decltype(p.get());
+  using Dereference = decltype(*p);
+  static_assert(__is_same(Get, int *) && __is_same(Dereference, int &));
+  static_assert(__is_same(decltype(*qualified), const int &));
+  static_assert(__is_same(decltype(view.operator->()), int *));
+  static_assert(__is_same(decltype(*custom_view), Box &));
+  static_assert(__is_same(decltype(custom_view.operator->()), Box *));
+  static_assert(__is_same(decltype(custom.get_deleter()), Observe &));
+  static_assert(__is_same(decltype(custom_view.get_deleter()), const Observe &));
+  static_assert(__is_same(decltype(custom_array.get_deleter()), ObserveArray &));
+  static_assert(__is_same(decltype(array_view.get_deleter()), const ObserveArray &));
+  static_assert(__is_same(decltype(p.get_deleter()), std::default_delete<int> &));
+  static_assert(__is_same(decltype(view.get_deleter()), const std::default_delete<int> &));
+  static_assert(__is_same(decltype(matrix.get_deleter()), std::default_delete<int[][2]> &));
+  static_assert(__is_same(decltype(boxes[Size(0)]), Box &));
+  static_assert(__is_same(decltype(matrix[Size(1)]), int (&)[2]));
+  static_assert(__is_same(decltype(array_view[index()]), int &));
+  static_assert(__is_same(decltype(custom_view.operator bool()), bool));
+  static_assert(sizeof(select(p).get()) == sizeof(int *));
+  static_assert(sizeof(select(pointer)->get()) == sizeof(int *));
+  static_assert(sizeof(select(const_pointer)->operator bool()) == sizeof(bool));
+  static_assert(sizeof((*select(pointer)).get()) == sizeof(int *));
+  static_assert(sizeof(boxes[index()]) == sizeof(Box));
+  static_assert(sizeof(matrix[index()]) == sizeof(int[2]));
+  static_assert(sizeof(custom_view.get_deleter()) == sizeof(Observe));
+  static_assert(alignof(decltype(custom_view.get_deleter())) == alignof(Observe));
+  static_assert(noexcept(select(p).get()) && noexcept(select(pointer)->operator*()));
+  static_assert(noexcept(select(const_pointer)->get_deleter()));
+  static_assert(noexcept(custom.get_deleter()) && noexcept(custom_view.get_deleter()));
+  static_assert(noexcept(*custom) && noexcept(custom_view.operator->()));
+  static_assert(!noexcept(boxes[index()]) && !noexcept(matrix[Size(0)]));
+  static_assert(!noexcept(custom_array[index()]) && noexcept(array_view.operator bool()));
+  static_assert(__is_same(decltype(Scalar(new int(mark())).get()), int *));
+  static_assert(sizeof(Scalar(nullptr).get()) == sizeof(int *));
+  static_assert(!noexcept(Scalar(new int(mark())).get()));
+  static_assert(sizeof(std::make_unique<int>(mark()).get()) == sizeof(int *));
+  static_assert(!noexcept(std::make_unique<int>(mark()).get()));
+  static_assert(__is_same(decltype(std::unique_ptr<Box, Observe>(&borrowed).get()), Box *));
+  if (allocated != saved_allocated || released != saved_released || created != saved_created ||
+      destroyed != saved_destroyed || receivers != saved_receivers || arguments != saved_arguments ||
+      defaults != saved_defaults || observed != saved_observed || array_observed) return 4;
+  return 0;
+}
+int main() {
+  int result = check();
+  if (result) return result;
+  return live == 0 && created == 4 && destroyed == 4 && allocated == released &&
+         observed == 18 && array_observed == 8 && defaults == 0 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-unique-ptr-observation-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrObservationResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"receiver-expression", R"cpp(
+int f(std::unique_ptr<int>& p) { p.get(); static_assert(sizeof((sizeof(long double),p).get()) == sizeof(int*)); return 0; }
+)cpp",
+       "TR0201"},
+      {"receiver-default", R"cpp(
+using P=std::unique_ptr<int>; P& select(P&p,int=sizeof(long double))noexcept{return p;} int f(P&p){select(p,1).get();static_assert(sizeof(select(p).get())==sizeof(int*));return 0;}
+)cpp",
+       "TR0201"},
+      {"receiver-noexcept", R"cpp(
+using P=std::unique_ptr<int>; P& select(P&p)noexcept(sizeof(long double)>0){return p;} int f(P&p){select(p).get();static_assert(noexcept(select(p).get()));return 0;}
+)cpp",
+       "TR0201"},
+      {"receiver-signature", R"cpp(
+int object;template<int*>using P=std::unique_ptr<int>;P<&object>& select(P<&object>&p)noexcept{return p;}int f(P<&object>&p){select(p).get();static_assert(sizeof(select(p).get())==sizeof(int*));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointee-layout", R"cpp(
+struct R{long double n;};int f(std::unique_ptr<R>&p){p.get();static_assert(sizeof(p.get())==sizeof(R*));return 0;}
+)cpp",
+       "TR0201"},
+      {"index-expression", R"cpp(
+int f(std::unique_ptr<int[]>&p){p[0];static_assert(sizeof(p[(sizeof(long double),Size(0))])==sizeof(int));return 0;}
+)cpp",
+       "TR0201"},
+      {"index-default", R"cpp(
+Size index(int=sizeof(long double))noexcept{return 0;}int f(std::unique_ptr<int[]>&p){p[index(1)];static_assert(sizeof(p[index()])==sizeof(int));return 0;}
+)cpp",
+       "TR0201"},
+      {"index-noexcept", R"cpp(
+Size index()noexcept(sizeof(long double)>0){return 0;}int f(std::unique_ptr<int[]>&p){p[index()];static_assert(!noexcept(p[index()]));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-get", R"cpp(
+int f(std::unique_ptr<int>&p){static_assert(noexcept(p.get()));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-arrow", R"cpp(
+int f(std::unique_ptr<int>&p){p.get();static_assert(sizeof(p.operator->())==sizeof(int*));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-dereference", R"cpp(
+int f(std::unique_ptr<int>&p){p.get();static_assert(noexcept(*p));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-boolean", R"cpp(
+int f(std::unique_ptr<int>&p){p.get();static_assert(noexcept(p.operator bool()));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-subscript", R"cpp(
+int f(std::unique_ptr<int[]>&p){p.get();static_assert(sizeof(p[Size(0)])==sizeof(int));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-const-deleter", R"cpp(
+int f(std::unique_ptr<int>&p){p.get_deleter();const auto&q=p;static_assert(noexcept(q.get_deleter()));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-specialization", R"cpp(
+int f(std::unique_ptr<int>&p,std::unique_ptr<unsigned>&q){p.get();static_assert(sizeof(q.get())==sizeof(unsigned*));return 0;}
+)cpp",
+       "TR0203"},
+      {"independent-member-address", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(sizeof(&P::get)>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-dereference-address", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){*p;static_assert(sizeof(&P::operator*)>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"mutating-decltype-query", R"cpp(
+int f(std::unique_ptr<int>&p){p.release();static_assert(__is_same(decltype(p.release()),int*));return 0;}
+)cpp",
+       "TR0201"},
+      {"get-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int* unique_ptr<int>::get()const noexcept{return nullptr;}}} int f(std::unique_ptr<int>&p){p.get();static_assert(noexcept(p.get()));return 0;}
+)cpp",
+       "TR0201"},
+      {"dereference-specialization", R"cpp(
+int replacement;namespace std{inline namespace __1{template<>int& unique_ptr<int>::operator*()const noexcept{return replacement;}}}int f(std::unique_ptr<int>&p){*p;static_assert(noexcept(*p));return 0;}
+)cpp",
+       "TR0201"},
+      {"subscript-specialization", R"cpp(
+int replacement;namespace std{inline namespace __1{template<>int& unique_ptr<int[]>::operator[](size_t)const{return replacement;}}}int f(std::unique_ptr<int[]>&p){p[0];static_assert(!noexcept(p[0]));return 0;}
+)cpp",
+       "TR0201"},
+      {"const-deleter-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const default_delete<int>& unique_ptr<int>::get_deleter()const noexcept{static default_delete<int>d;return d;}}}int f(const std::unique_ptr<int>&p){p.get_deleter();static_assert(noexcept(p.get_deleter()));return 0;}
+)cpp",
+       "TR0201"},
+      {"declval-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int*&& declval<int*>()noexcept;}}int f(std::unique_ptr<int>&p){*p;static_assert(noexcept(*p));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-destructor-source", R"cpp(
+struct R{~R()noexcept(sizeof(long double)>0){}};int f(){std::unique_ptr<R> p(nullptr);p.get();static_assert(sizeof(std::unique_ptr<R>(nullptr).get())==sizeof(R*));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-deleter-redeclaration", R"cpp(
+int object;template<int*>using T=int;struct D{void operator()(T<&object>*)const noexcept;};void D::operator()(int*)const noexcept{}int f(int*p){std::unique_ptr<int,D> q(p);q.get();static_assert(sizeof(std::unique_ptr<int,D>(p).get())==sizeof(int*));return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unique-ptr-observation-query-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unique-ptr-observation-query-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+void materialize_owners() {
+  std::unique_ptr<int> scalar;
+  std::unique_ptr<int[]> array;
+  std::unique_ptr<unsigned> other;
+}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2MemoryMakeUniqueResultQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("memory-make-unique-result-queries.cpp");
   const auto Output = tmpFile("memory-make-unique-result-queries.nc");
