@@ -2728,31 +2728,33 @@ utilityUniquePtrSource(Adapter &A, const CXXRecordDecl *Record) {
 }
 
 static bool utilityUniquePtrFunctionSource(Adapter &A,
-                                           const CXXMethodDecl *Method) {
+                                           const FunctionDecl *Function) {
   const auto Origin =
-      Method ? A.S.sdkFile(A.Sources, Method->getLocation()) : std::nullopt;
-  if (!Method || !Origin || Origin->Root != "libcxx" ||
-      Origin->Path != "__memory/unique_ptr.h" || Method->isInvalidDecl() ||
-      Method->isDeleted() || Method->isVariadic() ||
-      Method->getAccess() != AS_public || !Method->getDefinition())
+      Function ? A.S.sdkFile(A.Sources, Function->getLocation()) : std::nullopt;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Function || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "__memory/unique_ptr.h" || Function->isInvalidDecl() ||
+      Function->isDeleted() || Function->isVariadic() ||
+      (Method && Method->getAccess() != AS_public) ||
+      !Function->getDefinition())
     return false;
-  auto Pinned = [&](const FunctionDecl *Function) {
-    if (!Function ||
-        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+  auto Pinned = [&](const FunctionDecl *Declaration) {
+    if (!Declaration || Declaration->getTemplateSpecializationKind() ==
+                            TSK_ExplicitSpecialization)
       return false;
-    for (const auto *Declaration : Function->redecls()) {
-      A.chargeExpansion(1, Declaration->getLocation());
-      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+    for (const auto *Redeclaration : Declaration->redecls()) {
+      A.chargeExpansion(1, Redeclaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Redeclaration))
         return false;
     }
-    return !Function->getDefinition() ||
+    return !Declaration->getDefinition() ||
            approvedStandardSDKDeclaration(A.S, A.Sources,
-                                          Function->getDefinition());
+                                          Declaration->getDefinition());
   };
-  if (!Pinned(Method) ||
-      !Pinned(Method->getTemplateInstantiationPattern(/*ForDefinition=*/true)))
+  if (!Pinned(Function) || !Pinned(Function->getTemplateInstantiationPattern(
+                               /*ForDefinition=*/true)))
     return false;
-  if (const auto *Primary = Method->getPrimaryTemplate())
+  if (const auto *Primary = Function->getPrimaryTemplate())
     for (const auto *Declaration : Primary->redecls())
       if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) ||
           !Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl())))
@@ -2817,6 +2819,7 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
   case UtilityUniquePtrOperation::Arrow:
   case UtilityUniquePtrOperation::Boolean:
   case UtilityUniquePtrOperation::Release:
+  case UtilityUniquePtrOperation::Swap:
     if (Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
         Prototype->getNoexceptExpr())
       return std::nullopt;
@@ -2900,6 +2903,56 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
       return std::nullopt;
   }
   return Info;
+}
+
+static bool utilityUniquePtrSwapSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Function || isa<CXXMethodDecl>(Function) || !Function->getIdentifier() ||
+      Function->getName() != "swap" || !Function->getPrimaryTemplate() ||
+      !Reference || Reference->getDecl() != Function || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      !utilityUniquePtrFunctionSource(A, Function) ||
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
+          UtilityOperation::MemoryUniquePtrSwap)
+    return false;
+  const auto Owner = utilityUniquePtrSource(
+      A, Call->getArg(0)->getType()->getAsCXXRecordDecl());
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Member = Body && Body->size() == 1
+                           ? dyn_cast<CXXMemberCallExpr>(*Body->body_begin())
+                           : nullptr;
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto *MemberPrototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Receiver = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Object =
+      Receiver ? dyn_cast<DeclRefExpr>(Receiver->IgnoreParenImpCasts())
+               : nullptr;
+  const auto *Argument =
+      Member && Member->getNumArgs() == 1
+          ? dyn_cast<DeclRefExpr>(Member->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  // This exact SDK wrapper must select its owner's pinned member. Do not
+  // turn the private SDK call into a project traversal or instantiate a body.
+  return Owner && Method && Object && Argument && MemberPrototype &&
+         Method->getIdentifier() && Method->getName() == "swap" &&
+         !Method->isStatic() && !Method->isConst() &&
+         Method->getNumParams() == 1 && Method->getReturnType()->isVoidType() &&
+         Member->getType()->isVoidType() &&
+         Object->getDecl() == Function->getParamDecl(0) &&
+         Argument->getDecl() == Function->getParamDecl(1) &&
+         Method->getParent()->getCanonicalDecl() ==
+             Owner->Record->getCanonicalDecl() &&
+         A.Context.hasSameType(Method->getParamDecl(0)->getType(),
+                               Function->getParamDecl(1)->getType()) &&
+         MemberPrototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !MemberPrototype->getNoexceptExpr() &&
+         utilityUniquePtrFunctionSource(A, Method);
 }
 
 static bool
@@ -3775,7 +3828,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     // C++17 canCalleeThrow reads the actual callee expression type, even for a
     // direct call. A pointer conversion can erase noexcept from its declaration.
     const auto *Prototype = operationCalleePrototype(Call);
-    if (utilityUniquePtrMemberSource(A, Call))
+    if (utilityUniquePtrMemberSource(A, Call) ||
+        utilityUniquePtrSwapSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return PrototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -6384,8 +6438,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
-  std::map<const Expr *, const CallExpr *>
-      AuthenticatedUniquePtrMemberReferences;
+  std::map<const Expr *, const CallExpr *> AuthenticatedUniquePtrReferences;
   std::map<const DeclRefExpr *, const CallExpr *>
       AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
@@ -9133,7 +9186,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
       const FunctionDecl *AuthenticatedVectorEndpoint = nullptr;
-      const CallExpr *AuthenticatedUniquePtrMember = nullptr;
+      const CallExpr *AuthenticatedUniquePtrCall = nullptr;
       const CallExpr *AuthenticatedMakeUnique = nullptr;
       std::optional<AlgorithmCallableSource> AuthenticatedAlgorithm;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
@@ -9154,16 +9207,26 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (const auto Info = utilityUniquePtrMemberSource(A, Call))
           if (const auto *Reference = directMethodReference(Call)) {
             auto [Entry, Inserted] =
-                AuthenticatedUniquePtrMemberReferences.emplace(Reference, Call);
+                AuthenticatedUniquePtrReferences.emplace(Reference, Call);
             if (Inserted)
               A.chargeExpansion(1, Call->getExprLoc());
             if (Entry->second == Call) {
-              AuthenticatedUniquePtrMember = Call;
+              AuthenticatedUniquePtrCall = Call;
               if (Info->Operation == UtilityUniquePtrOperation::Reset)
                 for (auto *Dependencies : ActiveOperationSources)
                   if (Dependencies->UniquePtrResets.insert(Call).second)
                     A.chargeExpansion(1, Call->getExprLoc());
             }
+          }
+        if (utilityUniquePtrSwapSource(A, Call))
+          if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+                  directFunctionReference(Call))) {
+            auto [Entry, Inserted] =
+                AuthenticatedUniquePtrReferences.emplace(Reference, Call);
+            if (Inserted)
+              A.chargeExpansion(1, Call->getExprLoc());
+            if (Entry->second == Call)
+              AuthenticatedUniquePtrCall = Call;
           }
         // The public algorithm has no written exception specification. Its
         // exact descriptor supplies the SDK signature/body, not a blanket
@@ -9218,9 +9281,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         }
       } else if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
-        if (auto Found = AuthenticatedUniquePtrMemberReferences.find(Reference);
-            Found != AuthenticatedUniquePtrMemberReferences.end())
-          AuthenticatedUniquePtrMember = Found->second;
+        if (auto Found = AuthenticatedUniquePtrReferences.find(Reference);
+            Found != AuthenticatedUniquePtrReferences.end())
+          AuthenticatedUniquePtrCall = Found->second;
         if (auto Found = AuthenticatedMakeUniqueReferences.find(Reference);
             Found != AuthenticatedMakeUniqueReferences.end())
           AuthenticatedMakeUnique = Found->second;
@@ -9231,9 +9294,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             Found != AuthenticatedProjectionGetReferences.end())
           AuthenticatedProjectionGet = Found->second->getDirectCallee();
       } else if (const auto *Reference = dyn_cast<MemberExpr>(S)) {
-        if (auto Found = AuthenticatedUniquePtrMemberReferences.find(Reference);
-            Found != AuthenticatedUniquePtrMemberReferences.end())
-          AuthenticatedUniquePtrMember = Found->second;
+        if (auto Found = AuthenticatedUniquePtrReferences.find(Reference);
+            Found != AuthenticatedUniquePtrReferences.end())
+          AuthenticatedUniquePtrCall = Found->second;
         if (auto Found = AuthenticatedVectorEndpointReferences.find(Reference);
             Found != AuthenticatedVectorEndpointReferences.end())
           AuthenticatedVectorEndpoint = Found->second->getDirectCallee();
@@ -9243,8 +9306,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       };
       auto Exception = [&](const FunctionProtoType *Prototype,
                            const FunctionDecl *Function) {
-        if (AuthenticatedUniquePtrMember &&
-            Function == AuthenticatedUniquePtrMember->getDirectCallee() &&
+        if (AuthenticatedUniquePtrCall &&
+            Function == AuthenticatedUniquePtrCall->getDirectCallee() &&
             Prototype == Function->getType()->getAs<FunctionProtoType>())
           return;
         if (const auto *Method = inferredOperationExceptionSource(A, Prototype, Function)) {
@@ -9273,11 +9336,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // roots.
         if (Function == AuthenticatedVectorEndpoint)
           return;
-        // Only this exact member call supplies its SDK signature and resolved
-        // exception metadata. Receiver/argument source and owning temporaries
-        // still close through their ordinary dependencies.
-        if (AuthenticatedUniquePtrMember &&
-            Function == AuthenticatedUniquePtrMember->getDirectCallee())
+        // Only this exact unique pointer call supplies its SDK signature and
+        // resolved exception metadata. Receiver/argument source and owning
+        // temporaries still close through their ordinary dependencies.
+        if (AuthenticatedUniquePtrCall &&
+            Function == AuthenticatedUniquePtrCall->getDirectCallee())
           return;
         // The exact factory supplies the pinned SDK signature and body. Its
         // owning allocation, construction, defaults and cleanup close

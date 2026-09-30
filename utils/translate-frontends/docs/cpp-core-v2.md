@@ -1335,8 +1335,35 @@ keep their separate lifetime source. Unevaluated reset neither changes the
 pointer nor evaluates a receiver, replacement, default or allocation, and makes
 no deleter or destruction call. Missing query-only bodies, different array
 overloads/specializations, independent member addresses and source SDK
-replacements remain rejected. Assignment and swap receive no new result-source
+replacements remain rejected. Assignment receives no new result-source
 authentication.
+
+The same query boundary admits already materialized member `swap` and the exact
+pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` overload. Both retain a
+`void` result and nonthrowing signature for mutable scalar or array owners with
+the same concrete owner and deleter type, including admitted custom deleters,
+qualified pointees and bounded inner array extents. Member receivers may be
+objects or exact raw owner pointers; the peer and both free-swap arguments must
+remain mutable owner lvalues. Written receiver/peer expressions, aliases,
+original signatures, selected source defaults and explicit template arguments
+still require their original source. Argument-dependent lookup retains the
+selected specialized overload.
+The free wrapper, its instantiation pattern, primary and all redeclarations
+must remain in the pinned SDK. Its actual single member call must reference
+the wrapper's two exact parameters and select the same owner's pinned member
+definition and exception specification. This consumes the existing bodies;
+it does not instantiate SDK code or traverse the private member call as project
+source. Borrowed swaps select no owner or pointee construction, deleter call
+or destruction. Local owner initializers, temporary member receivers and
+factory/argument temporaries retain their separate owning lifetime source.
+Unevaluated swap neither exchanges pointers nor evaluates either operand or a
+default, allocates storage, or invokes construction, deletion or cleanup.
+Self-swap retains the same owner identity. Result-source queries without the
+materialized member/free bodies, different specializations, source SDK
+replacements and independent addresses remain rejected; the generic
+`std::swap<Owner>` overload has no new permission. Signature-only free-swap
+`noexcept` queries keep their existing exception-source boundary and need no
+unused body.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
