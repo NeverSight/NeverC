@@ -2315,6 +2315,12 @@ The function-pointer `generate` and `generate_n` forms also accept writable
 authenticated wrapped scalar outputs. The generator result uses its checked
 direct conversion to the output element; `generate_n` returns the advanced
 wrapped iterator, or the original position for a non-positive count.
+Writable function-pointer element ranges are also accepted by both forms.
+Their checked nullary generator returns the exact pointer type by value,
+including a `noexcept` function-pointer type; implicit conversion between
+different function-pointer types and reference results remain unsupported.
+The generated pointer values are stored without invoking the pointed-to
+functions. Empty ranges and non-positive `generate_n` counts make no calls.
 Both forms also accept exact trivial source records in writable raw or wrapped
 ranges when a checked nullary function pointer returns the same record by
 value. Each call writes the complete result. Empty ranges and non-positive

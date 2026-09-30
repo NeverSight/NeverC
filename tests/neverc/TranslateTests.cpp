@@ -49424,6 +49424,96 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackGenerateRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-generate.cpp");
+  const auto Output = tmpFile("callback-generate.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls;
+int calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+Callback next_callback() {
+  ++calls;
+  return calls % 2 ? one : two;
+}
+NoexceptCallback next_safe() noexcept {
+  ++calls;
+  return calls % 2 ? safe_one : safe_two;
+}
+int main() {
+  Callback values[3]{};
+  int first_effects = 0, last_effects = 0, generator_effects = 0;
+  std::generate((++first_effects, values), (++last_effects, values + 3),
+                (++generator_effects, next_callback));
+  if (first_effects != 1 || last_effects != 1 || generator_effects != 1 ||
+      calls != 3 || values[0] != one || values[1] != two ||
+      values[2] != one || pointed_calls != 0)
+    return 1;
+  calls = 0;
+  std::generate(values, values, next_callback);
+  if (calls != 0 || values[0] != one) return 2;
+  NoexceptCallback safe[3]{safe_one, safe_one, safe_one};
+  int output_effects = 0, count_effects = 0, safe_generator_effects = 0;
+  if (std::generate_n((++output_effects, safe),
+                      (++count_effects, short(2)),
+                      (++safe_generator_effects, next_safe)) != safe + 2 ||
+      output_effects != 1 || count_effects != 1 ||
+      safe_generator_effects != 1 || calls != 2 ||
+      safe[0] != safe_one || safe[1] != safe_two ||
+      safe[2] != safe_one || pointed_calls != 0)
+    return 3;
+  calls = 0;
+  if (std::generate_n(safe, 0, next_safe) != safe ||
+      std::generate_n(safe, -3, next_safe) != safe || calls != 0 ||
+      safe[0] != safe_one || pointed_calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-generate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackGenerateRejectsInexactResults) {
+  for (const std::string &Generator : {"next_reference", "next_safe"}) {
+    SCOPED_TRACE(Generator);
+    const auto Source = tmpFile(Generator + "-callback-generate.cpp");
+    const auto Output = tmpFile(Generator + "-callback-generate.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+Callback retained = one;
+Callback& next_reference() { return retained; }
+NoexceptCallback next_safe() { return safe_one; }
+int main() {
+  Callback output[2]{};
+  return std::generate_n(output, 2, )cpp" +
+                          Generator + ") == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndScalarResults) {
   struct Rejection {
