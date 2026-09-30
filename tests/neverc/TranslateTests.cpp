@@ -57494,6 +57494,135 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackSearchPredicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-search-predicates.cpp");
+  const auto Output = tmpFile("callback-search-predicates.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int four(int x) { ++calls; return x + 4; }
+int safe_one(int x) noexcept { ++calls; return x + 1; }
+int safe_two(int x) noexcept { ++calls; return x + 2; }
+int group(Callback f) {
+  if (f == one || f == three) return 1;
+  if (f == two) return 2;
+  if (f == four) return 3;
+  return 0;
+}
+bool same_group(Callback left, Callback right) {
+  ++checks;
+  return group(left) == group(right);
+}
+bool same_safe(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return left == right;
+}
+int main() {
+  const std::array<Callback, 7> values{{one, two, three, one, two, three, one}};
+  const Callback pattern[]{three, two};
+  int firstEffects = 0, lastEffects = 0, patternEffects = 0;
+  int patternLastEffects = 0, predicateEffects = 0;
+  auto first = std::search((++firstEffects, values.cbegin()),
+                           (++lastEffects, values.cend()),
+                           (++patternEffects, pattern),
+                           (++patternLastEffects, pattern + 2),
+                           (++predicateEffects, same_group));
+  if (first != values.cbegin() || firstEffects != 1 || lastEffects != 1 ||
+      patternEffects != 1 || patternLastEffects != 1 ||
+      predicateEffects != 1 || checks == 0 || calls != 0)
+    return 1;
+  if (std::find_end(values.cbegin(), values.cend(), pattern, pattern + 2,
+                    same_group) != values.cbegin() + 3 ||
+      std::search(values.cbegin(), values.cend(), pattern, pattern + 2,
+                  same_group) != values.cbegin() || calls != 0)
+    return 2;
+  const Callback choices[]{four, two};
+  if (std::find_first_of(values.cbegin(), values.cend(), choices, choices + 2,
+                         same_group) != values.cbegin() + 1 || calls != 0)
+    return 3;
+  const Callback missing[]{four, one};
+  if (std::search(values.cbegin(), values.cend(), missing, missing + 2,
+                  same_group) != values.cend() ||
+      std::find_end(values.cbegin(), values.cend(), missing, missing + 2,
+                    same_group) != values.cend() || calls != 0)
+    return 4;
+  const Callback raw[]{four, one, two, three, two};
+  const std::array<Callback, 2> wrappedPattern{{three, two}};
+  if (std::search(raw, raw + 5, wrappedPattern.cbegin(),
+                  wrappedPattern.cend(), same_group) != raw + 1 ||
+      std::find_end(raw, raw + 5, wrappedPattern.cbegin(),
+                    wrappedPattern.cend(), same_group) != raw + 3 ||
+      std::find_first_of(raw, raw + 5, wrappedPattern.cbegin(),
+                         wrappedPattern.cend(), same_group) != raw + 1 ||
+      calls != 0)
+    return 5;
+  const std::array<NoexceptCallback, 3> safe{{safe_one, safe_two, safe_one}};
+  const NoexceptCallback safePattern[]{safe_one};
+  if (std::search(safe.cbegin(), safe.cend(), safePattern, safePattern + 1,
+                  same_safe) != safe.cbegin() ||
+      std::find_end(safe.cbegin(), safe.cend(), safePattern, safePattern + 1,
+                    same_safe) != safe.cbegin() + 2 ||
+      std::find_first_of(safe.cbegin(), safe.cend(), safePattern,
+                         safePattern + 1, same_safe) != safe.cbegin() ||
+      calls != 0)
+    return 6;
+  checks = 0;
+  if (std::search(values.cbegin(), values.cend(), pattern, pattern,
+                  same_group) != values.cbegin() ||
+      std::find_end(values.cbegin(), values.cend(), pattern, pattern,
+                    same_group) != values.cend() ||
+      std::find_first_of(values.cbegin(), values.cend(), choices, choices,
+                         same_group) != values.cend() ||
+      checks != 0 || calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-search-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackSearchPredicatesRejectInvalidSignatures) {
+  for (const std::string &Name : {"search", "find_end", "find_first_of"}) {
+    for (const std::string &Predicate : {"wrong_result", "wrong_reference"}) {
+      SCOPED_TRACE(Name + ":" + Predicate);
+      const auto Source = tmpFile(Name + "-callback-" + Predicate + ".cpp");
+      const auto Output = tmpFile(Name + "-callback-" + Predicate + ".nc");
+      writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+int one(int x) { return x + 1; }
+int wrong_result(Callback, Callback) { return 1; }
+bool wrong_reference(const Callback&, const Callback&) { return true; }
+int main() {
+  const Callback values[]{one, one};
+  return std::)cpp" + Name + "(values, values + 2, values, values + 2, " +
+                            Predicate + ") == values;\n}\n");
+      auto Result = translate(Source,
+                              {"--profile", "cpp-core-v2", "-o", Output.string()});
+      EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+      EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackUniqueRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-unique.cpp");
   const auto Output = tmpFile("callback-unique.nc");

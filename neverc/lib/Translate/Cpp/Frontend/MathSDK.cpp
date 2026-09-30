@@ -26250,10 +26250,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RecordPredicate->getReturnType()->isBooleanType() &&
         AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0) &&
         AlgorithmRecordRangeCallbackReferenceParameter(4, 1, 2);
+    const bool PredicateCallbackRanges =
+        Call->getNumArgs() == 5 && CallbackDefault &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(4, 0, 2);
     const bool DefaultElements =
         ScalarDefault || RecordRanges || CallbackDefault;
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
-          PredicateRecordRanges ||
+          PredicateRecordRanges || PredicateCallbackRanges ||
           (Call->getNumArgs() == 5 && ScalarFirst && ScalarLast &&
            ScalarSecond && ScalarSecondLast &&
            AlgorithmRangeBinaryPredicateParameter(4, 0, 2))))

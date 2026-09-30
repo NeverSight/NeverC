@@ -2042,6 +2042,11 @@ first-range iterator type. `search` returns the first matching subsequence,
 `find_end` the last, and `find_first_of` the first input element equal to any
 choice. Empty patterns return the first iterator for `search` and the last for
 `find_end`; empty choices and unsuccessful searches return the last iterator.
+Their checked predicate overloads accept the same exact function-pointer
+element type through `bool(Callback, Callback)`, including `noexcept` pointer
+elements and raw or authenticated wrapped ranges. The predicate compares
+pointer values without calling the pointed-to functions, and the first-range
+iterator form and empty-pattern results are preserved.
 Checked function-pointer predicate overloads of `search`, `find_end` and
 `find_first_of` accept independent raw or authenticated wrapped scalar ranges,
 including different directly convertible element types.
