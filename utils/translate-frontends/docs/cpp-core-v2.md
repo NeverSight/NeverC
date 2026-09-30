@@ -2483,6 +2483,10 @@ by-value scalar parameters. It captures the callback once and follows the
 same pairwise call order and comparison bound; a singleton list makes no
 callback calls. Reference-parameter callbacks and record-valued list overloads
 remain outside this boundary.
+The comparator list overload also accepts one exact function-pointer element
+type, including `noexcept` pointers, through a `bool(Callback, Callback)`
+comparator. It copies the selected minimum and maximum pointer values into the
+authenticated pair without invoking the pointed-to functions.
 
 The corresponding three-argument `std::min`, `std::max` and `std::minmax`,
 four-argument `std::clamp`, and three-argument `std::minmax_element` overloads
