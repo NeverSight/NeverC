@@ -16617,7 +16617,9 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
       if (!Cast)
         break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                         Cast->getType()))
+                                         Cast->getType()) &&
+          !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
         return false;
       Argument = Cast->getSubExpr();
     }
@@ -18832,7 +18834,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const bool CallbackElements =
       !SDKObject &&
       (Find || FindNot || None || All || Any || Count || Copy || RemoveCopy ||
-       Replacement || Partitioned || PartitionPoint || PartitionCopy) &&
+       Replacement || Partitioned || PartitionPoint || PartitionCopy ||
+       Remove) &&
       utilityObjectPointer(Context, Pointer) &&
       utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
                                   Pointer->getPointeeType());
@@ -18883,7 +18886,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
         return std::nullopt;
     }
   }
-  if (Remove && !utilityAlgorithmWritableScalarPointer(Context, Pointer))
+  if (Remove && !WritableOutput(Pointer))
     return std::nullopt;
   if (RemoveCopy || Copy) {
     if (!WritableOutput(Output) ||

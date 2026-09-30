@@ -3175,12 +3175,21 @@ output pointer-type conversions, and Boolean outputs remain rejected. Empty
 ranges initialize the object without calls or stores; pointer targets are not
 invoked by the translator. SDK function objects retain their scalar boundary.
 `remove_if` authenticates the exact reference-parameter `find_if` specialization,
-its selected predicate call, the subsequent scan and the scalar move stores.
+its selected predicate call, the subsequent scan and the exact scalar or
+function-pointer move stores.
 Finding the first removable element and compacting later retained elements use
 one predicate object with continuing state. Retained prefix elements are not
 assigned to themselves; subsequent moves read their input after the predicate.
 The returned pointer ends the retained prefix. Empty/all-kept/all-removed ranges
 and full-expression cleanup preserve the same source parameter lifetime.
+Source-owned predicates also accept writable raw ranges of exact
+function-pointer elements, including `noexcept` signatures, with a non-template
+call operator returning `bool` and taking the pointer by value. Both the initial
+search and subsequent scan require that same exact pointer parameter type and
+selected method; the SDK `move` proof retains the exact element type. Pointer
+targets are not invoked by the translator. Reference predicate arguments and
+conversions between pointer signatures or to Boolean parameters remain rejected;
+SDK predicate objects retain their scalar boundary.
 Source-owned class-template predicates additionally support checked concrete
 primary, partial and full class specializations with an in-class non-template
 call operator. Type and value parameters, defaults, each concrete receiver's

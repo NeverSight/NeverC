@@ -54186,6 +54186,180 @@ auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{})
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackRemoveObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-remove-objects.cpp");
+  const auto Output = tmpFile("algorithm-callback-remove-objects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, pointed_calls, bad_receiver;
+int firsts, lasts, factories, constructions, live, destroyed;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+void reset() { calls = trace = state_trace = 0; }
+void observe(Callback value, int local_calls) {
+  ++calls;
+  trace = trace * 10 + (value == nullptr ? 0 : value == one ? 1 : value == two ? 2 : 3);
+  state_trace = state_trace * 10 + local_calls;
+}
+struct Select {
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    return value == one;
+  }
+  bool operator()(Callback) const & { ++bad_receiver; return false; }
+};
+struct AfterTwo {
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    return local_calls > 2;
+  }
+};
+struct Token {
+  int active;
+  Token() : active(1) { ++live; }
+  ~Token() { active = 0; --live; ++destroyed; }
+};
+struct Mutate {
+  const Mutate *self;
+  Callback *current;
+  const Token *token;
+  int local_calls;
+  Mutate(Callback *p, const Token &t = Token())
+      : self(this), current(p), token(&t), local_calls(0) { ++constructions; }
+  bool operator()(Callback value) & {
+    if (self != this || token->active != 1 || live != 1) ++bad_receiver;
+    observe(value, ++local_calls);
+    *current = value == two ? nullptr : two;
+    ++current;
+    return value == one;
+  }
+};
+Callback *first(Callback *p) { ++firsts; return p; }
+Callback *last(Callback *p) { ++lasts; return p; }
+Mutate make(Callback *p, const Token &t) { ++factories; return Mutate(p, t); }
+struct SafeSelect {
+  int local_calls;
+  bool operator()(NoexceptCallback value) & noexcept {
+    ++calls;
+    trace = trace * 10 + (value == nullptr ? 0 : value == safe_one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    return value == safe_one;
+  }
+};
+int main() {
+  Callback input[]{two, one, nullptr, two, one, three};
+  const Select caller{0};
+  int object_effects = 0;
+  auto end = std::remove_if(input, input + 6, (++object_effects, caller));
+  static_assert(__is_same(decltype(std::remove_if(input, input + 6, caller)), Callback *));
+  static_assert(!noexcept(std::remove_if(input, input + 6, caller)));
+  if (end != input + 4 || input[0] != two || input[1] != nullptr ||
+      input[2] != two || input[3] != three || calls != 6 || trace != 210213 ||
+      state_trace != 123456 || caller.local_calls || object_effects != 1) return 1;
+  reset();
+  Callback kept[]{two, nullptr, three};
+  if (std::remove_if(kept, kept + 3, caller) != kept + 3 || kept[0] != two ||
+      kept[1] != nullptr || kept[2] != three || calls != 3 || trace != 203 ||
+      state_trace != 123) return 2;
+  reset();
+  Callback removed[]{one, one, one};
+  if (std::remove_if(removed, removed + 3, caller) != removed || calls != 3 ||
+      trace != 111 || state_trace != 123) return 3;
+  reset();
+  Callback state[]{one, two, three, nullptr, two};
+  const AfterTwo state_caller{0};
+  if (std::remove_if(state, state + 5, state_caller) != state + 2 ||
+      state[0] != one || state[1] != two || calls != 5 || trace != 12302 ||
+      state_trace != 12345 || state_caller.local_calls) return 4;
+  reset();
+  Callback changing[]{two, one, three, one, nullptr};
+  auto changed = std::remove_if(first(changing), last(changing + 5), make(changing, Token{}));
+  if (changed != changing + 3 || changing[0] != nullptr || changing[1] != two ||
+      changing[2] != two || calls != 5 || trace != 21310 || state_trace != 12345 ||
+      firsts != 1 || lasts != 1 || factories != 1 || constructions != 1 ||
+      live || destroyed != 1 || bad_receiver) return 5;
+  reset();
+  auto empty = std::remove_if(first(changing), last(changing), Mutate(changing));
+  if (empty != changing || changing[0] != nullptr || calls || trace || state_trace ||
+      firsts != 2 || lasts != 2 || factories != 1 || constructions != 2 ||
+      live || destroyed != 2 || bad_receiver) return 6;
+  reset();
+  NoexceptCallback safe[]{safe_two, safe_one, nullptr, safe_one};
+  const SafeSelect safe_caller{0};
+  auto safe_end = std::remove_if(safe, safe + 4, safe_caller);
+  static_assert(__is_same(decltype(safe_end), NoexceptCallback *));
+  if (safe_end != safe + 2 || safe[0] != safe_two || safe[1] != nullptr ||
+      calls != 4 || trace != 2101 || state_trace != 1234 || safe_caller.local_calls)
+    return 7;
+  return pointed_calls || bad_receiver || caller.local_calls ? 8 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-callback-remove-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmCallbackRemoveObjectsRequireExactTypes) {
+  const struct {
+    const char *Name, *Definition, *Input, *Object;
+  } Cases[] = {
+      {"reference", "struct F { bool operator()(const Callback&) & { return true; } };",
+       "input", "F{}"},
+      {"input-conversion", "struct F { bool operator()(Callback) & { return true; } };",
+       "safe", "F{}"},
+      {"bool-conversion", "struct F { bool operator()(bool) & { return true; } };",
+       "input", "F{}"},
+      {"method-template", "struct F { template<class T> bool operator()(T) & { return true; } };",
+       "input", "F{}"},
+      {"non-bool-result", "struct F { int operator()(Callback) & { return 1; } };",
+       "input", "F{}"},
+      {"nontrivial-copy", "struct F { F() {} F(const F&) {} bool operator()(Callback) & { return true; } };",
+       "input", "F{}"},
+      {"nontrivial-destructor", "struct F { ~F() {} bool operator()(Callback) & { return true; } };",
+       "input", "F{}"},
+      {"sdk-object", "", "input", "std::logical_not<Callback>{}"},
+      {"sdk-noexcept-object", "", "safe", "std::logical_not<NoexceptCallback>{}"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + "-callback-remove-object.cpp");
+    const auto Output = tmpFile(std::string(Case.Name) + "-callback-remove-object.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) + R"cpp(
+int main() {
+  Callback input[]{one, nullptr};
+  NoexceptCallback safe[]{safe_one, nullptr};
+)cpp" + "(void)std::remove_if(" + Case.Input + ", " + Case.Input + " + 2, " +
+                      Case.Object + ");\nreturn 0;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmRemovePredicateObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-remove-predicate-state.cpp");
   const auto Output = tmpFile("algorithm-remove-predicate-state.nc");
