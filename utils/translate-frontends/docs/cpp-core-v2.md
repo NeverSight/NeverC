@@ -2477,22 +2477,29 @@ elements, including wrapped iterators supplied as source function parameters.
 The pinned wrapper layout, trivial copies and implicit destruction are
 authenticated. Result queries also accept direct mutable or const vector
 `begin`, `end`, `cbegin` and `cend` calls on vector references supplied as source
-function parameters and on locally constructed vectors with admitted scalar or
-object-pointer elements. The endpoint requires an already materialized pinned
-member body, including when used as the endpoint of these scans. For local
-receivers, the exact admitted default, initializer-list, count, fill, copy,
-move or raw/wrapped range construction and the materialized SDK destructor
-supply their library source; written types, initialization expressions and
-backing arrays still require their original source checks. The initializer-list
-view authenticates its pointer/size layout and trivial destruction without
-destroying or erasing the backing array's elements. Authentication belongs to
-the exact member call and reference; receiver expressions, factory defaults
-and written type or template source remain checked. These unevaluated calls
-preserve the iterator type and fixed `noexcept` value without evaluating their
-receiver. Locally constructed vectors with record or nested-container elements
-still require their owning element source proof. Query-only constructor or
-endpoint bodies, member addresses and other vector operations also remain
-outside this query boundary.
+function parameters and on locally constructed vectors with admitted scalar,
+object-pointer or source-owned record elements. The endpoint requires an already
+materialized pinned member body, including when used as the endpoint of these
+scans. For local receivers, the exact admitted default, initializer-list, count,
+fill, copy, move or raw/wrapped range construction and the materialized SDK
+destructor supply their library source; written types, initialization expressions
+and backing arrays still require their original source checks. The
+initializer-list view authenticates its pointer/size layout and trivial
+destruction without destroying or erasing the backing array's elements.
+Source-owned trivial and admitted nontrivial record elements also retain their complete destruction
+source. Count construction checks the selected element default constructor;
+initializer-list, fill, copy and raw/wrapped range construction check the
+selected element copy constructor, including its original signature, exception
+specification and completed source body or implicit/defaulted family proof.
+Empty default construction and buffer moves create no elements and require no
+unused element default or copy constructor, including for move-only records.
+Authentication belongs to the exact member call and reference; receiver
+expressions, factory defaults and written type or template source remain checked.
+These unevaluated calls preserve the iterator type and fixed `noexcept` value
+without evaluating their receiver. Direct SDK record elements and nested-container
+elements still require their separate owning element source proof. Query-only
+constructor or endpoint bodies, member addresses and other vector operations
+also remain outside this query boundary.
 The selected source call operator requires a completed, emitted body;
 its original signatures and exception specification, the range and object
 expressions, written template arguments, constructor and factory defaults

@@ -66783,6 +66783,392 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2SourceRecordVectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("source-record-vector-endpoint-result-queries.cpp");
+  const auto Output =
+      tmpFile("source-record-vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, live, copied, moved, created, destroyed, receivers, compared;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Box {
+  int *value;
+  Box() : value(new int(0)) { ++live; ++created; }
+  explicit Box(int n) : value(new int(n)) { ++live; ++created; }
+  Box(const Box &other) : value(new int(*other.value)) { ++live; ++copied; }
+  Box(Box &&other) noexcept : value(other.value) {
+    other.value = nullptr; ++live; ++moved;
+  }
+  ~Box() { delete value; --live; ++destroyed; }
+};
+struct MoveOnly {
+  int *value;
+  explicit MoveOnly(int n) : value(new int(n)) { ++live; ++created; }
+  MoveOnly(const MoveOnly &) = delete;
+  MoveOnly(MoveOnly &&other) noexcept : value(other.value) {
+    other.value = nullptr; ++live; ++moved;
+  }
+  ~MoveOnly() { delete value; --live; ++destroyed; }
+};
+struct Wrapped {
+  Box box;
+  Wrapped() = default;
+  Wrapped(const Wrapped &) = default;
+  Wrapped(Wrapped &&) noexcept = default;
+  ~Wrapped() = default;
+};
+struct Cell { int value; };
+struct Less {
+  bool operator()(const Cell &a, const Cell &b) const noexcept {
+    ++compared; return a.value < b.value;
+  }
+};
+using Boxes = std::vector<Box>;
+using Cells = std::vector<Cell>;
+using Only = std::vector<MoveOnly>;
+using Layers = std::vector<Wrapped>;
+Boxes &select_boxes(Boxes &v) noexcept { ++receivers; return v; }
+const Boxes &select_boxes(const Boxes &v) noexcept { ++receivers; return v; }
+Cells &select(Cells &v) noexcept { ++receivers; return v; }
+const Cells &select(const Cells &v) noexcept { ++receivers; return v; }
+int check() {
+  Boxes values{Box(3), Box(1), Box(4)};
+  Boxes empty;
+  Boxes copy(values);
+  Boxes move(static_cast<Boxes &&>(copy));
+  Boxes count(Size(2));
+  Box seed_box(1);
+  Boxes fill(Size(2), seed_box);
+  Box raw[] = {Box(6), Box(2)};
+  Boxes range(raw, raw + 2);
+  Boxes wrapped(values.begin(), values.end());
+  const auto &view = values;
+  auto first = select_boxes(values).begin();
+  auto last = select_boxes(view).cend();
+  auto const_first = view.begin(), const_last = view.end();
+  auto const_begin = values.cbegin(), const_end = values.cend();
+  auto view_begin = view.cbegin();
+  if (*first->value != 3 || last - view_begin != 3 ||
+      const_last - const_first != 3 || const_end - const_begin != 3 ||
+      !empty.empty() || !copy.empty() || *move[1].value != 1 ||
+      *count[0].value != 0 || *count[1].value != 0 ||
+      *fill[1].value != 1 || *range[1].value != 2 || *wrapped[2].value != 4)
+    return 1;
+  Cells cells{{3}, {1}, {4}};
+  Cells cell_empty;
+  Cells cell_copy(cells);
+  Cells cell_move(static_cast<Cells &&>(cell_copy));
+  Cells cell_count(Size(2));
+  Cell seed{7};
+  Cells cell_fill(Size(2), seed);
+  Cell cell_raw[] = {{6}, {2}};
+  Cells cell_range(cell_raw, cell_raw + 2);
+  Cells cell_wrapped(cells.begin(), cells.end());
+  const auto &cell_view = cells;
+  auto minimum = std::min_element(select(cells).begin(), select(cells).end(), Less{});
+  auto maximum = std::max_element(select(cell_view).cbegin(), select(cell_view).cend(), Less{});
+  Only only;
+  only.push_back(MoveOnly(9));
+  Only only_move(static_cast<Only &&>(only));
+  auto only_first = only_move.begin(), only_last = only_move.end();
+  if (minimum != cells.begin() + 1 || maximum != cell_view.begin() + 2 ||
+      cell_count[0].value != 0 || cell_fill[1].value != 7 ||
+      cell_range[1].value != 2 || cell_wrapped[2].value != 4 ||
+      !cell_empty.empty() || !cell_copy.empty() || cell_move[0].value != 3 ||
+      !only.empty() || only_last - only_first != 1 || *only_first->value != 9 ||
+      receivers != 6 || compared != 4)
+    return 2;
+  Wrapped seed_layer;
+  Wrapped layer_copy(seed_layer);
+  Wrapped layer_move(static_cast<Wrapped &&>(layer_copy));
+  Layers layers(Size(2));
+  Layers layers_copy(layers);
+  auto layer_first = layers.begin(), layer_last = layers.end();
+  if (layer_last - layer_first != 2 || *layer_first->box.value != 0 ||
+      layers_copy[0].box.value == layers[0].box.value || layer_copy.box.value ||
+      !layer_move.box.value)
+    return 5;
+  const int allocation_count = allocated, release_count = released;
+  const int live_count = live, copy_count = copied, move_count = moved;
+  const int construction_count = created, destruction_count = destroyed;
+  static_assert(__is_same(decltype(select_boxes(values).begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(select_boxes(values).end()), Boxes::iterator));
+  static_assert(__is_same(decltype(select_boxes(view).begin()), Boxes::const_iterator));
+  static_assert(__is_same(decltype(select_boxes(view).end()), Boxes::const_iterator));
+  static_assert(__is_same(decltype(select_boxes(values).cbegin()), Boxes::const_iterator));
+  static_assert(__is_same(decltype(select_boxes(values).cend()), Boxes::const_iterator));
+  static_assert(__is_same(decltype(select_boxes(view).cbegin()), Boxes::const_iterator));
+  static_assert(__is_same(decltype(select_boxes(view).cend()), Boxes::const_iterator));
+  static_assert(sizeof(select_boxes(values).begin()) == sizeof(Box *));
+  static_assert(alignof(decltype(select_boxes(view).cend())) == alignof(Box *));
+  static_assert(noexcept(select_boxes(values).begin()));
+  static_assert(noexcept(select_boxes(view).end()));
+  static_assert(__is_same(decltype(empty.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(copy.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(move.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(count.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(fill.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(range.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(wrapped.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(Boxes{Box(8)}), Boxes));
+  static_assert(sizeof(Boxes{Box(8), Box(9)}) == sizeof(Boxes));
+  static_assert(noexcept(Boxes()));
+  static_assert(noexcept(Boxes(static_cast<Boxes &&>(move))));
+  static_assert(!noexcept(Boxes(values)));
+  static_assert(!noexcept(Boxes(Size(2))));
+  static_assert(!noexcept(Boxes(Size(2), seed_box)));
+  static_assert(!noexcept(Boxes(raw, raw + 2)));
+  static_assert(!noexcept(Boxes(values.begin(), values.end())));
+  static_assert(__is_same(decltype(cell_empty.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(cell_copy.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(cell_move.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(cell_count.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(cell_fill.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(cell_range.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(cell_wrapped.begin()), Cells::iterator));
+  static_assert(__is_same(decltype(std::min_element(select(cells).begin(), select(cells).end(), Less{})), Cells::iterator));
+  static_assert(__is_same(decltype(std::max_element(select(cell_view).cbegin(), select(cell_view).cend(), Less{})), Cells::const_iterator));
+  static_assert(!noexcept(std::min_element(select(cells).begin(), select(cells).end(), Less{})));
+  static_assert(__is_same(decltype(layers.begin()), Layers::iterator));
+  static_assert(__is_same(decltype(layers_copy.begin()), Layers::iterator));
+  static_assert(!noexcept(Layers(Size(2))));
+  static_assert(!noexcept(Layers(layers)));
+  static_assert(__is_same(decltype(only.begin()), Only::iterator));
+  static_assert(__is_same(decltype(only_move.begin()), Only::iterator));
+  static_assert(__is_same(decltype(Only()), Only));
+  static_assert(noexcept(Only(static_cast<Only &&>(only_move))));
+  return allocated == allocation_count && released == release_count &&
+         live == live_count && copied == copy_count && moved == move_count &&
+         created == construction_count && destroyed == destruction_count &&
+         receivers == 6 && compared == 4 ? 0 : 3;
+}
+int main() {
+  int result = check();
+  return result ? result : live == 0 && allocated == released ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("source-record-vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2SourceRecordVectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"field-bound", R"cpp(
+struct Item { int values[(sizeof(long double), 1)]; }; using Vector = std::vector<Item>;
+int f() { Vector v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-field-type", R"cpp(
+template<int> using Field = int;
+struct Item { Field<(sizeof(long double), 0)> value; }; using Vector = std::vector<Item>;
+int f() { Vector v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-element-alias", R"cpp(
+int object; struct Item { int value; }; template<auto> using Element = Item; using Vector = std::vector<Item>;
+int f() { std::vector<Element<&object>> v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-receiver-alias", R"cpp(
+int object; struct Item { int value; }; using Vector = std::vector<Item>; template<auto> using Receiver = Vector;
+int f() { Receiver<&object> v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"receiver-source", R"cpp(
+struct Item { int value; }; using Vector = std::vector<Item>;
+int f() { Vector v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"initializer-source", R"cpp(
+struct Item { int value; }; using Vector = std::vector<Item>;
+int f() { Vector v{{(sizeof(long double), 1)}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"raw-range-bound", R"cpp(
+struct Item { int value; }; using Vector = std::vector<Item>;
+int f() { Item raw[(sizeof(long double), 2)] = {}; Vector v(raw, raw + 2); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"defaulted-default-noexcept", R"cpp(
+struct Item { int value; Item() noexcept(sizeof(long double) > 0) = default; }; using Vector = std::vector<Item>;
+int f() { Vector v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"defaulted-copy-noexcept", R"cpp(
+struct Item { int value; Item() = default; Item(const Item &) noexcept(sizeof(long double) > 0) = default; Item(Item &&) = default; Item &operator=(const Item &) = default; Item &operator=(Item &&) = default; }; using Vector = std::vector<Item>;
+int f() { Vector values(Size(2)); Vector v(values); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"defaulted-destructor-noexcept", R"cpp(
+struct Item { int value; Item() = default; Item(const Item &) = default; Item(Item &&) = default; Item &operator=(const Item &) = default; Item &operator=(Item &&) = default; ~Item() noexcept(sizeof(long double) > 0) = default; }; using Vector = std::vector<Item>;
+int f() { Vector v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-default-noexcept", R"cpp(
+struct Box {
+  int *value;
+  Box() noexcept(sizeof(long double) > 0) : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) : value(new int(*b.value)) {}
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() { delete value; }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-copy-noexcept", R"cpp(
+struct Box {
+  int *value;
+  Box() : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) noexcept(sizeof(long double) > 0) : value(new int(*b.value)) {}
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() { delete value; }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v{Box(1)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-copy-body", R"cpp(
+struct Box {
+  int *value;
+  Box() : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) : value(new int(*b.value)) { (void)sizeof(long double); }
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() { delete value; }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v{Box(1)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-destructor-noexcept", R"cpp(
+struct Box {
+  int *value;
+  Box() : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) : value(new int(*b.value)) {}
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() noexcept(sizeof(long double) > 0) { delete value; }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v{Box(1)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"owning-destructor-body", R"cpp(
+struct Box {
+  int *value;
+  Box() : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) : value(new int(*b.value)) {}
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() { delete value; (void)sizeof(long double); }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v{Box(1)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"missing-element-default", R"cpp(
+struct Box {
+  int *value;
+  Box();
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) : value(new int(*b.value)) {}
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() { delete value; }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"missing-element-copy", R"cpp(
+struct Box {
+  int *value;
+  Box() : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &);
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box() { delete value; }
+};
+using Vector = std::vector<Box>;
+int f() { Vector v{Box(1)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"missing-element-destructor", R"cpp(
+struct Box {
+  int *value;
+  Box() : value(new int(0)) {}
+  explicit Box(int n) : value(new int(n)) {}
+  Box(const Box &b) : value(new int(*b.value)) {}
+  Box(Box &&b) noexcept : value(b.value) { b.value = nullptr; }
+  ~Box();
+};
+using Vector = std::vector<Box>;
+int f() { Vector v{Box(1)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0203"},
+      {"fill-member-source", R"cpp(
+struct Item { int value; }; using Vector = std::vector<Item>;
+int f() { Vector source{{1}}; Vector v(Size(2), source[0]); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0201"},
+      {"different-construction", R"cpp(
+struct Item { int value; }; using Vector = std::vector<Item>;
+int f() { Vector v; auto first = v.begin(); static_assert(sizeof(Vector(Size(2))) == sizeof(Vector)); return 0; }
+)cpp",
+       "TR0203"},
+      {"different-endpoint", R"cpp(
+struct Item { int value; }; using Vector = std::vector<Item>;
+int f() { Vector v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.end()), Vector::iterator)); return 0; }
+)cpp",
+       "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("source-record-vector-endpoint-query-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("source-record-vector-endpoint-query-") +
+                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2ConstructedVectorEndpointResultQueriesRequireExactSource) {
   const struct {
     const char *Name, *Source, *Code;
@@ -66842,11 +67228,6 @@ int f() { Vector v{1}; auto first = v.begin(); static_assert(__is_same(decltype(
 int f(Vector &v) { auto first = v.begin(); static_assert(__is_same(decltype(Vector{1}.begin()), Iterator)); return 0; }
 )cpp",
        "TR0203"},
-      {"record-element-receiver", R"cpp(
-struct Item { int value; };
-int f() { std::vector<Item> v{{3}, {1}, {4}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), std::vector<Item>::iterator)); return 0; }
-)cpp",
-       "TR0201"},
       {"nested-vector-receiver", R"cpp(
 int f() { std::vector<Vector> v{{1}, {2}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), std::vector<Vector>::iterator)); return 0; }
 )cpp",

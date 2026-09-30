@@ -1801,6 +1801,7 @@ static OperationTypeSourceKey operationTypeSourceKey(TypeLoc Location) {
   return {Location.getType().getAsOpaquePtr(), Location.getOpaqueData()};
 }
 struct OperationSourceDependencies {
+  std::set<const FunctionDecl *> Definitions;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2692,14 +2693,22 @@ utilityInitializerListDestructionSource(Adapter &A,
   return List;
 }
 
+static bool utilityVectorSourceElements(Adapter &A,
+                                        const UtilityVectorRecord &Vector) {
+  const auto *Element = Vector.ElementType->getAsCXXRecordDecl();
+  Element = Element ? Element->getDefinition() : nullptr;
+  return !Vector.ElementType->isRecordType() ||
+         (Element && A.S.owns(A.Sources, Element->getLocation()));
+}
+
 static std::optional<UtilityVectorRecord>
-utilityScalarVectorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+utilityVectorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Vector =
       approvedUtilityVectorRecord(A.S, A.Sources, Record, A.Context);
   const auto *Destructor = Vector ? Vector->Record->getDestructor() : nullptr;
   const auto *Prototype =
       Destructor ? Destructor->getType()->getAs<FunctionProtoType>() : nullptr;
-  if (!Vector || Vector->ElementType->isRecordType() || !Destructor ||
+  if (!Vector || !utilityVectorSourceElements(A, *Vector) || !Destructor ||
       !Prototype || !Prototype->isNothrow() || Destructor->isInvalidDecl() ||
       Destructor->isDeleted() || Destructor->isVirtual() ||
       Destructor->isVariadic() || Destructor->getNumParams() ||
@@ -2994,10 +3003,13 @@ public:
     // array's actual expressions retain their own element destruction source.
     if (utilityInitializerListDestructionSource(A, Record))
       return true;
-    // Scalar vectors free storage but do not invoke an element destructor.
-    // Record and nested-container elements need their separate owning proof.
-    if (utilityScalarVectorDestructionSource(A, Record))
+    // Storage release belongs to the pinned SDK destructor. Source-owned
+    // record elements must independently close their actual destruction source.
+    if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
+      if (const auto *Element = Vector->ElementType->getAsCXXRecordDecl())
+        return destruction(Element, Depth + 1);
       return true;
+    }
     if (!A.S.owns(A.Sources, Record->getLocation()))
       return false;
     if (Record->hasUserDeclaredDestructor()) {
@@ -3038,6 +3050,9 @@ public:
       if (!Dependencies || !Seen.insert(Dependencies).second)
         continue;
       A.chargeExpansion(1, L);
+      for (const auto *Function : Dependencies->Definitions)
+        if (!defined(Function))
+          return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
           return false;
@@ -8597,7 +8612,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             (utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
              utilityInitializerListDestructionSource(A,
                                                      Destructor->getParent()) ||
-             utilityScalarVectorDestructionSource(A, Destructor->getParent())))
+             utilityVectorDestructionSource(A, Destructor->getParent())))
           return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
         // Its selected source operator retains ordinary signature and exception
@@ -8718,6 +8733,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const auto Vector = approvedUtilityVectorRecord(
             A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl(),
             A.Context);
+        const auto VectorConstruction =
+            Vector && utilityVectorSourceElements(A, *Vector)
+                ? approvedUtilityVectorConstruction(A.S, A.Sources,
+                                                    Construction, A.Context)
+                : std::nullopt;
         bool SDKConstruction =
             approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                             A.Context)
@@ -8730,10 +8750,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
                                                     Construction, A.Context)
                 .has_value() ||
-            (Vector && !Vector->ElementType->isRecordType() &&
-             approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
-                                               A.Context)
-                 .has_value());
+            VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
             return false;
@@ -8750,6 +8767,55 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           for (const auto *Declaration : Primary->redecls())
             SDKConstruction &= approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
                                Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl()));
+        if (SDKConstruction && VectorConstruction &&
+            Vector->ElementType->isRecordType() &&
+            *VectorConstruction != UtilityVectorConstruction::Default &&
+            *VectorConstruction != UtilityVectorConstruction::Move) {
+          // Empty construction and buffer moves create no elements. Count
+          // construction selects the element default constructor; the other
+          // admitted constructors copy from a const element reference.
+          const bool Default =
+              *VectorConstruction == UtilityVectorConstruction::Count;
+          const auto *ElementConstructor =
+              Default ? Vector->DefaultElementConstructor
+                      : Vector->CopyElementConstructor;
+          if (!ElementConstructor) {
+            // Trivial source records use existing Sema declarations only. Do
+            // not instantiate a missing operation just to complete a query.
+            const auto *Element =
+                Vector->ElementType->getAsCXXRecordDecl()->getDefinition();
+            for (const auto *Candidate : Element->ctors()) {
+              A.chargeExpansion(1, Candidate->getLocation());
+              if (Candidate->isDeleted() || Candidate->isInvalidDecl() ||
+                  Candidate->isVariadic())
+                continue;
+              if (Default ? Candidate->isDefaultConstructor() &&
+                                !Candidate->getNumParams()
+                          : Candidate->isCopyConstructor() &&
+                                Candidate->getNumParams() == 1 &&
+                                A.Context.hasSameType(
+                                    Candidate->getParamDecl(0)->getType(),
+                                    A.Context.getLValueReferenceType(
+                                        Vector->ElementType.withConst()))) {
+                ElementConstructor = Candidate;
+                break;
+              }
+            }
+          }
+          SDKConstruction &= ElementConstructor != nullptr;
+          if (ElementConstructor) {
+            FunctionSource(ElementConstructor);
+            if (ElementConstructor->isImplicit() ||
+                defaultedDeclaration(ElementConstructor)) {
+              Selected = ElementConstructor;
+              queueGenerated(ElementConstructor, Construction->getExprLoc());
+            } else {
+              for (auto *Dependencies : ActiveOperationSources)
+                if (Dependencies->Definitions.insert(ElementConstructor).second)
+                  A.chargeExpansion(1, ElementConstructor->getLocation());
+            }
+          }
+        }
         // Exact SDK construction admission supplies the selected operation,
         // including its generated trivial copy. Its argument expressions and
         // element types remain ordinary source dependencies below this node.
