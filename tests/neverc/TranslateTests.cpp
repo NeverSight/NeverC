@@ -66381,18 +66381,30 @@ using Iterator = std::vector<Callback>::iterator;
 using ConstIterator = std::vector<Callback>::const_iterator;
 using SafeIterator = std::vector<NoexceptCallback>::const_iterator;
 Iterator wrapped_min(Iterator first, Iterator last, Less less) {
-  return std::min_element(first, last, less);
+  auto result = std::min_element(first, last, less);
+  static_assert(__is_same(decltype(std::min_element(first, last, less)), Iterator));
+  static_assert(!noexcept(std::min_element(first, last, less)));
+  return result;
 }
 ConstIterator wrapped_max(ConstIterator first, ConstIterator last, Less less) {
-  return std::max_element(first, last, less);
+  auto result = std::max_element(first, last, less);
+  using Result = decltype(std::max_element(first, last, less));
+  static_assert(__is_same(Result, ConstIterator));
+  static_assert(sizeof(Result) == sizeof(Callback *));
+  return result;
 }
 SafeIterator safe_wrapped_min(SafeIterator first, SafeIterator last,
                               TypedLess<NoexceptCallback> less) {
-  return std::min_element(first, last, less);
+  auto result = std::min_element(first, last, less);
+  static_assert(__is_same(decltype(std::min_element(first, last, less)), SafeIterator));
+  return result;
 }
 SafeIterator safe_wrapped_max(SafeIterator first, SafeIterator last,
                               TypedLess<NoexceptCallback> less) {
-  return std::max_element(first, last, less);
+  auto result = std::max_element(first, last, less);
+  static_assert(__is_same(decltype(std::max_element(first, last, less)), SafeIterator));
+  static_assert(!noexcept(std::max_element(first, last, less)));
+  return result;
 }
 int main() {
   const Callback values[]{two, one, three, nullptr, nullptr, three};
@@ -66461,6 +66473,21 @@ int main() {
   auto built_single = std::max_element(values, values + 1, make(Token{}));
   if (built_single != values || checks || expected || built != 4 ||
       factories != 4 || live || destroyed != 4) return 13;
+  using Minimum = decltype(std::min_element(values, values + 6, less));
+  static_assert(__is_same(Minimum, const Callback *));
+  static_assert(__is_same(decltype(std::max_element(values, values + 6, less)), const Callback *));
+  static_assert(__is_same(decltype(std::min_element(writable, writable + 4, less)), Callback *));
+  static_assert(sizeof(Minimum) == sizeof(Callback *));
+  static_assert(alignof(Minimum) == alignof(Callback *));
+  static_assert(!noexcept(std::max_element((++first_effects, values),
+      (++last_effects, values + 6), (++object_effects, less))));
+  static_assert(__is_same(decltype(std::min_element(safe, safe + 5, safe_less)), NoexceptCallback *));
+  static_assert(!noexcept(std::max_element(safe, safe + 5, safe_less)));
+  static_assert(__is_same(decltype(std::min_element(values, values + 6, make(Token{}))), const Callback *));
+  static_assert(!noexcept(std::max_element(values, values + 6, make(Token{}))));
+  if (first_effects != 1 || last_effects != 1 || object_effects != 1 ||
+      built != 4 || factories != 4 || live || destroyed != 4 || checks || expected)
+    return 14;
   return pointed_calls || bad_state || bad_lifetime ? 17 : 0;
 }
 )cpp");
@@ -66475,6 +66502,215 @@ int main() {
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmExtremaObjectResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("extrema-object-result-queries.cpp");
+  const auto Output = tmpFile("extrema-object-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+int constructed, factories, endpoints, called, bad_identity;
+int initial() { ++constructed; return 0; }
+const short *endpoint(const short *p) { ++endpoints; return p; }
+using Answer = bool;
+struct Less {
+  int visits;
+  Less(int n = initial()) : visits(n) {}
+  Answer operator()(long long left, double right) & noexcept(sizeof(int) >= 2) {
+    ++visits; ++called; return left < right;
+  }
+};
+Less make() { ++factories; return Less(); }
+struct Item { int rank, tag; };
+const Item *base;
+bool inside(const Item *p) { return p == base || p == base + 1 || p == base + 2; }
+struct ItemLess {
+  bool operator()(const Item &left, const Item &right) const {
+    ++called;
+    if (!inside(&left) || !inside(&right)) ++bad_identity;
+    return left.rank < right.rank;
+  }
+};
+using Iterator = std::vector<int>::iterator;
+using ConstIterator = std::vector<int>::const_iterator;
+bool wrapped(Iterator first, Iterator last, ConstIterator const_first,
+             ConstIterator const_last, const Less &caller) {
+  auto lowest = std::min_element(first, last, caller);
+  auto highest = std::max_element(const_first, const_last, caller);
+  static_assert(__is_same(decltype(std::min_element(first, last, caller)), Iterator));
+  static_assert(__is_same(decltype(std::max_element(const_first, const_last, caller)), ConstIterator));
+  static_assert(!noexcept(std::max_element(const_first, const_last, caller)));
+  return lowest == first + 2 && highest == const_first + 1;
+}
+int main() {
+  const short values[4]{3, 1, 4, 1};
+  auto lowest = std::min_element(endpoint(values), endpoint(values + 4), make());
+  auto highest = std::max_element(endpoint(values), endpoint(values + 4), make());
+  using Input = const short *;
+  using Minimum = decltype(std::min_element<Input, Less>(endpoint(values), endpoint(values + 4), make()));
+  static_assert(__is_same(Minimum, Input));
+  static_assert(sizeof(std::max_element(endpoint(values), endpoint(values + 4), make())) == sizeof(Input));
+  static_assert(alignof(decltype(std::max_element(values, values + 4, Less()))) == alignof(Input));
+  static_assert(!noexcept(std::min_element(endpoint(values), endpoint(values + 4), make())));
+  static_assert(!noexcept(std::max_element(endpoint(values), endpoint(values + 4), make())));
+  if (lowest != values + 1 || highest != values + 2 || called != 6 ||
+      constructed != 2 || factories != 2 || endpoints != 4) return 1;
+
+  std::vector<int> numbers{2, 4, 1, 4};
+  const auto &view = numbers;
+  const Less caller(9);
+  if (!wrapped(numbers.begin(), numbers.end(), view.begin(), view.end(), caller) ||
+      called != 12 || caller.visits != 9 || constructed != 2) return 2;
+
+  const Item items[3]{{3, 0}, {1, 1}, {3, 2}};
+  base = items;
+  auto item_min = std::min_element(items, items + 3, ItemLess{});
+  auto item_max = std::max_element(items, items + 3, ItemLess{});
+  static_assert(__is_same(decltype(std::min_element(items, items + 3, ItemLess{})), const Item *));
+  static_assert(__is_same(decltype(std::max_element(items, items + 3, ItemLess{})), const Item *));
+  static_assert(!noexcept(std::max_element(items, items + 3, ItemLess{})));
+  return item_min == items + 1 && item_max == items && called == 16 &&
+         !bad_identity && constructed == 2 && factories == 2 && endpoints == 4 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("extrema-object-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmExtremaObjectResultQueriesRequireSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"query-without-definition", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, P{})), Callback *)); return 0; }
+)cpp",
+       "TR0203"},
+      {"different-specialization", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+struct Other { bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, Other{})), Callback *)); return live == p; }
+)cpp",
+       "TR0203"},
+      {"first-source", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM((sizeof(long double), p), p + 2, P{})), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"last-source", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM(p, (sizeof(long double), p + 2), P{})), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"object-source", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(!noexcept(std::ALGORITHM(p, p + 2, (sizeof(long double), P{})))); return live == p; }
+)cpp",
+       "TR0201"},
+      {"constructor-default-source", R"cpp(
+struct P { P(int = (sizeof(long double), 0)) {} bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P(0)); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, P())), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"factory-default-source", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+P make(int = (sizeof(long double), 0)) { return P{}; }
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, make())), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"operator-noexcept-source", R"cpp(
+struct P { bool operator()(Callback, Callback) const noexcept(sizeof(long double) > 0) { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(!noexcept(std::ALGORITHM(p, p + 2, P{}))); return live == p; }
+)cpp",
+       "TR0201"},
+      {"operator-return-alias-source", R"cpp(
+template<int> using Erased = bool;
+struct P { Erased<sizeof(long double)> operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, P{})), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"explicit-erased-argument", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int object; template<auto> using Erased = P;
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM<Callback *, Erased<&object>>(p, p + 2, P{})), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"address-after-checked-call", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); using Fn = decltype(&std::ALGORITHM<Callback *, P>); static_assert(__is_pointer(Fn)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"out-of-line-second-parameter-source", R"cpp(
+template<class T> struct P { bool operator()(T, Callback) const; };
+template<class U> bool P<U>::operator()(U, decltype((sizeof(long double), Callback{}))) const { return false; }
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P<Callback>{}); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, P<Callback>{})), Callback *)); return live == p; }
+)cpp",
+       "TR0203"},
+      {"public-redeclaration", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+namespace std { inline namespace __1 { template<class I, class C> constexpr I ALGORITHM(I, I, C); } }
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, P{})), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"public-specialization", R"cpp(
+struct P { bool operator()(Callback, Callback) const { return false; } };
+namespace std { template<> Callback *ALGORITHM<Callback *, P>(Callback *p, Callback *, P) { return p; } }
+int f(Callback *p) { auto live = std::ALGORITHM(p, p + 2, P{}); static_assert(__is_same(decltype(std::ALGORITHM(p, p + 2, P{})), Callback *)); return live == p; }
+)cpp",
+       "TR0201"},
+      {"wrapped-endpoint-source", R"cpp(
+#include <vector>
+using Iterator = std::vector<Callback>::iterator;
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Iterator first, Iterator last) { auto live = std::ALGORITHM(first, last, P{}); static_assert(__is_same(decltype(std::ALGORITHM(first, (sizeof(long double), last), P{})), Iterator)); return live == first; }
+)cpp",
+       "TR0201"},
+      {"wrapped-constructor-specialization", R"cpp(
+#include <vector>
+namespace std { inline namespace __1 { template<> constexpr __wrap_iter<Callback *>::__wrap_iter() noexcept : __i_(nullptr) {} } }
+using Iterator = std::vector<Callback>::iterator;
+struct P { bool operator()(Callback, Callback) const { return false; } };
+int f(Iterator first, Iterator last) { auto live = std::ALGORITHM(first, last, P{}); static_assert(__is_same(decltype(std::ALGORITHM(Iterator{}, Iterator{}, P{})), Iterator)); return live == first; }
+)cpp",
+       "TR0201"},
+  };
+  for (const std::string &Algorithm : {"min_element", "max_element"}) {
+    for (const auto &Case : Cases) {
+      SCOPED_TRACE(Algorithm + ":" + Case.Name);
+      const auto Source = tmpFile(Algorithm + "-query-" + Case.Name + ".cpp");
+      const auto Output = tmpFile(Algorithm + "-query-" + Case.Name + ".nc");
+      std::string Text =
+          "#include <algorithm>\nusing Callback = int (*)(int);\n" +
+          std::string(Case.Source);
+      for (size_t Position = 0;
+           (Position = Text.find("ALGORITHM", Position)) != std::string::npos;
+           Position += Algorithm.size())
+        Text.replace(Position, 9, Algorithm);
+      writeFile(Source, Text);
+      expectCode(translate(Source,
+                           {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 Case.Code);
+      expectNoArtifacts(Output);
+    }
   }
 }
 
@@ -66540,14 +66776,6 @@ TEST_F(TranslateTest, CoreV2CallbackExtremaObjectsRequireExactSource) {
        "*, Less>(Callback *p, Callback *, Less) { return p; } template<> "
        "Callback *max_element<Callback *, Less>(Callback *p, Callback *, Less) "
        "{ return p; } }",
-       "TR0201"},
-      {"result-query", "Callback",
-       "struct Less { bool operator()(Callback, Callback) const { return "
-       "false; } }; "
-       "int query(Callback *p) { std::min_element(p, p + 2, Less{}); "
-       "std::max_element(p, p + 2, Less{}); "
-       "static_assert(__is_same(decltype(std::min_element(p, p + 2, Less{})), "
-       "Callback *)); return 0; }",
        "TR0201"}};
   for (const std::string &Algorithm : {"min_element", "max_element"}) {
     for (const auto &Case : Cases) {

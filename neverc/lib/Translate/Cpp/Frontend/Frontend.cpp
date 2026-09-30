@@ -2639,6 +2639,32 @@ utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   return Tuple;
 }
 
+static std::optional<UtilityWrapIteratorRecord>
+utilityWrapIteratorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Iterator =
+      approvedUtilityWrapIteratorRecord(A.S, A.Sources, Record, A.Context);
+  if (!Iterator || Iterator->Record->hasUserDeclaredDestructor())
+    return std::nullopt;
+  const auto *Destructor = Iterator->Record->getDestructor();
+  if (!Destructor)
+    return Iterator;
+  for (const auto *Declaration : Destructor->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto *Method = cast<CXXDestructorDecl>(Declaration);
+    if (!Method->isImplicit() || !Method->isDefaulted() ||
+        !Method->isTrivial() || Method->isInvalidDecl() ||
+        Method->isDeleted() || Method->isVirtual() || Method->isVariadic() ||
+        Method->getNumParams() || Method->getAccess() != AS_public ||
+        Method->getTypeSourceInfo() ||
+        Method->getLexicalDeclContext() != Method->getParent() ||
+        Method->getParent()->getCanonicalDecl() !=
+            Iterator->Record->getCanonicalDecl() ||
+        !approvedStandardSDKDeclaration(A.S, A.Sources, Method))
+      return std::nullopt;
+  }
+  return Iterator;
+}
+
 static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
     const FunctionProtoType *Prototype, const FunctionDecl *Function) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -2900,6 +2926,9 @@ public:
       }
       return true;
     }
+    // The authenticated wrapper owns only a pointer, never its referent.
+    if (utilityWrapIteratorDestructionSource(A, Record))
+      return true;
     if (!A.S.owns(A.Sources, Record->getLocation()))
       return false;
     if (Record->hasUserDeclaredDestructor()) {
@@ -3324,7 +3353,8 @@ simpleOutOfLineAlgorithmPredicateSource(Adapter &A,
       !ordinaryOperator(Method) || !concreteClassFunction(Method) ||
       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
       Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      Method->getPrimaryTemplate() || Method->getNumParams() != 1 ||
+      Method->getPrimaryTemplate() ||
+      (Method->getNumParams() != 1 && Method->getNumParams() != 2) ||
       Method->getDefinition() != Method ||
       !Method->doesThisDeclarationHaveABody() ||
       !A.S.owns(A.Sources, Method->getLocation()))
@@ -3377,7 +3407,8 @@ simpleOutOfLineAlgorithmPredicateSource(Adapter &A,
         D ? D->getType()->getAs<FunctionProtoType>() : nullptr;
     if (!D || !Info || !Signature || !Prototype || D->isImplicit() ||
         D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        !A.S.owns(A.Sources, D->getLocation()) || D->getNumParams() != 1 ||
+        !A.S.owns(A.Sources, D->getLocation()) ||
+        D->getNumParams() != Method->getNumParams() ||
         D->getParent()->getCanonicalDecl() !=
             Pattern->getParent()->getCanonicalDecl() ||
         D->getOverloadedOperator() != OO_Call || D->isStatic() ||
@@ -3458,32 +3489,34 @@ simpleOutOfLineAlgorithmPredicateSource(Adapter &A,
         !A.Context.hasSameType(Return.getType(), A.Context.BoolTy) ||
         !A.Context.hasSameType(Method->getReturnType(), A.Context.BoolTy))
       return false;
-    const auto *Parameter = D->getParamDecl(0)->getTypeSourceInfo();
-    const auto ParameterLoc = Parameter ? Parameter->getTypeLoc() : TypeLoc();
-    if (!WrittenInside(ParameterLoc, D))
-      return false;
-    const auto Leaf = ParameterLoc.IgnoreParens().getUnqualifiedLoc();
-    QualType Expected;
-    if (Leaf.getAs<BuiltinTypeLoc>()) {
-      Expected = ParameterLoc.getType();
-    } else if (const auto T = Leaf.getAs<TemplateTypeParmTypeLoc>()) {
-      const auto *P = T.getDecl();
-      if (!P || P->isParameterPack() || P->getDepth() != 0 ||
-          P->getIndex() >= Parameters->size() ||
-          Parameters->getParam(P->getIndex())->getCanonicalDecl() !=
-              P->getCanonicalDecl() ||
-          P->getIndex() >= Record->getTemplateArgs().size())
+    for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+      const auto *Parameter = D->getParamDecl(I)->getTypeSourceInfo();
+      const auto ParameterLoc = Parameter ? Parameter->getTypeLoc() : TypeLoc();
+      if (!WrittenInside(ParameterLoc, D))
         return false;
-      const auto &Argument = Record->getTemplateArgs().get(P->getIndex());
-      if (Argument.getKind() != TemplateArgument::Type)
+      const auto Leaf = ParameterLoc.IgnoreParens().getUnqualifiedLoc();
+      QualType Expected;
+      if (Leaf.getAs<BuiltinTypeLoc>()) {
+        Expected = ParameterLoc.getType();
+      } else if (const auto T = Leaf.getAs<TemplateTypeParmTypeLoc>()) {
+        const auto *P = T.getDecl();
+        if (!P || P->isParameterPack() || P->getDepth() != 0 ||
+            P->getIndex() >= Parameters->size() ||
+            Parameters->getParam(P->getIndex())->getCanonicalDecl() !=
+                P->getCanonicalDecl() ||
+            P->getIndex() >= Record->getTemplateArgs().size())
+          return false;
+        const auto &Argument = Record->getTemplateArgs().get(P->getIndex());
+        if (Argument.getKind() != TemplateArgument::Type)
+          return false;
+        Expected = A.Context.getQualifiedType(
+            Argument.getAsType(), ParameterLoc.getType().getLocalQualifiers());
+      } else {
         return false;
-      Expected = A.Context.getQualifiedType(
-          Argument.getAsType(), ParameterLoc.getType().getLocalQualifiers());
-    } else {
-      return false;
+      }
+      if (!A.Context.hasSameType(Expected, Method->getParamDecl(I)->getType()))
+        return false;
     }
-    if (!A.Context.hasSameType(Expected, Method->getParamDecl(0)->getType()))
-      return false;
   }
   return true;
 }
@@ -5663,7 +5696,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
-  std::map<const DeclRefExpr *, std::pair<const CallExpr *, UtilityAlgorithmPredicateCall>>
+  struct AlgorithmCallableSource {
+    const FunctionDecl *Algorithm;
+    // A null method denotes a separately authenticated SDK operation.
+    const CXXMethodDecl *Method;
+  };
+  std::map<const DeclRefExpr *,
+           std::pair<const CallExpr *, AlgorithmCallableSource>>
       AuthenticatedAlgorithmReferences;
   std::map<const InitListExpr *, const InitListExpr *> ZeroArrayStorageSources;
   std::set<const Expr *> TypeSourceQueries;
@@ -8238,6 +8277,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Vector->ElementType, true, Depth + 1);
           return;
         }
+        if (const auto Iterator = approvedUtilityWrapIteratorRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // The pinned one-pointer layout supplies its private field source.
+          // Keep the original pointer type without requiring referent layout.
+          Self(Self, Iterator->IteratorType, false, Depth + 1);
+          return;
+        }
         if (const auto Optional = approvedUtilityOptionalRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // Optional storage has the same pinned SDK boundary. In particular,
@@ -8294,6 +8340,37 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       operationTypeDependency(Parameter->getTypeSourceInfo());
     collectOperationTypeSource(Function->getType(), Function->getLocation(), false);
   }
+  std::optional<AlgorithmCallableSource>
+  algorithmCallableSource(const CallExpr *Call) {
+    if (auto Predicate = approvedUtilityAlgorithmPredicateCall(A.S, A.Sources,
+                                                               Call, A.Context))
+      return AlgorithmCallableSource{
+          Predicate->Algorithm,
+          Predicate->SDKOperation ? nullptr : Predicate->Method};
+    const auto Operation =
+        approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+    if (!Operation || (*Operation != UtilityOperation::AlgorithmMinElement &&
+                       *Operation != UtilityOperation::AlgorithmMaxElement))
+      return std::nullopt;
+    const auto *Function = Call->getDirectCallee();
+    if (!Function || Call->getNumArgs() != 3)
+      return std::nullopt;
+    auto Pointer = Function->getParamDecl(0)->getType();
+    if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Pointer->getAsCXXRecordDecl(), A.Context))
+      Pointer = Wrapped->IteratorType;
+    if (!Pointer->isPointerType())
+      return std::nullopt;
+    const auto *Method =
+        *Operation == UtilityOperation::AlgorithmMinElement
+            ? approvedMinElementSourceComparator(
+                  A.S, A.Sources, Call, Pointer->getPointeeType(), A.Context)
+            : approvedMaxElementSourceComparator(
+                  A.S, A.Sources, Call, Pointer->getPointeeType(), A.Context);
+    return Method ? std::optional<AlgorithmCallableSource>(
+                        AlgorithmCallableSource{Function, Method})
+                  : std::nullopt;
+  }
   void collectOperationSource(const Stmt *S) {
     if (const auto *List = dyn_cast_or_null<InitListExpr>(S))
       if (auto Found = ZeroArrayStorageSources.find(List);
@@ -8309,7 +8386,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // even a trivial destructor and then omit the binding expression entirely.
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
-      std::optional<UtilityAlgorithmPredicateCall> AuthenticatedAlgorithm;
+      std::optional<AlgorithmCallableSource> AuthenticatedAlgorithm;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
         const auto *Function = Call->getDirectCallee();
         const auto *Prototype =
@@ -8318,14 +8395,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // exact descriptor supplies the SDK signature/body, not a blanket
         // exemption for other references to the same function declaration.
         if (Prototype && Prototype->getExceptionSpecType() == EST_None) {
-          if (auto Predicate = approvedUtilityAlgorithmPredicateCall(
-                  A.S, A.Sources, Call, A.Context)) {
+          if (auto Source = algorithmCallableSource(Call)) {
             if (const auto *Reference =
                     dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
                 Reference && Reference->getDecl() == Function) {
-              auto [Entry, Inserted] =
-                  AuthenticatedAlgorithmReferences.emplace(
-                      Reference, std::make_pair(Call, *Predicate));
+              auto [Entry, Inserted] = AuthenticatedAlgorithmReferences.emplace(
+                  Reference, std::make_pair(Call, *Source));
               if (Inserted)
                 A.chargeExpansion(1, Call->getExprLoc());
               if (Entry->second.first == Call)
@@ -8387,12 +8462,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // arguments still complete through their ordinary source traversal.
         if (Function == AuthenticatedProjectionGet)
           return;
+        if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Function);
+            Destructor &&
+            utilityWrapIteratorDestructionSource(A, Destructor->getParent()))
+          return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
         // Its selected source operator retains ordinary signature and exception
         // dependencies, and finishAlgorithmPredicates requires its checked body.
         if (AuthenticatedAlgorithm &&
             Function == AuthenticatedAlgorithm->Algorithm) {
-          if (AuthenticatedAlgorithm->SDKOperation)
+          if (!AuthenticatedAlgorithm->Method)
             return;
           Function = AuthenticatedAlgorithm->Method;
         }
@@ -8504,9 +8583,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
         const auto *Constructor = Construction->getConstructor();
         bool SDKConstruction =
-            approvedUtilityPairConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
-            approvedUtilityTupleConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
-            approvedUtilityArrayConstruction(A.S, A.Sources, Construction, A.Context);
+            approvedUtilityPairConstruction(A.S, A.Sources, Construction,
+                                            A.Context)
+                .has_value() ||
+            approvedUtilityTupleConstruction(A.S, A.Sources, Construction,
+                                             A.Context)
+                .has_value() ||
+            approvedUtilityArrayConstruction(A.S, A.Sources, Construction,
+                                             A.Context) ||
+            approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
+                                                    Construction, A.Context)
+                .has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
             return false;
@@ -15185,11 +15272,10 @@ public:
       if (A.S.coreV2())
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
-          if (auto Predicate = approvedUtilityAlgorithmPredicateCall(
-                  A.S, A.Sources, C, A.Context))
-            if (!Predicate->SDKOperation)
+          if (auto Source = algorithmCallableSource(C))
+            if (Source->Method)
               AlgorithmPredicateMethods.emplace(
-                  Predicate->Method->getCanonicalDecl(), L);
+                  Source->Method->getCanonicalDecl(), L);
           switch (*Operation) {
           case UtilityOperation::MemoryMakeUnique: {
             const auto Info =

@@ -2469,8 +2469,23 @@ calling it. Reference parameters, conversions between function-pointer types
 or to Boolean parameters, nontrivial copies and destructors, multiple call
 operators and member function templates remain rejected.
 Wrapped iterators may be supplied as parameters; owning vector construction
-requires its separately documented element boundary. Folded result queries
-for these source-object scans are not yet admitted.
+requires its separately documented element boundary.
+For these two source-object scans, folded `decltype`, `sizeof`, `alignof` and
+`noexcept` result queries can reuse an already instantiated and authenticated
+runtime specialization on admitted scalar, record or exact function-pointer
+elements, including wrapped iterators supplied as source function parameters.
+The pinned wrapper layout, trivial copies and implicit destruction are
+authenticated. Direct vector endpoint calls inside result queries remain
+outside this boundary.
+The selected source call operator requires a completed, emitted body;
+its original signatures and exception specification, the range and object
+expressions, written template arguments, constructor and factory defaults
+remain checked. Result aliases retain the original raw or wrapped iterator
+type. Unevaluated queries make no endpoint, constructor, factory or comparator
+calls, and the pinned public algorithms remain potentially throwing even when
+the source operator is `noexcept`. Query-only specializations, independent
+function-address queries, source SDK redeclarations or specializations and
+hidden unsupported source dependencies remain rejected.
 `std::minmax_element` accepts the same checked function-pointer comparator and
 const or mutable raw or authenticated wrapped input range. It returns a pair of
 the original iterator type, selecting the first tied minimum and last tied
