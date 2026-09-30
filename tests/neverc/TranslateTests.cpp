@@ -53386,6 +53386,317 @@ long*f(int*p,long*out){return std::copy_if(p,p+2,out,P{});}
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackPartitionQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-partition-queries.cpp");
+  const auto Output = tmpFile("algorithm-callback-partition-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, factories, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+void reset() { calls = trace = state_trace = 0; }
+void observe(Callback value, int local_calls) {
+  ++calls;
+  trace = trace * 10 + (value == nullptr ? 0 : value == one ? 1 : 2);
+  state_trace = state_trace * 10 + local_calls;
+}
+struct Select {
+  Callback needle;
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    return value == needle;
+  }
+  bool operator()(Callback) const & { bad_receiver += 100; return false; }
+};
+Select make() { ++factories; return {one, 0}; }
+struct Identity {
+  const Identity *self;
+  Callback needle;
+  int local_calls;
+  Identity() : self(this), needle(one), local_calls(0) { ++constructed; }
+  bool operator()(Callback value) & {
+    if (self != this) ++bad_receiver;
+    observe(value, ++local_calls);
+    return value == needle;
+  }
+};
+struct Mutate {
+  Callback *held;
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    *held = three;
+    return value == one;
+  }
+};
+struct SafeSelect {
+  int local_calls;
+  bool operator()(NoexceptCallback value) & noexcept {
+    ++calls;
+    trace = trace * 10 + (value == nullptr ? 0 : value == safe_one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    return value == safe_one;
+  }
+  bool operator()(NoexceptCallback) const & noexcept {
+    bad_receiver += 100;
+    return false;
+  }
+};
+int main() {
+  const Callback good[]{one, one, two, nullptr};
+  const Callback bad[]{one, two, one, three};
+  const Callback all[]{one, one, one, one}, none[]{two, two, two, two};
+  const Select caller{one, 0};
+  int first_effects = 0, last_effects = 0, object_effects = 0;
+  if (!std::is_partitioned((++first_effects, good), (++last_effects, good + 4),
+                           (++object_effects, make())) ||
+      calls != 4 || trace != 1120 || state_trace != 1234 ||
+      first_effects != 1 || last_effects != 1 || object_effects != 1 || factories != 1)
+    return 1;
+  reset();
+  if (std::is_partitioned(bad, bad + 4, caller) ||
+      calls != 3 || trace != 121 || state_trace != 123 || caller.local_calls) return 2;
+  reset();
+  if (!std::is_partitioned(all, all + 4, caller) ||
+      calls != 4 || trace != 1111 || state_trace != 1234) return 3;
+  reset();
+  if (!std::is_partitioned(none, none + 4, caller) ||
+      calls != 4 || trace != 2222 || state_trace != 1234) return 4;
+  reset();
+  if (!std::is_partitioned(good, good, Identity()) || calls || constructed != 1)
+    return 5;
+  if (std::partition_point((++first_effects, good), (++last_effects, good + 4),
+                           (++object_effects, make())) != good + 2 ||
+      calls != 2 || trace != 21 || state_trace != 12 || factories != 2 ||
+      first_effects != 2 || last_effects != 2 || object_effects != 2) return 6;
+  static_assert(__is_same(decltype(std::partition_point(good, good + 4, caller)), const Callback *));
+  reset();
+  if (std::partition_point(all, all + 4, caller) != all + 4 ||
+      calls != 2 || trace != 11 || state_trace != 12) return 7;
+  reset();
+  if (std::partition_point(none, none + 4, caller) != none ||
+      calls != 3 || trace != 222 || state_trace != 123) return 8;
+  reset();
+  if (std::partition_point(good, good + 4, Identity()) != good + 2 ||
+      calls != 2 || trace != 21 || state_trace != 12 || constructed != 2) return 9;
+  reset();
+  if (std::partition_point(good, good, Identity()) != good || calls || constructed != 3)
+    return 10;
+  Callback changing[]{one, one, one, two, two};
+  if (std::partition_point(changing, changing + 5, Mutate{changing + 2, 0}) !=
+      changing + 3 || calls != 3 || trace != 122 || state_trace != 123 ||
+      changing[2] != three) return 11;
+  const NoexceptCallback safe[]{safe_one, safe_one, safe_two, nullptr};
+  const SafeSelect safe_caller{0};
+  reset();
+  if (!std::is_partitioned(safe, safe + 4, safe_caller) ||
+      calls != 4 || trace != 1120 || state_trace != 1234 || safe_caller.local_calls)
+    return 12;
+  reset();
+  if (std::partition_point(safe, safe + 4, safe_caller) != safe + 2 ||
+      calls != 2 || trace != 21 || state_trace != 12 || safe_caller.local_calls)
+    return 13;
+  return pointed_calls || bad_receiver || caller.local_calls ? 14 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-callback-partition-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackPartitionCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-partition-copy.cpp");
+  const auto Output = tmpFile("algorithm-callback-partition-copy.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int safe_three(int x) noexcept { ++pointed_calls; return x + 3; }
+void reset() { calls = trace = state_trace = 0; }
+void observe(Callback value, int local_calls) {
+  ++calls;
+  trace = trace * 10 + (value == nullptr ? 0 : value == one ? 1 : 2);
+  state_trace = state_trace * 10 + local_calls;
+}
+bool observed() { return calls == 4 && trace == 1201 && state_trace == 1234; }
+struct Select {
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    return value == one;
+  }
+  bool operator()(Callback) const & { bad_receiver += 100; return false; }
+};
+struct Mutate {
+  const Mutate *self;
+  Callback *current;
+  int local_calls;
+  Mutate(Callback *p) : self(this), current(p), local_calls(0) { ++constructed; }
+  bool operator()(Callback value) & {
+    if (self != this) ++bad_receiver;
+    observe(value, ++local_calls);
+    bool selected = value == one;
+    *current = selected ? three : one;
+    ++current;
+    return selected;
+  }
+};
+struct SafeSelect {
+  int local_calls;
+  bool operator()(NoexceptCallback value) & noexcept {
+    ++calls;
+    trace = trace * 10 + (value == nullptr ? 0 : value == safe_one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    return value == safe_one;
+  }
+};
+int main() {
+  const Callback input[]{one, two, nullptr, one};
+  Callback yes[]{three, three, three, three}, no[]{three, three, three, three};
+  const Select caller{0};
+  int first_effects = 0, last_effects = 0, true_effects = 0, false_effects = 0;
+  int object_effects = 0;
+  auto result = std::partition_copy((++first_effects, input), (++last_effects, input + 4),
+                                    (++true_effects, yes), (++false_effects, no),
+                                    (++object_effects, caller));
+  static_assert(__is_same(decltype(result), std::pair<Callback *, Callback *>));
+  if (result.first != yes + 2 || result.second != no + 2 ||
+      yes[0] != one || yes[1] != one || yes[2] != three || no[0] != two ||
+      no[1] != nullptr || no[2] != three || !observed() || caller.local_calls ||
+      first_effects != 1 || last_effects != 1 || true_effects != 1 ||
+      false_effects != 1 || object_effects != 1) return 1;
+  Callback changing[]{one, two, nullptr, one};
+  reset();
+  auto [true_end, false_end] = std::partition_copy(changing, changing + 4, yes, no, Mutate(changing));
+  if (true_end != yes + 2 || false_end != no + 2 ||
+      yes[0] != three || yes[1] != three || no[0] != one || no[1] != one ||
+      !observed() || constructed != 1 || changing[0] != three ||
+      changing[1] != one || changing[2] != one || changing[3] != three) return 2;
+  reset();
+  auto empty = std::partition_copy(changing, changing, yes, no, Mutate(changing));
+  if (empty.first != yes || empty.second != no || calls || constructed != 2 ||
+      yes[0] != three || no[0] != one) return 3;
+  const Callback all[]{one, one, one, one}, none[]{two, two, two, two};
+  Callback all_yes[4]{}, all_no[]{three, three, three, three};
+  reset();
+  auto all_result = std::partition_copy(all, all + 4, all_yes, all_no, caller);
+  if (all_result.first != all_yes + 4 || all_result.second != all_no ||
+      all_yes[0] != one || all_yes[3] != one || all_no[0] != three ||
+      calls != 4 || trace != 1111 || state_trace != 1234) return 4;
+  reset();
+  auto none_result = std::partition_copy(none, none + 4, all_yes, all_no, caller);
+  if (none_result.first != all_yes || none_result.second != all_no + 4 ||
+      all_yes[0] != one || all_no[0] != two || all_no[3] != two ||
+      calls != 4 || trace != 2222 || state_trace != 1234) return 5;
+  const NoexceptCallback safe[]{safe_one, safe_two, nullptr, safe_one};
+  NoexceptCallback safe_yes[]{safe_three, safe_three, safe_three, safe_three};
+  NoexceptCallback safe_no[]{safe_three, safe_three, safe_three, safe_three};
+  const SafeSelect safe_caller{0};
+  reset();
+  auto safe_result = std::partition_copy(safe, safe + 4, safe_yes, safe_no, safe_caller);
+  if (safe_result.first != safe_yes + 2 || safe_result.second != safe_no + 2 ||
+      safe_yes[0] != safe_one || safe_yes[1] != safe_one || safe_yes[2] != safe_three ||
+      safe_no[0] != safe_two || safe_no[1] != nullptr || safe_no[2] != safe_three ||
+      !observed() || safe_caller.local_calls) return 6;
+  return pointed_calls || bad_receiver || caller.local_calls ? 7 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-callback-partition-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmCallbackPartitionObjectsRequireExactTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *Definition;
+    const char *Input;
+    const char *TrueOutput;
+    const char *FalseOutput;
+    const char *Object;
+    bool CopyOnly;
+  };
+  const Rejection Cases[] = {
+      {"reference", "struct F { bool operator()(const Callback&) & { return true; } };",
+       "input", "yes", "no", "F{}", false},
+      {"input-conversion", "struct F { bool operator()(Callback) & { return true; } };",
+       "safe", "safe_yes", "safe_no", "F{}", false},
+      {"method-template", "struct F { template<class T> bool operator()(T) & { return true; } };",
+       "input", "yes", "no", "F{}", false},
+      {"non-bool-result", "struct F { int operator()(Callback) & { return 1; } };",
+       "input", "yes", "no", "F{}", false},
+      {"sdk-object", "", "input", "yes", "no", "std::logical_not<Callback>{}", false},
+      {"true-conversion", "struct F { bool operator()(NoexceptCallback) & { return true; } };",
+       "safe", "yes", "safe_no", "F{}", true},
+      {"false-conversion", "struct F { bool operator()(NoexceptCallback) & { return true; } };",
+       "safe", "safe_yes", "no", "F{}", true},
+      {"true-bool", "struct F { bool operator()(Callback) & { return true; } };",
+       "input", "flags", "no", "F{}", true},
+      {"false-bool", "struct F { bool operator()(Callback) & { return true; } };",
+       "input", "yes", "flags", "F{}", true},
+  };
+  for (const auto &Case : Cases) {
+    for (const std::string &Algorithm : {"is_partitioned", "partition_point", "partition_copy"}) {
+      const bool Copy = Algorithm == "partition_copy";
+      if (Case.CopyOnly && !Copy)
+        continue;
+      const std::string Name = std::string(Case.Name) + "-" + Algorithm;
+      SCOPED_TRACE(Name);
+      const auto Source = tmpFile(Name + "-callback-partition-object.cpp");
+      const auto Output = tmpFile(Name + "-callback-partition-object.nc");
+      writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) + R"cpp(
+int main() {
+  Callback input[]{one, one}, yes[2]{}, no[2]{};
+  NoexceptCallback safe[]{safe_one, safe_one}, safe_yes[2]{}, safe_no[2]{};
+  bool flags[2]{};
+)cpp" + "(void)std::" + Algorithm + "(" + Case.Input + ", " + Case.Input +
+                       " + 2, " + (Copy ? std::string(Case.TrueOutput) + ", " + Case.FalseOutput + ", " : "") +
+                       Case.Object + ");\nreturn 0;\n}\n");
+      expectCode(
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+          "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPartitionPredicateObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-partition-predicate-state.cpp");
   const auto Output = tmpFile("algorithm-partition-predicate-state.nc");
@@ -54414,6 +54725,9 @@ int main() {
   if (std::partition_point(values, values,
                            std::logical_not<>{}) != values)
     return 6;
+  if (std::partition_point(values, values + 9,
+                           std::logical_not<long>{}) != values + 1)
+    return 7;
   return 0;
 }
 )cpp");
@@ -54615,9 +54929,10 @@ volatile int*f(volatile int*p){return std::partition_point(p,p+2,P{});}
 struct R{int v;};struct P{bool operator()(R n)const{return n.v<1;}};
 R*f(R*p){return std::partition_point(p,p+2,P{});}
 )cpp", "TR0203"},
-    {"sdk-predicate-mismatch", R"cpp(#include <algorithm>
+    {"sdk-callback-element", R"cpp(#include <algorithm>
 #include <functional>
-int*f(int*p){return std::partition_point(p,p+2,std::logical_not<long>{});}
+using Callback=int(*)(int);
+Callback*f(Callback*p){return std::partition_point(p,p+2,std::logical_not<Callback>{});}
 )cpp", "TR0203"},
     {"half-specialization", R"cpp(#include <algorithm>
 struct P{bool operator()(int n)const{return n<1;}};

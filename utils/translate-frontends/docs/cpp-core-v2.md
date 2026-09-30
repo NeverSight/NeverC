@@ -3163,6 +3163,17 @@ The true and false destinations may have distinct admitted scalar types, with
 independent direct conversions from the input. Each store rereads its element
 after the predicate returns. The returned pair preserves the two final output
 pointers and composes with supported structured bindings and result queries.
+These three partition forms also accept raw ranges of exact function-pointer
+elements, including `noexcept` types and const element storage, through a source
+predicate object whose selected Boolean operator takes that pointer by value.
+The two query forms retain their exact scan and middle-element call order and
+one continuing predicate state. `partition_copy` requires both writable raw
+outputs to store that same pointer type; each branch rereads its input after
+the predicate returns and advances only its selected output. The returned pair
+contains both final pointers. Reference predicate arguments, input or either
+output pointer-type conversions, and Boolean outputs remain rejected. Empty
+ranges initialize the object without calls or stores; pointer targets are not
+invoked by the translator. SDK function objects retain their scalar boundary.
 `remove_if` authenticates the exact reference-parameter `find_if` specialization,
 its selected predicate call, the subsequent scan and the scalar move stores.
 Finding the first removable element and compacting later retained elements use
