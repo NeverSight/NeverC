@@ -1804,6 +1804,7 @@ struct OperationSourceDependencies {
   std::set<const FunctionDecl *> Definitions;
   std::set<const CXXConstructorDecl *> VectorConstructors;
   std::set<const CXXConstructorDecl *> StringConstructors;
+  std::set<const CXXConstructorDecl *> UniquePtrConstructors;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2695,6 +2696,105 @@ utilityInitializerListDestructionSource(Adapter &A,
   return List;
 }
 
+static std::optional<UtilityUniquePtrRecord>
+utilityUniquePtrSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Owner =
+      approvedUtilityUniquePtrRecord(A.S, A.Sources, Record, A.Context);
+  if (!Owner || Owner->CustomDeleter)
+    return std::nullopt;
+  for (const auto *Definition : {Owner->Record, Owner->Deleter.Record}) {
+    const auto *Specialization =
+        dyn_cast<ClassTemplateSpecializationDecl>(Definition);
+    if (!Specialization ||
+        Specialization->getSpecializationKind() != TSK_ImplicitInstantiation)
+      return std::nullopt;
+    for (const auto *Declaration : Definition->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return std::nullopt;
+    }
+  }
+  return Owner;
+}
+
+static bool utilityUniquePtrFunctionSource(Adapter &A,
+                                           const CXXMethodDecl *Method) {
+  const auto Origin =
+      Method ? A.S.sdkFile(A.Sources, Method->getLocation()) : std::nullopt;
+  if (!Method || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "__memory/unique_ptr.h" || Method->isInvalidDecl() ||
+      Method->isDeleted() || Method->isVariadic() ||
+      Method->getAccess() != AS_public || !Method->getDefinition())
+    return false;
+  auto Pinned = [&](const FunctionDecl *Function) {
+    if (!Function ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return false;
+    }
+    return !Function->getDefinition() ||
+           approvedStandardSDKDeclaration(A.S, A.Sources,
+                                          Function->getDefinition());
+  };
+  if (!Pinned(Method) ||
+      !Pinned(Method->getTemplateInstantiationPattern(/*ForDefinition=*/true)))
+    return false;
+  if (const auto *Primary = Method->getPrimaryTemplate())
+    for (const auto *Declaration : Primary->redecls())
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) ||
+          !Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl())))
+        return false;
+  return true;
+}
+
+static bool utilityUniquePtrElementConstructionSource(
+    Adapter &A, const CXXConstructorDecl *Constructor) {
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  const auto *Arguments =
+      Constructor ? Constructor->getTemplateSpecializationArgs() : nullptr;
+  return Constructor && Constructor->isDefaultConstructor() && Arguments &&
+         Arguments->size() == 2 &&
+         Arguments->get(0).getKind() == TemplateArgument::Integral &&
+         A.Context.hasSameType(Arguments->get(0).getIntegralType(),
+                               A.Context.BoolTy) &&
+         Arguments->get(0).getAsIntegral().getBoolValue() &&
+         Arguments->get(1).getKind() == TemplateArgument::Type &&
+         A.Context.hasSameType(Arguments->get(1).getAsType(),
+                               A.Context.VoidTy) &&
+         !Constructor->getNumParams() && Prototype && Prototype->isNothrow() &&
+         utilityUniquePtrSource(A, Constructor->getParent()) &&
+         utilityUniquePtrFunctionSource(A, Constructor);
+}
+
+static std::optional<UtilityUniquePtrRecord>
+utilityUniquePtrDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Owner = utilityUniquePtrSource(A, Record);
+  const auto *Destructor = Owner ? Owner->Record->getDestructor() : nullptr;
+  if (!Owner || !Destructor ||
+      !approvedUtilityUniquePtrDestructor(A.S, A.Sources, Destructor,
+                                          A.Context) ||
+      !utilityUniquePtrFunctionSource(A, Destructor))
+    return std::nullopt;
+  // The destructor descriptor authenticates this exact reset call. Retain its
+  // materialized SDK body and the deleter method owning the checked delete.
+  const auto *Body = cast<CompoundStmt>(Destructor->getBody());
+  const auto *Reset = cast<CXXMemberCallExpr>(*Body->body_begin());
+  const auto *Argument = dyn_cast<DeclRefExpr>(
+      Owner->DefaultDeletion->getArgument()->IgnoreParenImpCasts());
+  const auto *Deleter =
+      Argument ? dyn_cast<CXXMethodDecl>(Argument->getDecl()->getDeclContext())
+               : nullptr;
+  if (!utilityUniquePtrFunctionSource(A, Reset->getMethodDecl()) ||
+      !utilityUniquePtrFunctionSource(A, Deleter))
+    return std::nullopt;
+  return Owner;
+}
+
 static bool utilityVectorSourceElements(Adapter &A,
                                         const UtilityVectorRecord &Vector,
                                         unsigned Depth = 0) {
@@ -2706,6 +2806,8 @@ static bool utilityVectorSourceElements(Adapter &A,
       (Element && A.S.owns(A.Sources, Element->getLocation())))
     return true;
   if (approvedUtilityStringRecord(A.S, A.Sources, Element, A.Context))
+    return true;
+  if (utilityUniquePtrSource(A, Element))
     return true;
   const auto Nested =
       approvedUtilityVectorRecord(A.S, A.Sources, Element, A.Context);
@@ -2738,6 +2840,20 @@ utilityVectorElementConstructor(Adapter &A, const UtilityVectorRecord &Vector,
                                             Vector.ElementType.withConst())))
       return Candidate;
   }
+  if (Default && utilityUniquePtrSource(A, Element))
+    for (const auto *Member : Element->decls()) {
+      const auto *Template = dyn_cast<FunctionTemplateDecl>(Member);
+      if (!Template || !isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+        continue;
+      for (const auto *Specialization : Template->specializations()) {
+        const auto *Candidate = dyn_cast<CXXConstructorDecl>(Specialization);
+        A.chargeExpansion(1, Specialization->getLocation());
+        if (Candidate && Candidate->isDefaultConstructor() &&
+            !Candidate->getNumParams() && !Candidate->isDeleted() &&
+            !Candidate->isInvalidDecl() && !Candidate->isVariadic())
+          return Candidate;
+      }
+    }
   return nullptr;
 }
 
@@ -3156,6 +3272,17 @@ public:
     // The pinned string owns only its admitted character storage and allocator.
     if (utilityStringDestructionSource(A, Record))
       return true;
+    if (const auto Owner = utilityUniquePtrDestructionSource(A, Record)) {
+      // Use the same selected deallocation function as lowering, which can
+      // differ from the SDK delete expression's implicit unsized declaration.
+      if (!defined(A.uniquePtrDeleteFunction(*Owner, Record->getLocation())))
+        return false;
+      if (const auto *Element =
+              A.Context.getBaseElementType(Owner->ElementType)
+                  ->getAsCXXRecordDecl())
+        return destruction(Element, Depth + 1);
+      return true;
+    }
     // Storage release belongs to each pinned SDK destructor. Nested vectors
     // and source-owned records must close their actual element destruction.
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
@@ -3239,6 +3366,9 @@ public:
           return false;
       for (const auto *Constructor : Dependencies->StringConstructors)
         if (!utilityStringElementConstructionSource(A, Constructor))
+          return false;
+      for (const auto *Constructor : Dependencies->UniquePtrConstructors)
+        if (!utilityUniquePtrElementConstructionSource(A, Constructor))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -8557,6 +8687,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, String->PointerType, false, Depth + 1);
           return;
         }
+        if (const auto Owner = utilityUniquePtrSource(A, Declaration)) {
+          // Its pinned pointer/empty-deleter shape supplies the SDK layout.
+          // Owning cleanup still consumes the original pointee layout source.
+          Self(Self, Owner->ElementType, true, Depth + 1);
+          return;
+        }
         if (const auto Iterator = approvedUtilityWrapIteratorRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // The pinned one-pointer layout supplies its private field source.
@@ -8807,6 +8943,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              utilityInitializerListDestructionSource(A,
                                                      Destructor->getParent()) ||
              utilityStringDestructionSource(A, Destructor->getParent()) ||
+             utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent())))
           return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
@@ -8933,6 +9070,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 ? approvedUtilityVectorConstruction(A.S, A.Sources,
                                                     Construction, A.Context)
                 : std::nullopt;
+        const auto Unique = utilityUniquePtrSource(
+            A, Construction->getType()->getAsCXXRecordDecl());
+        const auto UniqueConstruction =
+            Unique ? approvedUtilityUniquePtrConstruction(
+                         A.S, A.Sources, Construction, A.Context)
+                   : std::nullopt;
+        const bool UniqueSourceConstruction =
+            UniqueConstruction &&
+            *UniqueConstruction != UtilityUniquePtrConstruction::FactoryArray &&
+            *UniqueConstruction != UtilityUniquePtrConstruction::NullDeleter &&
+            *UniqueConstruction != UtilityUniquePtrConstruction::PointerDeleter;
         bool SDKConstruction =
             approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                             A.Context)
@@ -8948,7 +9096,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                               A.Context)
                 .has_value() ||
-            VectorConstruction.has_value();
+            UniqueSourceConstruction || VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
             return false;
@@ -9004,9 +9152,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             SDKConstruction &= ElementConstructor != nullptr;
           }
           if (SDKConstruction && ElementConstructor) {
-            if (approvedUtilityStringRecord(A.S, A.Sources,
-                                            ElementConstructor->getParent(),
-                                            A.Context)) {
+            if (utilityUniquePtrSource(A, ElementConstructor->getParent())) {
+              SDKConstruction &= utilityUniquePtrElementConstructionSource(
+                  A, ElementConstructor);
+              if (SDKConstruction)
+                for (auto *Dependencies : ActiveOperationSources)
+                  if (Dependencies->UniquePtrConstructors
+                          .insert(ElementConstructor)
+                          .second)
+                    A.chargeExpansion(1, ElementConstructor->getLocation());
+            } else if (approvedUtilityStringRecord(
+                           A.S, A.Sources, ElementConstructor->getParent(),
+                           A.Context)) {
               SDKConstruction &=
                   utilityStringElementConstructionSource(A, ElementConstructor);
               if (SDKConstruction)

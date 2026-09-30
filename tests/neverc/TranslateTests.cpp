@@ -66970,6 +66970,328 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2UniquePtrVectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unique-ptr-vector-endpoint-result-queries.cpp");
+  const auto Output = tmpFile("unique-ptr-vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, live, created, destroyed, class_deleted;
+int receivers, written, defaults;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+int value(int n = (++defaults, 7)) { ++written; return n; }
+struct Box {
+  int n;
+  explicit Box(int v) noexcept : n(v) { ++live; ++created; }
+  ~Box() noexcept(sizeof(int) > 0) { --live; ++destroyed; }
+  static void *operator new(Size n) { ++allocated; return malloc(n); }
+  static void operator delete(void *p) noexcept {
+    if (p) { ++released; ++class_deleted; } free(p);
+  }
+};
+using Owner = std::unique_ptr<int>;
+using Owners = std::vector<Owner>;
+using Rows = std::vector<Owners>;
+using Cubes = std::vector<Rows>;
+using ArrayOwner = std::unique_ptr<int[]>;
+using Arrays = std::vector<ArrayOwner>;
+using BoxOwner = std::unique_ptr<Box>;
+using Boxes = std::vector<BoxOwner>;
+using BoxArrayOwner = std::unique_ptr<Box[]>;
+using BoxArrays = std::vector<BoxArrayOwner>;
+Owners &select(Owners &v, int = (++defaults, 0)) noexcept { ++receivers; return v; }
+const Owners &select(const Owners &v) noexcept { ++receivers; return v; }
+Rows &rows(Rows &v) noexcept { ++receivers; return v; }
+int check() {
+  Owner empty_owner;
+  Owner seed(new int(value()));
+  Owner moved_owner(static_cast<Owner &&>(seed));
+  Owner null_owner(nullptr);
+  Owners empty, values(Size(2));
+  values[0].reset(new int(3));
+  values[1] = static_cast<Owner &&>(moved_owner);
+  auto storage = values.data();
+  Owners moved(static_cast<Owners &&>(values));
+  const auto &view = moved;
+  auto first = select(moved, 0).begin(), last = select(moved, 0).end();
+  auto const_first = select(view).begin(), const_last = select(view).end();
+  auto const_begin = moved.cbegin(), const_end = moved.cend();
+  auto view_begin = view.cbegin(), view_end = view.cend();
+  if (last - first != 2 || const_last - const_first != 2 ||
+      const_end - const_begin != 2 || view_end - view_begin != 2 ||
+      !values.empty() || !empty.empty() || seed || moved_owner ||
+      empty_owner || null_owner || moved.data() != storage ||
+      *moved[0] != 3 || *moved[1] != 7) return 1;
+  Rows nested_empty, nested(Size(2));
+  nested[0].push_back(Owner(new int(11)));
+  Rows nested_move(static_cast<Rows &&>(nested));
+  auto nested_first = rows(nested_move).begin(), nested_last = rows(nested_move).end();
+  Cubes cubes(Size(2));
+  cubes[0].push_back(static_cast<Owners &&>(moved));
+  Cubes cube_move(static_cast<Cubes &&>(cubes));
+  auto cube_first = cube_move.begin();
+  if (nested_last - nested_first != 2 || !nested.empty() ||
+      !nested_empty.empty() || !nested_move[1].empty() ||
+      *nested_move[0][0] != 11 || !cubes.empty() || !moved.empty() ||
+      *(*cube_first)[0][1] != 7 || cube_move[0][0].data() != storage) return 2;
+  ArrayOwner array_seed(new int[3]{2, 4, 6});
+  Arrays arrays(Size(2));
+  arrays[0] = static_cast<ArrayOwner &&>(array_seed);
+  Arrays array_move(static_cast<Arrays &&>(arrays));
+  auto array_first = array_move.begin(), array_last = array_move.end();
+  if (array_last - array_first != 2 || array_seed || !arrays.empty() ||
+      array_move[0][2] != 6 || array_move[1]) return 3;
+  BoxOwner box_seed(new Box(13));
+  Boxes boxes(Size(2));
+  boxes[0] = static_cast<BoxOwner &&>(box_seed);
+  auto box_first = boxes.begin(), box_last = boxes.end();
+  BoxArrayOwner box_array_seed(new Box[2]{Box(17), Box(19)});
+  BoxArrays box_arrays(Size(2));
+  box_arrays[0] = static_cast<BoxArrayOwner &&>(box_array_seed);
+  auto box_array_first = box_arrays.begin();
+  if (box_last - box_first != 2 || box_seed || boxes[0]->n != 13 ||
+      box_array_seed || (*box_array_first)[1].n != 19 ||
+      box_arrays[1] || live != 3) return 4;
+  std::vector<std::unique_ptr<const int>> const_values(Size(2));
+  const_values[0].reset(new int(23));
+  auto const_owner_first = const_values.begin();
+  if (*(*const_owner_first) != 23) return 5;
+  const int allocation_count = allocated, release_count = released;
+  const int live_count = live, creation_count = created, destruction_count = destroyed;
+  const int class_delete_count = class_deleted;
+  static_assert(__is_same(decltype(select(moved).begin()), Owners::iterator));
+  static_assert(__is_same(decltype(select(moved).end()), Owners::iterator));
+  static_assert(__is_same(decltype(select(view).begin()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(view).end()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(moved).cbegin()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(moved).cend()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(view).cbegin()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(view).cend()), Owners::const_iterator));
+  static_assert(sizeof(select(moved).begin()) == sizeof(Owner *));
+  static_assert(alignof(decltype(select(view).cend())) == alignof(Owner *));
+  static_assert(noexcept(select(moved).begin()));
+  static_assert(noexcept(select(view).end()));
+  static_assert(__is_same(decltype(empty.begin()), Owners::iterator));
+  static_assert(__is_same(decltype(values.begin()), Owners::iterator));
+  static_assert(noexcept(Owners()));
+  static_assert(!noexcept(Owners(Size(2))));
+  static_assert(noexcept(Owners(static_cast<Owners &&>(moved))));
+  static_assert(sizeof(Owner(new int(value()))) == sizeof(Owner));
+  static_assert(noexcept(Owner()));
+  static_assert(noexcept(Owner(nullptr)));
+  static_assert(noexcept(Owner(static_cast<Owner &&>(moved_owner))));
+  static_assert(__is_same(decltype(rows(nested_move).begin()), Rows::iterator));
+  static_assert(__is_same(decltype(rows(nested_move).end()), Rows::iterator));
+  static_assert(__is_same(decltype(nested.begin()), Rows::iterator));
+  static_assert(!noexcept(Rows(Size(2))));
+  static_assert(noexcept(Rows(static_cast<Rows &&>(nested_move))));
+  static_assert(__is_same(decltype(cube_move.begin()), Cubes::iterator));
+  static_assert(!noexcept(Cubes(Size(2))));
+  static_assert(noexcept(Cubes(static_cast<Cubes &&>(cube_move))));
+  static_assert(__is_same(decltype(array_move.begin()), Arrays::iterator));
+  static_assert(__is_same(decltype(arrays.begin()), Arrays::iterator));
+  static_assert(sizeof(ArrayOwner(new int[3]{value(2), 4, 6})) == sizeof(ArrayOwner));
+  static_assert(!noexcept(Arrays(Size(2))));
+  static_assert(noexcept(Arrays(static_cast<Arrays &&>(array_move))));
+  static_assert(__is_same(decltype(boxes.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(boxes.end()), Boxes::iterator));
+  static_assert(sizeof(BoxOwner(new Box(value(13)))) == sizeof(BoxOwner));
+  static_assert(!noexcept(Boxes(Size(2))));
+  static_assert(__is_same(decltype(box_arrays.begin()), BoxArrays::iterator));
+  static_assert(sizeof(BoxArrayOwner(new Box[2]{Box(value(17)), Box(19)})) == sizeof(BoxArrayOwner));
+  static_assert(!noexcept(BoxArrays(Size(2))));
+  static_assert(__is_same(decltype(const_values.begin()), std::vector<std::unique_ptr<const int>>::iterator));
+  return allocated == allocation_count && released == release_count &&
+         live == live_count && created == creation_count && destroyed == destruction_count &&
+         class_deleted == class_delete_count && receivers == 6 && written == 1 && defaults == 1 ? 0 : 6;
+}
+int main() {
+  const int result = check();
+  return result ? result : live == 0 && created == destroyed &&
+         class_deleted == 1 && allocated == released ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-ptr-vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrVectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"erased-pointee-alias", R"cpp(
+int object; template<auto> using Item = int;
+int f() { std::vector<std::unique_ptr<Item<&object>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-deleter-alias", R"cpp(
+int object; template<auto> using Deleter = std::default_delete<int>;
+int f() { std::vector<std::unique_ptr<int, Deleter<&object>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-owner-alias", R"cpp(
+int object; template<auto> using Item = Owner;
+int f() { std::vector<Item<&object>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"nested-erased-alias", R"cpp(
+int object; template<auto> using Item = Owners;
+int f() { std::vector<Item<&object>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"count-source", R"cpp(
+int f() { Owners v((sizeof(long double), Size(2))); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"receiver-source", R"cpp(
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-default-source", R"cpp(
+Owners &select(Owners &v, int = (sizeof(long double), 0)) { return v; }
+int f() { Owners v(Size(2)); auto first = select(v, 0).begin(); static_assert(__is_same(decltype(select(v).begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-noexcept-source", R"cpp(
+Owners &select(Owners &v) noexcept(sizeof(long double) > 0) { return v; }
+int f() { Owners v(Size(2)); auto first = select(v).begin(); static_assert(noexcept(select(v).begin())); return 0; }
+)cpp",
+       "TR0201"},
+      {"scalar-allocation-source", R"cpp(
+int f() { Owner owner(new int(1)); Owners v(Size(2)); auto first = v.begin(); static_assert(sizeof(Owner(new int((sizeof(long double), 1)))) == sizeof(Owner)); return 0; }
+)cpp",
+       "TR0201"},
+      {"array-allocation-bound", R"cpp(
+int f() { std::unique_ptr<int[]> owner(new int[2]{}); Owners v(Size(2)); auto first = v.begin(); static_assert(sizeof(std::unique_ptr<int[]>(new int[(sizeof(long double), 2)]{})) == sizeof(Owner)); return 0; }
+)cpp",
+       "TR0201"},
+      {"pointee-field-bound", R"cpp(
+struct Box { int fields[(sizeof(long double), 1)]; ~Box() noexcept {} };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"pointee-field-alias", R"cpp(
+int object; template<auto> using Field = int;
+struct Box { Field<&object> field; ~Box() noexcept {} };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"pointee-destructor-noexcept", R"cpp(
+struct Box { int n; ~Box() noexcept(sizeof(long double) > 0) {} };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"pointee-destructor-body", R"cpp(
+struct Box { int n; ~Box() noexcept { (void)sizeof(long double); } };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"class-deallocation-noexcept", R"cpp(
+struct Box { int n; static void operator delete(void *p) noexcept(sizeof(long double) > 0) { free(p); } };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"class-deallocation-body", R"cpp(
+struct Box { int n; static void operator delete(void *p) noexcept { (void)sizeof(long double); free(p); } };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"missing-class-deallocation", R"cpp(
+struct Box { int n; static void operator delete(void *) noexcept; };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"missing-pointee-destructor", R"cpp(
+struct Box { int n; ~Box() noexcept; };
+int f() { std::vector<std::unique_ptr<Box>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"default-delete-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> void default_delete<int>::operator()(int *) const noexcept {} } }
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"owner-destructor-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> unique_ptr<int>::~unique_ptr() noexcept {} } }
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"reset-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> void unique_ptr<int>::reset(pointer) noexcept {} } }
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"custom-deleter", R"cpp(
+struct Deleter { void operator()(int *p) const noexcept { delete p; } };
+int f() { std::vector<std::unique_ptr<int, Deleter>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"nested-custom-deleter", R"cpp(
+struct Deleter { void operator()(int *p) const noexcept { delete p; } };
+int f() { std::vector<std::vector<std::unique_ptr<int, Deleter>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-owner-construction", R"cpp(
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(sizeof(Owner(new int(1))) == sizeof(Owner)); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-copy", R"cpp(
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(!noexcept(Owners(v))); return 0; }
+)cpp",
+       "TR0201"},
+      {"different-endpoint", R"cpp(
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.end()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("unique-ptr-vector-endpoint-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("unique-ptr-vector-endpoint-query-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+using Owner = std::unique_ptr<int>;
+using Owners = std::vector<Owner>;
+using Rows = std::vector<Owners>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2StringVectorEndpointResultQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("string-vector-endpoint-result-queries.cpp");
   const auto Output = tmpFile("string-vector-endpoint-result-queries.nc");
@@ -67561,10 +67883,6 @@ int f() { Rows v; auto first = v.begin(); static_assert(__is_same(decltype(Rows{
 int f() { Rows v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.end()), decltype(first))); return 0; }
 )cpp",
        "TR0203"},
-      {"sdk-unique-leaf", R"cpp(
-int f() { std::vector<std::vector<std::unique_ptr<int>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
-)cpp",
-       "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

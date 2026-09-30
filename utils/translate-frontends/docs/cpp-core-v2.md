@@ -2478,8 +2478,9 @@ The pinned wrapper layout, trivial copies and implicit destruction are
 authenticated. Result queries also accept direct mutable or const vector
 `begin`, `end`, `cbegin` and `cend` calls on vector references supplied as source
 function parameters and on locally constructed vectors with admitted scalar,
-object-pointer, source-owned record, string or nested vector elements. Nested
-vectors retain these same leaf-element restrictions. The endpoint requires an already
+object-pointer, source-owned record, string, standard unique-pointer or nested
+vector elements. Nested vectors retain these same leaf-element restrictions.
+The endpoint requires an already
 materialized pinned member body, including when used as the endpoint of these
 scans. For local receivers, the exact admitted default, initializer-list, count,
 fill, copy, move or raw/wrapped range construction and the materialized SDK
@@ -2509,13 +2510,28 @@ materialized pinned destructor supplies character storage cleanup source.
 Admitted string construction inside receiver initializers or query temporaries
 likewise retains the exact SDK operation while checking written aliases,
 character arrays, argument expressions and selected source defaults normally.
+Unique-pointer leaves accept the pinned `unique_ptr<T>` and `unique_ptr<T[]>`
+shape with standard `default_delete`, including admitted source-owned objects
+and const scalar pointees. Their vector default, count and buffer-move
+constructions retain the exact owning operation; count construction requires
+the already materialized default constructor specialization with its pinned
+definition, original template pattern and default template arguments. Empty
+inner vectors and buffer moves require no unused managed-object constructor or
+unique-pointer copy. Cleanup authenticates the exact materialized destructor,
+its `reset` call and the selected `default_delete` body. It checks the same
+source deallocation definition selected by lowering, including its original
+signature and exception specification, and recursively retains managed-object
+layout and destruction source. Admitted direct unique-pointer construction in
+receiver initializers or query temporaries keeps written pointee/deleter
+aliases, argument expressions, source defaults and allocation bounds checked.
+Custom deleters and `make_unique` factory queries still require their separate
+owning source proof.
 Authentication belongs to the exact member call and reference; receiver
 expressions, factory defaults and written type or template source remain checked.
 These unevaluated calls preserve the iterator type and fixed `noexcept` value
 without evaluating their receiver or performing an inner allocation, copy or
-destruction. Other direct SDK record elements, including unique-pointer
-leaves inside nested vectors, still require their separate owning element
-source proof. Query-only constructor or endpoint bodies, member addresses and other vector operations
+destruction. Other direct SDK record elements still require their separate
+owning element source proof. Query-only constructor or endpoint bodies, member addresses and other vector operations
 also remain outside this query boundary.
 The selected source call operator requires a completed, emitted body;
 its original signatures and exception specification, the range and object
