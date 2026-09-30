@@ -2450,6 +2450,12 @@ It evaluates all arguments once, compares the value with the lower bound and
 then, if needed, the upper bound, and returns a const reference to the selected
 argument. A value equivalent to either bound retains the value argument's
 identity; the pointed-to functions are not invoked by the translator.
+The checked three-argument `std::minmax` form accepts two objects of one exact
+function-pointer type through that comparator boundary. Its authenticated
+`std::pair<const Callback&, const Callback&>` retains both argument identities:
+the comparator receives the second pointer value before the first, and
+equivalent values keep the first argument as the minimum and the second as the
+maximum. The pointed-to functions are not invoked by the translator.
 
 The exact one-argument `std::min(initializer_list<T>)` and
 `std::max(initializer_list<T>)` overloads also accept admitted ordered scalar

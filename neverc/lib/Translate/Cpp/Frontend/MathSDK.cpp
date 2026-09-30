@@ -26924,9 +26924,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       (AlgorithmReferenceParameter(0) ||
+       AlgorithmCallbackReferenceParameter(0) ||
        AlgorithmSourceOrderedReferenceParameter(0) ||
        AlgorithmRecordReferenceParameter(0)) &&
       (AlgorithmReferenceParameter(1) ||
+       AlgorithmCallbackReferenceParameter(1) ||
        AlgorithmSourceOrderedReferenceParameter(1) ||
        AlgorithmRecordReferenceParameter(1)) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -26939,6 +26941,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((AlgorithmReferenceParameter(0) &&
           (AlgorithmBinaryPredicateReferenceParameter(2, 0) ||
            approvedDirectAlgorithmComparator(S, SM, Call, Context))) ||
+         AlgorithmCallbackReferenceComparator(2, 0) ||
          AlgorithmRecordReferenceComparator(2, 0) ||
          approvedDirectAlgorithmSourceComparator(S, SM, Call, Context))))) {
     auto Pair = approvedUtilityReferencePairRecord(
