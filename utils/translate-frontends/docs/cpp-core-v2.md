@@ -2266,6 +2266,12 @@ The function-pointer `for_each` and `for_each_n` forms also accept authenticated
 mutable or const wrapped scalar input iterators. `for_each` still returns the
 retained callback; `for_each_n` returns the advanced wrapped iterator, including
 the original position for a non-positive count.
+These two traversal forms also accept raw or authenticated wrapped ranges of
+one exact function-pointer element type, including `noexcept` pointers, when
+their function-pointer callback takes that pointer value by value. A `void` or
+admitted scalar callback result is ignored. The pointed-to functions are not
+invoked by the translator; the callback is retained once, and the return
+iterator or callback keeps its original type.
 The function-pointer unary and binary `transform` forms likewise accept
 independent raw or authenticated wrapped scalar input ranges and a writable raw
 or wrapped scalar output. Each callback argument and result uses its checked

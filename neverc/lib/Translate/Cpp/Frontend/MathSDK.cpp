@@ -27869,6 +27869,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Pair->Second->getType(), Function->getParamDecl(3)->getType()))
       return UtilityOperation::AlgorithmPartitionCopy;
   }
+  auto AlgorithmTraversalRangeParameter = [&](unsigned Index) {
+    const auto Scalar = AlgorithmRangePointerParameter(Index);
+    return Scalar ? Scalar : AlgorithmCallbackRangeParameter(Index);
+  };
   if (Origin->Path == "__algorithm/for_each.h" && Name == "for_each" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&
@@ -27881,17 +27885,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmForEach;
   if (Origin->Path == "__algorithm/for_each.h" && Name == "for_each" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
-      AlgorithmRangePointerParameter(1) &&
+      Call->isPRValue() && AlgorithmTraversalRangeParameter(0) &&
+      AlgorithmTraversalRangeParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Callback = AlgorithmCallbackPrototype(2);
-    const auto Range = AlgorithmRangePointerParameter(0);
+    const auto Range = AlgorithmTraversalRangeParameter(0);
     if (Callback && Callback->getNumParams() == 1 && Range &&
-        utilityScalarDirectConversion(Context, (*Range)->getPointeeType(),
-                                      Callback->getParamType(0)) &&
+        (utilityScalarDirectConversion(Context, (*Range)->getPointeeType(),
+                                       Callback->getParamType(0)) ||
+         utilityCallbackEqualityType(Context, (*Range)->getPointeeType(),
+                                     Callback->getParamType(0))) &&
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEach;
@@ -27906,15 +27912,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmForEachN;
   if (Origin->Path == "__algorithm/for_each_n.h" && Name == "for_each_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      Call->isPRValue() && AlgorithmTraversalRangeParameter(0) &&
       AlgorithmCountParameter(1) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Callback = AlgorithmCallbackPrototype(2);
-    const auto Range = AlgorithmRangePointerParameter(0);
+    const auto Range = AlgorithmTraversalRangeParameter(0);
     if (Callback && Callback->getNumParams() == 1 && Range &&
-        utilityScalarDirectConversion(Context, (*Range)->getPointeeType(),
-                                      Callback->getParamType(0)) &&
+        (utilityScalarDirectConversion(Context, (*Range)->getPointeeType(),
+                                       Callback->getParamType(0)) ||
+         utilityCallbackEqualityType(Context, (*Range)->getPointeeType(),
+                                     Callback->getParamType(0))) &&
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEachN;

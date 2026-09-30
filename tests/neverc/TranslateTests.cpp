@@ -49066,6 +49066,119 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackValueTraversalRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-value-traversal.cpp");
+  const auto Output = tmpFile("callback-value-traversal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls;
+int calls;
+int trace;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int rank(Callback value) {
+  if (value == one) return 1;
+  if (value == two) return 2;
+  return 3;
+}
+void observe(Callback value) {
+  ++calls;
+  trace = trace * 10 + rank(value);
+}
+int project(Callback value) {
+  observe(value);
+  return rank(value);
+}
+void observe_safe(NoexceptCallback value) {
+  ++calls;
+  trace = trace * 10 + (value == safe_one ? 1 : 2);
+}
+int main() {
+  Callback values[]{one, two, three};
+  void (*action)(Callback) = observe;
+  int first_effects = 0, last_effects = 0, callback_effects = 0;
+  if (std::for_each((++first_effects, values),
+                    (++last_effects, values + 3),
+                    (++callback_effects, action)) != action ||
+      first_effects != 1 || last_effects != 1 || callback_effects != 1 ||
+      calls != 3 || trace != 123 || pointed_calls != 0)
+    return 1;
+  calls = trace = 0;
+  if (std::for_each(values + 1, values + 3, project) != project ||
+      calls != 2 || trace != 23 || pointed_calls != 0)
+    return 2;
+  calls = trace = 0;
+  if (std::for_each_n(values, 2, observe) != values + 2 ||
+      calls != 2 || trace != 12 || pointed_calls != 0)
+    return 3;
+  calls = trace = 0;
+  if (std::for_each_n(values, -2, observe) != values ||
+      calls != 0 || trace != 0)
+    return 4;
+  if (std::for_each(values, values, observe) != observe || calls != 0)
+    return 5;
+  NoexceptCallback safe_values[]{safe_one, safe_two};
+  calls = trace = 0;
+  if (std::for_each(safe_values, safe_values + 2, observe_safe) !=
+          observe_safe || calls != 2 || trace != 12 || pointed_calls != 0)
+    return 6;
+  calls = trace = 0;
+  if (std::for_each_n(safe_values, 1, observe_safe) != safe_values + 1 ||
+      calls != 1 || trace != 1 || pointed_calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-value-traversal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackValueTraversalRejectsInvalidParameters) {
+  for (const std::string &Name : {"for_each", "for_each_n"}) {
+    for (const std::string &Predicate : {"wrong_reference", "wrong_conversion"}) {
+      SCOPED_TRACE(Name + ":" + Predicate);
+      const auto Source = tmpFile(Name + "-callback-value-" + Predicate + ".cpp");
+      const auto Output = tmpFile(Name + "-callback-value-" + Predicate + ".nc");
+      const std::string ValueType = Predicate == "wrong_conversion"
+                                        ? "NoexceptCallback"
+                                        : "Callback";
+      const std::string Invocation =
+          Name == "for_each" ? "std::for_each(values, values + 2, "
+                             : "std::for_each_n(values, 2, ";
+      writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) noexcept { return x + 1; }
+int two(int x) noexcept { return x + 2; }
+void wrong_reference(const Callback&) {}
+void wrong_conversion(Callback) {}
+int main() {
+  )cpp" + ValueType + " values[]{one, two};\n  " + Invocation + Predicate +
+                       ");\n  return 0;\n}\n");
+      expectCode(
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+          "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndScalarResults) {
   struct Rejection {
