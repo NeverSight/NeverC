@@ -66970,6 +66970,479 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2CustomDeleterVectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("custom-deleter-vector-endpoint-result-queries.cpp");
+  const auto Output =
+      tmpFile("custom-deleter-vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, live, created, destroyed, class_deleted;
+int receivers, written, defaults;
+int scalar_calls, array_calls, box_calls, box_array_calls, const_calls;
+int conversions, deleter_arguments, deleter_defaults, observed_calls, observed_sum, borrowed_destroyed;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+int value(int n = (++defaults, 7)) { ++written; return n; }
+struct Box {
+  int n;
+  explicit Box(int v) noexcept : n(v) { ++live; ++created; }
+  ~Box() noexcept(sizeof(int) > 0) { --live; ++destroyed; }
+  static void *operator new(Size n) { ++allocated; return malloc(n); }
+  static void operator delete(void *p) noexcept {
+    if (p) { ++released; ++class_deleted; } free(p);
+  }
+};
+struct Dispose {
+  Dispose() noexcept(sizeof(int) > 0) = default;
+  Dispose(const Dispose &) noexcept(sizeof(int) > 0) = default;
+  Dispose(Dispose &&) noexcept(sizeof(int) > 0) = default;
+  Dispose &operator=(const Dispose &) noexcept(sizeof(int) > 0) = default;
+  Dispose &operator=(Dispose &&) noexcept(sizeof(int) > 0) = default;
+  ~Dispose() noexcept(sizeof(int) > 0) = default;
+  void operator()(int *p) const noexcept(sizeof(int) > 0) { ++scalar_calls; delete p; }
+};
+struct DisposeArray { void operator()(int *p) noexcept { ++array_calls; delete[] p; } };
+struct DisposeBox { void operator()(Box *p) const noexcept { ++box_calls; delete p; } };
+struct DisposeBoxArray { void operator()(Box *p) noexcept { ++box_array_calls; delete[] p; } };
+struct DisposeConst { void operator()(const int *p) const noexcept { ++const_calls; delete p; } };
+struct DisposeProxy { operator Dispose() const noexcept { ++conversions; return {}; } };
+Dispose &select_deleter(Dispose &d, int = (++deleter_defaults, 0)) noexcept {
+  ++deleter_arguments; return d;
+}
+struct Borrowed { int n; ~Borrowed() noexcept { ++borrowed_destroyed; } };
+struct Observe { void operator()(Borrowed *p) const noexcept { ++observed_calls; observed_sum += p->n; } };
+struct ColdDispose { void operator()(short *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>;
+using Owners = std::vector<Owner>;
+using Rows = std::vector<Owners>;
+using Cubes = std::vector<Rows>;
+using ArrayOwner = std::unique_ptr<int[], DisposeArray>;
+using Arrays = std::vector<ArrayOwner>;
+using BoxOwner = std::unique_ptr<Box, DisposeBox>;
+using Boxes = std::vector<BoxOwner>;
+using BoxArrayOwner = std::unique_ptr<Box[], DisposeBoxArray>;
+using BoxArrays = std::vector<BoxArrayOwner>;
+Owners &select(Owners &v, int = (++defaults, 0)) noexcept { ++receivers; return v; }
+const Owners &select(const Owners &v) noexcept { ++receivers; return v; }
+Rows &rows(Rows &v) noexcept { ++receivers; return v; }
+int check() {
+  Owner empty_owner;
+  Owner seed(new int(value()));
+  Owner moved_owner(static_cast<Owner &&>(seed));
+  Owner null_owner(nullptr);
+  Dispose deleter;
+  Owner lvalue_deleter(new int(17), select_deleter(deleter, 0));
+  Owner rvalue_deleter(new int(19), Dispose{});
+  Owner converted_deleter(new int(29), DisposeProxy{});
+  Owner null_lvalue(nullptr, select_deleter(deleter, 0));
+  Owner null_rvalue(nullptr, Dispose{});
+  Owners empty, values(Size(2));
+  values[0].reset(new int(3));
+  values[1] = static_cast<Owner &&>(moved_owner);
+  auto storage = values.data();
+  Owners moved(static_cast<Owners &&>(values));
+  const auto &view = moved;
+  auto first = select(moved, 0).begin(), last = select(moved, 0).end();
+  auto const_first = select(view).begin(), const_last = select(view).end();
+  auto const_begin = moved.cbegin(), const_end = moved.cend();
+  auto view_begin = view.cbegin(), view_end = view.cend();
+  if (last - first != 2 || const_last - const_first != 2 ||
+      const_end - const_begin != 2 || view_end - view_begin != 2 ||
+      !values.empty() || !empty.empty() || seed || moved_owner ||
+      empty_owner || null_owner || moved.data() != storage ||
+      *moved[0] != 3 || *moved[1] != 7) return 1;
+  Rows nested_empty, nested(Size(2));
+  nested[0].push_back(Owner(new int(11)));
+  Rows nested_move(static_cast<Rows &&>(nested));
+  auto nested_first = rows(nested_move).begin(), nested_last = rows(nested_move).end();
+  Cubes cubes(Size(2));
+  cubes[0].push_back(static_cast<Owners &&>(moved));
+  Cubes cube_move(static_cast<Cubes &&>(cubes));
+  auto cube_first = cube_move.begin();
+  if (nested_last - nested_first != 2 || !nested.empty() ||
+      !nested_empty.empty() || !nested_move[1].empty() ||
+      *nested_move[0][0] != 11 || !cubes.empty() || !moved.empty() ||
+      *(*cube_first)[0][1] != 7 || cube_move[0][0].data() != storage) return 2;
+  ArrayOwner array_seed(new int[3]{2, 4, 6});
+  Arrays arrays(Size(2));
+  arrays[0] = static_cast<ArrayOwner &&>(array_seed);
+  Arrays array_move(static_cast<Arrays &&>(arrays));
+  auto array_first = array_move.begin(), array_last = array_move.end();
+  if (array_last - array_first != 2 || array_seed || !arrays.empty() ||
+      array_move[0][2] != 6 || array_move[1]) return 3;
+  BoxOwner box_seed(new Box(13));
+  Boxes boxes(Size(2));
+  boxes[0] = static_cast<BoxOwner &&>(box_seed);
+  auto box_first = boxes.begin(), box_last = boxes.end();
+  BoxArrayOwner box_array_seed(new Box[2]{Box(17), Box(19)});
+  BoxArrays box_arrays(Size(2));
+  box_arrays[0] = static_cast<BoxArrayOwner &&>(box_array_seed);
+  auto box_array_first = box_arrays.begin();
+  if (box_last - box_first != 2 || box_seed || boxes[0]->n != 13 ||
+      box_array_seed || (*box_array_first)[1].n != 19 ||
+      box_arrays[1] || live != 3) return 4;
+  std::vector<std::unique_ptr<const int, DisposeConst>> const_values(Size(2));
+  const_values[0].reset(new int(23));
+  auto const_owner_first = const_values.begin();
+  if (*(*const_owner_first) != 23) return 5;
+  using ColdOwners = std::vector<std::unique_ptr<short, ColdDispose>>;
+  ColdOwners cold(Size(2)); auto cold_first = cold.begin();
+  Borrowed borrowed{31};
+  using Observers = std::vector<std::unique_ptr<Borrowed, Observe>>;
+  Observers observers(Size(2)); observers[0].reset(&borrowed);
+  auto observer_first = observers.begin();
+  const int scalar_count = scalar_calls, array_count = array_calls;
+  const int box_count = box_calls, box_array_count = box_array_calls, const_count = const_calls;
+  const int observation_count = observed_calls, observation_sum = observed_sum;
+  const int allocation_count = allocated, release_count = released;
+  const int live_count = live, creation_count = created, destruction_count = destroyed;
+  const int class_delete_count = class_deleted;
+  static_assert(__is_same(decltype(select(moved).begin()), Owners::iterator));
+  static_assert(__is_same(decltype(select(moved).end()), Owners::iterator));
+  static_assert(__is_same(decltype(select(view).begin()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(view).end()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(moved).cbegin()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(moved).cend()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(view).cbegin()), Owners::const_iterator));
+  static_assert(__is_same(decltype(select(view).cend()), Owners::const_iterator));
+  static_assert(sizeof(select(moved).begin()) == sizeof(Owner *));
+  static_assert(alignof(decltype(select(view).cend())) == alignof(Owner *));
+  static_assert(noexcept(select(moved).begin()));
+  static_assert(noexcept(select(view).end()));
+  static_assert(__is_same(decltype(empty.begin()), Owners::iterator));
+  static_assert(__is_same(decltype(values.begin()), Owners::iterator));
+  static_assert(noexcept(Owners()));
+  static_assert(!noexcept(Owners(Size(2))));
+  static_assert(noexcept(Owners(static_cast<Owners &&>(moved))));
+  static_assert(sizeof(Owner(new int(value()))) == sizeof(Owner));
+  static_assert(noexcept(Owner()));
+  static_assert(noexcept(Owner(nullptr)));
+  static_assert(noexcept(Owner(static_cast<Owner &&>(moved_owner))));
+  static_assert(__is_same(decltype(rows(nested_move).begin()), Rows::iterator));
+  static_assert(__is_same(decltype(rows(nested_move).end()), Rows::iterator));
+  static_assert(__is_same(decltype(nested.begin()), Rows::iterator));
+  static_assert(!noexcept(Rows(Size(2))));
+  static_assert(noexcept(Rows(static_cast<Rows &&>(nested_move))));
+  static_assert(__is_same(decltype(cube_move.begin()), Cubes::iterator));
+  static_assert(!noexcept(Cubes(Size(2))));
+  static_assert(noexcept(Cubes(static_cast<Cubes &&>(cube_move))));
+  static_assert(__is_same(decltype(array_move.begin()), Arrays::iterator));
+  static_assert(__is_same(decltype(arrays.begin()), Arrays::iterator));
+  static_assert(sizeof(ArrayOwner(new int[3]{value(2), 4, 6})) == sizeof(ArrayOwner));
+  static_assert(!noexcept(Arrays(Size(2))));
+  static_assert(noexcept(Arrays(static_cast<Arrays &&>(array_move))));
+  static_assert(__is_same(decltype(boxes.begin()), Boxes::iterator));
+  static_assert(__is_same(decltype(boxes.end()), Boxes::iterator));
+  static_assert(sizeof(BoxOwner(new Box(value(13)))) == sizeof(BoxOwner));
+  static_assert(!noexcept(Boxes(Size(2))));
+  static_assert(__is_same(decltype(box_arrays.begin()), BoxArrays::iterator));
+  static_assert(sizeof(BoxArrayOwner(new Box[2]{Box(value(17)), Box(19)})) == sizeof(BoxArrayOwner));
+  static_assert(!noexcept(BoxArrays(Size(2))));
+  static_assert(__is_same(decltype(const_values.begin()), std::vector<std::unique_ptr<const int, DisposeConst>>::iterator));
+  static_assert(sizeof(Owner(new int(value()), select_deleter(deleter))) == sizeof(Owner));
+  static_assert(sizeof(Owner(new int(value()), Dispose{})) == sizeof(Owner));
+  static_assert(sizeof(Owner(new int(value()), DisposeProxy{})) == sizeof(Owner));
+  static_assert(noexcept(Owner(nullptr, select_deleter(deleter))));
+  static_assert(noexcept(Owner(nullptr, Dispose{})));
+  static_assert(__is_same(decltype(cold.begin()), decltype(cold_first)));
+  static_assert(__is_same(decltype(observers.begin()), decltype(observer_first)));
+  return scalar_calls == scalar_count && array_calls == array_count &&
+         box_calls == box_count && box_array_calls == box_array_count && const_calls == const_count &&
+         observed_calls == observation_count && observed_sum == observation_sum &&
+         borrowed_destroyed == 0 && conversions == 1 && deleter_arguments == 2 && deleter_defaults == 0 &&
+         allocated == allocation_count && released == release_count &&
+         live == live_count && created == creation_count && destroyed == destruction_count &&
+         class_deleted == class_delete_count && receivers == 6 && written == 1 && defaults == 1 ? 0 : 6;
+}
+int main() {
+  const int result = check();
+  return result ? result : live == 0 && created == destroyed &&
+         class_deleted == 1 && allocated == released &&
+         scalar_calls == 6 && array_calls == 1 && box_calls == 1 && box_array_calls == 1 &&
+         const_calls == 1 && observed_calls == 1 && observed_sum == 31 && borrowed_destroyed == 1 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("custom-deleter-vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2CustomDeleterVectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"erased-deleter-alias", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int object; template<auto> using D = Dispose;
+int f() { std::vector<std::unique_ptr<int, D<&object>>> v(Size(2)); auto first=v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-owner-alias", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int object; template<auto> using Item = Owner;
+int f() { std::vector<Item<&object>> v(Size(2)); auto first=v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-callback-parameter", R"cpp(
+int object; template<auto> using Pointer = int *;
+struct Dispose { void operator()(Pointer<&object> p) const noexcept { delete p; } };
+using Owners = std::vector<std::unique_ptr<int, Dispose>>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"erased-callback-result", R"cpp(
+int object; template<auto> using Result = void;
+struct Dispose { Result<&object> operator()(int *p) const noexcept { delete p; } };
+using Owners = std::vector<std::unique_ptr<int, Dispose>>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"callback-noexcept", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept(sizeof(long double) > 0) { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"callback-body", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { (void)sizeof(long double); delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"callback-original-declaration", R"cpp(
+struct Dispose { void operator()(int *) const noexcept(sizeof(long double) > 0); };
+void Dispose::operator()(int *p) const noexcept(sizeof(int) > 0) { delete p; }
+using Owners = std::vector<std::unique_ptr<int, Dispose>>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"hidden-default-constructor", R"cpp(
+struct Dispose { Dispose() noexcept(sizeof(long double) > 0) = default; void operator()(int *p) const noexcept { delete p; } };
+using Owners = std::vector<std::unique_ptr<int, Dispose>>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"hidden-copy-constructor", R"cpp(
+struct Dispose { Dispose() = default; Dispose(const Dispose &) noexcept(sizeof(long double) > 0) = default; Dispose(Dispose &&) = default; Dispose &operator=(const Dispose &) = default; Dispose &operator=(Dispose &&) = default; void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Dispose d; Owner source(new int(1), d); Owners v(Size(2)); auto first=v.begin(); static_assert(sizeof(Owner(new int(2), d)) == sizeof(Owner)); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"hidden-copy-parameter-alias", R"cpp(
+int object; template<auto> using Reference = const struct Dispose &;
+struct Dispose { Dispose() = default; Dispose(Reference<&object>) = default; Dispose(Dispose &&) = default; Dispose &operator=(const Dispose &) = default; Dispose &operator=(Dispose &&) = default; void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Dispose d; Owner source(new int(1), d); Owners v(Size(2)); auto first=v.begin(); static_assert(sizeof(Owner(new int(2), d)) == sizeof(Owner)); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"hidden-move-constructor", R"cpp(
+struct Dispose { Dispose() = default; Dispose(const Dispose &) = default; Dispose(Dispose &&) noexcept(sizeof(long double) > 0) = default; Dispose &operator=(const Dispose &) = default; Dispose &operator=(Dispose &&) = default; void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owner source(new int(1)); Owner moved(static_cast<Owner &&>(source)); Owners v(Size(2)); auto first=v.begin(); static_assert(noexcept(Owner(static_cast<Owner &&>(moved)))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"deleter-destructor-noexcept", R"cpp(
+struct Dispose { Dispose() = default; Dispose(const Dispose &) = default; Dispose(Dispose &&) = default; Dispose &operator=(const Dispose &) = default; Dispose &operator=(Dispose &&) = default; ~Dispose() noexcept(sizeof(long double) > 0) = default; void operator()(int *p) const noexcept { delete p; } };
+using Owners = std::vector<std::unique_ptr<int, Dispose>>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"count-source", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v((sizeof(long double), Size(2))); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"receiver-source", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"factory-default-source", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+Owners &select(Owners &v, int = (sizeof(long double), 0)) noexcept { return v; }
+int f() { Owners v(Size(2)); auto first=select(v, 0).begin(); static_assert(__is_same(decltype(select(v).begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"deleter-factory-default", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+Dispose &select(Dispose &d, int = (sizeof(long double), 0)) noexcept { return d; }
+int f() { Dispose d; Owner source(new int(1), select(d, 0)); Owners v(Size(2)); auto first=v.begin(); static_assert(sizeof(Owner(new int(2), select(d))) == sizeof(Owner)); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"deleter-conversion-body", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+struct Proxy { operator Dispose() const noexcept { (void)sizeof(long double); return {}; } };
+int f() { Owner source(new int(1), Proxy{}); Owners v(Size(2)); auto first=v.begin(); static_assert(sizeof(Owner(new int(2), Proxy{})) == sizeof(Owner)); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"array-bound", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete[] p; } };
+using Owner = std::unique_ptr<int[], Dispose>; using Owners = std::vector<Owner>;
+int f() { Owner source(new int[2]{}, Dispose{}); Owners v(Size(2)); auto first=v.begin(); static_assert(sizeof(Owner(new int[(sizeof(long double), 2)]{}, Dispose{})) == sizeof(Owner)); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"missing-callback-body", R"cpp(
+struct Dispose { void operator()(int *) const noexcept; };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"stateful-deleter", R"cpp(
+struct Dispose { int state; void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"reference-deleter", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { std::vector<std::unique_ptr<int, Dispose &>> v; auto first=v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"nontrivial-deleter", R"cpp(
+struct Dispose { Dispose() noexcept {} void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"overloaded-deleter", R"cpp(
+struct Dispose { void operator()(double *) const noexcept {} void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"ref-qualified-deleter", R"cpp(
+struct Dispose { void operator()(int *p) const & noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"throwing-deleter", R"cpp(
+struct Dispose { void operator()(int *p) const { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"nonexact-pointer", R"cpp(
+struct Dispose { void operator()(void *p) const noexcept { delete static_cast<int *>(p); } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"query-only-owner-construction", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first=v.begin(); static_assert(sizeof(Owner(new int(1), Dispose{})) == sizeof(Owner)); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-copy", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(!noexcept(Owners(v))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"different-endpoint", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.end()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0203"},
+      {"reset-specialization", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+namespace std { inline namespace __1 { template<> void unique_ptr<int, ::Dispose>::reset(pointer) noexcept {} } }
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+      {"destructor-specialization", R"cpp(
+struct Dispose { void operator()(int *p) const noexcept { delete p; } };
+using Owner = std::unique_ptr<int, Dispose>; using Owners = std::vector<Owner>;
+namespace std { inline namespace __1 { template<> unique_ptr<int, ::Dispose>::~unique_ptr() noexcept {} } }
+int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("custom-deleter-vector-endpoint-query-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("custom-deleter-vector-endpoint-query-") +
+                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2UniquePtrVectorEndpointResultQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("unique-ptr-vector-endpoint-result-queries.cpp");
   const auto Output = tmpFile("unique-ptr-vector-endpoint-result-queries.nc");
@@ -67239,16 +67712,6 @@ int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(dec
       {"reset-specialization", R"cpp(
 namespace std { inline namespace __1 { template<> void unique_ptr<int>::reset(pointer) noexcept {} } }
 int f() { Owners v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
-)cpp",
-       "TR0201"},
-      {"custom-deleter", R"cpp(
-struct Deleter { void operator()(int *p) const noexcept { delete p; } };
-int f() { std::vector<std::unique_ptr<int, Deleter>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
-)cpp",
-       "TR0201"},
-      {"nested-custom-deleter", R"cpp(
-struct Deleter { void operator()(int *p) const noexcept { delete p; } };
-int f() { std::vector<std::vector<std::unique_ptr<int, Deleter>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
 )cpp",
        "TR0201"},
       {"query-only-owner-construction", R"cpp(

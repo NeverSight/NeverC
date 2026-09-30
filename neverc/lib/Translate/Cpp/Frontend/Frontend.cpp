@@ -2700,9 +2700,17 @@ static std::optional<UtilityUniquePtrRecord>
 utilityUniquePtrSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Owner =
       approvedUtilityUniquePtrRecord(A.S, A.Sources, Record, A.Context);
-  if (!Owner || Owner->CustomDeleter)
+  if (!Owner)
     return std::nullopt;
   for (const auto *Definition : {Owner->Record, Owner->Deleter.Record}) {
+    if (Owner->CustomDeleter && Definition == Owner->Deleter.Record) {
+      for (const auto *Declaration : Definition->redecls()) {
+        A.chargeExpansion(1, Declaration->getLocation());
+        if (!A.S.owns(A.Sources, Declaration->getLocation()))
+          return std::nullopt;
+      }
+      continue;
+    }
     const auto *Specialization =
         dyn_cast<ClassTemplateSpecializationDecl>(Definition);
     if (!Specialization ||
@@ -2784,15 +2792,52 @@ utilityUniquePtrDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   // materialized SDK body and the deleter method owning the checked delete.
   const auto *Body = cast<CompoundStmt>(Destructor->getBody());
   const auto *Reset = cast<CXXMemberCallExpr>(*Body->body_begin());
+  if (!utilityUniquePtrFunctionSource(A, Reset->getMethodDecl()))
+    return std::nullopt;
+  // A custom callback requires its completed source definition separately.
+  // The pinned reset body invokes the owner's one exact pointer call operator.
+  if (Owner->CustomDeleter)
+    return Owner;
   const auto *Argument = dyn_cast<DeclRefExpr>(
       Owner->DefaultDeletion->getArgument()->IgnoreParenImpCasts());
   const auto *Deleter =
       Argument ? dyn_cast<CXXMethodDecl>(Argument->getDecl()->getDeclContext())
                : nullptr;
-  if (!utilityUniquePtrFunctionSource(A, Reset->getMethodDecl()) ||
-      !utilityUniquePtrFunctionSource(A, Deleter))
+  if (!utilityUniquePtrFunctionSource(A, Deleter))
     return std::nullopt;
   return Owner;
+}
+
+static const CXXConstructorDecl *
+utilityUniquePtrDeleterConstructor(Adapter &A,
+                                   const CXXConstructorDecl *Constructor,
+                                   const UtilityUniquePtrRecord &Owner) {
+  const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(
+      Constructor ? Constructor->getDefinition() : nullptr);
+  if (!Definition || !Owner.CustomDeleter)
+    return nullptr;
+  const CXXConstructorDecl *Selected = nullptr;
+  for (const auto *Initializer : Definition->inits()) {
+    A.chargeExpansion(1, Constructor->getLocation());
+    const auto *Field =
+        Initializer->isMemberInitializer() ? Initializer->getMember() : nullptr;
+    if (!Field || Field->getName() != "__deleter_" ||
+        Field->getParent()->getCanonicalDecl() !=
+            Owner.Record->getCanonicalDecl())
+      continue;
+    const auto *Construction = dyn_cast<CXXConstructExpr>(
+        Initializer->getInit()->IgnoreParenImpCasts());
+    const auto *Candidate =
+        Construction ? Construction->getConstructor() : nullptr;
+    if (Selected || !Candidate || !Candidate->isTrivial() ||
+        (!Candidate->isDefaultConstructor() &&
+         !Candidate->isCopyOrMoveConstructor()) ||
+        Candidate->getParent()->getCanonicalDecl() !=
+            Owner.Deleter.Record->getCanonicalDecl())
+      return nullptr;
+    Selected = Candidate;
+  }
+  return Selected;
 }
 
 static bool utilityVectorSourceElements(Adapter &A,
@@ -3273,6 +3318,16 @@ public:
     if (utilityStringDestructionSource(A, Record))
       return true;
     if (const auto Owner = utilityUniquePtrDestructionSource(A, Record)) {
+      if (Owner->CustomDeleter) {
+        // The callback, rather than the owner, decides whether to destroy or
+        // release its pointee. Retain its source and its own trivial cleanup.
+        for (const auto *Declaration : Owner->CustomDeleter->redecls()) {
+          A.chargeExpansion(1, Declaration->getLocation());
+          if (!defined(Declaration))
+            return false;
+        }
+        return destruction(Owner->Deleter.Record, Depth + 1);
+      }
       // Use the same selected deallocation function as lowering, which can
       // differ from the SDK delete expression's implicit unsized declaration.
       if (!defined(A.uniquePtrDeleteFunction(*Owner, Record->getLocation())))
@@ -3350,6 +3405,17 @@ public:
                ? generatedOperation(ElementConstructor)
                : defined(ElementConstructor);
   }
+  bool uniquePtrConstruction(const CXXConstructorDecl *Constructor) {
+    const auto Owner = utilityUniquePtrSource(
+        A, Constructor ? Constructor->getParent() : nullptr);
+    if (!Owner || !utilityUniquePtrFunctionSource(A, Constructor) ||
+        (Constructor->isDefaultConstructor() &&
+         !utilityUniquePtrElementConstructionSource(A, Constructor)))
+      return false;
+    return !Owner->CustomDeleter ||
+           generatedOperation(
+               utilityUniquePtrDeleterConstructor(A, Constructor, *Owner));
+  }
   bool finish(SourceLocation L) {
     std::set<const OperationSourceDependencies *> Seen;
     while (!Work.empty()) {
@@ -3368,7 +3434,7 @@ public:
         if (!utilityStringElementConstructionSource(A, Constructor))
           return false;
       for (const auto *Constructor : Dependencies->UniquePtrConstructors)
-        if (!utilityUniquePtrElementConstructionSource(A, Constructor))
+        if (!uniquePtrConstruction(Constructor))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -8691,6 +8757,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // Its pinned pointer/empty-deleter shape supplies the SDK layout.
           // Owning cleanup still consumes the original pointee layout source.
           Self(Self, Owner->ElementType, true, Depth + 1);
+          if (Owner->CustomDeleter)
+            Self(Self, A.Context.getRecordType(Owner->Deleter.Record), true,
+                 Depth + 1);
           return;
         }
         if (const auto Iterator = approvedUtilityWrapIteratorRecord(
@@ -9079,8 +9148,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const bool UniqueSourceConstruction =
             UniqueConstruction &&
             *UniqueConstruction != UtilityUniquePtrConstruction::FactoryArray &&
-            *UniqueConstruction != UtilityUniquePtrConstruction::NullDeleter &&
-            *UniqueConstruction != UtilityUniquePtrConstruction::PointerDeleter;
+            (Unique->CustomDeleter ||
+             (*UniqueConstruction !=
+                  UtilityUniquePtrConstruction::NullDeleter &&
+              *UniqueConstruction !=
+                  UtilityUniquePtrConstruction::PointerDeleter));
         bool SDKConstruction =
             approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                             A.Context)
@@ -9113,6 +9185,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           for (const auto *Declaration : Primary->redecls())
             SDKConstruction &= approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
                                Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl()));
+        if (SDKConstruction && UniqueSourceConstruction)
+          for (auto *Dependencies : ActiveOperationSources)
+            if (Dependencies->UniquePtrConstructors.insert(Constructor).second)
+              A.chargeExpansion(1, Constructor->getLocation());
         if (SDKConstruction && VectorConstruction &&
             Vector->ElementType->isRecordType() &&
             *VectorConstruction != UtilityVectorConstruction::Default &&

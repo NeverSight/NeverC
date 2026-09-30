@@ -2511,21 +2511,33 @@ Admitted string construction inside receiver initializers or query temporaries
 likewise retains the exact SDK operation while checking written aliases,
 character arrays, argument expressions and selected source defaults normally.
 Unique-pointer leaves accept the pinned `unique_ptr<T>` and `unique_ptr<T[]>`
-shape with standard `default_delete`, including admitted source-owned objects
-and const scalar pointees. Their vector default, count and buffer-move
-constructions retain the exact owning operation; count construction requires
-the already materialized default constructor specialization with its pinned
-definition, original template pattern and default template arguments. Empty
+shape with matching `default_delete` or an admitted source-owned empty, trivial
+deleter, including admitted source-owned objects and const scalar pointees.
+Their vector default, count and buffer-move constructions retain the exact
+owning operation; count construction requires the already materialized default
+constructor specialization with its pinned definition, original template
+pattern and default template arguments. Empty
 inner vectors and buffer moves require no unused managed-object constructor or
-unique-pointer copy. Cleanup authenticates the exact materialized destructor,
-its `reset` call and the selected `default_delete` body. It checks the same
-source deallocation definition selected by lowering, including its original
-signature and exception specification, and recursively retains managed-object
-layout and destruction source. Admitted direct unique-pointer construction in
-receiver initializers or query temporaries keeps written pointee/deleter
+unique-pointer copy. Cleanup authenticates the exact materialized destructor
+and its `reset` call. For a standard deleter, it also authenticates the selected
+`default_delete` body and checks the same source deallocation definition selected
+by lowering, including its original signature and exception specification,
+and recursively retains managed-object layout and destruction source.
+Admitted direct unique-pointer construction in receiver initializers or query
+temporaries keeps written pointee/deleter
 aliases, argument expressions, source defaults and allocation bounds checked.
-Custom deleters and `make_unique` factory queries still require their separate
-owning source proof.
+For a custom deleter, the pinned constructor's actual deleter initializer
+supplies its selected trivial default, copy or move operation. The original
+source signature, exception specification and implicit/defaulted family proof
+remain required. Cleanup retains the callback's completed source definition,
+all its original redeclaration signatures and the deleter's own destruction
+source. Pointee cleanup follows the callback body, including callbacks that
+only observe a borrowed object. The admitted pointer and `nullptr`
+constructors with an exact source deleter lvalue or rvalue also retain written
+argument, conversion and selected default sources. Stateful, reference,
+nontrivial, overloaded, ref-qualified, throwing and nonexact-pointer deleters
+retain their existing rejection boundary. `make_unique` factory queries still
+require their separate owning source proof.
 Authentication belongs to the exact member call and reference; receiver
 expressions, factory defaults and written type or template source remain checked.
 These unevaluated calls preserve the iterator type and fixed `noexcept` value
