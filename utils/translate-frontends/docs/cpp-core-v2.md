@@ -2438,6 +2438,12 @@ exact authenticated `std::pair<const T&, const T&>` result; its fields retain
 the two argument referents on every pointer width. `minmax_element` returns an
 authenticated pointer pair, selects the first minimum and last maximum, and
 uses pairwise comparisons after its initial elements.
+The checked three-argument `std::min` and `std::max` forms also accept two
+objects of one exact function-pointer type, including `noexcept` pointers,
+through a `bool(Callback, Callback)` comparator. The comparator receives the
+pointer values in the pinned call order; the result remains a const reference
+to the selected argument, with the first argument selected on equivalence.
+The translator does not invoke the pointed-to functions.
 
 The exact one-argument `std::min(initializer_list<T>)` and
 `std::max(initializer_list<T>)` overloads also accept admitted ordered scalar

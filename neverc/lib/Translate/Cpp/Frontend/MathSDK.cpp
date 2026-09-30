@@ -24327,6 +24327,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     return true;
   };
+  auto AlgorithmCallbackReferenceParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    return Parameter->isLValueReferenceType() &&
+           Parameter->getPointeeType().isConstQualified() &&
+           utilityCallbackEqualityType(Context, Call->getArg(Index)->getType(),
+                                       Parameter->getPointeeType())
+               .has_value();
+  };
   auto AlgorithmOrderedReferenceParameter = [&](unsigned Index) {
     if (!AlgorithmReferenceParameter(Index))
       return false;
@@ -24786,6 +24796,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                              LeftParameter) &&
                utilityScalarDirectConversion(Context, Reference,
                                              RightParameter);
+      };
+  auto AlgorithmCallbackReferenceComparator =
+      [&](unsigned ComparatorIndex, unsigned ReferenceIndex) {
+        if (!AlgorithmCallbackReferenceParameter(ReferenceIndex))
+          return false;
+        const auto *Prototype = AlgorithmCallbackPrototype(ComparatorIndex);
+        if (!Prototype || Prototype->getNumParams() != 2 ||
+            !Prototype->getReturnType()->isBooleanType())
+          return false;
+        const auto Reference = Function->getParamDecl(ReferenceIndex)
+                                   ->getType()
+                                   ->getPointeeType();
+        return utilityCallbackEqualityType(Context, Reference,
+                                           Prototype->getParamType(0)) &&
+               utilityCallbackEqualityType(Context, Reference,
+                                           Prototype->getParamType(1));
       };
   auto AlgorithmRecordReferenceComparator = [&](unsigned ComparatorIndex,
                                                 unsigned ReferenceIndex) {
@@ -26809,9 +26835,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isLValue() &&
       (AlgorithmReferenceParameter(0) ||
+       AlgorithmCallbackReferenceParameter(0) ||
        AlgorithmSourceOrderedReferenceParameter(0) ||
        AlgorithmRecordReferenceParameter(0)) &&
       (AlgorithmReferenceParameter(1) ||
+       AlgorithmCallbackReferenceParameter(1) ||
        AlgorithmSourceOrderedReferenceParameter(1) ||
        AlgorithmRecordReferenceParameter(1)) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -26826,6 +26854,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((AlgorithmReferenceParameter(0) &&
           (AlgorithmBinaryPredicateReferenceParameter(2, 0) ||
            approvedDirectAlgorithmComparator(S, SM, Call, Context))) ||
+         AlgorithmCallbackReferenceComparator(2, 0) ||
          AlgorithmRecordReferenceComparator(2, 0) ||
          approvedDirectAlgorithmSourceComparator(S, SM, Call, Context)))))
     return Name == "min" ? UtilityOperation::AlgorithmMin

@@ -45855,6 +45855,121 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackMinMaxReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-min-max-references.cpp");
+  const auto Output = tmpFile("callback-min-max-references.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls;
+int comparisons;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int rank(Callback value) {
+  if (value == one) return 1;
+  if (value == two) return 2;
+  return 3;
+}
+bool less_rank(Callback left, Callback right) {
+  ++comparisons;
+  return rank(left) < rank(right);
+}
+bool less_safe(NoexceptCallback left, NoexceptCallback right) {
+  ++comparisons;
+  return left == safe_one && right == safe_two;
+}
+int main() {
+  Callback low = one, high = three, same = one;
+  bool (*compare)(Callback, Callback) = less_rank;
+  int left_effects = 0, right_effects = 0, compare_effects = 0;
+  const Callback &minimum = std::min((++left_effects, high),
+                                     (++right_effects, low),
+                                     (++compare_effects, compare));
+  if (&minimum != &low || left_effects != 1 || right_effects != 1 ||
+      compare_effects != 1 || comparisons != 1 || pointed_calls != 0)
+    return 1;
+  comparisons = 0;
+  const Callback &maximum = std::max(low, high, compare);
+  if (&maximum != &high || comparisons != 1 || pointed_calls != 0)
+    return 2;
+  comparisons = 0;
+  if (&std::min(low, same, compare) != &low ||
+      &std::max(low, same, compare) != &low ||
+      comparisons != 2 || pointed_calls != 0)
+    return 3;
+  NoexceptCallback safe_low = safe_one, safe_high = safe_two;
+  comparisons = 0;
+  if (&std::min(safe_high, safe_low, less_safe) != &safe_low ||
+      &std::max(safe_low, safe_high, less_safe) != &safe_high ||
+      comparisons != 2 || pointed_calls != 0)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-min-max-references" +
+                                    Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackMinMaxReferencesRejectInvalidComparators) {
+  for (const std::string &Name : {"min", "max"}) {
+    for (const std::string &Predicate : {"wrong_result", "wrong_reference"}) {
+      SCOPED_TRACE(Name + ":" + Predicate);
+      const auto Source = tmpFile(Name + "-callback-" + Predicate + ".cpp");
+      const auto Output = tmpFile(Name + "-callback-" + Predicate + ".nc");
+      writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+int one(int x) { return x + 1; }
+int two(int x) { return x + 2; }
+int wrong_result(Callback, Callback) { return 1; }
+bool wrong_reference(const Callback&, const Callback&) { return true; }
+int main() {
+  Callback left = one, right = two;
+  return &std::)cpp" + Name + "(left, right, " + Predicate +
+                            ") == &left;\n}\n");
+      expectCode(
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+          "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+  for (const std::string &Name : {"min", "max"}) {
+    SCOPED_TRACE(Name + ":noexcept-conversion");
+    const auto Source = tmpFile(Name + "-callback-noexcept-conversion.cpp");
+    const auto Output = tmpFile(Name + "-callback-noexcept-conversion.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) noexcept { return x + 1; }
+int two(int x) noexcept { return x + 2; }
+bool wrong_conversion(Callback, Callback) { return true; }
+int main() {
+  NoexceptCallback left = one, right = two;
+  return &std::)cpp" + Name +
+                          "(left, right, wrong_conversion) == &left;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DirectAlgorithmFunctionalComparatorsRun) {
   const auto Source = tmpFile("algorithm-functional-extrema.cpp");
   const auto Output = tmpFile("algorithm-functional-extrema.nc");
