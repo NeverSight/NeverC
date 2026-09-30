@@ -52479,6 +52479,197 @@ int f(int*p){return std::all_of(p,p+2,P<int>{});}
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackFilterCopyObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-filter-copy-objects.cpp");
+  const auto Output = tmpFile("algorithm-callback-filter-copy-objects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, factories, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int safe_three(int x) noexcept { ++pointed_calls; return x + 3; }
+void reset() { calls = trace = state_trace = 0; }
+void observe(Callback value, int local_calls) {
+  ++calls;
+  trace = trace * 10 + (value == nullptr ? 0 : value == one ? 1 : 2);
+  state_trace = state_trace * 10 + local_calls;
+}
+bool observed() { return calls == 4 && trace == 1201 && state_trace == 1234; }
+struct Select {
+  Callback needle;
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    return value == needle;
+  }
+  bool operator()(Callback) const & { bad_receiver += 100; return false; }
+};
+Select make(Callback needle) { ++factories; return {needle, 0}; }
+struct Mutate {
+  const Mutate *self;
+  Callback *current;
+  int local_calls;
+  Mutate(Callback *p) : self(this), current(p), local_calls(0) { ++constructed; }
+  bool operator()(Callback value) & {
+    if (self != this) ++bad_receiver;
+    observe(value, ++local_calls);
+    bool selected = value == one;
+    *current = selected ? three : one;
+    ++current;
+    return selected;
+  }
+};
+struct SafeSelect {
+  NoexceptCallback needle;
+  int local_calls;
+  bool operator()(NoexceptCallback value) & noexcept {
+    ++calls;
+    trace = trace * 10 + (value == nullptr ? 0 : value == safe_one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    return value == needle;
+  }
+  bool operator()(NoexceptCallback) const & noexcept {
+    bad_receiver += 100;
+    return false;
+  }
+};
+int main() {
+  const Callback input[]{one, two, nullptr, one};
+  Callback kept[]{three, three, three, three};
+  Callback removed[]{three, three, three, three};
+  const Select caller{one, 0};
+  int first_effects = 0, last_effects = 0, output_effects = 0, object_effects = 0;
+  if (std::copy_if((++first_effects, input), (++last_effects, input + 4),
+                   (++output_effects, kept), (++object_effects, caller)) != kept + 2 ||
+      kept[0] != one || kept[1] != one || kept[2] != three || !observed() ||
+      first_effects != 1 || last_effects != 1 || output_effects != 1 ||
+      object_effects != 1 || caller.local_calls) return 1;
+  reset();
+  if (std::remove_copy_if(input, input + 4, removed, caller) != removed + 2 ||
+      removed[0] != two || removed[1] != nullptr || removed[2] != three ||
+      !observed() || caller.local_calls) return 2;
+  Callback none[]{three, three, three, three};
+  reset();
+  if (std::copy_if(input, input + 4, none, make(three)) != none ||
+      none[0] != three || !observed()) return 3;
+  Callback all[4]{};
+  reset();
+  if (std::remove_copy_if(input, input + 4, all, make(three)) != all + 4 ||
+      all[0] != one || all[1] != two || all[2] != nullptr || all[3] != one ||
+      !observed() || factories != 2) return 4;
+  reset();
+  if (std::copy_if(input, input, none, make(one)) != none ||
+      std::remove_copy_if(input, input, none, make(one)) != none ||
+      calls || trace || state_trace || factories != 4 || none[0] != three)
+    return 5;
+  Callback changing[]{one, two, nullptr, one};
+  Callback changed_output[4]{};
+  if (std::copy_if(changing, changing + 4, changed_output, Mutate(changing)) !=
+      changed_output + 2 || changed_output[0] != three || changed_output[1] != three ||
+      changed_output[2] != nullptr || !observed() || constructed != 1) return 6;
+  if (changing[0] != three || changing[1] != one || changing[2] != one ||
+      changing[3] != three) return 7;
+  Callback again[]{one, two, nullptr, one};
+  Callback again_output[4]{};
+  reset();
+  if (std::remove_copy_if(again, again + 4, again_output, Mutate(again)) !=
+      again_output + 2 || again_output[0] != one || again_output[1] != one ||
+      again_output[2] != nullptr || !observed() || constructed != 2) return 8;
+  reset();
+  if (std::copy_if(changing, changing, changed_output, Mutate(changing)) !=
+      changed_output ||
+      std::remove_copy_if(again, again, again_output, Mutate(again)) !=
+      again_output || calls || constructed != 4) return 9;
+  NoexceptCallback safe[]{safe_one, safe_two, nullptr, safe_one};
+  NoexceptCallback safe_kept[]{safe_three, safe_three, safe_three, safe_three};
+  NoexceptCallback safe_removed[]{safe_three, safe_three, safe_three, safe_three};
+  const SafeSelect safe_caller{safe_one, 0};
+  reset();
+  if (std::copy_if(safe, safe + 4, safe_kept, safe_caller) != safe_kept + 2 ||
+      safe_kept[0] != safe_one || safe_kept[1] != safe_one ||
+      safe_kept[2] != safe_three || !observed() || safe_caller.local_calls)
+    return 10;
+  reset();
+  if (std::remove_copy_if(safe, safe + 4, safe_removed, safe_caller) !=
+      safe_removed + 2 || safe_removed[0] != safe_two || safe_removed[1] != nullptr ||
+      safe_removed[2] != safe_three || !observed() || safe_caller.local_calls)
+    return 11;
+  return pointed_calls || bad_receiver || caller.local_calls ? 12 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-callback-filter-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmCallbackFilterCopyObjectsRequireExactTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *Definition;
+    const char *Input;
+    const char *Output;
+    const char *Object;
+  };
+  const Rejection Cases[] = {
+      {"reference", "struct F { bool operator()(const Callback&) & { return true; } };",
+       "input", "output", "F{}"},
+      {"input-conversion", "struct F { bool operator()(Callback) & { return true; } };",
+       "safe", "safe_output", "F{}"},
+      {"output-conversion", "struct F { bool operator()(NoexceptCallback) & { return true; } };",
+       "safe", "output", "F{}"},
+      {"bool-output", "struct F { bool operator()(Callback) & { return true; } };",
+       "input", "flags", "F{}"},
+      {"method-template", "struct F { template<class T> bool operator()(T) & { return true; } };",
+       "input", "output", "F{}"},
+      {"non-bool-result", "struct F { int operator()(Callback) & { return 1; } };",
+       "input", "output", "F{}"},
+      {"sdk-object", "", "input", "output", "std::logical_not<Callback>{}"},
+  };
+  for (const auto &Case : Cases) {
+    for (const std::string &Algorithm : {"copy_if", "remove_copy_if"}) {
+      const std::string Name = std::string(Case.Name) + "-" + Algorithm;
+      SCOPED_TRACE(Name);
+      const auto Source = tmpFile(Name + "-callback-filter-copy-object.cpp");
+      const auto Output = tmpFile(Name + "-callback-filter-copy-object.nc");
+      writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) +
+                            R"cpp(
+int main() {
+  Callback input[]{one, one}, output[2]{};
+  NoexceptCallback safe[]{safe_one, safe_one}, safe_output[2]{};
+  bool flags[2]{};
+)cpp" +
+                            "auto end = std::" + Algorithm + "(" + Case.Input +
+                            ", " + Case.Input + " + 2, " + Case.Output + ", " +
+                            Case.Object + ");\n(void)end;\nreturn 0;\n}\n");
+      expectCode(
+          translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+          "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmFilterCopyPredicateObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-filter-copy-state.cpp");
   const auto Output = tmpFile("algorithm-filter-copy-state.nc");

@@ -3124,6 +3124,16 @@ For `copy_if`, the public predicate parameter is passed by reference through
 returned pointer pair, `make_pair`, `move`, `forward`, pair construction and the
 public `second` projection retain separate exact signature and source checks.
 No additional predicate object or user-visible pair is created by lowering.
+Both source-object filtering copy forms also accept raw ranges of exact
+function-pointer elements, including `noexcept` types, with a Boolean operator
+taking the element by value and a writable raw output of that same pointer
+type. Const input storage is accepted. Reference parameters, input or output
+pointer-type conversions and conversion to a Boolean output remain rejected.
+One by-value predicate retains its state, and copies reread selected elements
+after it returns, preserving writes through an independently held input pointer.
+The returned iterator advances only for retained elements. Empty ranges
+initialize the object without invoking it or writing output; pointed-to
+functions are not invoked by the translator. SDK objects keep scalar inputs.
 `is_partitioned` authenticates both direct predicate call sites and the exact
 two-scan control flow. Both scans use the same parameter object and selected
 method; the first false element is tested once, then skipped before the tail

@@ -15811,7 +15811,9 @@ static const Expr *utilityAlgorithmFilterLoop(const FunctionDecl *Definition,
   const Expr *RHS = Assign->getRHS();
   while (const auto *Cast = dyn_cast<ImplicitCastExpr>(RHS)) {
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+                                       Cast->getType()) &&
+        !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
+                                     Cast->getType()))
       return nullptr;
     RHS = Cast->getSubExpr();
   }
@@ -18820,7 +18822,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   }
   const auto Pointer = Function->getParamDecl(0)->getType();
   const bool CallbackElements =
-      !SDKObject && (Find || FindNot || None || All || Any || Count) &&
+      !SDKObject &&
+      (Find || FindNot || None || All || Any || Count || Copy || RemoveCopy) &&
       utilityObjectPointer(Context, Pointer) &&
       utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
                                   Pointer->getPointeeType());
@@ -18866,12 +18869,18 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   }
   if (Remove && !utilityAlgorithmWritableScalarPointer(Context, Pointer))
     return std::nullopt;
-  if ((RemoveCopy || Copy) &&
-      (!utilityAlgorithmWritableScalarPointer(Context, Output) ||
-       !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
-       !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                      Output->getPointeeType())))
-    return std::nullopt;
+  if (RemoveCopy || Copy) {
+    const bool CallbackOutput =
+        CallbackElements && utilityObjectPointer(Context, Output) &&
+        !Output->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                    Output->getPointeeType());
+    if ((!utilityAlgorithmWritableScalarPointer(Context, Output) &&
+         !CallbackOutput) ||
+        !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
+        !InputConversion(Pointer->getPointeeType(), Output->getPointeeType()))
+      return std::nullopt;
+  }
   if (Replacement) {
     const unsigned ValueIndex = ParameterCount - 1;
     const auto Value = Function->getParamDecl(ValueIndex)->getType();
