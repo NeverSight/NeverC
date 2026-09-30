@@ -17325,7 +17325,17 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
   auto Count = Function->getParamDecl(1)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  if (!utilityAlgorithmWritableScalarPointer(Context, Pointer) ||
+  const bool CallbackOutput =
+      utilityObjectPointer(Context, Pointer) &&
+      !Pointer->getPointeeType().isConstQualified() &&
+      utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                  Pointer->getPointeeType());
+  auto ResultConversion = [&](QualType From, QualType To) {
+    return utilityScalarDirectConversion(Context, From, To) ||
+           (CallbackOutput && utilityCallbackEqualityType(Context, From, To));
+  };
+  if ((!utilityAlgorithmWritableScalarPointer(Context, Pointer) &&
+       !CallbackOutput) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Count) ||
       !Context.hasSameType(Call->getArg(2)->getType(), Object) ||
@@ -17470,8 +17480,7 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
   }
   const Expr *Result = Assignment->getRHS();
   while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+    if (!ResultConversion(Cast->getSubExpr()->getType(), Cast->getType()))
       return std::nullopt;
     Result = Cast->getSubExpr();
   }
@@ -17489,8 +17498,7 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false) ||
-      !utilityScalarDirectConversion(Context, Method->getReturnType(),
-                                     Pointer->getPointeeType()) ||
+      !ResultConversion(Method->getReturnType(), Pointer->getPointeeType()) ||
       (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
        Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
       Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||

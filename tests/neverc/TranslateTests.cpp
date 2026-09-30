@@ -50806,6 +50806,238 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmGenerateObjectPointerOutputsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-generate-object-pointer-outputs.cpp");
+  const auto Output = tmpFile("algorithm-generate-object-pointer-outputs.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, pointed_calls, bad_receiver;
+int firsts, lasts, counts, factories, constructions, live, destroyed;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+void reset() { calls = trace = 0; }
+void observe(int next) { ++calls; trace = trace * 10 + next; }
+struct Generator {
+  int next;
+  Callback operator()() & {
+    observe(++next);
+    return next % 3 == 1 ? one : next % 3 == 2 ? two : nullptr;
+  }
+  Callback operator()() const & { ++bad_receiver; return nullptr; }
+};
+struct Token {
+  int active;
+  Token() : active(1) { ++live; }
+  ~Token() { active = 0; --live; ++destroyed; }
+};
+struct Built {
+  const Built *self;
+  const Token *token;
+  Callback target;
+  int next;
+  Built(Callback value, const Token &t = Token())
+      : self(this), token(&t), target(value), next(0) { ++constructions; }
+  Callback operator()() & {
+    if (self != this || token->active != 1 || live != 1) ++bad_receiver;
+    observe(++next);
+    return next % 2 ? target : nullptr;
+  }
+};
+Callback *first(Callback *p) { ++firsts; return p; }
+Callback *last(Callback *p) { ++lasts; return p; }
+short count(short value) { ++counts; return value; }
+Built make(Callback value, const Token &t) { ++factories; return Built(value, t); }
+struct SafeGenerator {
+  int next;
+  NoexceptCallback operator()() & noexcept {
+    observe(++next);
+    return next % 3 == 1 ? safe_one : next % 3 == 2 ? safe_two : nullptr;
+  }
+  NoexceptCallback operator()() const & noexcept { ++bad_receiver; return nullptr; }
+};
+template<class T> struct Repeat {
+  T value;
+  int next;
+  T operator()() & {
+    observe(++next);
+    return next % 2 ? value : nullptr;
+  }
+};
+enum Amount : unsigned char { two_items = 2 };
+int main() {
+  Callback values[]{three, three, three, three, three};
+  const Generator caller{0};
+  int object_effects = 0;
+  std::generate(first(values), last(values + 4), (++object_effects, caller));
+  static_assert(__is_same(decltype(std::generate(values, values + 4, caller)), void));
+  static_assert(!noexcept(std::generate(values, values + 4, caller)));
+  if (values[0] != one || values[1] != two || values[2] != nullptr ||
+      values[3] != one || values[4] != three || calls != 4 || trace != 1234 ||
+      firsts != 1 || lasts != 1 || object_effects != 1 || caller.next) return 1;
+  reset();
+  auto end = std::generate_n(first(values), count(3), (++object_effects, caller));
+  static_assert(__is_same(decltype(std::generate_n(values, short(3), caller)), Callback *));
+  static_assert(!noexcept(std::generate_n(values, short(3), caller)));
+  if (end != values + 3 || values[0] != one || values[1] != two ||
+      values[2] != nullptr || values[3] != one || values[4] != three || calls != 3 ||
+      trace != 123 || firsts != 2 || counts != 1 || object_effects != 2 || caller.next)
+    return 2;
+  reset();
+  std::generate(values, values + 3, make(two, Token{}));
+  if (values[0] != two || values[1] != nullptr || values[2] != two || values[3] != one ||
+      calls != 3 || trace != 123 || factories != 1 || constructions != 1 ||
+      live || destroyed != 1 || bad_receiver) return 3;
+  reset();
+  std::generate(values, values, Built(three));
+  if (values[0] != two || calls || trace || constructions != 2 || live ||
+      destroyed != 2 || bad_receiver) return 4;
+  auto built_end = std::generate_n(values, short(2), make(one, Token{}));
+  if (built_end != values + 2 ||
+      values[0] != one || values[1] != nullptr || values[2] != two ||
+      calls != 2 || trace != 12 || factories != 2 || constructions != 3 ||
+      live || destroyed != 3 || bad_receiver) return 5;
+  reset();
+  auto zero_end = std::generate_n(first(values), count(0), Built(two));
+  if (zero_end != values ||
+      calls || trace || values[0] != one || firsts != 3 || counts != 2 ||
+      constructions != 4 || live || destroyed != 4) return 6;
+  auto negative_end = std::generate_n(first(values), count(-3), Built(two));
+  if (negative_end != values ||
+      calls || trace || values[0] != one || firsts != 4 || counts != 3 ||
+      constructions != 5 || live || destroyed != 5) return 7;
+  auto unsigned_zero_end = std::generate_n(values, 0u, Built(two));
+  if (unsigned_zero_end != values || calls || trace ||
+      constructions != 6 || live || destroyed != 6 || bad_receiver) return 8;
+  reset();
+  NoexceptCallback safe[]{safe_two, safe_two, safe_two, safe_two};
+  const SafeGenerator safe_caller{0};
+  std::generate(safe, safe + 3, safe_caller);
+  if (safe[0] != safe_one || safe[1] != safe_two || safe[2] != nullptr ||
+      safe[3] != safe_two || calls != 3 || trace != 123 || safe_caller.next) return 9;
+  reset();
+  int count_effects = 0;
+  auto safe_end = std::generate_n(safe, (++count_effects, two_items), safe_caller);
+  static_assert(__is_same(decltype(safe_end), NoexceptCallback *));
+  if (safe_end != safe + 2 || safe[0] != safe_one || safe[1] != safe_two ||
+      safe[2] != nullptr || safe[3] != safe_two || calls != 2 || trace != 12 ||
+      safe_caller.next || count_effects != 1) return 10;
+  reset();
+  const Repeat<Callback> repeat{three, 0};
+  std::generate(values, values + 2, repeat);
+  if (values[0] != three || values[1] != nullptr || values[2] != two ||
+      calls != 2 || trace != 12 || repeat.next) return 11;
+  reset();
+  if (std::generate_n(values, two_items, repeat) != values + 2 ||
+      values[0] != three || values[1] != nullptr || values[2] != two ||
+      calls != 2 || trace != 12 || repeat.next) return 12;
+  return pointed_calls || bad_receiver || caller.next ? 13 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-generate-object-pointer-outputs" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmGenerateObjectPointerOutputsRequireExactTypes) {
+  const struct {
+    const char *Name, *Definition, *Output, *Code;
+  } Cases[] = {
+      {"result-conversion",
+       "struct F { NoexceptCallback operator()() & { return safe_one; } };",
+       "output", "TR0203"},
+      {"reference-result",
+       "struct F { Callback& operator()() & { return retained; } };", "output",
+       "TR0203"},
+      {"nullptr-result",
+       "struct F { decltype(nullptr) operator()() & { return nullptr; } };",
+       "output", "TR0203"},
+      {"bool-output", "struct F { Callback operator()() & { return one; } };",
+       "flags", "TR0203"},
+      {"non-nullary",
+       "struct F { Callback operator()(int = 0) & { return one; } };", "output",
+       "TR0203"},
+      {"method-template",
+       "struct F { template<class T = int> Callback operator()() & { return "
+       "one; } };",
+       "output", "TR0203"},
+      {"nontrivial-copy",
+       "struct F { F() {} F(const F&) {} Callback operator()() & { return one; "
+       "} };",
+       "output", "TR0203"},
+      {"nontrivial-destructor",
+       "struct F { ~F() {} Callback operator()() & { return one; } };",
+       "output", "TR0203"},
+      {"missing-definition", "struct F { Callback operator()() &; };", "output",
+       "TR0203"},
+      {"unsupported-body",
+       "struct F { Callback operator()() & { long double hidden = 0; return "
+       "one; } };",
+       "output", "TR0201"},
+      {"constructor-default",
+       "struct F { F(int = (sizeof(long double), 0)) {} Callback operator()() "
+       "& { return one; } };",
+       "output", "TR0201"},
+      {"record-result",
+       "struct R { operator Callback() const { return one; } }; struct F { R "
+       "operator()() & { return {}; } };",
+       "output", "TR0203"},
+      {"source-specialization",
+       "struct F { Callback operator()() & { return one; } }; namespace std { "
+       "template<> void generate<Callback*, F>(Callback*, Callback*, F) {} "
+       "template<> Callback* generate_n<Callback*, int, F>(Callback* p, int, "
+       "F) { return p; } }",
+       "output", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    for (bool Counted : {false, true}) {
+      const std::string Name =
+          std::string(Case.Name) + (Counted ? "-counted" : "-range");
+      SCOPED_TRACE(Name);
+      const auto Source = tmpFile(Name + "-generate-object-pointer-output.cpp");
+      const auto Output = tmpFile(Name + "-generate-object-pointer-output.nc");
+      writeFile(
+          Source,
+          R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+Callback retained = one;
+)cpp" + std::string(Case.Definition) +
+              R"cpp(
+int main() {
+  Callback output[2]{};
+  bool flags[2]{};
+)cpp" + (Counted ? "(void)std::generate_n(" : "std::generate(") +
+              Case.Output +
+              (Counted ? ", 2, " : ", " + std::string(Case.Output) + " + 2, ") +
+              "F{});\nreturn 0;\n}\n");
+      expectCode(translate(Source,
+                           {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 Case.Code);
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmGenerateObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-generate-object.cpp");
   const auto Output = tmpFile("algorithm-generate-object.nc");

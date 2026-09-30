@@ -2363,9 +2363,19 @@ the original iterator. SDK function objects retain their scalar input boundary.
 `generate` and `generate_n` accept source-owned, standard-layout, trivially
 copied generator objects with a defined non-template nullary call operator.
 The selected scalar result must convert directly to the writable output
-element. Their exact pinned loops are authenticated, and the generator's
+element. A generator may also return the exact function-pointer element type
+by value, including a `noexcept` signature, for a writable raw output range.
+The translator stores each returned pointer without invoking its target;
+for function-pointer outputs, reference results, conversions between pointer
+signatures and results returning only `nullptr_t` remain rejected.
+Function-pointer results cannot convert to Boolean outputs.
+Their exact pinned loops are authenticated, and the generator's
 by-value state is retained once across visits. Empty ranges and non-positive
-counted ranges do not invoke it.
+counted ranges initialize the object and preserve full-expression cleanup
+without invoking it or storing output elements. `generate_n` returns the
+advanced output pointer, or the original pointer for a non-positive count.
+Result queries require an already instantiated, authenticated specialization;
+the count type remains part of the `generate_n` specialization.
 
 Both `transform` overloads accept these source-owned trivial function objects
 when the selected non-template operator returns an admitted scalar that converts
