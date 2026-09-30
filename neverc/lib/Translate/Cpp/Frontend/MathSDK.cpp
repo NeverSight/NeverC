@@ -23509,10 +23509,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           if (Null)
             return Parameter->isNullPtrType() &&
                    Call->getArg(Index)->getType()->isNullPtrType();
+          // A const owner reference borrows xvalues as well as lvalues;
+          // neither binding selects an ownership transfer.
           return Unique && Parameter->isLValueReferenceType() &&
                  Parameter->getPointeeType().isConstQualified() &&
                  !Parameter->getPointeeType().isVolatileQualified() &&
-                 Call->getArg(Index)->isLValue() &&
+                 Call->getArg(Index)->isGLValue() &&
                  Context.hasSameUnqualifiedType(
                      Parameter->getPointeeType(),
                      Call->getArg(Index)->getType()) &&

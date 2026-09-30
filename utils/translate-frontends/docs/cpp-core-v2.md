@@ -1264,9 +1264,14 @@ Member `swap` evaluates its receiver
 before its argument; free `std::swap` evaluates each owner once. Both exchange
 only the captured pointer fields, perform no destruction and retain ownership
 during self-swap. All six comparisons capture raw pointers, including either
-operand order with `nullptr`. Two admitted owners may use different deleter
-specializations when both are scalar or both are arrays and their raw pointers
-have a qualification-compatible common type. Ordered forms reuse
+operand order with `nullptr`. Their exact `const owner&` parameters also borrow
+mutable or const xvalues from admitted `std::move`, `std::forward`, explicit
+rvalue-reference casts, source reference returns and glvalue conditionals. Each
+operand retains its object identity and executes once; no move construction,
+assignment or ownership transfer is selected. Owning temporary operands retain
+their ordinary full-expression cleanup. Two admitted owners may use different
+deleter specializations when both are scalar or both are arrays and their raw
+pointers have a qualification-compatible common type. Ordered forms reuse
 the checked flat-address pointer carrier that implements the `std::less` total
 order without C relational-pointer undefined behavior.
 Automatic and static destruction first clear the owner and then run its
@@ -1396,7 +1401,8 @@ overloads. They retain a `bool` prvalue result and nonthrowing signature for
 mutable or const scalar and array owners with standard or admitted custom
 deleters, including qualified pointees and bounded inner array extents. The
 owner may come from a source reference or dereferenced exact raw owner pointer;
-the null operand may be any admitted `nullptr_t` expression. Both written
+the owner may also be an admitted mutable or const xvalue, and the null operand
+may be any admitted `nullptr_t` expression. Both written
 operands, aliases, original source signatures, exception specifications and
 selected defaults keep their ordinary source dependencies.
 The exact free wrapper, its primary, instantiation pattern and all
@@ -1425,7 +1431,10 @@ Scalar and array owners must have the same unqualified element type and array
 kind; the two concrete owner/deleter types may differ, including admitted custom
 deleters, qualified pointees and bounded inner array extents. Const owners,
 source references and dereferenced exact raw owner pointers keep the ordinary
-runtime operand boundary, including its rejection of explicit owner xvalues.
+runtime operand boundary, including mutable or const owner xvalues bound to
+the exact const-reference parameters. An xvalue borrowed from a live owner
+selects no move construction, assignment or ownership transfer; materialized
+owning temporaries keep their original lifetime dependencies.
 Both written operand expressions, aliases, original
 function signatures, exception specifications and selected source defaults
 retain their original source dependencies.
@@ -1445,6 +1454,23 @@ evaluate both operands once in an unspecified C++17 order. Missing result-query
 bodies, different unmaterialized pairs/specializations, source comparison or
 selected-getter replacements, independent function addresses, ordering queries
 and explicit operator-function calls remain rejected.
+
+For these owner xvalue queries, exact pinned `std::move` and `std::forward`
+specializations supply their reference-cast source. Any
+selected definition, instantiation pattern, primary and every redeclaration
+must remain in `__utility/move.h` or `__utility/forward.h`. Clang's matching
+implicit library builtin must retain the exact nonthrowing signature, owner
+cv qualification and rvalue-reference result. This source needs no concrete
+body; Clang may omit that body even for an ordinary builtin call. Other selected
+specializations require their already materialized return to cast the unchanged
+parameter to the exact owner rvalue reference;
+only the pinned type alias or compile-time reference-category check may precede
+it. This consumes no private SDK traversal or new body instantiation. Direct
+result queries retain the qualified owner `T&&` type, and nested calls keep
+their original argument, template argument, default and temporary-lifetime
+dependencies. Missing non-builtin adapter bodies, source replacements,
+independent adapter function addresses and erased nonthrowing signatures remain
+rejected.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;

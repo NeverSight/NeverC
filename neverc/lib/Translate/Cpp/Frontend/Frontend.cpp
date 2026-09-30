@@ -2727,16 +2727,17 @@ utilityUniquePtrSource(Adapter &A, const CXXRecordDecl *Record) {
   return Owner;
 }
 
-static bool utilityUniquePtrFunctionSource(Adapter &A,
-                                           const FunctionDecl *Function) {
+static bool utilitySDKFunctionSource(Adapter &A, const FunctionDecl *Function,
+                                     llvm::StringRef Path,
+                                     bool RequireDefinition = true) {
   const auto Origin =
       Function ? A.S.sdkFile(A.Sources, Function->getLocation()) : std::nullopt;
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   if (!Function || !Origin || Origin->Root != "libcxx" ||
-      Origin->Path != "__memory/unique_ptr.h" || Function->isInvalidDecl() ||
+      Origin->Path != Path || Function->isInvalidDecl() ||
       Function->isDeleted() || Function->isVariadic() ||
       (Method && Method->getAccess() != AS_public) ||
-      !Function->getDefinition())
+      (RequireDefinition && !Function->getDefinition()))
     return false;
   auto Pinned = [&](const FunctionDecl *Declaration) {
     if (!Declaration || Declaration->getTemplateSpecializationKind() ==
@@ -2759,6 +2760,86 @@ static bool utilityUniquePtrFunctionSource(Adapter &A,
       if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) ||
           !Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl())))
         return false;
+  return true;
+}
+
+static bool utilityUniquePtrFunctionSource(Adapter &A,
+                                           const FunctionDecl *Function) {
+  return utilitySDKFunctionSource(A, Function, "__memory/unique_ptr.h");
+}
+
+static bool utilityUniquePtrValueAdapterSource(Adapter &A,
+                                               const CallExpr *Call) {
+  const auto Operation =
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+  if (!Operation || (*Operation != UtilityOperation::Move &&
+                     *Operation != UtilityOperation::Forward))
+    return false;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto Path = *Operation == UtilityOperation::Move
+                        ? "__utility/move.h"
+                        : "__utility/forward.h";
+  const auto BuiltinID = *Operation == UtilityOperation::Move
+                             ? Builtin::BImove
+                             : Builtin::BIforward;
+  const auto *Builtin = Function ? Function->getAttr<BuiltinAttr>() : nullptr;
+  const bool BuiltinCast = Builtin && Builtin->isImplicit() &&
+                           Builtin->getID() == BuiltinID &&
+                           Function->getBuiltinID() == BuiltinID;
+  if (!Function || isa<CXXMethodDecl>(Function) || !Reference ||
+      Reference->getDecl() != Function || !Function->getPrimaryTemplate() ||
+      Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      Function->getParamDecl(0)->hasDefaultArg() || !Call->isXValue() ||
+      !Call->getArg(0)->isGLValue() ||
+      !Function->getReturnType()->isRValueReferenceType() || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      operationCalleePrototype(Call) != Prototype ||
+      !A.Context.hasSameType(Call->getArg(0)->getType(), Call->getType()) ||
+      !utilityUniquePtrSource(A, Call->getType()->getAsCXXRecordDecl()) ||
+      !utilitySDKFunctionSource(A, Function, Path, !BuiltinCast))
+    return false;
+  // Clang can execute these exact library reference casts as implicit
+  // builtins without instantiating a concrete body, even for ordinary calls.
+  // Pin the declaration chain and signature instead of manufacturing a body.
+  if (BuiltinCast)
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  if (!Body || Body->body_empty() || Body->size() > 2)
+    return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(
+      Return && Return->getRetValue()
+          ? Return->getRetValue()->IgnoreParenImpCasts()
+          : nullptr);
+  const auto *Parameter =
+      Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts())
+           : nullptr;
+  if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+      !A.Context.hasSameType(Cast->getTypeAsWritten(),
+                             Function->getReturnType()) ||
+      !A.Context.hasSameType(Cast->getType(), Call->getType()) || !Parameter ||
+      Parameter->getDecl() != Function->getParamDecl(0))
+    return false;
+  // Only the pinned reference cast is executed. Its optional preceding node
+  // is move's type alias or forward's compile-time reference-category check.
+  if (Body->size() == 2) {
+    const auto *Declaration = dyn_cast<DeclStmt>(*Body->body_begin());
+    if (!Declaration || !Declaration->isSingleDecl())
+      return false;
+    if (*Operation == UtilityOperation::Move) {
+      const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration->getSingleDecl());
+      if (!Alias ||
+          !A.Context.hasSameType(Alias->getUnderlyingType(), Call->getType()))
+        return false;
+    } else if (!isa<StaticAssertDecl>(Declaration->getSingleDecl())) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -4109,7 +4190,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     if (utilityUniquePtrMemberSource(A, Call) ||
         utilityUniquePtrSwapSource(A, Call) ||
         utilityUniquePtrNullComparisonSource(A, Call) ||
-        utilityUniquePtrOwnerComparisonSource(A, Call))
+        utilityUniquePtrOwnerComparisonSource(A, Call) ||
+        utilityUniquePtrValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return PrototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -9501,7 +9583,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         if (utilityUniquePtrSwapSource(A, Call) ||
             utilityUniquePtrNullComparisonSource(A, Call) ||
-            utilityUniquePtrOwnerComparisonSource(A, Call))
+            utilityUniquePtrOwnerComparisonSource(A, Call) ||
+            utilityUniquePtrValueAdapterSource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
                   directFunctionReference(Call))) {
             auto [Entry, Inserted] =
