@@ -66970,6 +66970,286 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2StringVectorEndpointResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("string-vector-endpoint-result-queries.cpp");
+  const auto Output = tmpFile("string-vector-endpoint-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <string>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, receivers, written, defaults;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+const char *text(int n = (++defaults, 0)) { ++written; return n ? "other" : "short"; }
+using String = std::string;
+using Words = std::vector<String>;
+using Rows = std::vector<Words>;
+using Cubes = std::vector<Rows>;
+Words &select(Words &v, int = (++defaults, 0)) noexcept { ++receivers; return v; }
+const Words &select(const Words &v) noexcept { ++receivers; return v; }
+Rows &rows(Rows &v) noexcept { ++receivers; return v; }
+int check() {
+  String empty_string;
+  String short_string(text()), long_string("a long string with independently allocated character storage");
+  String binary("a\0b", Size(3)), filled(Size(26), 'q');
+  String characters{'x', 'y', 'z'};
+  char raw_chars[] = {'r', 'a', 'w'};
+  String raw_string(raw_chars, raw_chars + 3);
+  String string_copy(long_string);
+  String string_move(static_cast<String &&>(string_copy));
+  Words empty;
+  Words values{short_string, long_string, binary, filled, characters, raw_string, string_move};
+  Words literal{text(1), "a long literal that exceeds the string short buffer"};
+  Words count(Size(2));
+  Words fill(Size(2), long_string);
+  Words copy(values);
+  Words move(static_cast<Words &&>(copy));
+  String raw[] = {short_string, long_string};
+  Words range(raw, raw + 2);
+  Words wrapped(values.begin(), values.end());
+  const auto &view = values;
+  auto first = select(values, 0).begin(), last = select(values, 0).end();
+  auto const_first = select(view).begin(), const_last = select(view).end();
+  auto const_begin = values.cbegin(), const_end = values.cend();
+  auto view_begin = view.cbegin(), view_end = view.cend();
+  if (last - first != 7 || const_last - const_first != 7 ||
+      const_end - const_begin != 7 || view_end - view_begin != 7 ||
+      !empty.empty() || !empty_string.empty() || !copy.empty() ||
+      !count[0].empty() || !count[1].empty() || literal[0] != "other" ||
+      values[2].size() != 3 || values[2][1] != 0 || values[2][2] != 'b' ||
+      values[3].size() != 26 || values[3][25] != 'q' ||
+      values[4] != "xyz" || values[5] != "raw" ||
+      move[1] != long_string || range[1] != long_string ||
+      wrapped[1] != long_string || fill[1] != long_string ||
+      values[1].data() == long_string.data() ||
+      fill[0].data() == fill[1].data() ||
+      values[1].data() == move[1].data() ||
+      values[1].data() == wrapped[1].data()) return 1;
+  move[1][0] = 'A';
+  if (long_string[0] != 'a' || values[1][0] != 'a') return 2;
+  Rows nested{values, range};
+  Rows nested_empty;
+  Rows nested_count(Size(2));
+  Rows nested_fill(Size(2), values);
+  Rows nested_copy(nested);
+  Rows nested_move(static_cast<Rows &&>(nested_copy));
+  Words raw_words[] = {values, range};
+  Rows nested_range(raw_words, raw_words + 2);
+  Rows nested_wrapped(nested.begin(), nested.end());
+  auto nested_first = rows(nested).begin(), nested_last = rows(nested).end();
+  const auto &nested_view = nested;
+  auto nested_const_first = nested_view.begin(), nested_const_last = nested_view.end();
+  auto nested_cbegin = nested.cbegin(), nested_cend = nested.cend();
+  auto view_cbegin = nested_view.cbegin(), view_cend = nested_view.cend();
+  Cubes cubes{nested, nested_fill};
+  Cubes cube_copy(cubes);
+  Cubes cube_count(Size(2));
+  auto cube_first = cubes.begin(), cube_last = cubes.end();
+  if (nested_last - nested_first != 2 || nested_const_last - nested_const_first != 2 ||
+      nested_cend - nested_cbegin != 2 || view_cend - view_cbegin != 2 ||
+      !nested_empty.empty() || !nested_copy.empty() ||
+      !nested_count[0].empty() || !nested_count[1].empty() ||
+      nested_fill[1][1] != long_string || nested_range[1][1] != long_string ||
+      nested_wrapped[0][2][1] != 0 || nested_move[0][1] != long_string ||
+      nested[0][1].data() == values[1].data() ||
+      nested[0][1].data() == nested_move[0][1].data() ||
+      nested_fill[0][1].data() == nested_fill[1][1].data() ||
+      cube_last - cube_first != 2 || !cube_count[0].empty() ||
+      cube_copy[0][0][1].data() == cubes[0][0][1].data()) return 3;
+  const int allocation_count = allocated, release_count = released;
+  static_assert(__is_same(decltype(select(values).begin()), Words::iterator));
+  static_assert(__is_same(decltype(select(values).end()), Words::iterator));
+  static_assert(__is_same(decltype(select(view).begin()), Words::const_iterator));
+  static_assert(__is_same(decltype(select(view).end()), Words::const_iterator));
+  static_assert(__is_same(decltype(select(values).cbegin()), Words::const_iterator));
+  static_assert(__is_same(decltype(select(values).cend()), Words::const_iterator));
+  static_assert(__is_same(decltype(select(view).cbegin()), Words::const_iterator));
+  static_assert(__is_same(decltype(select(view).cend()), Words::const_iterator));
+  static_assert(sizeof(select(values).begin()) == sizeof(String *));
+  static_assert(alignof(decltype(select(view).cend())) == alignof(String *));
+  static_assert(noexcept(select(values).begin()));
+  static_assert(noexcept(select(view).end()));
+  static_assert(__is_same(decltype(empty.begin()), Words::iterator));
+  static_assert(__is_same(decltype(count.begin()), Words::iterator));
+  static_assert(__is_same(decltype(fill.begin()), Words::iterator));
+  static_assert(__is_same(decltype(copy.begin()), Words::iterator));
+  static_assert(__is_same(decltype(move.begin()), Words::iterator));
+  static_assert(__is_same(decltype(range.begin()), Words::iterator));
+  static_assert(__is_same(decltype(wrapped.begin()), Words::iterator));
+  static_assert(__is_same(decltype(literal.begin()), Words::iterator));
+  static_assert(__is_same(decltype(Words{String(text(1)), binary}), Words));
+  static_assert(sizeof(Words{String("x\0y", Size(3)), long_string}) == sizeof(Words));
+  static_assert(sizeof(Words{String(Size(26), 'q'), String{'x', 'y', 'z'}}) == sizeof(Words));
+  static_assert(sizeof(Words{String(raw_chars, raw_chars + 3)}) == sizeof(Words));
+  static_assert(noexcept(Words()));
+  static_assert(noexcept(Words(static_cast<Words &&>(move))));
+  static_assert(!noexcept(Words(values)));
+  static_assert(!noexcept(Words(Size(2))));
+  static_assert(!noexcept(Words(Size(2), long_string)));
+  static_assert(!noexcept(Words(raw, raw + 2)));
+  static_assert(!noexcept(Words(values.begin(), values.end())));
+  static_assert(__is_same(decltype(rows(nested).begin()), Rows::iterator));
+  static_assert(__is_same(decltype(rows(nested).end()), Rows::iterator));
+  static_assert(__is_same(decltype(nested_view.begin()), Rows::const_iterator));
+  static_assert(__is_same(decltype(nested_view.end()), Rows::const_iterator));
+  static_assert(__is_same(decltype(nested.cbegin()), Rows::const_iterator));
+  static_assert(__is_same(decltype(nested.cend()), Rows::const_iterator));
+  static_assert(__is_same(decltype(nested_view.cbegin()), Rows::const_iterator));
+  static_assert(__is_same(decltype(nested_view.cend()), Rows::const_iterator));
+  static_assert(__is_same(decltype(nested_count.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(nested_copy.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(nested_move.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(nested_fill.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(nested_range.begin()), Rows::iterator));
+  static_assert(__is_same(decltype(nested_wrapped.begin()), Rows::iterator));
+  static_assert(sizeof(Rows{Words{String(text())}}) == sizeof(Rows));
+  static_assert(!noexcept(Rows(nested)));
+  static_assert(!noexcept(Rows(Size(2))));
+  static_assert(__is_same(decltype(cubes.begin()), Cubes::iterator));
+  static_assert(__is_same(decltype(cube_copy.begin()), Cubes::iterator));
+  static_assert(__is_same(decltype(cube_count.begin()), Cubes::iterator));
+  return allocated == allocation_count && released == release_count &&
+         receivers == 6 && written == 2 && defaults == 1 ? 0 : 4;
+}
+int main() {
+  const int result = check();
+  return result ? result : allocated == released ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-vector-endpoint-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2StringVectorEndpointResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"erased-string-alias", R"cpp(
+int object; template<auto> using Text = String;
+int f() { std::vector<Text<&object>> v{"value"}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-character-alias", R"cpp(
+int object; template<auto> using Character = char;
+int f() { std::vector<std::basic_string<Character<&object>>> v{"value"}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"erased-vector-alias", R"cpp(
+int object; template<auto> using Outer = Words;
+int f() { Outer<&object> v{"value"}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"nested-erased-string-alias", R"cpp(
+int object; template<auto> using Text = String;
+int f() { std::vector<std::vector<Text<&object>>> v{{"value"}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"literal-source", R"cpp(
+int f() { Words v{String((sizeof(long double), "value"))}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"fill-size-source", R"cpp(
+int f() { Words v{String((sizeof(long double), Size(26)), 'q')}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"pointer-length-source", R"cpp(
+int f() { Words v{String("a\0b", (sizeof(long double), Size(3)))}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"character-list-source", R"cpp(
+int f() { Words v{String{'a', (sizeof(long double), 'b')}}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"raw-character-bound", R"cpp(
+int f() { char raw[(sizeof(long double), 2)] = {'a', 'b'}; Words v{String(raw, raw + 2)}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"copy-source", R"cpp(
+int f() { String source("value"); Words v{String((sizeof(long double), source))}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"move-source", R"cpp(
+int f() { String source("value"); Words v{String(static_cast<String &&>((sizeof(long double), source)))}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-default-source", R"cpp(
+Words &select(Words &v, int = (sizeof(long double), 0)) { return v; }
+int f() { Words v{"value"}; auto first = select(v, 0).begin(); static_assert(__is_same(decltype(select(v).begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-noexcept-source", R"cpp(
+Words &select(Words &v) noexcept(sizeof(long double) > 0) { return v; }
+int f() { Words v{"value"}; auto first = select(v).begin(); static_assert(noexcept(select(v).begin())); return 0; }
+)cpp",
+       "TR0201"},
+      {"string-factory-default-source", R"cpp(
+const char *text(int = (sizeof(long double), 0)) { return "value"; }
+int f() { Words v{String(text(0))}; auto first = v.begin(); static_assert(sizeof(Words{String(text())}) == sizeof(Words)); return 0; }
+)cpp",
+       "TR0201"},
+      {"receiver-source", R"cpp(
+int f() { Words v{"value"}; auto first = v.begin(); static_assert(__is_same(decltype((sizeof(long double), v).begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"string-default-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> basic_string<char>::basic_string() noexcept {} } }
+int f() { Words v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-string-construction", R"cpp(
+int f() { String source; Words v{source}; auto first = v.begin(); static_assert(sizeof(Words{String("value")}) == sizeof(Words)); return 0; }
+)cpp",
+       "TR0201"},
+      {"different-endpoint", R"cpp(
+int f() { Words v{"value"}; auto first = v.begin(); static_assert(__is_same(decltype(v.end()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+      {"fill-member-source", R"cpp(
+int f() { Words source{"value"}; Words v(Size(2), source[0]); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("string-vector-endpoint-query-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("string-vector-endpoint-query-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <string>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+using String = std::string;
+using Words = std::vector<String>;
+using Rows = std::vector<Words>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NestedVectorEndpointResultQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("nested-vector-endpoint-result-queries.cpp");
   const auto Output = tmpFile("nested-vector-endpoint-result-queries.nc");
@@ -67281,10 +67561,6 @@ int f() { Rows v; auto first = v.begin(); static_assert(__is_same(decltype(Rows{
 int f() { Rows v{{1}}; auto first = v.begin(); static_assert(__is_same(decltype(v.end()), decltype(first))); return 0; }
 )cpp",
        "TR0203"},
-      {"sdk-string-leaf", R"cpp(
-int f() { std::vector<std::string> source{"value"}; std::vector<std::vector<std::string>> v{source}; auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
-)cpp",
-       "TR0201"},
       {"sdk-unique-leaf", R"cpp(
 int f() { std::vector<std::vector<std::unique_ptr<int>>> v(Size(2)); auto first = v.begin(); static_assert(__is_same(decltype(v.begin()), decltype(first))); return 0; }
 )cpp",

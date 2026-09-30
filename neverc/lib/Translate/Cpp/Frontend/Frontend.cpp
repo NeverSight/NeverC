@@ -1803,6 +1803,7 @@ static OperationTypeSourceKey operationTypeSourceKey(TypeLoc Location) {
 struct OperationSourceDependencies {
   std::set<const FunctionDecl *> Definitions;
   std::set<const CXXConstructorDecl *> VectorConstructors;
+  std::set<const CXXConstructorDecl *> StringConstructors;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2704,6 +2705,8 @@ static bool utilityVectorSourceElements(Adapter &A,
   if (!Vector.ElementType->isRecordType() ||
       (Element && A.S.owns(A.Sources, Element->getLocation())))
     return true;
+  if (approvedUtilityStringRecord(A.S, A.Sources, Element, A.Context))
+    return true;
   const auto Nested =
       approvedUtilityVectorRecord(A.S, A.Sources, Element, A.Context);
   return Nested && utilityVectorSourceElements(A, *Nested, Depth + 1);
@@ -2785,6 +2788,67 @@ utilityNestedVectorConstructionSource(Adapter &A,
           /*ForDefinition=*/true)))
     return std::nullopt;
   return Vector;
+}
+
+static bool utilityStringOperationSource(Adapter &A,
+                                         const CXXMethodDecl *Method) {
+  const auto Origin =
+      Method ? A.S.sdkFile(A.Sources, Method->getLocation()) : std::nullopt;
+  if (!Method || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "string" || Method->isInvalidDecl() ||
+      Method->isDeleted() || Method->isVariadic() ||
+      Method->getAccess() != AS_public || !Method->getDefinition() ||
+      !approvedUtilityStringRecord(A.S, A.Sources, Method->getParent(),
+                                   A.Context))
+    return false;
+  auto Pinned = [&](const FunctionDecl *Function) {
+    if (!Function ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return false;
+    }
+    return !Function->getDefinition() ||
+           approvedStandardSDKDeclaration(A.S, A.Sources,
+                                          Function->getDefinition());
+  };
+  return Pinned(Method) && Pinned(Method->getTemplateInstantiationPattern(
+                               /*ForDefinition=*/true));
+}
+
+static bool
+utilityStringElementConstructionSource(Adapter &A,
+                                       const CXXConstructorDecl *Constructor) {
+  if (!utilityStringOperationSource(A, Constructor))
+    return false;
+  const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+  if (!Prototype)
+    return false;
+  if (Constructor->isDefaultConstructor() && !Constructor->getNumParams())
+    return Prototype->isNothrow();
+  return Constructor->isCopyConstructor() && Constructor->getNumParams() == 1 &&
+         Prototype->getExceptionSpecType() == EST_None &&
+         A.Context.hasSameType(
+             Constructor->getParamDecl(0)->getType(),
+             A.Context.getLValueReferenceType(
+                 A.Context.getRecordType(Constructor->getParent())
+                     .withConst()));
+}
+
+static bool utilityStringDestructionSource(Adapter &A,
+                                           const CXXRecordDecl *Record) {
+  const auto String =
+      approvedUtilityStringRecord(A.S, A.Sources, Record, A.Context);
+  const auto *Destructor = String ? String->Record->getDestructor() : nullptr;
+  const auto *Prototype =
+      Destructor ? Destructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  return Destructor && Prototype && Prototype->isNothrow() &&
+         !Destructor->isVirtual() && !Destructor->getNumParams() &&
+         approvedUtilityStringDestructor(A.S, A.Sources, Destructor,
+                                         A.Context) &&
+         utilityStringOperationSource(A, Destructor);
 }
 
 static std::optional<UtilityVectorRecord>
@@ -3089,6 +3153,9 @@ public:
     // array's actual expressions retain their own element destruction source.
     if (utilityInitializerListDestructionSource(A, Record))
       return true;
+    // The pinned string owns only its admitted character storage and allocator.
+    if (utilityStringDestructionSource(A, Record))
+      return true;
     // Storage release belongs to each pinned SDK destructor. Nested vectors
     // and source-owned records must close their actual element destruction.
     if (const auto Vector = utilityVectorDestructionSource(A, Record)) {
@@ -3148,6 +3215,9 @@ public:
     if (approvedUtilityVectorRecord(A.S, A.Sources,
                                     ElementConstructor->getParent(), A.Context))
       return vectorConstruction(ElementConstructor, Depth + 1);
+    if (approvedUtilityStringRecord(A.S, A.Sources,
+                                    ElementConstructor->getParent(), A.Context))
+      return utilityStringElementConstructionSource(A, ElementConstructor);
     return ElementConstructor->isImplicit() ||
                    defaultedDeclaration(ElementConstructor)
                ? generatedOperation(ElementConstructor)
@@ -3166,6 +3236,9 @@ public:
           return false;
       for (const auto *Constructor : Dependencies->VectorConstructors)
         if (!vectorConstruction(Constructor))
+          return false;
+      for (const auto *Constructor : Dependencies->StringConstructors)
+        if (!utilityStringElementConstructionSource(A, Constructor))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -8477,6 +8550,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Vector->ElementType, true, Depth + 1);
           return;
         }
+        if (const auto String = approvedUtilityStringRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // The authenticated SSO/heap shape supplies the private SDK layout.
+          // Written aliases and constructor arguments keep their own sources.
+          Self(Self, String->PointerType, false, Depth + 1);
+          return;
+        }
         if (const auto Iterator = approvedUtilityWrapIteratorRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // The pinned one-pointer layout supplies its private field source.
@@ -8726,6 +8806,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             (utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
              utilityInitializerListDestructionSource(A,
                                                      Destructor->getParent()) ||
+             utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityVectorDestructionSource(A, Destructor->getParent())))
           return;
         // The exact algorithm descriptor supplies its pinned SDK implementation.
@@ -8864,6 +8945,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
                                                     Construction, A.Context)
                 .has_value() ||
+            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
+                                              A.Context)
+                .has_value() ||
             VectorConstruction.has_value();
         auto Pinned = [&](const FunctionDecl *Function) {
           if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
@@ -8920,12 +9004,24 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             SDKConstruction &= ElementConstructor != nullptr;
           }
           if (SDKConstruction && ElementConstructor) {
-            FunctionSource(ElementConstructor);
-            if (ElementConstructor->isImplicit() ||
-                defaultedDeclaration(ElementConstructor)) {
+            if (approvedUtilityStringRecord(A.S, A.Sources,
+                                            ElementConstructor->getParent(),
+                                            A.Context)) {
+              SDKConstruction &=
+                  utilityStringElementConstructionSource(A, ElementConstructor);
+              if (SDKConstruction)
+                for (auto *Dependencies : ActiveOperationSources)
+                  if (Dependencies->StringConstructors
+                          .insert(ElementConstructor)
+                          .second)
+                    A.chargeExpansion(1, ElementConstructor->getLocation());
+            } else if (ElementConstructor->isImplicit() ||
+                       defaultedDeclaration(ElementConstructor)) {
+              FunctionSource(ElementConstructor);
               Selected = ElementConstructor;
               queueGenerated(ElementConstructor, Construction->getExprLoc());
             } else {
+              FunctionSource(ElementConstructor);
               for (auto *Dependencies : ActiveOperationSources)
                 if (Dependencies->Definitions.insert(ElementConstructor).second)
                   A.chargeExpansion(1, ElementConstructor->getLocation());
