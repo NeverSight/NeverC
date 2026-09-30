@@ -15719,7 +15719,9 @@ utilityAlgorithmReplacementPredicate(const FunctionDecl *Function, bool Copy,
     const Expr *RHS = Assign->getRHS();
     while (const auto *Cast = dyn_cast<ImplicitCastExpr>(RHS)) {
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                         Cast->getType()))
+                                         Cast->getType()) &&
+          !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
         return false;
       RHS = Cast->getSubExpr();
     }
@@ -18823,7 +18825,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const auto Pointer = Function->getParamDecl(0)->getType();
   const bool CallbackElements =
       !SDKObject &&
-      (Find || FindNot || None || All || Any || Count || Copy || RemoveCopy) &&
+      (Find || FindNot || None || All || Any || Count || Copy || RemoveCopy ||
+       Replacement) &&
       utilityObjectPointer(Context, Pointer) &&
       utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
                                   Pointer->getPointeeType());
@@ -18869,12 +18872,12 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   }
   if (Remove && !utilityAlgorithmWritableScalarPointer(Context, Pointer))
     return std::nullopt;
+  const bool CallbackOutput =
+      CallbackElements && utilityObjectPointer(Context, Output) &&
+      !Output->getPointeeType().isConstQualified() &&
+      utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                  Output->getPointeeType());
   if (RemoveCopy || Copy) {
-    const bool CallbackOutput =
-        CallbackElements && utilityObjectPointer(Context, Output) &&
-        !Output->getPointeeType().isConstQualified() &&
-        utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
-                                    Output->getPointeeType());
     if ((!utilityAlgorithmWritableScalarPointer(Context, Output) &&
          !CallbackOutput) ||
         !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
@@ -18885,19 +18888,20 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     const unsigned ValueIndex = ParameterCount - 1;
     const auto Value = Function->getParamDecl(ValueIndex)->getType();
     const auto &TemplateValue = Arguments->get(PredicateArgument + 1);
-    if (!utilityAlgorithmWritableScalarPointer(Context, Output) ||
+    if ((!utilityAlgorithmWritableScalarPointer(Context, Output) &&
+         !CallbackOutput) ||
         (ReplaceCopy &&
          (!Context.hasSameType(Call->getArg(2)->getType(), Output) ||
-          !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                         Output->getPointeeType()))) ||
+          !InputConversion(Pointer->getPointeeType(),
+                           Output->getPointeeType()))) ||
         !Value->isLValueReferenceType() ||
         !Value->getPointeeType().isConstQualified() ||
         Value->getPointeeType().isVolatileQualified() ||
-        !utilityScalar(Context, Value->getPointeeType()) ||
+        (!utilityScalar(Context, Value->getPointeeType()) &&
+         !CallbackElements) ||
         !Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                         Value->getPointeeType()) ||
-        !utilityScalarDirectConversion(Context, Value->getPointeeType(),
-                                       Output->getPointeeType()) ||
+        !InputConversion(Value->getPointeeType(), Output->getPointeeType()) ||
         TemplateValue.getKind() != TemplateArgument::Type ||
         !Context.hasSameType(
             Value, Context.getLValueReferenceType(

@@ -3112,6 +3112,18 @@ conversions from the input and replacement types. The replacement remains a
 reference throughout the scan: predicate-side changes and aliases to an input
 or output element remain visible to later stores. Empty ranges still initialize
 the predicate parameter and preserve full-expression temporary cleanup.
+Both replacement forms also accept raw ranges of exact function-pointer
+elements, including `noexcept` signatures, through a source predicate object
+whose selected Boolean operator takes that pointer type by value. Replacement
+values must have the same pointer type; the copy form accepts const input and
+requires a writable raw output of that type. Reference predicate arguments,
+input/output/replacement pointer conversions, function-designator and `nullptr`
+replacement types, and Boolean output remain rejected. A pointer-typed
+replacement value may itself be null. Predicate state persists across visits;
+each store rereads its input or replacement after the predicate returns, retaining
+changes through independently held pointers and input/output replacement aliases.
+Empty ranges initialize the predicate without calls or stores. SDK function
+objects retain their scalar input boundary, and pointer targets are not invoked.
 `copy_if` and `remove_copy_if` also accept the same source predicate objects. Their exact
 conditional copy loops and both iterator increments are authenticated; output
 storage accepts checked direct scalar conversions. Only kept elements advance

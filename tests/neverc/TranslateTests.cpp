@@ -51700,6 +51700,250 @@ int f(){static_assert(__is_same(Difference,__PTRDIFF_TYPE__));return 0;}
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackReplacementObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-replacement-objects.cpp");
+  const auto Output = tmpFile("algorithm-callback-replacement-objects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, factories, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int safe_three(int x) noexcept { ++pointed_calls; return x + 3; }
+void reset() { calls = trace = state_trace = 0; }
+void observe(Callback value, int local_calls) {
+  ++calls;
+  trace = trace * 10 + (value == nullptr ? 0 : value == one ? 1 : 2);
+  state_trace = state_trace * 10 + local_calls;
+}
+bool observed() { return calls == 4 && trace == 1201 && state_trace == 1234; }
+struct Select {
+  Callback needle;
+  Callback *replacement;
+  int local_calls;
+  bool operator()(Callback value) & {
+    observe(value, ++local_calls);
+    if (local_calls == 3) *replacement = three;
+    return value == needle;
+  }
+  bool operator()(Callback) const & { bad_receiver += 100; return false; }
+};
+Select make(Callback *replacement) { ++factories; return {one, replacement, 0}; }
+struct Mutate {
+  const Mutate *self;
+  Callback *current;
+  Callback *replacement;
+  int local_calls;
+  Mutate(Callback *p, Callback *r)
+      : self(this), current(p), replacement(r), local_calls(0) { ++constructed; }
+  bool operator()(Callback value) & {
+    if (self != this) ++bad_receiver;
+    observe(value, ++local_calls);
+    bool selected = value == one;
+    *replacement = local_calls % 2 ? two : three;
+    *current = selected ? nullptr : one;
+    ++current;
+    return selected;
+  }
+};
+struct SafeSelect {
+  NoexceptCallback *replacement;
+  int local_calls;
+  bool operator()(NoexceptCallback value) & noexcept {
+    ++calls;
+    trace = trace * 10 + (value == nullptr ? 0 : value == safe_one ? 1 : 2);
+    state_trace = state_trace * 10 + ++local_calls;
+    if (local_calls == 3) *replacement = safe_three;
+    return value == safe_one;
+  }
+  bool operator()(NoexceptCallback) const & noexcept {
+    bad_receiver += 100;
+    return false;
+  }
+};
+int main() {
+  Callback input[]{one, two, nullptr, one}, replacement = two;
+  const Select caller{one, &replacement, 0};
+  int first_effects = 0, last_effects = 0, object_effects = 0, value_effects = 0;
+  std::replace_if((++first_effects, input), (++last_effects, input + 4),
+                  (++object_effects, caller), (++value_effects, replacement));
+  static_assert(__is_same(decltype(std::replace_if(input, input + 4, caller, replacement)), void));
+  if (input[0] != two || input[1] != two || input[2] != nullptr ||
+      input[3] != three || !observed() || replacement != three ||
+      first_effects != 1 || last_effects != 1 || object_effects != 1 ||
+      value_effects != 1 || caller.local_calls) return 1;
+  const Callback source[]{one, two, nullptr, one};
+  Callback output[4]{};
+  replacement = two;
+  reset();
+  int output_effects = 0;
+  auto end = std::replace_copy_if((++first_effects, source),
+                                  (++last_effects, source + 4),
+                                  (++output_effects, output),
+                                  (++object_effects, make(&replacement)),
+                                  (++value_effects, replacement));
+  static_assert(__is_same(decltype(end), Callback *));
+  if (end != output + 4 || output[0] != two || output[1] != two ||
+      output[2] != nullptr || output[3] != three || !observed() ||
+      replacement != three || first_effects != 2 || last_effects != 2 ||
+      output_effects != 1 || object_effects != 2 || value_effects != 2 ||
+      factories != 1 || source[0] != one || source[3] != one) return 2;
+  Callback changing[]{one, two, nullptr, one};
+  reset();
+  std::replace_if(changing, changing + 4, Mutate(changing, &replacement), replacement);
+  if (changing[0] != two || changing[1] != one || changing[2] != one ||
+      changing[3] != three || !observed() || constructed != 1) return 3;
+  Callback again[]{one, two, nullptr, one}, reread[4]{};
+  reset();
+  if (std::replace_copy_if(again, again + 4, reread, Mutate(again, &replacement),
+                           replacement) != reread + 4 ||
+      reread[0] != two || reread[1] != one || reread[2] != one ||
+      reread[3] != three || again[0] != nullptr || again[1] != one ||
+      again[2] != one || again[3] != nullptr || !observed() || constructed != 2)
+    return 4;
+  Callback alias[]{one, one, one, one};
+  reset();
+  std::replace_if(alias, alias + 4, make(alias), alias[0]);
+  if (alias[0] != three || alias[1] != one || alias[2] != three ||
+      alias[3] != three || calls != 4 || trace != 1111 || state_trace != 1234)
+    return 5;
+  Callback alias_output[]{two, nullptr, nullptr, nullptr};
+  reset();
+  if (std::replace_copy_if(source, source + 4, alias_output, make(alias_output),
+                           alias_output[0]) != alias_output + 4 ||
+      alias_output[0] != three || alias_output[1] != two ||
+      alias_output[2] != nullptr || alias_output[3] != three || !observed() ||
+      factories != 3) return 6;
+  reset();
+  std::replace_if(changing, changing, Mutate(changing, &replacement), replacement);
+  if (std::replace_copy_if(again, again, reread, Mutate(again, &replacement),
+                           replacement) != reread ||
+      calls || trace || state_trace || constructed != 4 ||
+      replacement != three || changing[0] != two || reread[0] != two) return 7;
+  Callback null_replacement = nullptr, single[]{one}, null_output[]{three};
+  const Callback one_source[]{one};
+  reset();
+  std::replace_if(single, single + 1, Select{one, &null_replacement, 0}, null_replacement);
+  if (std::replace_copy_if(one_source, one_source + 1, null_output,
+                           Select{one, &null_replacement, 0}, null_replacement) !=
+      null_output + 1 || single[0] != nullptr || null_output[0] != nullptr ||
+      calls != 2 || trace != 11 || state_trace != 11) return 8;
+  NoexceptCallback safe[]{safe_one, safe_two, nullptr, safe_one};
+  NoexceptCallback safe_replacement = safe_two;
+  const SafeSelect safe_caller{&safe_replacement, 0};
+  reset();
+  std::replace_if(safe, safe + 4, safe_caller, safe_replacement);
+  if (safe[0] != safe_two || safe[1] != safe_two || safe[2] != nullptr ||
+      safe[3] != safe_three || !observed() || safe_caller.local_calls) return 9;
+  const NoexceptCallback safe_source[]{safe_one, safe_two, nullptr, safe_one};
+  NoexceptCallback safe_output[4]{};
+  safe_replacement = safe_two;
+  reset();
+  if (std::replace_copy_if(safe_source, safe_source + 4, safe_output, safe_caller,
+                           safe_replacement) != safe_output + 4 ||
+      safe_output[0] != safe_two || safe_output[1] != safe_two ||
+      safe_output[2] != nullptr || safe_output[3] != safe_three ||
+      !observed() || safe_caller.local_calls) return 10;
+  return pointed_calls || bad_receiver || caller.local_calls ? 11 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-callback-replacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackReplacementObjectsRequireExactTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *Definition;
+    const char *Input;
+    const char *Output;
+    const char *Object;
+    const char *Value;
+    bool CopyOnly;
+  };
+  const Rejection Cases[] = {
+      {"reference",
+       "struct F { bool operator()(const Callback&) & { return true; } };",
+       "input", "output", "F{}", "replacement", false},
+      {"input-conversion",
+       "struct F { bool operator()(Callback) & { return true; } };", "safe",
+       "safe_output", "F{}", "safe_replacement", false},
+      {"replacement-conversion",
+       "struct F { bool operator()(Callback) & { return true; } };", "input",
+       "output", "F{}", "safe_replacement", false},
+      {"function-designator",
+       "struct F { bool operator()(Callback) & { return true; } };", "input",
+       "output", "F{}", "one", false},
+      {"nullptr-value",
+       "struct F { bool operator()(Callback) & { return true; } };", "input",
+       "output", "F{}", "nullptr", false},
+      {"method-template",
+       "struct F { template<class T> bool operator()(T) & { return true; } };",
+       "input", "output", "F{}", "replacement", false},
+      {"non-bool-result",
+       "struct F { int operator()(Callback) & { return 1; } };", "input",
+       "output", "F{}", "replacement", false},
+      {"sdk-object", "", "input", "output", "std::logical_not<Callback>{}",
+       "replacement", false},
+      {"output-conversion",
+       "struct F { bool operator()(NoexceptCallback) & { return true; } };",
+       "safe", "output", "F{}", "safe_replacement", true},
+      {"bool-output",
+       "struct F { bool operator()(Callback) & { return true; } };", "input",
+       "flags", "F{}", "replacement", true},
+  };
+  for (const auto &Case : Cases) {
+    for (const std::string &Algorithm : {"replace_if", "replace_copy_if"}) {
+      const bool Copy = Algorithm == "replace_copy_if";
+      if (Case.CopyOnly && !Copy)
+        continue;
+      const std::string Name = std::string(Case.Name) + "-" + Algorithm;
+      SCOPED_TRACE(Name);
+      const auto Source = tmpFile(Name + "-callback-replacement-object.cpp");
+      const auto Output = tmpFile(Name + "-callback-replacement-object.nc");
+      writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) +
+                            R"cpp(
+int main() {
+  Callback input[]{one, one}, output[2]{}, replacement = one;
+  NoexceptCallback safe[]{safe_one, safe_one}, safe_output[2]{};
+  NoexceptCallback safe_replacement = safe_one;
+  bool flags[2]{};
+)cpp" + "(void)std::" + Algorithm +
+                            "(" + Case.Input + ", " + Case.Input + " + 2, " +
+                            (Copy ? std::string(Case.Output) + ", " : "") +
+                            Case.Object + ", " + Case.Value +
+                            ");\nreturn 0;\n}\n");
+      expectCode(translate(Source,
+                           {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 "TR0203");
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmReplacementObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-replacement-state.cpp");
   const auto Output = tmpFile("algorithm-replacement-state.nc");
