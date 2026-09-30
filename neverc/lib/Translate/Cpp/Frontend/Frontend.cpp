@@ -3026,6 +3026,81 @@ static bool utilityUniquePtrSwapSource(Adapter &A, const CallExpr *Call) {
          utilityUniquePtrFunctionSource(A, Method);
 }
 
+static bool utilityUniquePtrNullComparisonSource(Adapter &A,
+                                                 const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Function || isa<CXXMethodDecl>(Function) ||
+      (Function->getOverloadedOperator() != OO_EqualEqual &&
+       Function->getOverloadedOperator() != OO_ExclaimEqual) ||
+      !Function->getPrimaryTemplate() || !Reference ||
+      Reference->getDecl() != Function || !Prototype ||
+      Call->getNumArgs() != 2 || Function->getNumParams() != 2 ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      !utilityUniquePtrFunctionSource(A, Function))
+    return false;
+  const auto Kind = Function->getOverloadedOperator();
+  const auto Expected = Kind == OO_EqualEqual
+                            ? UtilityOperation::MemoryUniquePtrEqual
+                            : UtilityOperation::MemoryUniquePtrNotEqual;
+  const bool LeftNull = Call->getArg(0)->getType()->isNullPtrType();
+  const bool RightNull = Call->getArg(1)->getType()->isNullPtrType();
+  if (LeftNull == RightNull ||
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context) != Expected)
+    return false;
+  const unsigned OwnerIndex = LeftNull ? 1 : 0;
+  const auto Owner = utilityUniquePtrSource(
+      A, Call->getArg(OwnerIndex)->getType()->getAsCXXRecordDecl());
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const Expr *Value = Return && Return->getRetValue()
+                          ? Return->getRetValue()->IgnoreParenImpCasts()
+                          : nullptr;
+  if (Kind == OO_EqualEqual) {
+    const auto *Negation = dyn_cast_or_null<UnaryOperator>(Value);
+    if (!Negation || Negation->getOpcode() != UO_LNot ||
+        !A.Context.hasSameType(Negation->getType(), A.Context.BoolTy))
+      return false;
+    Value = Negation->getSubExpr()->IgnoreParenImpCasts();
+  } else {
+    const auto *Conversion = dyn_cast_or_null<CXXStaticCastExpr>(Value);
+    if (!Conversion || !A.Context.hasSameType(Conversion->getTypeAsWritten(),
+                                              A.Context.BoolTy))
+      return false;
+    Value = Conversion->getSubExpr()->IgnoreParenImpCasts();
+  }
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Value);
+  const auto *Method = dyn_cast_or_null<CXXConversionDecl>(
+      Member ? Member->getMethodDecl() : nullptr);
+  const auto *MemberPrototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Receiver = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Object =
+      Receiver ? dyn_cast<DeclRefExpr>(Receiver->IgnoreParenImpCasts())
+               : nullptr;
+  // Both pinned null comparisons read their exact owner parameter through
+  // its actual Boolean member. Consume those materialized SDK bodies without
+  // instantiating code or treating the private member call as project source.
+  return Owner && Member && Method && MemberPrototype && Object &&
+         !Member->getNumArgs() && Member->isPRValue() &&
+         A.Context.hasSameType(Member->getType(), A.Context.BoolTy) &&
+         !Method->isStatic() && Method->isConst() &&
+         !Method->getPrimaryTemplate() && !Method->getNumParams() &&
+         A.Context.hasSameType(Method->getConversionType(), A.Context.BoolTy) &&
+         Object->getDecl() == Function->getParamDecl(OwnerIndex) &&
+         Method->getParent()->getCanonicalDecl() ==
+             Owner->Record->getCanonicalDecl() &&
+         MemberPrototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !MemberPrototype->getNoexceptExpr() &&
+         utilityUniquePtrFunctionSource(A, Method);
+}
+
 static bool
 utilityUniquePtrDeletionSource(Adapter &A,
                                const UtilityUniquePtrRecord &Owner) {
@@ -3902,7 +3977,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     // direct call. A pointer conversion can erase noexcept from its declaration.
     const auto *Prototype = operationCalleePrototype(Call);
     if (utilityUniquePtrMemberSource(A, Call) ||
-        utilityUniquePtrSwapSource(A, Call))
+        utilityUniquePtrSwapSource(A, Call) ||
+        utilityUniquePtrNullComparisonSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return PrototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -9292,7 +9368,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                     A.chargeExpansion(1, Call->getExprLoc());
             }
           }
-        if (utilityUniquePtrSwapSource(A, Call))
+        if (utilityUniquePtrSwapSource(A, Call) ||
+            utilityUniquePtrNullComparisonSource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
                   directFunctionReference(Call))) {
             auto [Entry, Inserted] =

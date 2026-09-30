@@ -1390,6 +1390,34 @@ or delegated-reset replacements and independent member addresses remain
 rejected. Same-type and converting move assignment keep their existing runtime
 boundary and receive no new result-source authentication here.
 
+Result-source queries also admit the four already materialized pinned C++17
+`owner == nullptr`, `nullptr == owner`, `owner != nullptr` and `nullptr != owner`
+overloads. They retain a `bool` prvalue result and nonthrowing signature for
+mutable or const scalar and array owners with standard or admitted custom
+deleters, including qualified pointees and bounded inner array extents. The
+owner may come from a source reference or dereferenced exact raw owner pointer;
+the null operand may be any admitted `nullptr_t` expression. Both written
+operands, aliases, original source signatures, exception specifications and
+selected defaults keep their ordinary source dependencies.
+The exact free wrapper, its primary, instantiation pattern and all
+redeclarations must remain in the pinned SDK. Its actual single return must
+negate the owner's Boolean conversion for equality or explicitly cast it to
+`bool` for inequality. That conversion must select the same owner's pinned,
+materialized nonthrowing member and use the wrapper's exact owner parameter.
+This proof consumes the existing SDK bodies without instantiating code or
+traversing the private conversion as project source. A borrowed comparison
+selects no construction, deleter call or pointee destruction; local owners and
+owning temporary/factory operands retain their separate lifetime source.
+Unevaluated comparisons preserve the pointer and evaluate neither operand nor
+defaults, allocate no storage and invoke no construction, deletion or cleanup.
+Ordinary comparisons evaluate each operand once in an unspecified C++17 order.
+Missing result-query bodies, different overloads/specializations, source wrapper
+or selected Boolean-member replacements and independent function addresses
+remain rejected. Owner-to-owner and ordering comparisons, and explicit calls to
+the operator function, receive no new result-source authentication. Pure free
+comparison `noexcept` queries keep their existing signature-source boundary and
+need no unused wrapper body.
+
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
 array `T` may contain complete bounded inner extents. The
