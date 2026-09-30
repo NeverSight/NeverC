@@ -1806,7 +1806,7 @@ struct OperationSourceDependencies {
   std::set<const CXXConstructorDecl *> StringConstructors;
   std::set<const CXXConstructorDecl *> UniquePtrConstructors;
   std::set<const CallExpr *> UniquePtrFactories;
-  std::set<const CallExpr *> UniquePtrResets;
+  std::set<const CallExpr *> UniquePtrDeletions;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2783,6 +2783,73 @@ static bool utilityUniquePtrElementConstructionSource(
          utilityUniquePtrFunctionSource(A, Constructor);
 }
 
+static bool
+utilityUniquePtrNullAssignmentSource(Adapter &A, const CXXMethodDecl *Method,
+                                     const UtilityUniquePtrRecord &Owner) {
+  const auto *Body =
+      dyn_cast_or_null<CompoundStmt>(Method ? Method->getBody() : nullptr);
+  if (!Body || Body->size() != 2)
+    return false;
+  const auto *Reset = dyn_cast<CXXMemberCallExpr>(*Body->body_begin());
+  const auto *Return = dyn_cast<ReturnStmt>(*std::next(Body->body_begin()));
+  const auto *ResetMethod = Reset ? Reset->getMethodDecl() : nullptr;
+  const auto *Object = Reset ? Reset->getImplicitObjectArgument() : nullptr;
+  const auto *This =
+      Object ? dyn_cast<CXXThisExpr>(Object->IgnoreParenImpCasts()) : nullptr;
+  const auto *Result = Return && Return->getRetValue()
+                           ? dyn_cast<UnaryOperator>(
+                                 Return->getRetValue()->IgnoreParenImpCasts())
+                           : nullptr;
+  const auto *ReturnedThis =
+      Result
+          ? dyn_cast<CXXThisExpr>(Result->getSubExpr()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto OwnerType = A.Context.getRecordType(Owner.Record);
+  const auto *Prototype =
+      ResetMethod ? ResetMethod->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Reset || !ResetMethod || !This || !Result || !ReturnedThis ||
+      !Prototype || Reset->getNumArgs() != 1 || !ResetMethod->getIdentifier() ||
+      ResetMethod->getName() != "reset" || ResetMethod->isStatic() ||
+      ResetMethod->isConst() || ResetMethod->getPrimaryTemplate() ||
+      ResetMethod->getNumParams() != 1 ||
+      !ResetMethod->getReturnType()->isVoidType() ||
+      !Reset->getType()->isVoidType() ||
+      ResetMethod->getParent()->getCanonicalDecl() !=
+          Owner.Record->getCanonicalDecl() ||
+      !A.Context.hasSameType(This->getType(),
+                             A.Context.getPointerType(OwnerType)) ||
+      Result->getOpcode() != UO_Deref || !Result->isLValue() ||
+      !A.Context.hasSameType(Result->getType(), OwnerType) ||
+      !A.Context.hasSameType(ReturnedThis->getType(), This->getType()) ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      !utilityUniquePtrFunctionSource(A, ResetMethod))
+    return false;
+  const auto *Default = dyn_cast<CXXDefaultArgExpr>(Reset->getArg(0));
+  const auto *Parameter = Default ? Default->getParam() : nullptr;
+  const auto *Initializer = selectedDefaultArgument(Default, A.Context);
+  const auto Origin = Initializer
+                          ? A.S.sdkFile(A.Sources, Initializer->getExprLoc())
+                          : std::nullopt;
+  // The private wrapper's reset() must keep its exact pinned zero default.
+  // Consume that SDK source directly, without a synthetic project call or Sema.
+  return Default && !Default->hasRewrittenInit() && Parameter && Initializer &&
+         Parameter == ResetMethod->getParamDecl(0) &&
+         Parameter->getFunctionScopeIndex() == 0 &&
+         Initializer == Parameter->getDefaultArg() && Origin &&
+         Origin->Root == "libcxx" && Origin->Path == "__memory/unique_ptr.h" &&
+         approvedStandardSDKDeclaration(A.S, A.Sources, Parameter) &&
+         ((Owner.Deleter.Array && Parameter->getType()->isNullPtrType() &&
+           A.Context.hasSameType(Initializer->getType(),
+                                 Parameter->getType()) &&
+           isa<CXXNullPtrLiteralExpr>(Initializer->IgnoreParenImpCasts())) ||
+          (!Owner.Deleter.Array &&
+           A.Context.hasSameType(Parameter->getType(), Owner.PointerType) &&
+           A.Context.hasSameType(Initializer->getType(), Owner.PointerType) &&
+           isa<CXXScalarValueInitExpr>(Initializer->IgnoreParenImpCasts())));
+}
+
 static std::optional<UtilityUniquePtrCall>
 utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
   const auto Info =
@@ -2796,6 +2863,10 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
       !utilityUniquePtrFunctionSource(A, Method))
     return std::nullopt;
   switch (Info->Operation) {
+  case UtilityUniquePtrOperation::NullAssign:
+    if (!utilityUniquePtrNullAssignmentSource(A, Method, Info->Owner))
+      return std::nullopt;
+    [[fallthrough]];
   case UtilityUniquePtrOperation::Reset:
     for (unsigned I = 0; I < Call->getNumArgs(); ++I)
       if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Call->getArg(I))) {
@@ -3674,9 +3745,11 @@ public:
     }
     return true;
   }
-  bool uniquePtrReset(const CallExpr *Call) {
+  bool uniquePtrDeletionCall(const CallExpr *Call) {
     const auto Info = utilityUniquePtrMemberSource(A, Call);
-    return Info && Info->Operation == UtilityUniquePtrOperation::Reset &&
+    return Info &&
+           (Info->Operation == UtilityUniquePtrOperation::Reset ||
+            Info->Operation == UtilityUniquePtrOperation::NullAssign) &&
            uniquePtrDeletion(Info->Owner, 0);
   }
   bool finish(SourceLocation L) {
@@ -3702,8 +3775,8 @@ public:
       for (const auto *Call : Dependencies->UniquePtrFactories)
         if (!uniquePtrFactory(Call))
           return false;
-      for (const auto *Call : Dependencies->UniquePtrResets)
-        if (!uniquePtrReset(Call))
+      for (const auto *Call : Dependencies->UniquePtrDeletions)
+        if (!uniquePtrDeletionCall(Call))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -9212,9 +9285,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               A.chargeExpansion(1, Call->getExprLoc());
             if (Entry->second == Call) {
               AuthenticatedUniquePtrCall = Call;
-              if (Info->Operation == UtilityUniquePtrOperation::Reset)
+              if (Info->Operation == UtilityUniquePtrOperation::Reset ||
+                  Info->Operation == UtilityUniquePtrOperation::NullAssign)
                 for (auto *Dependencies : ActiveOperationSources)
-                  if (Dependencies->UniquePtrResets.insert(Call).second)
+                  if (Dependencies->UniquePtrDeletions.insert(Call).second)
                     A.chargeExpansion(1, Call->getExprLoc());
             }
           }

@@ -39409,10 +39409,6 @@ using P=std::unique_ptr<int>;using F=void(*)(P&,P&)noexcept;int f(P&p,P&q){std::
 using P=std::unique_ptr<int>;int f(P&p,P&q){std::swap(p,q);static_assert(__is_same(decltype(std::swap<P>(p,q)),void));return 0;}
 )cpp",
        "TR0203"},
-      {"other-member-assignment", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p.operator=(nullptr)),P&));return 0;}
-)cpp",
-       "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -39422,6 +39418,315 @@ using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(__is_same(declty
         tmpFile(std::string("unique-ptr-swap-query-") + Case.Name + ".nc");
     writeFile(Source, R"cpp(#include <memory>
 using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+void materialize_default_deleters() {
+  std::default_delete<int>{}(nullptr);
+  std::default_delete<int[]>{}(static_cast<int *>(nullptr));
+  std::default_delete<const int>{}(nullptr);
+}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrNullAssignmentResultQueriesRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("memory-unique-ptr-null-assignment-result-queries.cpp");
+  const auto Output =
+      tmpFile("memory-unique-ptr-null-assignment-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+using Null = decltype(nullptr);
+extern "C" void *malloc(Size); extern "C" void free(void *);
+int allocated, released, created, destroyed, live, class_allocated, class_released;
+int receivers, arguments, defaults, effects, callbacks, array_callbacks, observed, array_observed;
+int ignored_calls;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Box {
+  int n;
+  explicit Box(int v = 4) noexcept : n(v) { ++created; ++live; }
+  ~Box() noexcept(sizeof(int) > 0) { ++destroyed; --live; }
+  static void *operator new(Size n) { ++allocated; ++class_allocated; return malloc(n); }
+  static void operator delete(void *p) noexcept {
+    if (p) { ++released; ++class_released; } free(p);
+  }
+};
+struct Cold { int n; Cold() = delete; Cold(const Cold &) = delete; };
+struct NoDestroy { int n; NoDestroy() = delete; ~NoDestroy() = delete; };
+struct Ignore { void operator()(NoDestroy *) const noexcept { ++ignored_calls; } };
+struct Observe {
+  void operator()(Box *p) const noexcept(sizeof(int) > 0) { ++callbacks; observed += p->n; }
+};
+struct ObserveArray {
+  void operator()(int *p) noexcept { ++array_callbacks; array_observed += p[0] + p[1]; }
+};
+using Scalar = std::unique_ptr<int>;
+Scalar &select(Scalar &p, int n = (++defaults, 9)) noexcept {
+  ++receivers; effects = effects * 10 + n; return p;
+}
+Scalar *select(Scalar *p, int n = (++defaults, 9)) noexcept {
+  ++receivers; effects = effects * 10 + n; return p;
+}
+Null zero(int n = (++defaults, 8)) noexcept { ++arguments; effects = effects * 10 + n; return nullptr; }
+Null throwing_zero() { ++arguments; return nullptr; }
+Scalar &throwing_receiver(Scalar &p) { ++receivers; return p; }
+int mark(int n = (++defaults, 11)) noexcept { ++arguments; return n; }
+int check() {
+  Scalar p(new int(1)), empty;
+  auto factory = std::make_unique<int>(mark(7));
+  auto array_factory = std::make_unique<int[]>(Size(2));
+  std::unique_ptr<const int> qualified(new int(8));
+  std::unique_ptr<int[]> array(new int[2]{});
+  std::unique_ptr<const int[]> qualified_array(new int[2]{});
+  std::unique_ptr<int[][2]> matrix(new int[2][2]{});
+  std::unique_ptr<Box> box(new Box(5));
+  std::unique_ptr<Box[]> boxes(new Box[2]);
+  std::unique_ptr<Cold> cold;
+  std::unique_ptr<NoDestroy, Ignore> ignored;
+  Box borrowed(5), next(9);
+  std::unique_ptr<Box, Observe> custom(&borrowed);
+  int data[2] = {1, 2}, next_data[2] = {3, 4};
+  std::unique_ptr<int[], ObserveArray> custom_array(data);
+  Scalar &result = (select(p, 2) = zero(1));
+  if (&result != &p || p || effects != 12 || receivers != 1 || arguments != 2) return 1;
+  p.reset(new int(2)); effects = 0;
+  Scalar &explicit_result = select(&p, 4)->operator=(zero(3));
+  if (&explicit_result != &p || p || effects != 43 || receivers != 2 || arguments != 3) return 2;
+  p.reset(new int(3));
+  if (&(empty = nullptr) != &empty || &(empty.operator=(nullptr).operator=(nullptr)) != &empty) return 3;
+  qualified = nullptr; qualified.reset(new int(8));
+  array = nullptr; array.reset(new int[2]{});
+  qualified_array = nullptr; qualified_array.reset(new int[2]{});
+  matrix = nullptr; matrix.reset(new int[2][2]{});
+  box = nullptr; box.reset(new Box(6));
+  boxes = nullptr; boxes.reset(new Box[2]);
+  cold = nullptr; ignored = nullptr;
+  custom = nullptr; custom.reset(&next);
+  custom_array = nullptr; custom_array.reset(next_data);
+  array[Size(1)] = 6; matrix[Size(1)][1] = 7;
+  int *raw = p.get(), *array_raw = array.get();
+  const int *qualified_raw = qualified.get(), *qualified_array_raw = qualified_array.get();
+  int (*matrix_raw)[2] = matrix.get();
+  Box *box_raw = box.get(), *boxes_raw = boxes.get();
+  int saved_allocated = allocated, saved_released = released, saved_created = created;
+  int saved_destroyed = destroyed, saved_receivers = receivers, saved_arguments = arguments;
+  int saved_defaults = defaults, saved_effects = effects, saved_callbacks = callbacks;
+  int saved_array_callbacks = array_callbacks;
+  Null null = nullptr; const Null &null_reference = null;
+  using Result = decltype(p = nullptr);
+  static_assert(__is_same(Result, Scalar &));
+  static_assert(__is_same(decltype(p.operator=(nullptr)), Scalar &));
+  static_assert(__is_same(decltype(select(p) = zero()), Scalar &));
+  static_assert(__is_same(decltype(select(&p)->operator=(zero())), Scalar &));
+  static_assert(__is_same(decltype((*select(&p)) = nullptr), Scalar &));
+  static_assert(__is_same(decltype(static_cast<Scalar &&>(p) = null_reference), Scalar &));
+  static_assert(__is_same(decltype((p = nullptr) = nullptr), Scalar &));
+  static_assert(__is_same(decltype(qualified = nullptr), std::unique_ptr<const int> &));
+  static_assert(__is_same(decltype(array = nullptr), std::unique_ptr<int[]> &));
+  static_assert(__is_same(decltype(qualified_array = nullptr), std::unique_ptr<const int[]> &));
+  static_assert(__is_same(decltype(matrix.operator=(nullptr)), std::unique_ptr<int[][2]> &));
+  static_assert(__is_same(decltype(box = nullptr), std::unique_ptr<Box> &));
+  static_assert(__is_same(decltype(boxes = nullptr), std::unique_ptr<Box[]> &));
+  static_assert(__is_same(decltype(cold = nullptr), std::unique_ptr<Cold> &));
+  static_assert(__is_same(decltype(ignored = nullptr), std::unique_ptr<NoDestroy, Ignore> &));
+  static_assert(__is_same(decltype(custom.operator=(zero())), std::unique_ptr<Box, Observe> &));
+  static_assert(__is_same(decltype(custom_array = nullptr), std::unique_ptr<int[], ObserveArray> &));
+  static_assert(sizeof(select(p) = zero()) == sizeof(Scalar));
+  static_assert(alignof(decltype(select(&p)->operator=(zero()))) == alignof(Scalar));
+  static_assert(sizeof((select(p) = zero(), 0)) == sizeof(int));
+  static_assert(noexcept(p = nullptr) && noexcept(p.operator=(null_reference)));
+  static_assert(noexcept(select(p) = zero()) && noexcept(select(&p)->operator=(zero())));
+  static_assert(noexcept(qualified = nullptr) && noexcept(array = nullptr) && noexcept(matrix = nullptr));
+  static_assert(noexcept(box = nullptr) && noexcept(boxes = nullptr) && noexcept(cold = nullptr));
+  static_assert(noexcept(custom = nullptr) && noexcept(custom_array = nullptr) && noexcept(ignored = nullptr));
+  static_assert(!noexcept(p = throwing_zero()) && !noexcept(throwing_receiver(p) = nullptr));
+  static_assert(__is_same(decltype(Scalar{} = nullptr), Scalar &));
+  static_assert(noexcept(Scalar{} = nullptr));
+  static_assert(__is_same(decltype(Scalar(new int(mark())) = zero()), Scalar &));
+  static_assert(!noexcept(Scalar(new int(mark())) = nullptr));
+  static_assert(__is_same(decltype(std::make_unique<int>(mark()) = zero()), Scalar &));
+  static_assert(!noexcept(std::make_unique<int>(mark()) = nullptr));
+  static_assert(__is_same(decltype(std::make_unique<int[]>(Size(3)) = nullptr), std::unique_ptr<int[]> &));
+  static_assert(__is_same(decltype(std::unique_ptr<Box, Observe>(&borrowed) = nullptr), std::unique_ptr<Box, Observe> &));
+  static_assert(__is_same(decltype(std::unique_ptr<NoDestroy, Ignore>{} = nullptr), std::unique_ptr<NoDestroy, Ignore> &));
+  if (allocated != saved_allocated || released != saved_released || created != saved_created ||
+      destroyed != saved_destroyed || receivers != saved_receivers || arguments != saved_arguments ||
+      defaults != saved_defaults || effects != saved_effects || callbacks != saved_callbacks ||
+      array_callbacks != saved_array_callbacks || ignored_calls || observed != 5 || array_observed != 3 ||
+      p.get() != raw || *p != 3 || *factory != 7 || qualified.get() != qualified_raw ||
+      array.get() != array_raw || array[Size(1)] != 6 || qualified_array.get() != qualified_array_raw ||
+      matrix.get() != matrix_raw || matrix[Size(1)][1] != 7 || box.get() != box_raw || boxes.get() != boxes_raw ||
+      custom.get() != &next || custom_array.get() != next_data || empty || cold || ignored) return 4;
+  return 0;
+}
+int main() {
+  int result = check(); if (result) return result;
+  return live == 0 && created == 8 && destroyed == 8 && allocated == released &&
+         class_allocated == 2 && class_released == 2 && callbacks == 2 && array_callbacks == 2 &&
+         observed == 14 && array_observed == 10 && ignored_calls == 0 && defaults == 0 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "memory-unique-ptr-null-assignment-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrNullAssignmentResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"receiver-expression", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(__is_same(decltype((sizeof(long double),p)=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"operand-expression", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(noexcept(p.operator=((sizeof(long double),nullptr))));return 0;}
+)cpp",
+       "TR0201"},
+      {"receiver-default", R"cpp(
+using P=std::unique_ptr<int>;P& select(P&p,int=sizeof(long double))noexcept{return p;}int f(P&p){select(p,1)=nullptr;static_assert(__is_same(decltype(select(p)=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"operand-default", R"cpp(
+Null zero(int=sizeof(long double))noexcept{return nullptr;}using P=std::unique_ptr<int>;int f(P&p){p=zero(1);static_assert(noexcept(p=zero()));return 0;}
+)cpp",
+       "TR0201"},
+      {"receiver-noexcept", R"cpp(
+using P=std::unique_ptr<int>;P* select(P*p)noexcept(sizeof(long double)>0){return p;}int f(P*p){select(p)->operator=(nullptr);static_assert(noexcept(select(p)->operator=(nullptr)));return 0;}
+)cpp",
+       "TR0201"},
+      {"operand-noexcept", R"cpp(
+Null zero()noexcept(sizeof(long double)>0){return nullptr;}using P=std::unique_ptr<int>;int f(P&p){p=zero();static_assert(__is_same(decltype(p=zero()),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-receiver-signature", R"cpp(
+int object;template<int*>using P=std::unique_ptr<int>;P<&object>& select(P<&object>&p)noexcept{return p;}int f(P<&object>&p){select(p)=nullptr;static_assert(noexcept(select(p)=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-operand-signature", R"cpp(
+int object;template<int*>using N=Null;N<&object> zero()noexcept{return nullptr;}using P=std::unique_ptr<int>;int f(P&p){p=zero();static_assert(__is_same(decltype(p=zero()),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"owner-alias", R"cpp(
+int object;template<int*>using P=std::unique_ptr<int>;int f(P<&object>&p){p=nullptr;static_assert(noexcept(p=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointee-layout", R"cpp(
+struct R{long double n;};int f(std::unique_ptr<R>&p){p=nullptr;static_assert(noexcept(p=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"inner-array-bound", R"cpp(
+using E=int[sizeof(long double)];using P=std::unique_ptr<E[]>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointee-destruction-noexcept", R"cpp(
+struct R{int n;~R()noexcept(sizeof(long double)>0){}};using P=std::unique_ptr<R>;int f(P&p){p=nullptr;static_assert(noexcept(p=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"array-destruction-noexcept", R"cpp(
+struct R{int n;~R()noexcept(sizeof(long double)>0){}};using P=std::unique_ptr<R[]>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"class-delete-noexcept", R"cpp(
+struct R{int n;static void operator delete(void*p)noexcept(sizeof(long double)>0){free(p);}};using P=std::unique_ptr<R>;int f(P&p){p=nullptr;static_assert(noexcept(p=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-noexcept", R"cpp(
+struct D{void operator()(int*)const noexcept(sizeof(long double)>0){}};using P=std::unique_ptr<int,D>;int f(P&p){p=nullptr;static_assert(noexcept(p=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"array-callback-noexcept", R"cpp(
+struct D{void operator()(int*)noexcept(sizeof(long double)>0){}};using P=std::unique_ptr<int[],D>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-redeclaration", R"cpp(
+int object;template<int*>using T=int;struct D{void operator()(T<&object>*)const noexcept;};void D::operator()(int*)const noexcept{}using P=std::unique_ptr<int,D>;int f(P&p){p=nullptr;static_assert(noexcept(p=nullptr));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-operand", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,int*raw){P local;local=nullptr;static_assert(__is_same(decltype(P((sizeof(long double),raw))=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-allocation-default", R"cpp(
+int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int>;int f(P&p){P local;local=nullptr;static_assert(__is_same(decltype(P(new int(value()))=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"factory-default", R"cpp(
+int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int>;int f(P&p){auto local=std::make_unique<int>(value(1));local=nullptr;static_assert(__is_same(decltype(std::make_unique<int>(value())=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-member", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-array", R"cpp(
+using P=std::unique_ptr<int[]>;int f(P&p){p.reset(nullptr);static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-custom", R"cpp(
+struct D{void operator()(int*)const noexcept{}};using P=std::unique_ptr<int,D>;int f(P&p){p.reset();static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0203"},
+      {"query-only-specialization", R"cpp(
+int f(std::unique_ptr<int>&p,std::unique_ptr<const int>&q){p=nullptr;static_assert(noexcept(q=nullptr));return 0;}
+)cpp",
+       "TR0203"},
+      {"assignment-specialization", R"cpp(
+namespace std{inline namespace __1{template<>unique_ptr<int>& unique_ptr<int>::operator=(nullptr_t)noexcept{return *this;}}}using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"delegated-reset-specialization", R"cpp(
+namespace std{inline namespace __1{template<>void unique_ptr<int>::reset(int*)noexcept{}}}using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"delegated-array-reset-specialization", R"cpp(
+namespace std{inline namespace __1{template<>void unique_ptr<int[]>::reset(nullptr_t)noexcept{}}}using P=std::unique_ptr<int[]>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-member-address", R"cpp(
+using P=std::unique_ptr<int>;using F=P&(P::*)(Null)noexcept;int f(P&p){p=nullptr;static_assert(sizeof(static_cast<F>(&P::operator=))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"other-member-move-assignment", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p=std::move(q);static_assert(__is_same(decltype(p=std::move(q)),P&));return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("unique-ptr-null-assignment-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("unique-ptr-null-assignment-query-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+using Size = decltype(sizeof(0)); using Null = decltype(nullptr);
 extern "C" void *malloc(Size); extern "C" void free(void *);
 void *operator new(Size n) { return malloc(n); }
 void *operator new[](Size n) { return malloc(n); }

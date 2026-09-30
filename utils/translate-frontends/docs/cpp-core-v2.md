@@ -1335,7 +1335,7 @@ keep their separate lifetime source. Unevaluated reset neither changes the
 pointer nor evaluates a receiver, replacement, default or allocation, and makes
 no deleter or destruction call. Missing query-only bodies, different array
 overloads/specializations, independent member addresses and source SDK
-replacements remain rejected. Assignment receives no new result-source
+replacements remain rejected. Move assignment receives no new result-source
 authentication.
 
 The same query boundary admits already materialized member `swap` and the exact
@@ -1364,6 +1364,31 @@ replacements and independent addresses remain rejected; the generic
 `std::swap<Owner>` overload has no new permission. Signature-only free-swap
 `noexcept` queries keep their existing exception-source boundary and need no
 unused body.
+
+Result-source queries also admit the already materialized pinned
+`unique_ptr::operator=(nullptr_t)` for mutable scalar and array owners, including
+qualified pointees, bounded inner array extents and admitted custom deleters.
+Operator syntax and explicit member calls retain the exact owner lvalue
+reference result and nonthrowing signature. The receiver may be an object
+expression or an exact raw owner pointer; its original type, written expression,
+source defaults and `nullptr_t` operand keep their ordinary source dependencies.
+The actual SDK assignment body must call the same owner's pinned `reset()`
+with its exact unrewritten zero default, then return `*this`. The reset member,
+its instantiation pattern and all redeclarations remain authenticated SDK
+source; this proof neither instantiates a body nor traverses its private call
+as project source. The query closes the same selected deallocation, pointee
+destruction or source-defined deleter callback as reset. Every original callback
+declaration and exception specification must be admitted. A borrowed receiver
+requires no owner or pointee construction; local initializers, temporary
+receivers and factory receivers retain their separate owning lifetime source.
+Unevaluated assignment preserves the pointer and original owner identity,
+evaluates neither operand nor defaults, and invokes no deletion or cleanup.
+Its ordinary evaluated form retains C++17 right-before-left ordering for
+operator syntax and receiver-before-argument ordering for explicit member calls.
+Query-only bodies, different unmaterialized specializations, source assignment
+or delegated-reset replacements and independent member addresses remain
+rejected. Same-type and converting move assignment keep their existing runtime
+boundary and receive no new result-source authentication here.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
