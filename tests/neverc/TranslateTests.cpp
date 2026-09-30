@@ -49514,6 +49514,168 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MixedCallbackRecordTransformRunsAtBothOptimizations) {
+  const auto Source = tmpFile("mixed-callback-record-transform.cpp");
+  const auto Output = tmpFile("mixed-callback-record-transform.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <vector>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+struct Item { int key; int tag; };
+struct Product { long total; int tag; };
+const Item *record_base;
+int calls, bad_identity, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int rank(Callback value, const Item &item) {
+  if (&item != record_base + calls) ++bad_identity;
+  ++calls;
+  return item.key * 10 + item.tag + (value == one ? 1 : 2);
+}
+int rank_reverse(const Item &item, Callback value) { return rank(value, item); }
+Product combine(Callback value, const Item &item) {
+  if (&item != record_base + calls) ++bad_identity;
+  ++calls;
+  return {item.key + (value == one ? 10L : 20L), item.tag + calls};
+}
+Product combine_reverse(const Item &item, Callback value) {
+  return combine(value, item);
+}
+Callback select(Callback value, const Item &item) {
+  if (&item != record_base + calls) ++bad_identity;
+  ++calls;
+  return item.key == 1 ? two : value;
+}
+NoexceptCallback select_safe(const Item &item, NoexceptCallback value) {
+  if (&item != record_base + calls) ++bad_identity;
+  ++calls;
+  return item.key == 1 ? value : safe_two;
+}
+Item update(Callback value, const Item &item) {
+  if (&item != record_base + calls) ++bad_identity;
+  ++calls;
+  return {item.key + (value == one ? 1 : 2), item.tag + calls};
+}
+int main() {
+  Callback input[]{one, two};
+  Item raw_records[]{{1, 10}, {2, 20}};
+  const std::vector<Item> records{{1, 10}, {2, 20}};
+  std::vector<long> values(2);
+  int first_effects = 0, last_effects = 0, second_effects = 0;
+  int output_effects = 0, callback_effects = 0;
+  record_base = raw_records;
+  if (std::transform((++first_effects, input),
+                     (++last_effects, input + 2),
+                     (++second_effects, raw_records),
+                     (++output_effects, values.begin()),
+                     (++callback_effects, rank)) != values.end() ||
+      first_effects != 1 || last_effects != 1 || second_effects != 1 ||
+      output_effects != 1 || callback_effects != 1 || calls != 2 ||
+      bad_identity || values[0] != 21 || values[1] != 42 || pointed_calls)
+    return 1;
+  long raw_values[2]{};
+  record_base = &records[0]; calls = bad_identity = 0;
+  if (std::transform(records.cbegin(), records.cend(), input,
+                     raw_values, rank_reverse) != raw_values + 2 ||
+      calls != 2 || bad_identity || raw_values[0] != 21 || raw_values[1] != 42)
+    return 2;
+  std::vector<Product> products(2);
+  calls = bad_identity = 0;
+  if (std::transform(input, input + 2, records.cbegin(),
+                     products.begin(), combine) != products.end() ||
+      calls != 2 || bad_identity || products[0].total != 11 ||
+      products[0].tag != 11 || products[1].total != 22 || products[1].tag != 22)
+    return 3;
+  Product raw_products[2]{};
+  record_base = raw_records; calls = bad_identity = 0;
+  if (std::transform(raw_records, raw_records + 2, input,
+                     raw_products, combine_reverse) != raw_products + 2 ||
+      calls != 2 || bad_identity || raw_products[0].total != 11 ||
+      raw_products[0].tag != 11 || raw_products[1].total != 22 ||
+      raw_products[1].tag != 22)
+    return 4;
+  record_base = &records[0]; calls = bad_identity = 0;
+  if (std::transform(input, input + 2, records.cbegin(), input, select) !=
+          input + 2 || calls != 2 || bad_identity || input[0] != two ||
+      input[1] != two || pointed_calls)
+    return 5;
+  NoexceptCallback safe[]{safe_one, safe_one};
+  record_base = raw_records; calls = bad_identity = 0;
+  if (std::transform(raw_records, raw_records + 2, safe, safe, select_safe) !=
+          safe + 2 || calls != 2 || bad_identity || safe[0] != safe_one ||
+      safe[1] != safe_two || pointed_calls)
+    return 6;
+  calls = bad_identity = 0;
+  if (std::transform(input, input + 2, raw_records, raw_records, update) !=
+          raw_records + 2 || calls != 2 || bad_identity ||
+      raw_records[0].key != 3 || raw_records[0].tag != 11 ||
+      raw_records[1].key != 4 || raw_records[1].tag != 22)
+    return 7;
+  calls = bad_identity = 0;
+  if (std::transform(input, input, records.cbegin(), values.begin(), rank) !=
+          values.begin() ||
+      std::transform(records.cend(), records.cend(), input,
+                     raw_products, combine_reverse) != raw_products ||
+      calls || bad_identity || pointed_calls)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("mixed-callback-record-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MixedCallbackRecordTransformRejectsInvalidParameters) {
+  for (const std::string &CallbackName :
+       {"by_value", "mutable_reference", "pointer_reference"}) {
+    SCOPED_TRACE(CallbackName);
+    const auto Source = tmpFile(CallbackName + "-mixed-transform.cpp");
+    const auto Output = tmpFile(CallbackName + "-mixed-transform.nc");
+    const std::string Inputs = CallbackName == "mutable_reference"
+                                   ? "records, records + 2, input"
+                                   : "input, input + 2, records";
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+struct Item { int key; int tag; };
+int one(int x) { return x + 1; }
+int by_value(Callback, Item item) { return item.key; }
+int mutable_reference(Item &item, Callback) { return item.key; }
+int pointer_reference(const Callback&, const Item &item) { return item.key; }
+int main() {
+  Callback input[]{one, one};
+  Item records[]{{1, 10}, {2, 20}};
+  int output[2]{};
+  return std::transform()cpp" +
+                          Inputs + ", output, " + CallbackName +
+                          ") == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackToRecordTransformRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-to-record-transform.cpp");
   const auto Output = tmpFile("callback-to-record-transform.nc");

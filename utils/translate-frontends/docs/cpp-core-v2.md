@@ -2285,13 +2285,14 @@ the matching writable output. The output iterator keeps its original form, and
 in-place pointer transformation reads each value before replacing it. The
 translator does not invoke the pointed-to functions.
 Binary `transform` accepts a function-pointer value range in either input
-position, with an independent exact function-pointer or directly convertible
-scalar range in the other position. Both function-pointer arguments are passed
-by value with exact types, including `noexcept`; the result may be a directly
-convertible scalar, an exact function-pointer type or an exact trivial source
-record by value for the matching writable output. Both input values are read
-before an overlapping output write, and the returned iterator retains the
-output range's form.
+position, with an independent exact function-pointer, directly convertible
+scalar or exact trivial source-record range in the other position. Each
+function-pointer argument is passed by value with its exact type, including
+`noexcept`; a record argument is an exact `const Record&` addressing the original
+input element. The result may be a directly convertible scalar, an exact
+function-pointer type or an exact trivial source record by value for the
+matching writable output. Both input values are read before an overlapping
+output write, and the returned iterator retains the output range's form.
 These function-pointer input forms write the complete source-record result to
 a writable raw or authenticated wrapped output range. Reference results and
 conversions between different record types remain rejected.

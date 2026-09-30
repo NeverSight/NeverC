@@ -28018,6 +28018,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto FirstCallback = AlgorithmCallbackRangeParameter(0);
     const auto FirstScalar = AlgorithmRangePointerParameter(0);
+    const auto FirstRecord = AlgorithmRecordRangeParameter(0);
     const auto SecondCallback = AlgorithmCallbackRangeParameter(2);
     const auto SecondScalar = AlgorithmRangePointerParameter(2);
     const auto ScalarOutput = AlgorithmRangePointerParameter(3);
@@ -28026,7 +28027,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Callback = AlgorithmCallbackPrototype(4);
     const bool FirstRange =
         (FirstCallback && AlgorithmCallbackRangeParameter(1)) ||
-        (FirstScalar && AlgorithmRangePointerParameter(1));
+        (FirstScalar && AlgorithmRangePointerParameter(1)) ||
+        (FirstRecord && AlgorithmRecordRangeParameter(1));
     const bool ScalarResult =
         Callback && ScalarOutput &&
         utilityAlgorithmWritableScalarPointer(Context, *ScalarOutput) &&
@@ -28048,13 +28050,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                Callback->getParamType(0))) ||
          (FirstScalar && utilityScalarDirectConversion(
                              Context, (*FirstScalar)->getPointeeType(),
-                             Callback->getParamType(0)))) &&
+                             Callback->getParamType(0))) ||
+         AlgorithmRecordRangeCallbackReferenceParameter(4, 0, 0)) &&
         ((SecondCallback && utilityCallbackEqualityType(
                                 Context, (*SecondCallback)->getPointeeType(),
                                 Callback->getParamType(1))) ||
          (SecondScalar && utilityScalarDirectConversion(
                               Context, (*SecondScalar)->getPointeeType(),
-                              Callback->getParamType(1)))) &&
+                              Callback->getParamType(1))) ||
+         AlgorithmRecordRangeCallbackReferenceParameter(4, 1, 2)) &&
         (ScalarResult || CallbackResult || RecordResult))
       return UtilityOperation::AlgorithmTransformBinary;
   }
