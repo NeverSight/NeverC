@@ -9086,8 +9086,8 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
             Context, Function->getParamDecl(0)->getType()->getPointeeType(),
             ValueElement))
       return std::nullopt;
-    return UtilityMakeUniqueCall{*Owner, Allocation, nullptr, nullptr,
-                                 ArrayCount};
+    return UtilityMakeUniqueCall{*Owner,  Allocation, OwnerConstruction,
+                                 nullptr, nullptr,    ArrayCount};
   }
 
   const auto *Record = definedRecord(ValueElement.getUnqualifiedType());
@@ -9133,8 +9133,8 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
       return std::nullopt;
     Constructor = cast<CXXConstructorDecl>(Definition);
   }
-  return UtilityMakeUniqueCall{*Owner, Allocation, Construction, Constructor,
-                               ArrayCount};
+  return UtilityMakeUniqueCall{*Owner,       Allocation,  OwnerConstruction,
+                               Construction, Constructor, ArrayCount};
 }
 
 static bool utilityAllocatorForwardingArguments(

@@ -567,6 +567,7 @@ approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
 struct UtilityMakeUniqueCall {
   UtilityUniquePtrRecord Owner;
   const clang::CXXNewExpr *Allocation;
+  const clang::CXXConstructExpr *OwnerConstruction;
   const clang::CXXConstructExpr *Construction;
   const clang::CXXConstructorDecl *Constructor;
   std::optional<uint64_t> ArrayCount = std::nullopt;

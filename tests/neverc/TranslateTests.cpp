@@ -38288,6 +38288,249 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryMakeUniqueResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-make-unique-result-queries.cpp");
+  const auto Output = tmpFile("memory-make-unique-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <vector>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+int allocated, released, live, created, destroyed, class_allocated, class_released;
+int written, argument_defaults, constructor_defaults, copies, moves, receivers;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+int value(int n = (++argument_defaults, 9)) noexcept { ++written; return n; }
+int default_value(int n) noexcept { ++constructor_defaults; return n; }
+struct Owned {
+  int left, right;
+  Owned(int a = default_value(1), int b = default_value(2)) noexcept(sizeof(int) > 0)
+      : left(a), right(b) { ++live; ++created; }
+  ~Owned() noexcept(sizeof(int) > 0) { --live; ++destroyed; }
+};
+struct Parent { Owned member; Parent() noexcept = default; ~Parent() noexcept = default; };
+struct Aggregate { int n; };
+struct Copyable {
+  int n;
+  explicit Copyable(int v) noexcept : n(v) { ++live; ++created; }
+  Copyable(const Copyable &v) noexcept : n(v.n) { ++live; ++created; ++copies; }
+  Copyable(Copyable &&v) noexcept : n(v.n) { v.n = 0; ++live; ++created; ++moves; }
+  ~Copyable() noexcept { --live; ++destroyed; }
+};
+struct Box {
+  int n;
+  explicit Box(int v) noexcept : n(v) { ++live; ++created; }
+  ~Box() noexcept { --live; ++destroyed; }
+  static void *operator new(Size n) { ++allocated; ++class_allocated; return malloc(n); }
+  static void operator delete(void *p) noexcept {
+    if (p) { ++released; ++class_released; } free(p);
+  }
+};
+using Owners = std::vector<std::unique_ptr<int>>;
+Owners &select(Owners &v, std::unique_ptr<int> p) noexcept { ++receivers; return v; }
+int check() {
+  auto zero = std::make_unique<int>();
+  auto scalar = std::make_unique<int>(value(3));
+  auto qualified = std::make_unique<const int>(7);
+  auto converted = std::make_unique<long>(short(8));
+  auto object = std::make_unique<Owned>(4, 5);
+  auto defaulted = std::make_unique<Owned>();
+  auto trailing = std::make_unique<Owned>(6);
+  auto parent = std::make_unique<Parent>();
+  auto aggregate = std::make_unique<Aggregate>();
+  Copyable source(11);
+  auto copied = std::make_unique<Copyable>(source);
+  auto moved = std::make_unique<Copyable>(static_cast<Copyable &&>(source));
+  auto box = std::make_unique<Box>(13);
+  auto values = std::make_unique<int[]>(Size(3));
+  auto const_values = std::make_unique<const int[]>(Size(2));
+  auto empty = std::make_unique<int[]>(Size(0));
+  auto objects = std::make_unique<Owned[]>(Size(2));
+  auto matrix = std::make_unique<int[][2]>(Size(2));
+  auto object_matrix = std::make_unique<Owned[][2]>(Size(1));
+  Owners owners(Size(2));
+  auto first = select(owners, std::make_unique<int>(value(5))).begin();
+  if (*zero != 0 || *scalar != 3 || *qualified != 7 || *converted != 8 ||
+      object->left != 4 || object->right != 5 || defaulted->left != 1 ||
+      trailing->right != 2 || parent->member.right != 2 || aggregate->n != 0 ||
+      copied->n != 11 || moved->n != 11 || source.n != 0 || box->n != 13 ||
+      values[2] != 0 || const_values[1] != 0 || objects[1].left != 1 ||
+      matrix[1][1] != 0 || object_matrix[0][1].right != 2) return 1;
+  const int allocation_count = allocated, release_count = released;
+  const int live_count = live, created_count = created, destroyed_count = destroyed;
+  const int default_count = constructor_defaults;
+  static_assert(__is_same(decltype(std::make_unique<int>()), std::unique_ptr<int>));
+  static_assert(__is_same(decltype(std::make_unique<int>(value())), std::unique_ptr<int>));
+  static_assert(__is_same(decltype(std::make_unique<const int>(7)), std::unique_ptr<const int>));
+  static_assert(sizeof(std::make_unique<long>(short(8))) == sizeof(converted));
+  static_assert(!noexcept(std::make_unique<int>()));
+  static_assert(!noexcept(std::make_unique<int>(value())));
+  static_assert(__is_same(decltype(std::make_unique<Owned>(4, 5)), std::unique_ptr<Owned>));
+  static_assert(sizeof(std::make_unique<Owned>()) == sizeof(defaulted));
+  static_assert(sizeof(std::make_unique<Owned>(6)) == sizeof(trailing));
+  static_assert(!noexcept(std::make_unique<Owned>()));
+  static_assert(sizeof(std::make_unique<Parent>()) == sizeof(parent));
+  static_assert(sizeof(std::make_unique<Aggregate>()) == sizeof(aggregate));
+  static_assert(sizeof(std::make_unique<Copyable>(source)) == sizeof(copied));
+  static_assert(sizeof(std::make_unique<Copyable>(static_cast<Copyable &&>(source))) == sizeof(moved));
+  static_assert(alignof(decltype(std::make_unique<Box>(value()))) == alignof(std::unique_ptr<Box>));
+  static_assert(sizeof(std::make_unique<Box>(value())) == sizeof(box));
+  static_assert(__is_same(decltype(std::make_unique<int[]>(Size(4))), std::unique_ptr<int[]>));
+  static_assert(sizeof(std::make_unique<const int[]>(Size(0))) == sizeof(const_values));
+  static_assert(!noexcept(std::make_unique<int[]>(Size(0))));
+  static_assert(sizeof(std::make_unique<Owned[]>(Size(3))) == sizeof(objects));
+  static_assert(!noexcept(std::make_unique<Owned[]>(Size(0))));
+  static_assert(__is_same(decltype(std::make_unique<int[][2]>(Size(3))), std::unique_ptr<int[][2]>));
+  static_assert(sizeof(std::make_unique<Owned[][2]>(Size(0))) == sizeof(object_matrix));
+  static_assert(__is_same(decltype(select(owners, std::make_unique<int>(value())).begin()), decltype(first)));
+  return allocated == allocation_count && released == release_count &&
+         live == live_count && created == created_count && destroyed == destroyed_count &&
+         constructor_defaults == default_count && written == 2 && argument_defaults == 0 &&
+         copies == 1 && moves == 1 && receivers == 1 && class_allocated == 1 &&
+         class_released == 0 ? 0 : 2;
+}
+int main() {
+  const int result = check();
+  return result ? result : allocated == released && live == 0 && created == destroyed &&
+         class_released == 1 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-make-unique-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryMakeUniqueResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"erased-element-alias", R"cpp(
+int object; template<auto> using T = int;
+int f() { auto p=std::make_unique<int>(1); static_assert(sizeof(std::make_unique<T<&object>>(2)) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"argument-source", R"cpp(
+int f() { auto p=std::make_unique<int>(1); static_assert(sizeof(std::make_unique<int>((sizeof(long double), 2))) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"argument-default", R"cpp(
+int value(int n=(sizeof(long double), 1)) noexcept {return n;}
+int f() { auto p=std::make_unique<int>(value(2)); static_assert(sizeof(std::make_unique<int>(value())) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"pointee-layout", R"cpp(
+struct R { long double n; R() noexcept : n(0) {} };
+int f() { auto p=std::make_unique<R>(); static_assert(sizeof(std::make_unique<R>()) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"constructor-noexcept", R"cpp(
+struct R { R(int) noexcept(sizeof(long double)>0) {} };
+int f() { auto p=std::make_unique<R>(1); static_assert(sizeof(std::make_unique<R>(2)) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"constructor-original-declaration", R"cpp(
+struct R { R(int) noexcept(sizeof(long double)>0); };
+R::R(int) noexcept(sizeof(int)>0) {}
+int f() { auto p=std::make_unique<R>(1); static_assert(sizeof(std::make_unique<R>(2)) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"constructor-default", R"cpp(
+struct R { R(int n=(sizeof(long double), 1)) noexcept {} };
+int f() { auto p=std::make_unique<R>(2); auto q=std::make_unique<R>(); static_assert(sizeof(std::make_unique<R>()) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"generated-constructor-default", R"cpp(
+struct Member { Member(int n=(sizeof(long double), 1)) noexcept {} };
+struct R { Member member; R() noexcept = default; };
+int f() { auto p=std::make_unique<R>(); static_assert(sizeof(std::make_unique<R>()) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"destructor-noexcept", R"cpp(
+struct R { R() noexcept {} ~R() noexcept(sizeof(long double)>0) {} };
+int f() { auto p=std::make_unique<R>(); static_assert(sizeof(std::make_unique<R>()) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"copy-signature", R"cpp(
+int object; template<auto> using Reference = const struct R &;
+struct R { R(int) noexcept {} R(Reference<&object>) noexcept {} };
+int f() { R r(1); auto p=std::make_unique<R>(r); static_assert(sizeof(std::make_unique<R>(r)) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"array-count-source", R"cpp(
+int f() { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>((sizeof(long double), Size(3)))) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"array-runtime-count", R"cpp(
+int f(Size n) { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>(n)) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"array-count-limit", R"cpp(
+int f() { auto p=std::make_unique<int[]>(Size(2)); static_assert(sizeof(std::make_unique<int[]>(Size(65537))) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-specialization", R"cpp(
+int f() { static_assert(sizeof(std::make_unique<int>(1)) == sizeof(std::unique_ptr<int>)); return 0; }
+)cpp",
+       "TR0201"},
+      {"query-only-record-constructor", R"cpp(
+struct R { R(int) noexcept {} R(short) noexcept {} };
+int f() { auto p=std::make_unique<R>(1); static_assert(sizeof(std::make_unique<R>(short(2))) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"independent-function-address", R"cpp(
+using Factory = std::unique_ptr<int> (*)(int &&);
+int f() { auto p=std::make_unique<int>(1); static_assert(sizeof(static_cast<Factory>(&std::make_unique<int, int>)) == sizeof(Factory)); return 0; }
+)cpp",
+       "TR0201"},
+      {"factory-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> unique_ptr<int> make_unique<int>() { return unique_ptr<int>(new int(1)); } } }
+int f() { auto p=std::make_unique<int>(); static_assert(sizeof(std::make_unique<int>()) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+      {"owner-destructor-specialization", R"cpp(
+namespace std { inline namespace __1 { template<> unique_ptr<int>::~unique_ptr() noexcept {} } }
+int f() { auto p=std::make_unique<int>(1); static_assert(sizeof(std::make_unique<int>(2)) == sizeof(p)); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("make-unique-result-query-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("make-unique-result-query-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRunsAtBothOptimizations) {
   const auto Source = tmpFile("memory-make-unique.cpp");
   const auto Output = tmpFile("memory-make-unique.nc");
@@ -38890,7 +39133,9 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "int main(){auto value=std::make_unique<R>();}",
        "TR0201"},
       {"function-address",
-       "#include <memory>\nusing P=std::unique_ptr<int>;"
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
+       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+       "void operator delete(void*,S)noexcept{}using P=std::unique_ptr<int>;"
        "P(*factory)()=&std::make_unique<int>;",
        "TR0201"}};
   for (const auto &Case : Cases) {

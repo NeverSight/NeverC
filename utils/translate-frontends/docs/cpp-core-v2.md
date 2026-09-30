@@ -2536,9 +2536,27 @@ only observe a borrowed object. The admitted pointer and `nullptr`
 constructors with an exact source deleter lvalue or rvalue also retain written
 argument, conversion and selected default sources. Stateful, reference,
 nontrivial, overloaded, ref-qualified, throwing and nonexact-pointer deleters
-retain their existing rejection boundary. `make_unique` factory queries still
-require their separate owning source proof.
-Authentication belongs to the exact member call and reference; receiver
+retain their existing rejection boundary.
+Admitted `make_unique<T>` and `make_unique<T[]>` calls in receiver initializers
+and result queries retain their exact already materialized factory definition,
+template pattern, primary template and pinned redeclarations. The descriptor's
+actual owning constructor supplies the SDK pointer or array-tag construction;
+it does not admit independent uses of the private array tag. The source
+allocation definition, the same deallocation selected by lowering, original
+pointee layout and complete destruction source remain required. Object
+construction retains the selected source constructor's original declarations,
+signatures, exception specifications and completed body or implicit/defaulted
+family proof. Selected trailing defaults consume their original checked source
+expressions without borrowing the SDK's forwarding nodes. Scalar, qualified,
+converted and copied/moved object results, constant-count arrays and bounded
+inner array extents preserve the owning runtime boundary. Written template
+arguments, argument expressions and caller defaults remain ordinary source
+dependencies; unsupported or runtime array counts, query-only factory
+specializations, independent factory addresses and source SDK replacements
+remain rejected. Unevaluated queries make no factory, allocation, constructor,
+default-argument or cleanup calls; the pinned factories remain potentially
+throwing.
+Authentication belongs to the exact checked call and reference; receiver
 expressions, factory defaults and written type or template source remain checked.
 These unevaluated calls preserve the iterator type and fixed `noexcept` value
 without evaluating their receiver or performing an inner allocation, copy or

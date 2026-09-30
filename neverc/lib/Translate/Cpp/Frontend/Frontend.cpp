@@ -1805,6 +1805,7 @@ struct OperationSourceDependencies {
   std::set<const CXXConstructorDecl *> VectorConstructors;
   std::set<const CXXConstructorDecl *> StringConstructors;
   std::set<const CXXConstructorDecl *> UniquePtrConstructors;
+  std::set<const CallExpr *> UniquePtrFactories;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2840,6 +2841,43 @@ utilityUniquePtrDeleterConstructor(Adapter &A,
   return Selected;
 }
 
+static std::optional<UtilityMakeUniqueCall>
+utilityMakeUniqueSource(Adapter &A, const CallExpr *Call) {
+  const auto Info =
+      approvedUtilityMakeUniqueCall(A.S, A.Sources, Call, A.Context);
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  if (!Info || Info->Owner.CustomDeleter || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_None || !Primary ||
+      !utilityUniquePtrSource(A, Info->Owner.Record))
+    return std::nullopt;
+  auto Pinned = [&](const FunctionDecl *Declaration) {
+    if (!Declaration || !Declaration->getDefinition() ||
+        Declaration->getTemplateSpecializationKind() ==
+            TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Redeclaration : Declaration->redecls()) {
+      A.chargeExpansion(1, Redeclaration->getLocation());
+      if (!approvedStandardSDKDeclaration(A.S, A.Sources, Redeclaration))
+        return false;
+    }
+    return approvedStandardSDKDeclaration(A.S, A.Sources,
+                                          Declaration->getDefinition());
+  };
+  if (!Pinned(Function) || !Pinned(Function->getTemplateInstantiationPattern(
+                               /*ForDefinition=*/true)))
+    return std::nullopt;
+  for (const auto *Declaration : Primary->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) ||
+        !Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl())))
+      return std::nullopt;
+  }
+  return Info;
+}
+
 static bool utilityVectorSourceElements(Adapter &A,
                                         const UtilityVectorRecord &Vector,
                                         unsigned Depth = 0) {
@@ -3416,6 +3454,39 @@ public:
            generatedOperation(
                utilityUniquePtrDeleterConstructor(A, Constructor, *Owner));
   }
+  bool uniquePtrFactory(const CallExpr *Call) {
+    const auto Info = utilityMakeUniqueSource(A, Call);
+    if (!Info || !Info->OwnerConstruction ||
+        !uniquePtrConstruction(Info->OwnerConstruction->getConstructor()))
+      return false;
+    const auto L = Call->getExprLoc();
+    if (!defined(A.allocationFunction(Info->Allocation->getOperatorNew(), true,
+                                      L, Info->Owner.Deleter.Array)) ||
+        !destruction(Info->Owner.Record))
+      return false;
+    if (const auto *Constructor = Info->Constructor) {
+      if (Constructor->isImplicit() || defaultedDeclaration(Constructor)) {
+        if (!generatedOperation(Constructor))
+          return false;
+      } else {
+        for (const auto *Declaration : Constructor->redecls()) {
+          A.chargeExpansion(1, Declaration->getLocation());
+          if (!defined(Declaration))
+            return false;
+        }
+      }
+      // The SDK forwards the written arguments, but selected trailing defaults
+      // still belong to the original source constructor. Consume those exact
+      // already checked expressions, never the private SDK forwarding nodes.
+      for (const auto *Argument : Info->Construction->arguments())
+        if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument)) {
+          const auto *Initializer = selectedDefaultArgument(Default, A.Context);
+          if (!Initializer || !requireExpression(Initializer))
+            return false;
+        }
+    }
+    return true;
+  }
   bool finish(SourceLocation L) {
     std::set<const OperationSourceDependencies *> Seen;
     while (!Work.empty()) {
@@ -3435,6 +3506,9 @@ public:
           return false;
       for (const auto *Constructor : Dependencies->UniquePtrConstructors)
         if (!uniquePtrConstruction(Constructor))
+          return false;
+      for (const auto *Call : Dependencies->UniquePtrFactories)
+        if (!uniquePtrFactory(Call))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -6165,6 +6239,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
+  std::map<const DeclRefExpr *, const CallExpr *>
+      AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
     const FunctionDecl *Algorithm;
     // A null method denotes a separately authenticated SDK operation.
@@ -8910,6 +8986,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
       const FunctionDecl *AuthenticatedVectorEndpoint = nullptr;
+      const CallExpr *AuthenticatedMakeUnique = nullptr;
       std::optional<AlgorithmCallableSource> AuthenticatedAlgorithm;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
         const auto *Function = Call->getDirectCallee();
@@ -8930,6 +9007,21 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // exact descriptor supplies the SDK signature/body, not a blanket
         // exemption for other references to the same function declaration.
         if (Prototype && Prototype->getExceptionSpecType() == EST_None) {
+          if (utilityMakeUniqueSource(A, Call))
+            if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+                    directFunctionReference(Call));
+                Reference && Reference->getDecl() == Function) {
+              auto [Entry, Inserted] =
+                  AuthenticatedMakeUniqueReferences.emplace(Reference, Call);
+              if (Inserted)
+                A.chargeExpansion(1, Call->getExprLoc());
+              if (Entry->second == Call) {
+                AuthenticatedMakeUnique = Call;
+                for (auto *Dependencies : ActiveOperationSources)
+                  if (Dependencies->UniquePtrFactories.insert(Call).second)
+                    A.chargeExpansion(1, Call->getExprLoc());
+              }
+            }
           if (auto Source = algorithmCallableSource(Call)) {
             if (const auto *Reference =
                     dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
@@ -8964,6 +9056,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         }
       } else if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
+        if (auto Found = AuthenticatedMakeUniqueReferences.find(Reference);
+            Found != AuthenticatedMakeUniqueReferences.end())
+          AuthenticatedMakeUnique = Found->second;
         if (auto Found = AuthenticatedAlgorithmReferences.find(Reference);
             Found != AuthenticatedAlgorithmReferences.end())
           AuthenticatedAlgorithm = Found->second.second;
@@ -9005,6 +9100,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // Receiver expressions, written types and arguments remain source
         // roots.
         if (Function == AuthenticatedVectorEndpoint)
+          return;
+        // The exact factory supplies the pinned SDK signature and body. Its
+        // owning allocation, construction, defaults and cleanup close
+        // separately.
+        if (AuthenticatedMakeUnique &&
+            Function == AuthenticatedMakeUnique->getDirectCallee())
           return;
         if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Function);
             Destructor &&
