@@ -26823,10 +26823,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                         OO_Less)) ||
          (Comparator && Comparator->getNumParams() == 2 &&
           Comparator->getReturnType()->isBooleanType() &&
-          utilityScalarDirectConversion(Context, List->ElementType,
+          ((utilityScalarDirectConversion(Context, List->ElementType,
+                                          Comparator->getParamType(0)) &&
+            utilityScalarDirectConversion(Context, List->ElementType,
+                                          Comparator->getParamType(1))) ||
+           (utilityCallbackEqualityType(Context, List->ElementType,
                                         Comparator->getParamType(0)) &&
-          utilityScalarDirectConversion(Context, List->ElementType,
-                                        Comparator->getParamType(1)))))
+            utilityCallbackEqualityType(Context, List->ElementType,
+                                        Comparator->getParamType(1)))))))
       return Name == "min" ? UtilityOperation::AlgorithmMin
                            : UtilityOperation::AlgorithmMax;
   }

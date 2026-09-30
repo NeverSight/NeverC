@@ -2466,6 +2466,10 @@ these overloads. The two-argument list overloads also accept a checked
 Boolean function-pointer comparator with directly convertible by-value scalar
 parameters. The callback is captured once, called for each element after the
 first in the pinned comparison order, and not called for a singleton list.
+These two-argument list overloads also accept one exact function-pointer
+element type, including `noexcept` pointers, through a
+`bool(Callback, Callback)` comparator. They return the selected pointer value
+without invoking the pointed-to function.
 Reference-parameter callbacks and record-valued list overloads remain outside
 this boundary.
 
