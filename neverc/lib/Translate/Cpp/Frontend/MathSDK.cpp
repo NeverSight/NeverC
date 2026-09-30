@@ -27971,6 +27971,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                     : UtilityOperation::AlgorithmTransformUnary;
   }
   if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmCallbackRangeParameter(0) &&
+      AlgorithmCallbackRangeParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = AlgorithmCallbackRangeParameter(0);
+    const auto ScalarOutput = AlgorithmRangePointerParameter(2);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(2);
+    const auto *Callback = AlgorithmCallbackPrototype(3);
+    const bool ScalarResult =
+        Callback && ScalarOutput &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarOutput) &&
+        utilityScalarDirectConversion(Context, Callback->getReturnType(),
+                                      (*ScalarOutput)->getPointeeType());
+    const bool CallbackResult =
+        Callback && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, Callback->getReturnType(),
+                                    (*CallbackOutput)->getPointeeType());
+    if (Input && Callback && Callback->getNumParams() == 1 &&
+        utilityCallbackEqualityType(Context, (*Input)->getPointeeType(),
+                                    Callback->getParamType(0)) &&
+        (ScalarResult || CallbackResult))
+      return UtilityOperation::AlgorithmTransformUnary;
+  }
+  if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&

@@ -49179,6 +49179,115 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackUnaryTransformRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-unary-transform.cpp");
+  const auto Output = tmpFile("callback-unary-transform.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls;
+int calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int project(Callback value) {
+  ++calls;
+  if (value == one) return 1;
+  if (value == two) return 2;
+  return 3;
+}
+Callback rotate(Callback value) {
+  ++calls;
+  if (value == one) return two;
+  if (value == two) return three;
+  return one;
+}
+NoexceptCallback rotate_safe(NoexceptCallback value) {
+  ++calls;
+  return value == safe_one ? safe_two : safe_one;
+}
+int main() {
+  Callback values[]{one, two, three};
+  int ranks[3]{};
+  int first_effects = 0, last_effects = 0;
+  int output_effects = 0, callback_effects = 0;
+  if (std::transform((++first_effects, values),
+                     (++last_effects, values + 3),
+                     (++output_effects, ranks),
+                     (++callback_effects, project)) != ranks + 3 ||
+      first_effects != 1 || last_effects != 1 || output_effects != 1 ||
+      callback_effects != 1 || calls != 3 ||
+      ranks[0] != 1 || ranks[1] != 2 || ranks[2] != 3 || pointed_calls != 0)
+    return 1;
+  Callback selected[3]{};
+  calls = 0;
+  if (std::transform(values, values + 3, selected, rotate) != selected + 3 ||
+      calls != 3 || selected[0] != two || selected[1] != three ||
+      selected[2] != one || values[0] != one || pointed_calls != 0)
+    return 2;
+  calls = 0;
+  if (std::transform(values, values + 3, values, rotate) != values + 3 ||
+      calls != 3 || values[0] != two || values[1] != three ||
+      values[2] != one || pointed_calls != 0)
+    return 3;
+  calls = 0;
+  if (std::transform(values, values, ranks, project) != ranks || calls != 0)
+    return 4;
+  NoexceptCallback safe_values[]{safe_one, safe_two};
+  NoexceptCallback safe_output[2]{};
+  calls = 0;
+  if (std::transform(safe_values, safe_values + 2, safe_output, rotate_safe) !=
+          safe_output + 2 || calls != 2 || safe_output[0] != safe_two ||
+      safe_output[1] != safe_one || pointed_calls != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-unary-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackUnaryTransformRejectsInvalidParameters) {
+  for (const std::string &Predicate : {"wrong_reference", "wrong_conversion"}) {
+    SCOPED_TRACE(Predicate);
+    const auto Source = tmpFile(Predicate + "-callback-unary-transform.cpp");
+    const auto Output = tmpFile(Predicate + "-callback-unary-transform.nc");
+    const std::string ValueType = Predicate == "wrong_conversion"
+                                      ? "NoexceptCallback"
+                                      : "Callback";
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) noexcept { return x + 1; }
+int two(int x) noexcept { return x + 2; }
+int wrong_reference(const Callback&) { return 1; }
+int wrong_conversion(Callback) { return 1; }
+int main() {
+  )cpp" + ValueType + " values[]{one, two};\n"
+                     "  int output[2]{};\n"
+                     "  return std::transform(values, values + 2, output, " +
+                     Predicate + ") == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndScalarResults) {
   struct Rejection {

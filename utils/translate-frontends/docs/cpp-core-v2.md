@@ -2277,6 +2277,13 @@ independent raw or authenticated wrapped scalar input ranges and a writable raw
 or wrapped scalar output. Each callback argument and result uses its checked
 direct conversion; the returned position retains the output iterator type.
 The selected input values are read before an overlapping output write.
+Unary `transform` also accepts raw or authenticated wrapped input ranges of
+one exact function-pointer type, including `noexcept` pointers. Its checked
+callback takes that pointer by value and returns either a directly convertible
+scalar for a writable scalar output or the exact function-pointer type for a
+writable pointer output. The output iterator keeps its original form, and
+in-place pointer transformation reads each value before replacing it. The
+translator does not invoke the pointed-to functions.
 Scalar inputs may also produce an exact trivial source record in a writable raw
 or wrapped output range. Each callback input uses the existing checked direct
 scalar conversion, and the callback must return the exact output record by
