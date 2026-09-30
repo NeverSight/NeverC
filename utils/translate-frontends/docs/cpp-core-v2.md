@@ -2002,8 +2002,11 @@ even for an empty range, and the first matching iterator form is preserved.
 
 The default `std::adjacent_find` form also accepts exact function-pointer
 element types, including `noexcept` pointers, in raw or authenticated wrapped
-ranges. It compares pointer values without invoking the functions;
-callback-range predicate forms remain outside this boundary.
+ranges. It compares pointer values without invoking the functions. Its checked
+predicate form accepts the same ranges through an exact
+`bool(Callback, Callback)` function pointer, evaluates the predicate expression
+once, and passes each adjacent pointer value in order. Empty and single-element
+ranges return the end iterator without invoking the predicate.
 
 Default `std::search_n` also accepts raw or authenticated wrapped scalar
 ranges and exact source-owned trivial record ranges under the selected Boolean

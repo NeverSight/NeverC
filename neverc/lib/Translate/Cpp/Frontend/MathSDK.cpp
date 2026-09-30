@@ -25977,6 +25977,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeBinaryPredicateParameter(2, 0, 0))
       return UtilityOperation::AlgorithmAdjacentFind;
+    if (Call->getNumArgs() == 3 && AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmAdjacentFind;
     if (Call->getNumArgs() == 3 && AlgorithmRecordRangeParameter(0) &&
         AlgorithmRecordRangeParameter(1) &&
         AlgorithmRecordRangeBinaryPredicateParameter(2, 0, 0))

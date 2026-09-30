@@ -61434,6 +61434,107 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2CallbackAdjacentFindPredicateRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-adjacent-find-predicate.cpp");
+  const auto Output = tmpFile("callback-adjacent-find-predicate.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int safe_one(int x) noexcept { ++calls; return x + 1; }
+int safe_two(int x) noexcept { ++calls; return x + 2; }
+int group(Callback f) { return f == one || f == three ? 1 : f == two ? 2 : 0; }
+bool same_group(Callback left, Callback right) {
+  ++checks;
+  return group(left) == group(right);
+}
+bool same_safe(NoexceptCallback left, NoexceptCallback right) {
+  ++checks;
+  return left == right;
+}
+int main() {
+  const std::array<Callback, 6> values{{one, two, three, one, three, two}};
+  int firstEffects = 0, lastEffects = 0, predicateEffects = 0;
+  auto found = std::adjacent_find((++firstEffects, values.cbegin()),
+                                  (++lastEffects, values.cend()),
+                                  (++predicateEffects, same_group));
+  if (found != values.cbegin() + 2 || firstEffects != 1 || lastEffects != 1 ||
+      predicateEffects != 1 || checks == 0 || calls != 0)
+    return 1;
+  if (std::adjacent_find(values.cbegin() + 3, values.cend(), same_group) !=
+          values.cbegin() + 3 || calls != 0)
+    return 2;
+  const Callback raw[]{two, one, three, two};
+  if (std::adjacent_find(raw, raw + 4, same_group) != raw + 1 || calls != 0)
+    return 3;
+  const std::array<Callback, 3> distinct{{one, two, three}};
+  if (std::adjacent_find(distinct.cbegin(), distinct.cend(), same_group) !=
+          distinct.cend() || calls != 0)
+    return 4;
+  const std::array<NoexceptCallback, 4> safe{{safe_one, safe_two, safe_one,
+                                               safe_one}};
+  if (std::adjacent_find(safe.cbegin(), safe.cend(), same_safe) !=
+          safe.cbegin() + 2 || calls != 0)
+    return 5;
+  const std::array<Callback, 0> empty{};
+  const std::array<Callback, 1> single{{one}};
+  int emptyPredicateEffects = 0;
+  checks = 0;
+  if (std::adjacent_find(empty.cbegin(), empty.cend(),
+                         (++emptyPredicateEffects, same_group)) !=
+          empty.cend() ||
+      std::adjacent_find(single.cbegin(), single.cend(), same_group) !=
+          single.cend() ||
+      emptyPredicateEffects != 1 || checks != 0 || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-adjacent-find-predicate" +
+                                    Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2CallbackAdjacentFindPredicateRejectsInvalidSignatures) {
+  for (const std::string &Predicate : {"wrong_result", "wrong_reference"}) {
+    SCOPED_TRACE(Predicate);
+    const auto Source = tmpFile("callback-adjacent-find-" + Predicate + ".cpp");
+    const auto Output = tmpFile("callback-adjacent-find-" + Predicate + ".nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+int one(int x) { return x + 1; }
+int wrong_result(Callback, Callback) { return 1; }
+bool wrong_reference(const Callback&, const Callback&) { return true; }
+int main() {
+  const Callback values[]{one, one};
+  return std::adjacent_find(values, values + 2, )cpp" + Predicate +
+                          ") == values;\n}\n");
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceRecordAdjacentFindRun) {
   const auto Source = tmpFile("source-record-adjacent-find.cpp");
   const auto Output = tmpFile("source-record-adjacent-find.nc");
