@@ -2444,6 +2444,12 @@ through a `bool(Callback, Callback)` comparator. The comparator receives the
 pointer values in the pinned call order; the result remains a const reference
 to the selected argument, with the first argument selected on equivalence.
 The translator does not invoke the pointed-to functions.
+The checked four-argument `std::clamp` form accepts three objects of one exact
+function-pointer type through the same Boolean by-value comparator boundary.
+It evaluates all arguments once, compares the value with the lower bound and
+then, if needed, the upper bound, and returns a const reference to the selected
+argument. A value equivalent to either bound retains the value argument's
+identity; the pointed-to functions are not invoked by the translator.
 
 The exact one-argument `std::min(initializer_list<T>)` and
 `std::max(initializer_list<T>)` overloads also accept admitted ordered scalar

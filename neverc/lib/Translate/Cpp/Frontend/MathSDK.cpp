@@ -26863,12 +26863,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isLValue() &&
       (AlgorithmReferenceParameter(0) ||
+       AlgorithmCallbackReferenceParameter(0) ||
        AlgorithmSourceOrderedReferenceParameter(0) ||
        AlgorithmRecordReferenceParameter(0)) &&
       (AlgorithmReferenceParameter(1) ||
+       AlgorithmCallbackReferenceParameter(1) ||
        AlgorithmSourceOrderedReferenceParameter(1) ||
        AlgorithmRecordReferenceParameter(1)) &&
       (AlgorithmReferenceParameter(2) ||
+       AlgorithmCallbackReferenceParameter(2) ||
        AlgorithmSourceOrderedReferenceParameter(2) ||
        AlgorithmRecordReferenceParameter(2)) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -26885,6 +26888,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((AlgorithmReferenceParameter(0) &&
           (AlgorithmBinaryPredicateReferenceParameter(3, 0) ||
            approvedDirectAlgorithmComparator(S, SM, Call, Context))) ||
+         AlgorithmCallbackReferenceComparator(3, 0) ||
          AlgorithmRecordReferenceComparator(3, 0) ||
          approvedDirectAlgorithmSourceComparator(S, SM, Call, Context)))))
     return UtilityOperation::AlgorithmClamp;

@@ -45970,6 +45970,125 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackClampReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-clamp-references.cpp");
+  const auto Output = tmpFile("callback-clamp-references.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls;
+int comparisons;
+int call_order;
+int first(int x) { ++pointed_calls; return x + 1; }
+int second(int x) { ++pointed_calls; return x + 2; }
+int third(int x) { ++pointed_calls; return x + 3; }
+int fourth(int x) { ++pointed_calls; return x + 4; }
+int fifth(int x) { ++pointed_calls; return x + 5; }
+int safe_first(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_second(int x) noexcept { ++pointed_calls; return x + 2; }
+int safe_third(int x) noexcept { ++pointed_calls; return x + 3; }
+int rank(Callback value) {
+  if (value == first) return 1;
+  if (value == second) return 2;
+  if (value == third) return 3;
+  if (value == fourth) return 4;
+  return 5;
+}
+bool less_rank(Callback left, Callback right) {
+  ++comparisons;
+  call_order = call_order * 100 + rank(left) * 10 + rank(right);
+  return rank(left) < rank(right);
+}
+bool less_safe(NoexceptCallback left, NoexceptCallback right) {
+  ++comparisons;
+  return left == safe_first && right == safe_second;
+}
+int main() {
+  Callback below = first, low = second, inside = third;
+  Callback high = fourth, above = fifth;
+  bool (*compare)(Callback, Callback) = less_rank;
+  int value_effects = 0, low_effects = 0;
+  int high_effects = 0, compare_effects = 0;
+  const Callback &bounded = std::clamp((++value_effects, below),
+                                       (++low_effects, low),
+                                       (++high_effects, high),
+                                       (++compare_effects, compare));
+  if (&bounded != &low || value_effects != 1 || low_effects != 1 ||
+      high_effects != 1 || compare_effects != 1 || comparisons != 1 ||
+      call_order != 12 || pointed_calls != 0)
+    return 1;
+  comparisons = 0; call_order = 0;
+  if (&std::clamp(inside, low, high, compare) != &inside ||
+      comparisons != 2 || call_order != 3243 || pointed_calls != 0)
+    return 2;
+  comparisons = 0; call_order = 0;
+  if (&std::clamp(above, low, high, compare) != &high ||
+      comparisons != 2 || call_order != 5245 || pointed_calls != 0)
+    return 3;
+  Callback equal_low = second, equal_high = fourth;
+  comparisons = 0; call_order = 0;
+  if (&std::clamp(equal_low, low, high, compare) != &equal_low ||
+      comparisons != 2 || call_order != 2242)
+    return 4;
+  comparisons = 0; call_order = 0;
+  if (&std::clamp(equal_high, low, high, compare) != &equal_high ||
+      comparisons != 2 || call_order != 4244 || pointed_calls != 0)
+    return 5;
+  NoexceptCallback safe_below = safe_first, safe_low = safe_second;
+  NoexceptCallback safe_high = safe_third;
+  comparisons = 0;
+  if (&std::clamp(safe_below, safe_low, safe_high, less_safe) != &safe_low ||
+      comparisons != 1 || pointed_calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-clamp-references" +
+                                    Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackClampReferencesRejectInvalidComparators) {
+  for (const std::string &Predicate : {"wrong_result", "wrong_reference",
+                                       "wrong_conversion"}) {
+    SCOPED_TRACE(Predicate);
+    const auto Source = tmpFile(Predicate + "-callback-clamp.cpp");
+    const auto Output = tmpFile(Predicate + "-callback-clamp.nc");
+    const std::string ValueType = Predicate == "wrong_conversion"
+                                      ? "NoexceptCallback"
+                                      : "Callback";
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) noexcept { return x + 1; }
+int two(int x) noexcept { return x + 2; }
+int three(int x) noexcept { return x + 3; }
+int wrong_result(Callback, Callback) { return 1; }
+bool wrong_reference(const Callback&, const Callback&) { return true; }
+bool wrong_conversion(Callback, Callback) { return true; }
+int main() {
+  )cpp" + ValueType + " value = one, low = two, high = three;\n"
+                     "  return &std::clamp(value, low, high, " + Predicate +
+                     ") == &low;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DirectAlgorithmFunctionalComparatorsRun) {
   const auto Source = tmpFile("algorithm-functional-extrema.cpp");
   const auto Output = tmpFile("algorithm-functional-extrema.nc");
