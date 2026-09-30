@@ -2369,18 +2369,21 @@ counted ranges do not invoke it.
 
 Both `transform` overloads accept these source-owned trivial function objects
 when the selected non-template operator returns an admitted scalar that converts
-directly to the writable output element. The unary overload reads one scalar
-or exact function-pointer input; the binary overload reads two independently
-typed scalar or exact function-pointer inputs, including mixed ranges. A
-function-pointer element is passed by value with the exact parameter type,
-including `noexcept`; reference parameters and conversions between different
-function-pointer types remain rejected. The pointed-to functions are not
-invoked by the translator. These source-object forms use raw input and output
-pointers. Their exact pinned loops are authenticated, retaining one by-value
-operation object and advancing each pointer once after its corresponding read
-and store. Empty and overlapping in-place ranges preserve that order. The
-binary overload also accepts admitted typed or transparent `<functional>` binary
-objects, including
+directly to the writable output element, or returns the exact writable
+function-pointer output element by value, including a `noexcept` signature.
+The unary overload reads one scalar or exact function-pointer input; the binary
+overload reads two independently typed scalar or exact function-pointer inputs,
+including mixed ranges. A function-pointer element is passed by value with the
+exact parameter type, including `noexcept`; reference parameters and conversions
+between different function-pointer types remain rejected. The pointed-to
+functions are not invoked by the translator. Function-pointer results must
+exactly match the output element type; reference results and conversions between
+pointer types or to Boolean outputs remain rejected. These source-object forms
+use raw input and output pointers. Their exact pinned loops are authenticated,
+retaining one by-value operation object and advancing each pointer once after
+its corresponding read and store. Empty and overlapping in-place ranges preserve
+that order. The binary overload also accepts admitted typed or transparent
+`<functional>` binary objects, including
 arithmetic, comparison and logical operators, after authenticating the selected
 SDK method and checking direct scalar conversions from both input elements to
 their operand types. Typed objects convert both inputs before the
@@ -2390,6 +2393,7 @@ The unary overload similarly accepts authenticated typed or transparent
 selected operand type accepts a checked direct conversion from the input
 element, including typed narrowing before the operation; the result converts
 directly to the output element. Other unary SDK objects remain excluded.
+SDK function objects retain their scalar output boundary.
 
 The exact default-equality four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges;

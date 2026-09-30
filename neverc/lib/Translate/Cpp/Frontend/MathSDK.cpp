@@ -16679,6 +16679,11 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   const bool SDKObject =
       Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
+  const bool CallbackOutput =
+      !SDKObject && utilityObjectPointer(Context, Output) &&
+      !Output->getPointeeType().isConstQualified() &&
+      utilityCallbackEqualityType(Context, Output->getPointeeType(),
+                                  Output->getPointeeType());
   auto InputPointer = [&](QualType Pointer) {
     return utilityAlgorithmScalarPointer(Context, Pointer) ||
            (!SDKObject && utilityObjectPointer(Context, Pointer) &&
@@ -16689,9 +16694,14 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
     return utilityScalarDirectConversion(Context, From, To) ||
            (!SDKObject && utilityCallbackEqualityType(Context, From, To));
   };
+  auto ResultConversion = [&](QualType From, QualType To) {
+    return utilityScalarDirectConversion(Context, From, To) ||
+           (CallbackOutput && utilityCallbackEqualityType(Context, From, To));
+  };
   if (!InputPointer(Input) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
-      !utilityAlgorithmWritableScalarPointer(Context, Output) ||
+      (!utilityAlgorithmWritableScalarPointer(Context, Output) &&
+       !CallbackOutput) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Input) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Input) ||
       (Binary && (!InputPointer(Second) ||
@@ -16800,8 +16810,7 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
 
   const Expr *Result = Assignment->getRHS();
   while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+    if (!ResultConversion(Cast->getSubExpr()->getType(), Cast->getType()))
       return std::nullopt;
     Result = Cast->getSubExpr();
   }
@@ -16847,9 +16856,8 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false) ||
-      !utilityScalar(Context, Method->getReturnType()) ||
-      !utilityScalarDirectConversion(Context, Method->getReturnType(),
-                                     Output->getPointeeType()))
+      (!utilityScalar(Context, Method->getReturnType()) && !CallbackOutput) ||
+      !ResultConversion(Method->getReturnType(), Output->getPointeeType()))
     return std::nullopt;
   std::optional<FunctionalOperationInfo> SDKOperation;
   if (SDKObject) {

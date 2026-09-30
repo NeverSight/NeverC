@@ -50405,6 +50405,252 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2AlgorithmTransformObjectPointerOutputsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-transform-object-pointer-outputs.cpp");
+  const auto Output = tmpFile("algorithm-transform-object-pointer-outputs.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, trace, state_trace, right_trace, pointed_calls, bad_receiver;
+int firsts, lasts, outputs, factories, target_calls, constructions, live, destroyed;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+void reset() { calls = trace = state_trace = right_trace = 0; }
+int rank(Callback value) { return value == nullptr ? 0 : value == one ? 1 : value == two ? 2 : 3; }
+void observe(int value, int local_calls) {
+  ++calls;
+  trace = trace * 10 + value;
+  state_trace = state_trace * 10 + local_calls;
+}
+struct Select {
+  int local_calls;
+  Callback operator()(long long value) & {
+    observe(int(value), ++local_calls);
+    return local_calls == 2 ? two : value == 0 ? nullptr : one;
+  }
+  Callback operator()(long long) const & { ++bad_receiver; return nullptr; }
+};
+struct Combine {
+  int local_calls;
+  Callback operator()(long long left, long long right) & {
+    observe(int(left), ++local_calls);
+    right_trace = right_trace * 10 + int(right);
+    return left == right ? three : local_calls <= 2 ? two : nullptr;
+  }
+};
+struct PairPick {
+  int local_calls;
+  Callback operator()(Callback left, Callback right) & {
+    observe(rank(left), ++local_calls);
+    right_trace = right_trace * 10 + rank(right);
+    return local_calls == 2 ? nullptr : left == nullptr ? right : left;
+  }
+};
+struct Token {
+  int active;
+  Token() : active(1) { ++live; }
+  ~Token() { active = 0; --live; ++destroyed; }
+};
+struct Map {
+  const Map *self;
+  const Token *token;
+  Callback target;
+  int local_calls;
+  Map(Callback value, const Token &t = Token())
+      : self(this), token(&t), target(value), local_calls(0) { ++constructions; }
+  Callback operator()(Callback value) & {
+    if (self != this || token->active != 1 || live != 1) ++bad_receiver;
+    observe(rank(value), ++local_calls);
+    return value == one ? target : nullptr;
+  }
+};
+Callback *first(Callback *p) { ++firsts; return p; }
+Callback *last(Callback *p) { ++lasts; return p; }
+Callback *output(Callback *p) { ++outputs; return p; }
+Callback target() { ++target_calls; return three; }
+Map make(Callback value, const Token &t) { ++factories; return Map(value, t); }
+struct SafeSelect {
+  int local_calls;
+  NoexceptCallback operator()(int value) & noexcept {
+    observe(value, ++local_calls);
+    return value ? safe_one : safe_two;
+  }
+};
+struct SafeCombine {
+  int local_calls;
+  NoexceptCallback operator()(Callback left, NoexceptCallback right) & noexcept {
+    observe(rank(left), ++local_calls);
+    return left == one ? right : nullptr;
+  }
+};
+int main() {
+  const int scalars[]{1, 0, 3};
+  Callback result[]{three, three, three, three};
+  const Select caller{0};
+  int first_effects = 0, last_effects = 0, output_effects = 0, object_effects = 0;
+  auto end = std::transform((++first_effects, scalars), (++last_effects, scalars + 3),
+                            (++output_effects, result), (++object_effects, caller));
+  static_assert(__is_same(decltype(std::transform(scalars, scalars + 3, result, caller)), Callback *));
+  static_assert(!noexcept(std::transform(scalars, scalars + 3, result, caller)));
+  if (end != result + 3 || result[0] != one || result[1] != two || result[2] != one ||
+      result[3] != three || calls != 3 || trace != 103 || state_trace != 123 ||
+      caller.local_calls || first_effects != 1 || last_effects != 1 ||
+      output_effects != 1 || object_effects != 1) return 1;
+  reset();
+  const short other_scalars[]{0, 2, 3};
+  const Combine combine_caller{0};
+  int second_effects = 0;
+  if (std::transform(scalars, scalars + 3, (++second_effects, other_scalars), result,
+                     combine_caller) != result + 3 || result[0] != two ||
+      result[1] != two || result[2] != three || result[3] != three || calls != 3 ||
+      trace != 103 || right_trace != 23 || state_trace != 123 ||
+      combine_caller.local_calls || second_effects != 1) return 2;
+  reset();
+  const Callback left[]{one, nullptr, two};
+  Callback right[]{two, three, one};
+  const PairPick pair_caller{0};
+  if (std::transform(left, left + 3, right, right, pair_caller) != right + 3 ||
+      right[0] != one || right[1] != nullptr || right[2] != two || calls != 3 ||
+      trace != 102 || right_trace != 231 || state_trace != 123 ||
+      pair_caller.local_calls) return 3;
+  reset();
+  Callback in_place[]{one, two, nullptr, one};
+  auto mapped = std::transform(first(in_place), last(in_place + 4), output(in_place),
+                               make(target(), Token{}));
+  if (mapped != in_place + 4 || in_place[0] != three || in_place[1] != nullptr ||
+      in_place[2] != nullptr || in_place[3] != three || calls != 4 || trace != 1201 ||
+      state_trace != 1234 || firsts != 1 || lasts != 1 || outputs != 1 ||
+      factories != 1 || target_calls != 1 || constructions != 1 || live ||
+      destroyed != 1 || bad_receiver) return 4;
+  reset();
+  auto empty = std::transform(in_place, in_place, in_place, Map(one));
+  if (empty != in_place || in_place[0] != three || calls || trace || state_trace ||
+      constructions != 2 || live || destroyed != 2 || bad_receiver) return 5;
+  if (std::transform(left, left, right, result, pair_caller) != result || calls ||
+      result[0] != two || pair_caller.local_calls) return 6;
+  reset();
+  NoexceptCallback safe_result[]{safe_two, safe_two, safe_two, safe_two};
+  const SafeSelect safe_caller{0};
+  auto safe_end = std::transform(scalars, scalars + 3, safe_result, safe_caller);
+  static_assert(__is_same(decltype(safe_end), NoexceptCallback *));
+  if (safe_end != safe_result + 3 || safe_result[0] != safe_one ||
+      safe_result[1] != safe_two || safe_result[2] != safe_one ||
+      safe_result[3] != safe_two || calls != 3 || trace != 103 || state_trace != 123 ||
+      safe_caller.local_calls) return 7;
+  reset();
+  const NoexceptCallback safe_input[]{safe_two, safe_one, safe_two};
+  const SafeCombine safe_combine{0};
+  if (std::transform(left, left + 3, safe_input, safe_result, safe_combine) !=
+          safe_result + 3 || safe_result[0] != safe_two || safe_result[1] != nullptr ||
+      safe_result[2] != nullptr || safe_result[3] != safe_two || calls != 3 ||
+      trace != 102 || state_trace != 123 || safe_combine.local_calls) return 8;
+  return pointed_calls || bad_receiver || caller.local_calls ? 9 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-transform-object-pointer-outputs" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmTransformObjectPointerOutputsRequireExactTypes) {
+  const struct {
+    const char *Name, *Definition, *Inputs, *Output, *Code;
+  } Cases[] = {
+      {"unary-result-conversion",
+       "struct F { NoexceptCallback operator()(int) & { return safe_one; } };",
+       "scalars, scalars + 2", "output", "TR0203"},
+      {"binary-result-conversion",
+       "struct F { NoexceptCallback operator()(int, int) & { return safe_one; "
+       "} };",
+       "scalars, scalars + 2, scalars", "output", "TR0203"},
+      {"unary-reference-result",
+       "struct F { Callback& operator()(int) & { return retained; } };",
+       "scalars, scalars + 2", "output", "TR0203"},
+      {"binary-reference-result",
+       "struct F { Callback& operator()(int, int) & { return retained; } };",
+       "scalars, scalars + 2, scalars", "output", "TR0203"},
+      {"unary-bool-output",
+       "struct F { Callback operator()(int) & { return one; } };",
+       "scalars, scalars + 2", "flags", "TR0203"},
+      {"binary-bool-output",
+       "struct F { Callback operator()(int, int) & { return one; } };",
+       "scalars, scalars + 2, scalars", "flags", "TR0203"},
+      {"unary-reference-input",
+       "struct F { Callback operator()(const Callback&) & { return one; } };",
+       "input, input + 2", "output", "TR0203"},
+      {"binary-reference-input",
+       "struct F { Callback operator()(Callback, const Callback&) & { return "
+       "one; } };",
+       "input, input + 2, input", "output", "TR0203"},
+      {"unary-input-conversion",
+       "struct F { Callback operator()(Callback) & { return one; } };",
+       "safe, safe + 2", "output", "TR0203"},
+      {"binary-input-conversion",
+       "struct F { Callback operator()(int, Callback) & { return one; } };",
+       "scalars, scalars + 2, safe", "output", "TR0203"},
+      {"method-template",
+       "struct F { template<class T> Callback operator()(T) & { return one; } "
+       "};",
+       "scalars, scalars + 2", "output", "TR0203"},
+      {"nontrivial-copy",
+       "struct F { F() {} F(const F&) {} Callback operator()(int) & { return "
+       "one; } };",
+       "scalars, scalars + 2", "output", "TR0203"},
+      {"record-result",
+       "struct R { operator Callback() const { return one; } }; struct F { R "
+       "operator()(int) & { return {}; } };",
+       "scalars, scalars + 2", "output", "TR0203"},
+      {"unsupported-body",
+       "struct F { Callback operator()(int) & { long double hidden = 0; return "
+       "one; } };",
+       "scalars, scalars + 2", "output", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) +
+                                "-transform-object-pointer-output.cpp");
+    const auto Output =
+        tmpFile(std::string(Case.Name) + "-transform-object-pointer-output.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+Callback retained = one;
+)cpp" + std::string(Case.Definition) +
+                          R"cpp(
+int main() {
+  int scalars[]{1, 2};
+  Callback input[]{one, nullptr}, output[2]{};
+  NoexceptCallback safe[]{safe_one, nullptr};
+  bool flags[2]{};
+)cpp" + "(void)std::transform(" +
+                          Case.Inputs + ", " + Case.Output +
+                          ", F{});\nreturn 0;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2AlgorithmBinaryTransformObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-binary-transform-object.cpp");
   const auto Output = tmpFile("algorithm-binary-transform-object.nc");
