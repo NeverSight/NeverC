@@ -49288,6 +49288,142 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackBinaryTransformRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-binary-transform.cpp");
+  const auto Output = tmpFile("callback-binary-transform.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls;
+int visits;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int three(int x) { ++pointed_calls; return x + 3; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+int rank(Callback left, Callback right) {
+  ++visits;
+  return (left == one ? 1 : left == two ? 2 : 3) +
+         (right == one ? 10 : 20);
+}
+Callback select(Callback value, int flag) {
+  ++visits;
+  return flag ? three : value;
+}
+NoexceptCallback select_safe(int flag, NoexceptCallback value) {
+  ++visits;
+  return flag ? safe_two : value;
+}
+Callback merge(Callback left, Callback right) {
+  ++visits;
+  return right == three ? right : left;
+}
+int main() {
+  Callback left[]{one, two, three};
+  NoexceptCallback safe[]{safe_one, safe_two, safe_one};
+  Callback paired[]{one, two, one};
+  int ranks[3]{};
+  int first_effects = 0, last_effects = 0, second_effects = 0;
+  int output_effects = 0, callback_effects = 0;
+  if (std::transform((++first_effects, left),
+                     (++last_effects, left + 3),
+                     (++second_effects, paired),
+                     (++output_effects, ranks),
+                     (++callback_effects, rank)) != ranks + 3 ||
+      first_effects != 1 || last_effects != 1 || second_effects != 1 ||
+      output_effects != 1 || callback_effects != 1 || visits != 3 ||
+      ranks[0] != 11 || ranks[1] != 22 || ranks[2] != 13 ||
+      pointed_calls != 0)
+    return 1;
+  int flags[]{0, 1, 0};
+  Callback selected[3]{};
+  visits = 0;
+  if (std::transform(left, left + 3, flags, selected, select) != selected + 3 ||
+      visits != 3 || selected[0] != one || selected[1] != three ||
+      selected[2] != three || pointed_calls != 0)
+    return 2;
+  int safe_flags[]{1, 0, 1};
+  visits = 0;
+  if (std::transform(safe_flags, safe_flags + 3, safe, safe, select_safe) !=
+          safe + 3 || visits != 3 || safe[0] != safe_two ||
+      safe[1] != safe_two || safe[2] != safe_two || pointed_calls != 0)
+    return 3;
+  Callback right[]{two, three, one};
+  visits = 0;
+  if (std::transform(left, left + 3, right, left, merge) != left + 3 ||
+      visits != 3 || left[0] != one || left[1] != three ||
+      left[2] != three || pointed_calls != 0)
+    return 4;
+  visits = 0;
+  if (std::transform(left, left, paired, ranks, rank) != ranks || visits != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-binary-transform" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackBinaryTransformRejectsInvalidTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *FirstType;
+    const char *FirstValues;
+    const char *SecondType;
+    const char *SecondValues;
+    const char *OutputType;
+  };
+  for (const Rejection &Case : {
+           Rejection{"wrong_reference", "Callback", "one, two", "int", "1, 0",
+                     "int"},
+           Rejection{"wrong_conversion", "Callback", "one, two",
+                     "NoexceptCallback", "safe_one, safe_two", "int"},
+           Rejection{"wrong_result", "NoexceptCallback", "safe_one, safe_two",
+                     "int", "1, 0", "Callback"},
+       }) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string(Case.Name) + "-binary-transform.cpp");
+    const auto Output =
+        tmpFile(std::string(Case.Name) + "-binary-transform.nc");
+    writeFile(Source,
+              R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int two(int x) { return x + 2; }
+int safe_one(int x) noexcept { return x + 1; }
+int safe_two(int x) noexcept { return x + 2; }
+int wrong_reference(const Callback&, int) { return 1; }
+int wrong_conversion(Callback, Callback) { return 1; }
+NoexceptCallback wrong_result(NoexceptCallback value, int) { return value; }
+int main() {
+  )cpp" + std::string(Case.FirstType) +
+                  " first[]{" + Case.FirstValues + "};\n  " + Case.SecondType +
+                  " second[]{" + Case.SecondValues + "};\n  " +
+                  Case.OutputType +
+                  " output[2]{};\n  return std::transform(first, first + 2, "
+                  "second, output, " +
+                  Case.Name + ") == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndScalarResults) {
   struct Rejection {

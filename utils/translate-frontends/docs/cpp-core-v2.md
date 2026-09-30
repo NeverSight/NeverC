@@ -2284,6 +2284,13 @@ scalar for a writable scalar output or the exact function-pointer type for a
 writable pointer output. The output iterator keeps its original form, and
 in-place pointer transformation reads each value before replacing it. The
 translator does not invoke the pointed-to functions.
+Binary `transform` accepts a function-pointer value range in either input
+position, with an independent exact function-pointer or directly convertible
+scalar range in the other position. Both function-pointer arguments are passed
+by value with exact types, including `noexcept`; the result may be a directly
+convertible scalar or the exact writable function-pointer output type. Both
+input values are read before an overlapping output write, and the returned
+iterator retains the output range's form.
 Scalar inputs may also produce an exact trivial source record in a writable raw
 or wrapped output range. Each callback input uses the existing checked direct
 scalar conversion, and the callback must return the exact output record by

@@ -27999,6 +27999,50 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::AlgorithmTransformUnary;
   }
   if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
+      Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
+      Call->isPRValue() &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto FirstCallback = AlgorithmCallbackRangeParameter(0);
+    const auto FirstScalar = AlgorithmRangePointerParameter(0);
+    const auto SecondCallback = AlgorithmCallbackRangeParameter(2);
+    const auto SecondScalar = AlgorithmRangePointerParameter(2);
+    const auto ScalarOutput = AlgorithmRangePointerParameter(3);
+    const auto CallbackOutput = AlgorithmCallbackRangeParameter(3);
+    const auto *Callback = AlgorithmCallbackPrototype(4);
+    const bool FirstRange =
+        (FirstCallback && AlgorithmCallbackRangeParameter(1)) ||
+        (FirstScalar && AlgorithmRangePointerParameter(1));
+    const bool ScalarResult =
+        Callback && ScalarOutput &&
+        utilityAlgorithmWritableScalarPointer(Context, *ScalarOutput) &&
+        utilityScalarDirectConversion(Context, Callback->getReturnType(),
+                                      (*ScalarOutput)->getPointeeType());
+    const bool CallbackResult =
+        Callback && CallbackOutput &&
+        !(*CallbackOutput)->getPointeeType().isConstQualified() &&
+        utilityCallbackEqualityType(Context, Callback->getReturnType(),
+                                    (*CallbackOutput)->getPointeeType());
+    if (Callback && Callback->getNumParams() == 2 && FirstRange &&
+        (FirstCallback || SecondCallback) &&
+        ((FirstCallback && utilityCallbackEqualityType(
+                               Context, (*FirstCallback)->getPointeeType(),
+                               Callback->getParamType(0))) ||
+         (FirstScalar && utilityScalarDirectConversion(
+                             Context, (*FirstScalar)->getPointeeType(),
+                             Callback->getParamType(0)))) &&
+        ((SecondCallback && utilityCallbackEqualityType(
+                                Context, (*SecondCallback)->getPointeeType(),
+                                Callback->getParamType(1))) ||
+         (SecondScalar && utilityScalarDirectConversion(
+                              Context, (*SecondScalar)->getPointeeType(),
+                              Callback->getParamType(1)))) &&
+        (ScalarResult || CallbackResult))
+      return UtilityOperation::AlgorithmTransformBinary;
+  }
+  if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       AlgorithmRangePointerParameter(0) && AlgorithmRangePointerParameter(1) &&
