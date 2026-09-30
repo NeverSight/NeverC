@@ -50026,6 +50026,197 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackTransformObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-transform-object.cpp");
+  const auto Output = tmpFile("algorithm-callback-transform-object.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int visits, factories, constructed, bad_receiver, pointed_calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+struct Rank {
+  int bias, local_calls;
+  int operator()(Callback value) & {
+    ++visits;
+    return (value == one ? 1 : 2) + bias + ++local_calls;
+  }
+  int operator()(Callback) const & { bad_receiver += 100; return -100; }
+};
+Rank make(int bias) { ++factories; return {bias, 0}; }
+struct Constructed {
+  const Constructed *self;
+  int local_calls;
+  long bias;
+  Constructed() : self(this), local_calls(0), bias(10) { ++constructed; }
+  int operator()(Callback value) & {
+    if (self != this) ++bad_receiver;
+    ++visits;
+    return (value == one ? 1 : 2) + bias + ++local_calls;
+  }
+};
+struct PairRank {
+  int local_calls;
+  int operator()(Callback left, Callback right) & {
+    ++visits;
+    return (left == right ? 10 : 20) + ++local_calls;
+  }
+};
+struct PointerFirst {
+  int local_calls;
+  long operator()(Callback value, long scalar) & {
+    ++visits;
+    return (value == one ? 1 : 2) + scalar + ++local_calls;
+  }
+};
+struct PointerSecond {
+  int local_calls;
+  long operator()(long scalar, Callback value) & {
+    ++visits;
+    return scalar + (value == one ? 1 : 2) + ++local_calls;
+  }
+};
+struct SafeRank {
+  int local_calls;
+  int operator()(NoexceptCallback value) & noexcept {
+    ++visits;
+    return (value == safe_one ? 1 : 2) + ++local_calls;
+  }
+};
+struct MixedSignatures {
+  int local_calls;
+  int operator()(Callback left, NoexceptCallback right) & {
+    ++visits;
+    return (left == one ? 10 : 20) + (right == safe_one ? 1 : 2) +
+           ++local_calls;
+  }
+};
+int main() {
+  const Callback input[]{one, two, one};
+  const Callback other[]{two, two, one};
+  long output[3]{};
+  Rank caller{10, 0};
+  int first_effects = 0, last_effects = 0;
+  int output_effects = 0, operation_effects = 0;
+  if (std::transform((++first_effects, input),
+                     (++last_effects, input + 3),
+                     (++output_effects, output),
+                     (++operation_effects, caller)) != output + 3 ||
+      first_effects != 1 || last_effects != 1 || output_effects != 1 ||
+      operation_effects != 1 || visits != 3 || caller.local_calls ||
+      output[0] != 12 || output[1] != 14 || output[2] != 14 ||
+      bad_receiver || pointed_calls)
+    return 1;
+  if (std::transform(input, input, output, make(5)) != output ||
+      visits != 3 || factories != 1 || output[0] != 12)
+    return 2;
+  visits = 0;
+  if (std::transform(input, input + 2, output, Constructed{}) != output + 2 ||
+      visits != 2 || constructed != 1 || bad_receiver || output[0] != 12 ||
+      output[1] != 14)
+    return 3;
+  if (std::transform(input, input, output, Constructed{}) != output ||
+      visits != 2 || constructed != 2 || bad_receiver)
+    return 4;
+  visits = 0;
+  if (std::transform(input, input + 3, other, output, PairRank{0}) !=
+          output + 3 || visits != 3 || output[0] != 21 || output[1] != 12 ||
+      output[2] != 13)
+    return 5;
+  short scalars[]{10, 20, 30};
+  visits = 0;
+  if (std::transform(input, input + 3, scalars, output, PointerFirst{0}) !=
+          output + 3 || visits != 3 || output[0] != 12 || output[1] != 24 ||
+      output[2] != 34)
+    return 6;
+  visits = 0;
+  if (std::transform(scalars, scalars + 3, input, scalars, PointerSecond{0}) !=
+          scalars + 3 || visits != 3 || scalars[0] != 12 || scalars[1] != 24 ||
+      scalars[2] != 34)
+    return 7;
+  const NoexceptCallback safe[]{safe_one, safe_two};
+  visits = 0;
+  if (std::transform(safe, safe + 2, output, SafeRank{0}) != output + 2 ||
+      visits != 2 || output[0] != 2 || output[1] != 4 || pointed_calls)
+    return 8;
+  visits = 0;
+  if (std::transform(input, input + 2, safe, output, MixedSignatures{0}) !=
+          output + 2 || visits != 2 || output[0] != 12 || output[1] != 24 ||
+      pointed_calls)
+    return 9;
+  visits = 0;
+  if (std::transform(input, input, other, output, PairRank{0}) != output ||
+      visits || pointed_calls)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-callback-transform-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackTransformObjectsRequireExactTypes) {
+  struct Rejection {
+    const char *Name;
+    const char *Definition;
+    const char *Inputs;
+  };
+  for (const Rejection &Case : {
+           Rejection{
+               "reference",
+               "struct F { int operator()(const Callback&) & { return 1; } };",
+               "input, input + 2"},
+           Rejection{
+               "conversion",
+               "struct F { int operator()(int, Callback) & { return 1; } };",
+               "scalars, scalars + 2, safe"},
+           Rejection{"method_template",
+                     "struct F { template<class T> int operator()(T) & { "
+                     "return 1; } };",
+                     "input, input + 2"},
+       }) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string(Case.Name) + "-callback-transform-object.cpp");
+    const auto Output =
+        tmpFile(std::string(Case.Name) + "-callback-transform-object.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+)cpp" + std::string(Case.Definition) +
+                          R"cpp(
+int main() {
+  Callback input[]{one, one};
+  NoexceptCallback safe[]{safe_one, safe_one};
+  int scalars[]{1, 2};
+  int output[2]{};
+  return std::transform()cpp" +
+                          Case.Inputs + ", output, F{}) == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2AlgorithmBinaryTransformObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-binary-transform-object.cpp");
   const auto Output = tmpFile("algorithm-binary-transform-object.nc");

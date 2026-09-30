@@ -16665,12 +16665,22 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   const bool SDKObject =
       Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
-  if (!utilityAlgorithmScalarPointer(Context, Input) ||
+  auto InputPointer = [&](QualType Pointer) {
+    return utilityAlgorithmScalarPointer(Context, Pointer) ||
+           (!SDKObject && utilityObjectPointer(Context, Pointer) &&
+            utilityCallbackEqualityType(Context, Pointer->getPointeeType(),
+                                        Pointer->getPointeeType()));
+  };
+  auto InputConversion = [&](QualType From, QualType To) {
+    return utilityScalarDirectConversion(Context, From, To) ||
+           (!SDKObject && utilityCallbackEqualityType(Context, From, To));
+  };
+  if (!InputPointer(Input) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
       !utilityAlgorithmWritableScalarPointer(Context, Output) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Input) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Input) ||
-      (Binary && (!utilityAlgorithmScalarPointer(Context, Second) ||
+      (Binary && (!InputPointer(Second) ||
                   !Context.hasSameType(Call->getArg(2)->getType(), Second))) ||
       !Context.hasSameType(Call->getArg(OutputIndex)->getType(), Output) ||
       !Context.hasSameType(Call->getArg(ObjectIndex)->getType(), Object) ||
@@ -16801,8 +16811,7 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
       if (!Cast)
         break;
-      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                         Cast->getType()))
+      if (!InputConversion(Cast->getSubExpr()->getType(), Cast->getType()))
         return std::nullopt;
       ElementArgument = Cast->getSubExpr();
     }
@@ -16864,10 +16873,8 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   const auto RightType = SDKOperation ? SDKOperation->RightType
                          : Binary     ? Method->getParamDecl(1)->getType()
                                       : QualType{};
-  if (!utilityScalarDirectConversion(Context, Input->getPointeeType(),
-                                     LeftType) ||
-      (Binary && !utilityScalarDirectConversion(
-                     Context, Second->getPointeeType(), RightType)))
+  if (!InputConversion(Input->getPointeeType(), LeftType) ||
+      (Binary && !InputConversion(Second->getPointeeType(), RightType)))
     return std::nullopt;
   return UtilityAlgorithmPredicateCall{
       Binary ? UtilityOperation::AlgorithmTransformBinary
