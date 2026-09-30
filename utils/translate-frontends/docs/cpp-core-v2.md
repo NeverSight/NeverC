@@ -2455,6 +2455,22 @@ element type, including `noexcept` pointers. The comparator takes two values of
 that pointer type and returns `bool`; it is evaluated once and compares pointer
 values without invoking their functions. Both scans retain the first tied
 extremum, and empty or single-element ranges make no comparator calls.
+These two scans also accept source-owned, standard-layout, trivially copied
+comparison objects on const or mutable raw or authenticated wrapped ranges of
+one exact function-pointer element type, including `noexcept` pointers. The
+single defined non-template call operator takes two values of that exact type
+and returns `bool`. Its argument is evaluated once and its by-value state is
+retained across comparisons without changing the caller's object. The pinned
+SDK dispatch and projection bodies are authenticated before the source method
+is invoked. Pointer targets are not called, and the original raw or wrapped
+iterator form and first tied extremum are preserved. Empty or single-element
+ranges initialize the object and preserve full-expression cleanup without
+calling it. Reference parameters, conversions between function-pointer types
+or to Boolean parameters, nontrivial copies and destructors, multiple call
+operators and member function templates remain rejected.
+Wrapped iterators may be supplied as parameters; owning vector construction
+requires its separately documented element boundary. Folded result queries
+for these source-object scans are not yet admitted.
 `std::minmax_element` accepts the same checked function-pointer comparator and
 const or mutable raw or authenticated wrapped input range. It returns a pair of
 the original iterator type, selecting the first tied minimum and last tied

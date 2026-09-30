@@ -15331,6 +15331,8 @@ utilityAlgorithmBinaryDispatch(const State &S, const SourceManager &SM,
         break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()) &&
+          !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()) &&
           !(Cast->getCastKind() == CK_NoOp &&
             Context.hasSameUnqualifiedType(Cast->getSubExpr()->getType(),
                                            Cast->getType())))
@@ -19184,20 +19186,23 @@ approvedDirectAlgorithmComparator(const State &S, const SourceManager &SM,
   return Operation;
 }
 
-static const CXXMethodDecl *
-approvedSourceComparatorMethod(const State &S, const SourceManager &SM,
-                               QualType Object, QualType Element,
-                               const ASTContext &Context) {
+static const CXXMethodDecl *approvedSourceComparatorMethod(
+    const State &S, const SourceManager &SM, QualType Object, QualType Element,
+    const ASTContext &Context, bool AllowCallbackElements = false) {
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   const bool SourceRecord =
       utilityComparableSourceElement(S, SM, Element, false, Context);
   const bool Scalar = utilityScalar(Context, Element);
+  const bool CallbackElements =
+      AllowCallbackElements &&
+      utilityCallbackEqualityType(Context, Element, Element);
   if (!Record || Object.hasLocalQualifiers() ||
       !S.owns(SM, Record->getLocation()) || Record->isLambda() ||
       Record->isUnion() || !Record->isStandardLayout() ||
       !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
-      !Record->hasTrivialDestructor() || (!SourceRecord && !Scalar))
+      !Record->hasTrivialDestructor() ||
+      (!SourceRecord && !Scalar && !CallbackElements))
     return nullptr;
   const CXXMethodDecl *Method = nullptr;
   for (const auto *Declaration : Record->decls()) {
@@ -19237,9 +19242,11 @@ approvedSourceComparatorMethod(const State &S, const SourceManager &SM,
         Parameter->getPointeeType().isConstQualified() &&
         !Parameter->getPointeeType().isVolatileQualified() &&
         Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Element);
-    if (!(ConstReference ||
+    if (!((!CallbackElements && ConstReference) ||
           (!SourceRecord && !Parameter->isReferenceType() &&
-           utilityScalarDirectConversion(Context, Element, Parameter))))
+           (utilityScalarDirectConversion(Context, Element, Parameter) ||
+            (CallbackElements &&
+             utilityCallbackEqualityType(Context, Element, Parameter))))))
       return nullptr;
   }
   return Method;
@@ -19303,7 +19310,7 @@ approvedMaxElementSourceComparator(const State &S, const SourceManager &SM,
   if (!Context.hasSameType(Call->getArg(2)->getType(), Object))
     return nullptr;
   const auto *Method =
-      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context, true);
   if (!Method)
     return nullptr;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
@@ -19410,7 +19417,7 @@ approvedMinElementSourceComparator(const State &S, const SourceManager &SM,
   if (!Context.hasSameType(Call->getArg(2)->getType(), Object))
     return nullptr;
   const auto *Method =
-      approvedSourceComparatorMethod(S, SM, Object, Element, Context);
+      approvedSourceComparatorMethod(S, SM, Object, Element, Context, true);
   if (!Method)
     return nullptr;
 
@@ -25915,11 +25922,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto ScalarRange = AlgorithmRangePointerParameter(0);
     const auto RecordRange = AlgorithmRecordRangeParameter(0);
-    const auto Range = ScalarRange ? ScalarRange : RecordRange;
+    const auto CallbackRange = AlgorithmCallbackRangeParameter(0);
+    const auto Range = ScalarRange   ? ScalarRange
+                       : RecordRange ? RecordRange
+                                     : CallbackRange;
     const bool SourceObject =
         Call->getNumArgs() == 3 && Range &&
-        (ScalarRange ? AlgorithmRangePointerParameter(1).has_value()
-                     : AlgorithmRecordRangeParameter(1).has_value()) &&
+        (ScalarRange   ? AlgorithmRangePointerParameter(1).has_value()
+         : RecordRange ? AlgorithmRecordRangeParameter(1).has_value()
+                       : AlgorithmCallbackRangeParameter(1).has_value()) &&
         (Name == "max_element"
              ? approvedMaxElementSourceComparator(
                    S, SM, Call, (*Range)->getPointeeType(), Context)

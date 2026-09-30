@@ -66318,6 +66318,257 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackExtremaObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("callback-extrema-objects.cpp");
+  const auto Output = tmpFile("callback-extrema-objects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <vector>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int pointed_calls, checks, expected, trace, bad_state;
+int built, live, destroyed, bad_lifetime, factories;
+int one(int n) { ++pointed_calls; return n + 1; }
+int two(int n) { ++pointed_calls; return n + 2; }
+int three(int n) { ++pointed_calls; return n + 3; }
+int quiet(int n) noexcept { ++pointed_calls; return n + 4; }
+int silent(int n) noexcept { ++pointed_calls; return n + 5; }
+int rank(Callback p) { return p == one ? 1 : p == two ? 2 : p == three ? 3 : 0; }
+int safe_rank(NoexceptCallback p) { return p == quiet ? 1 : p == silent ? 2 : 0; }
+void reset(int n) { checks = trace = 0; expected = n; }
+struct Less {
+  int visits;
+  bool operator()(Callback left, Callback right) & {
+    if (visits++ != expected++) ++bad_state;
+    ++checks;
+    trace = trace * 16 + rank(left) * 4 + rank(right);
+    return rank(left) < rank(right);
+  }
+};
+template<class Pointer> struct TypedLess {
+  int visits;
+  bool operator()(Pointer left, Pointer right) & noexcept;
+};
+template<class Pointer>
+bool TypedLess<Pointer>::operator()(Pointer left, Pointer right) & noexcept {
+  if (visits++ != expected++) ++bad_state;
+  ++checks;
+  return safe_rank(left) < safe_rank(right);
+}
+struct Token {
+  int active;
+  Token() : active(1) { ++live; }
+  ~Token() { active = 0; --live; ++destroyed; }
+};
+struct Built {
+  Built *self;
+  const Token *token;
+  Callback marker;
+  int visits;
+  Built(const Token &t, Callback p) : self(this), token(&t), marker(p), visits(0) {
+    ++built;
+  }
+  bool operator()(Callback left, Callback right) & {
+    if (self != this || token->active != 1 || live != 1 || marker != one)
+      ++bad_lifetime;
+    if (visits++ != expected++) ++bad_state;
+    ++checks;
+    return rank(left) < rank(right);
+  }
+};
+Built make(const Token &token) { ++factories; return Built(token, one); }
+using Iterator = std::vector<Callback>::iterator;
+using ConstIterator = std::vector<Callback>::const_iterator;
+using SafeIterator = std::vector<NoexceptCallback>::const_iterator;
+Iterator wrapped_min(Iterator first, Iterator last, Less less) {
+  return std::min_element(first, last, less);
+}
+ConstIterator wrapped_max(ConstIterator first, ConstIterator last, Less less) {
+  return std::max_element(first, last, less);
+}
+SafeIterator safe_wrapped_min(SafeIterator first, SafeIterator last,
+                              TypedLess<NoexceptCallback> less) {
+  return std::min_element(first, last, less);
+}
+SafeIterator safe_wrapped_max(SafeIterator first, SafeIterator last,
+                              TypedLess<NoexceptCallback> less) {
+  return std::max_element(first, last, less);
+}
+int main() {
+  const Callback values[]{two, one, three, nullptr, nullptr, three};
+  Less less{17};
+  int first_effects = 0, last_effects = 0, object_effects = 0;
+  reset(17);
+  auto lowest = std::min_element((++first_effects, values),
+      (++last_effects, values + 6), (++object_effects, less));
+  if (lowest != values + 3 || checks != 5 || expected != 22 ||
+      trace != 0x6d10c || less.visits != 17 || first_effects != 1 ||
+      last_effects != 1 || object_effects != 1) return 1;
+  reset(17);
+  if (std::max_element(values, values + 6, less) != values + 2 ||
+      checks != 5 || expected != 22 || trace != 0x9bccf || less.visits != 17)
+    return 2;
+  reset(17);
+  if (std::min_element(values, values, less) != values ||
+      std::max_element(values, values, less) != values ||
+      std::min_element(values, values + 1, less) != values ||
+      std::max_element(values, values + 1, less) != values ||
+      checks || expected != 17 || less.visits != 17) return 3;
+
+  Callback writable[]{two, nullptr, one, two};
+  reset(17);
+  if (std::min_element(writable, writable + 4, less) != writable + 1 ||
+      checks != 3 || expected != 20) return 4;
+  reset(17);
+  if (std::max_element(writable, writable + 4, less) != writable ||
+      checks != 3 || expected != 20 || writable[1] != nullptr ||
+      writable[3] != two || less.visits != 17) return 5;
+  Iterator empty;
+  ConstIterator view(empty);
+  reset(17);
+  auto wrapped_minimum = wrapped_min(empty, empty, less);
+  auto wrapped_maximum = wrapped_max(view, view, less);
+  if (wrapped_minimum != empty || wrapped_maximum != view ||
+      checks || expected != 17 || less.visits != 17) return 6;
+
+  NoexceptCallback safe[]{silent, quiet, nullptr, quiet, silent};
+  const TypedLess<NoexceptCallback> safe_less{9};
+  reset(9);
+  if (std::min_element(safe, safe + 5, safe_less) != safe + 2 ||
+      checks != 4 || expected != 13 || safe_less.visits != 9) return 7;
+  reset(9);
+  if (std::max_element(safe, safe + 5, safe_less) != safe ||
+      checks != 4 || expected != 13 || safe_less.visits != 9) return 8;
+  SafeIterator safe_empty;
+  reset(9);
+  auto safe_minimum = safe_wrapped_min(safe_empty, safe_empty, safe_less);
+  auto safe_maximum = safe_wrapped_max(safe_empty, safe_empty, safe_less);
+  if (safe_minimum != safe_empty || safe_maximum != safe_empty ||
+      checks || expected != 9 || safe_less.visits != 9) return 9;
+
+  reset(0);
+  auto built_min = std::min_element(values, values + 6, make(Token{}));
+  if (built_min != values + 3 || checks != 5 || expected != 5 ||
+      built != 1 || factories != 1 || live || destroyed != 1) return 10;
+  reset(0);
+  auto built_max = std::max_element(values, values + 6, make(Token{}));
+  if (built_max != values + 2 || checks != 5 || expected != 5 ||
+      built != 2 || factories != 2 || live || destroyed != 2) return 11;
+  reset(0);
+  auto built_empty = std::min_element(values, values, make(Token{}));
+  if (built_empty != values || checks || expected || built != 3 ||
+      factories != 3 || live || destroyed != 3) return 12;
+  auto built_single = std::max_element(values, values + 1, make(Token{}));
+  if (built_single != values || checks || expected || built != 4 ||
+      factories != 4 || live || destroyed != 4) return 13;
+  return pointed_calls || bad_state || bad_lifetime ? 17 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-extrema-objects" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackExtremaObjectsRequireExactSource) {
+  struct Rejection {
+    const char *Name, *Type, *Definition, *Code;
+  };
+  const Rejection Cases[] = {
+      {"noexcept-conversion", "NoexceptCallback",
+       "struct Less { bool operator()(Callback, Callback) const { return "
+       "false; } };",
+       "TR0203"},
+      {"left-reference", "Callback",
+       "struct Less { bool operator()(const Callback &, Callback) const { "
+       "return false; } };",
+       "TR0203"},
+      {"right-reference", "Callback",
+       "struct Less { bool operator()(Callback, const Callback &) const { "
+       "return false; } };",
+       "TR0203"},
+      {"boolean-conversion", "Callback",
+       "struct Less { bool operator()(bool, bool) const { return false; } };",
+       "TR0203"},
+      {"nonboolean-result", "Callback",
+       "struct Less { int operator()(Callback, Callback) const { return 0; } "
+       "};",
+       "TR0203"},
+      {"extra-default-argument", "Callback",
+       "struct Less { bool operator()(Callback, Callback, int = 0) const { "
+       "return false; } };",
+       "TR0203"},
+      {"method-template", "Callback",
+       "struct Less { template<class T> bool operator()(T, T) const { return "
+       "false; } };",
+       "TR0203"},
+      {"multiple-overloads", "Callback",
+       "struct Less { bool operator()(Callback, Callback) & { return false; } "
+       "bool operator()(Callback, Callback) const & { return false; } };",
+       "TR0203"},
+      {"nontrivial-copy", "Callback",
+       "struct Less { Less() = default; Less(const Less &) {} bool "
+       "operator()(Callback, Callback) const { return false; } };",
+       "TR0203"},
+      {"nontrivial-destruction", "Callback",
+       "struct Less { ~Less() {} bool operator()(Callback, Callback) const { "
+       "return false; } };",
+       "TR0203"},
+      {"missing-definition", "Callback",
+       "struct Less { bool operator()(Callback, Callback) const; };", "TR0203"},
+      {"sdk-object", "Callback", "using Less = std::equal_to<Callback>;",
+       "TR0203"},
+      {"hidden-body-source", "Callback",
+       "struct Less { bool operator()(Callback, Callback) const { return "
+       "sizeof(long double) == 16; } };",
+       "TR0201"},
+      {"hidden-default-source", "Callback",
+       "struct Less { Less(int = (sizeof(long double), 0)) {} bool "
+       "operator()(Callback, Callback) const { return false; } };",
+       "TR0201"},
+      {"algorithm-specialization", "Callback",
+       "struct Less { bool operator()(Callback, Callback) const { return "
+       "false; } }; namespace std { template<> Callback *min_element<Callback "
+       "*, Less>(Callback *p, Callback *, Less) { return p; } template<> "
+       "Callback *max_element<Callback *, Less>(Callback *p, Callback *, Less) "
+       "{ return p; } }",
+       "TR0201"},
+      {"result-query", "Callback",
+       "struct Less { bool operator()(Callback, Callback) const { return "
+       "false; } }; "
+       "int query(Callback *p) { std::min_element(p, p + 2, Less{}); "
+       "std::max_element(p, p + 2, Less{}); "
+       "static_assert(__is_same(decltype(std::min_element(p, p + 2, Less{})), "
+       "Callback *)); return 0; }",
+       "TR0201"}};
+  for (const std::string &Algorithm : {"min_element", "max_element"}) {
+    for (const auto &Case : Cases) {
+      SCOPED_TRACE(Algorithm + ":" + Case.Name);
+      const auto Source = tmpFile(Algorithm + "-object-" + Case.Name + ".cpp");
+      const auto Output = tmpFile(Algorithm + "-object-" + Case.Name + ".nc");
+      writeFile(Source, "#include <algorithm>\n#include <functional>\n"
+                        "using Callback = int (*)(int); using NoexceptCallback "
+                        "= int (*)(int) noexcept;\n" +
+                            std::string(Case.Definition) + "\nint main() { " +
+                            Case.Type +
+                            " values[2]{}; return std::" + Algorithm +
+                            "(values, values + 2, Less{}) == values; }\n");
+      expectCode(translate(Source,
+                           {"--profile", "cpp-core-v2", "-o", Output.string()}),
+                 Case.Code);
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SourceMaxElementFunctorRun) {
   const auto Source = tmpFile("source-max-element-functor.cpp");
   const auto Output = tmpFile("source-max-element-functor.nc");
