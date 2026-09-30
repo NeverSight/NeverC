@@ -2311,6 +2311,12 @@ source-record input in either order. The scalar callback parameter uses its
 checked direct conversion; the record parameter is an exact `const Record&`.
 The result may directly convert to a writable scalar output or return the exact
 writable output record by value. Raw and wrapped iterators remain independent.
+These scalar and source-record `transform` inputs may also produce an exact
+function-pointer value, including a `noexcept` pointer, in a writable raw or
+wrapped output range. Scalar callback parameters use checked direct conversion;
+record parameters remain exact `const Record&` references. The callback returns
+the output pointer type by value, and the translator stores it without calling
+the pointed-to function. The returned iterator retains the output range's form.
 The function-pointer `generate` and `generate_n` forms also accept writable
 authenticated wrapped scalar outputs. The generator result uses its checked
 direct conversion to the output element; `generate_n` returns the advanced

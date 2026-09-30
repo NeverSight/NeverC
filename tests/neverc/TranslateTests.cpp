@@ -49514,6 +49514,124 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TransformToCallbackRunsAtBothOptimizations) {
+  const auto Source = tmpFile("transform-to-callback.cpp");
+  const auto Output = tmpFile("transform-to-callback.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+struct Item { int code; };
+int pointed_calls;
+int calls;
+int one(int x) { ++pointed_calls; return x + 1; }
+int two(int x) { ++pointed_calls; return x + 2; }
+int safe_one(int x) noexcept { ++pointed_calls; return x + 1; }
+int safe_two(int x) noexcept { ++pointed_calls; return x + 2; }
+Callback select(int value) {
+  ++calls;
+  return value & 1 ? one : two;
+}
+Callback combine(int left, int right) {
+  ++calls;
+  return left + right > 3 ? two : one;
+}
+Callback from_record(const Item& value) {
+  ++calls;
+  return value.code ? two : one;
+}
+Callback combine_record(const Item& value, int flag) {
+  ++calls;
+  return value.code == flag ? one : two;
+}
+NoexceptCallback select_safe(int value) {
+  ++calls;
+  return value & 1 ? safe_one : safe_two;
+}
+int main() {
+  int input[]{1, 2, 3};
+  Callback output[3]{};
+  int first_effects = 0, last_effects = 0, output_effects = 0;
+  int callback_effects = 0;
+  if (std::transform((++first_effects, input),
+                     (++last_effects, input + 3),
+                     (++output_effects, output),
+                     (++callback_effects, select)) != output + 3 ||
+      first_effects != 1 || last_effects != 1 || output_effects != 1 ||
+      callback_effects != 1 || calls != 3 || output[0] != one ||
+      output[1] != two || output[2] != one || pointed_calls != 0)
+    return 1;
+  int second[]{0, 2, 3};
+  calls = 0;
+  if (std::transform(input, input + 3, second, output, combine) != output + 3 ||
+      calls != 3 || output[0] != one || output[1] != two ||
+      output[2] != two || pointed_calls != 0)
+    return 2;
+  Item items[]{{0}, {1}, {0}};
+  calls = 0;
+  if (std::transform(items, items + 3, output, from_record) != output + 3 ||
+      calls != 3 || output[0] != one || output[1] != two ||
+      output[2] != one || pointed_calls != 0)
+    return 3;
+  int flags[]{0, 0, 0};
+  calls = 0;
+  if (std::transform(items, items + 3, flags, output, combine_record) !=
+          output + 3 || calls != 3 || output[0] != one ||
+      output[1] != two || output[2] != one || pointed_calls != 0)
+    return 4;
+  NoexceptCallback safe[2]{};
+  calls = 0;
+  if (std::transform(input, input + 2, safe, select_safe) != safe + 2 ||
+      calls != 2 || safe[0] != safe_one || safe[1] != safe_two ||
+      pointed_calls != 0)
+    return 5;
+  calls = 0;
+  if (std::transform(input, input, output, select) != output || calls != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("transform-to-callback" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TransformToCallbackRejectsInexactResults) {
+  for (const std::string &CallbackName :
+       {"wrong_conversion", "wrong_reference"}) {
+    SCOPED_TRACE(CallbackName);
+    const auto Source = tmpFile(CallbackName + "-transform-to-callback.cpp");
+    const auto Output = tmpFile(CallbackName + "-transform-to-callback.nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int one(int x) { return x + 1; }
+int safe_one(int x) noexcept { return x + 1; }
+Callback retained = one;
+NoexceptCallback wrong_conversion(int) { return safe_one; }
+Callback& wrong_reference(int) { return retained; }
+int main() {
+  int input[]{1, 2};
+  Callback output[2]{};
+  return std::transform(input, input + 2, output, )cpp" +
+                          CallbackName + ") == output + 2;\n}\n");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndScalarResults) {
   struct Rejection {
