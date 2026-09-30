@@ -1806,6 +1806,7 @@ struct OperationSourceDependencies {
   std::set<const CXXConstructorDecl *> StringConstructors;
   std::set<const CXXConstructorDecl *> UniquePtrConstructors;
   std::set<const CallExpr *> UniquePtrFactories;
+  std::set<const CallExpr *> UniquePtrResets;
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
@@ -2793,6 +2794,24 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
       !utilityUniquePtrFunctionSource(A, Method))
     return std::nullopt;
   switch (Info->Operation) {
+  case UtilityUniquePtrOperation::Reset:
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Call->getArg(I))) {
+        const auto *Parameter = Default->getParam();
+        const auto *Initializer = selectedDefaultArgument(Default, A.Context);
+        const auto Origin =
+            Initializer ? A.S.sdkFile(A.Sources, Initializer->getExprLoc())
+                        : std::nullopt;
+        if (!approvedUtilityDefaultArgument(A.S, A.Sources, Default, Method, I,
+                                            A.Context) ||
+            Default->hasRewrittenInit() || !Parameter || !Initializer ||
+            Initializer != Parameter->getDefaultArg() || !Origin ||
+            Origin->Root != "libcxx" ||
+            Origin->Path != "__memory/unique_ptr.h" ||
+            !approvedStandardSDKDeclaration(A.S, A.Sources, Parameter))
+          return std::nullopt;
+      }
+    [[fallthrough]];
   case UtilityUniquePtrOperation::Get:
   case UtilityUniquePtrOperation::GetDeleter:
   case UtilityUniquePtrOperation::Arrow:
@@ -2883,6 +2902,21 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
   return Info;
 }
 
+static bool
+utilityUniquePtrDeletionSource(Adapter &A,
+                               const UtilityUniquePtrRecord &Owner) {
+  // A custom callback requires its completed source definition separately.
+  // The pinned reset body invokes the owner's one exact pointer call operator.
+  if (Owner.CustomDeleter)
+    return true;
+  const auto *Argument = dyn_cast<DeclRefExpr>(
+      Owner.DefaultDeletion->getArgument()->IgnoreParenImpCasts());
+  const auto *Deleter =
+      Argument ? dyn_cast<CXXMethodDecl>(Argument->getDecl()->getDeclContext())
+               : nullptr;
+  return utilityUniquePtrFunctionSource(A, Deleter);
+}
+
 static std::optional<UtilityUniquePtrRecord>
 utilityUniquePtrDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Owner = utilityUniquePtrSource(A, Record);
@@ -2896,18 +2930,8 @@ utilityUniquePtrDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   // materialized SDK body and the deleter method owning the checked delete.
   const auto *Body = cast<CompoundStmt>(Destructor->getBody());
   const auto *Reset = cast<CXXMemberCallExpr>(*Body->body_begin());
-  if (!utilityUniquePtrFunctionSource(A, Reset->getMethodDecl()))
-    return std::nullopt;
-  // A custom callback requires its completed source definition separately.
-  // The pinned reset body invokes the owner's one exact pointer call operator.
-  if (Owner->CustomDeleter)
-    return Owner;
-  const auto *Argument = dyn_cast<DeclRefExpr>(
-      Owner->DefaultDeletion->getArgument()->IgnoreParenImpCasts());
-  const auto *Deleter =
-      Argument ? dyn_cast<CXXMethodDecl>(Argument->getDecl()->getDeclContext())
-               : nullptr;
-  if (!utilityUniquePtrFunctionSource(A, Deleter))
+  if (!utilityUniquePtrFunctionSource(A, Reset->getMethodDecl()) ||
+      !utilityUniquePtrDeletionSource(A, *Owner))
     return std::nullopt;
   return Owner;
 }
@@ -3422,6 +3446,28 @@ public:
     add(&Found->second.Dependencies);
     return true;
   }
+  bool uniquePtrDeletion(const UtilityUniquePtrRecord &Owner, unsigned Depth) {
+    if (Depth > 64 || !utilityUniquePtrDeletionSource(A, Owner))
+      return false;
+    if (Owner.CustomDeleter) {
+      // The callback decides whether to destroy or release its pointee.
+      // Retain each original signature and exception specification.
+      for (const auto *Declaration : Owner.CustomDeleter->redecls()) {
+        A.chargeExpansion(1, Declaration->getLocation());
+        if (!defined(Declaration))
+          return false;
+      }
+      return true;
+    }
+    // Use the same selected deallocation function as lowering, which can
+    // differ from the SDK delete expression's implicit unsized declaration.
+    if (!defined(A.uniquePtrDeleteFunction(Owner, Owner.Record->getLocation())))
+      return false;
+    if (const auto *Element = A.Context.getBaseElementType(Owner.ElementType)
+                                  ->getAsCXXRecordDecl())
+      return destruction(Element, Depth + 1);
+    return true;
+  }
   bool destruction(const CXXRecordDecl *Record, unsigned Depth = 0) {
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Depth > 64)
@@ -3459,25 +3505,10 @@ public:
     if (utilityStringDestructionSource(A, Record))
       return true;
     if (const auto Owner = utilityUniquePtrDestructionSource(A, Record)) {
-      if (Owner->CustomDeleter) {
-        // The callback, rather than the owner, decides whether to destroy or
-        // release its pointee. Retain its source and its own trivial cleanup.
-        for (const auto *Declaration : Owner->CustomDeleter->redecls()) {
-          A.chargeExpansion(1, Declaration->getLocation());
-          if (!defined(Declaration))
-            return false;
-        }
-        return destruction(Owner->Deleter.Record, Depth + 1);
-      }
-      // Use the same selected deallocation function as lowering, which can
-      // differ from the SDK delete expression's implicit unsized declaration.
-      if (!defined(A.uniquePtrDeleteFunction(*Owner, Record->getLocation())))
+      if (!uniquePtrDeletion(*Owner, Depth))
         return false;
-      if (const auto *Element =
-              A.Context.getBaseElementType(Owner->ElementType)
-                  ->getAsCXXRecordDecl())
-        return destruction(Element, Depth + 1);
-      return true;
+      return !Owner->CustomDeleter ||
+             destruction(Owner->Deleter.Record, Depth + 1);
     }
     // Storage release belongs to each pinned SDK destructor. Nested vectors
     // and source-owned records must close their actual element destruction.
@@ -3590,6 +3621,11 @@ public:
     }
     return true;
   }
+  bool uniquePtrReset(const CallExpr *Call) {
+    const auto Info = utilityUniquePtrMemberSource(A, Call);
+    return Info && Info->Operation == UtilityUniquePtrOperation::Reset &&
+           uniquePtrDeletion(Info->Owner, 0);
+  }
   bool finish(SourceLocation L) {
     std::set<const OperationSourceDependencies *> Seen;
     while (!Work.empty()) {
@@ -3612,6 +3648,9 @@ public:
           return false;
       for (const auto *Call : Dependencies->UniquePtrFactories)
         if (!uniquePtrFactory(Call))
+          return false;
+      for (const auto *Call : Dependencies->UniquePtrResets)
+        if (!uniquePtrReset(Call))
           return false;
       for (const auto *Method : Dependencies->Families)
         if (!generatedOperation(Method))
@@ -9112,14 +9151,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             if (Entry->second == Call)
               AuthenticatedVectorEndpoint = Method;
           }
-        if (utilityUniquePtrMemberSource(A, Call))
+        if (const auto Info = utilityUniquePtrMemberSource(A, Call))
           if (const auto *Reference = directMethodReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUniquePtrMemberReferences.emplace(Reference, Call);
             if (Inserted)
               A.chargeExpansion(1, Call->getExprLoc());
-            if (Entry->second == Call)
+            if (Entry->second == Call) {
               AuthenticatedUniquePtrMember = Call;
+              if (Info->Operation == UtilityUniquePtrOperation::Reset)
+                for (auto *Dependencies : ActiveOperationSources)
+                  if (Dependencies->UniquePtrResets.insert(Call).second)
+                    A.chargeExpansion(1, Call->getExprLoc());
+            }
           }
         // The public algorithm has no written exception specification. Its
         // exact descriptor supplies the SDK signature/body, not a blanket

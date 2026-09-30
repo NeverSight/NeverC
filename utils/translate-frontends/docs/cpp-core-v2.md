@@ -1311,7 +1311,32 @@ Unevaluated `release` queries neither clear the owner nor evaluate a receiver,
 allocate storage or call a deleter. The runtime call continues to clear its
 owner and transfer its pointer without deleting it. Query-only release bodies,
 independent member addresses and source SDK replacements remain rejected;
-other modifying members do not receive this result-source authentication.
+other modifying members follow their separate contracts below.
+
+`decltype` and `noexcept` also admit the exact already materialized mutable
+`reset` members, retaining their `void` result and nonthrowing signature.
+Scalar owners accept the checked raw-pointer or null replacement and the pinned
+`pointer()` default; array owners accept the separately materialized compatible
+pointer overload and the `nullptr` overload, including its pinned default.
+Object and exact raw-pointer receivers share the runtime boundary. The SDK
+default must belong to the selected parameter, keep its original initializer
+without a per-use rewrite and remain in the pinned header. Written receivers,
+replacements, aliases, original signatures, source defaults and replacement
+allocation/construction still require their ordinary source proof. Comma
+expressions containing these calls may supply a non-void operand to `sizeof`
+or `alignof`; the queries do not make the call.
+A reset selects deletion dependencies: default deleters must
+retain their exact SDK call operator, source-defined selected class/global
+deallocation and pointee destruction; custom deleters must retain every original
+callback declaration and its completed source definition. A custom callback
+selects no unused pointee constructor or destructor. Borrowed owners select no
+owner construction or cleanup; local initializers and owning temporaries/factories
+keep their separate lifetime source. Unevaluated reset neither changes the
+pointer nor evaluates a receiver, replacement, default or allocation, and makes
+no deleter or destruction call. Missing query-only bodies, different array
+overloads/specializations, independent member addresses and source SDK
+replacements remain rejected. Assignment and swap receive no new result-source
+authentication.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
