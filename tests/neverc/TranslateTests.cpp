@@ -57271,6 +57271,112 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackSearchNPredicateRunsAtBothOptimizations) {
+  const auto Source = tmpFile("callback-search-n-predicate.cpp");
+  const auto Output = tmpFile("callback-search-n-predicate.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+int calls, checks, valueEffects;
+int one(int x) { ++calls; return x + 1; }
+int two(int x) { ++calls; return x + 2; }
+int three(int x) { ++calls; return x + 3; }
+int safe_one(int x) noexcept { ++calls; return x + 1; }
+Callback pick() { ++valueEffects; return three; }
+int group(Callback f) { return f == one || f == three ? 1 : f == two ? 2 : 0; }
+bool same_group(Callback element, Callback value) {
+  ++checks;
+  return group(element) == group(value);
+}
+bool same_safe(NoexceptCallback element, NoexceptCallback value) {
+  ++checks;
+  return element == value;
+}
+int main() {
+  const std::array<Callback, 7> values{{two, one, three, one, two, three, one}};
+  Callback needle = three;
+  int firstEffects = 0, lastEffects = 0, countEffects = 0;
+  int needleEffects = 0, predicateEffects = 0;
+  auto found = std::search_n((++firstEffects, values.cbegin()),
+                             (++lastEffects, values.cend()),
+                             (++countEffects, 3), (++needleEffects, needle),
+                             (++predicateEffects, same_group));
+  if (found != values.cbegin() + 1 || firstEffects != 1 || lastEffects != 1 ||
+      countEffects != 1 || needleEffects != 1 || predicateEffects != 1 ||
+      checks == 0 || calls != 0)
+    return 1;
+  if (std::search_n(values.cbegin(), values.cend(), 4, needle, same_group) !=
+          values.cend() ||
+      std::search_n(values.cbegin() + 4, values.cend(), 2, needle,
+                    same_group) != values.cbegin() + 5 || calls != 0)
+    return 2;
+  checks = 0;
+  if (std::search_n(values.cbegin(), values.cend(), 0, pick(), same_group) !=
+          values.cbegin() ||
+      valueEffects != 1 || checks != 0 || calls != 0)
+    return 3;
+  if (std::search_n(values.cbegin(), values.cend(), 3, pick(), same_group) !=
+          values.cbegin() + 1 || valueEffects != 2 || calls != 0)
+    return 4;
+  const Callback raw[]{two, one, three, two};
+  if (std::search_n(raw, raw + 4, 2, needle, same_group) != raw + 1 ||
+      std::search_n(raw, raw + 4, 3, needle, same_group) != raw + 4 ||
+      calls != 0)
+    return 5;
+  const std::array<NoexceptCallback, 3> safe{{safe_one, safe_one, nullptr}};
+  NoexceptCallback safeNeedle = safe_one;
+  if (std::search_n(safe.cbegin(), safe.cend(), 2, safeNeedle, same_safe) !=
+          safe.cbegin() || calls != 0)
+    return 6;
+  const std::array<Callback, 0> empty{};
+  if (std::search_n(empty.cbegin(), empty.cend(), 1, needle, same_group) !=
+          empty.cend() ||
+      std::search_n(empty.cbegin(), empty.cend(), 0, needle, same_group) !=
+          empty.cbegin() || calls != 0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("callback-search-n-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackSearchNPredicateRejectsInvalidSignatures) {
+  for (const std::string &Predicate : {"wrong_result", "wrong_reference"}) {
+    SCOPED_TRACE(Predicate);
+    const auto Source = tmpFile("callback-search-n-" + Predicate + ".cpp");
+    const auto Output = tmpFile("callback-search-n-" + Predicate + ".nc");
+    writeFile(Source, R"cpp(
+#include <algorithm>
+using Callback = int (*)(int);
+int one(int x) { return x + 1; }
+int wrong_result(Callback, Callback) { return 1; }
+bool wrong_reference(const Callback&, const Callback&) { return true; }
+int main() {
+  const Callback values[]{one, one};
+  Callback needle = one;
+  return std::search_n(values, values + 2, 2, needle, )cpp" + Predicate +
+                          ") == values;\n}\n");
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackSearchRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-search.cpp");
   const auto Output = tmpFile("callback-search.nc");

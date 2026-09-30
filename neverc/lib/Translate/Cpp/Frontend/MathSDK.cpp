@@ -24424,6 +24424,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                utilityCallbackEqualityType(Context, (*Right)->getPointeeType(),
                                            Prototype->getParamType(1));
       };
+  auto AlgorithmCallbackRangeBinaryPredicateValueParameter =
+      [&](unsigned PredicateIndex, unsigned IteratorIndex,
+          unsigned ValueIndex) {
+        const auto Iterator = AlgorithmCallbackRangeParameter(IteratorIndex);
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        return Iterator &&
+               AlgorithmCallbackRangeValueParameter(ValueIndex,
+                                                    IteratorIndex) &&
+               Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityCallbackEqualityType(Context,
+                                           (*Iterator)->getPointeeType(),
+                                           Prototype->getParamType(0)) &&
+               utilityCallbackEqualityType(Context,
+                                           (*Iterator)->getPointeeType(),
+                                           Prototype->getParamType(1));
+      };
   auto AlgorithmRecordRangeUnaryPredicateParameter =
       [&](unsigned PredicateIndex, unsigned IteratorIndex) {
         const auto Iterator = AlgorithmRecordRangeParameter(IteratorIndex);
@@ -26317,6 +26334,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(0) &&
         AlgorithmRangePointerParameter(1) &&
         AlgorithmRangeBinaryPredicateValueParameter(4, 0, 3))
+      return UtilityOperation::AlgorithmSearchN;
+    if (Call->getNumArgs() == 5 && AlgorithmCallbackRangeParameter(0) &&
+        AlgorithmCallbackRangeParameter(1) &&
+        AlgorithmCallbackRangeBinaryPredicateValueParameter(4, 0, 3))
       return UtilityOperation::AlgorithmSearchN;
     if (Call->getNumArgs() == 5 && AlgorithmRecordRangeParameter(0) &&
         AlgorithmRecordRangeParameter(1) &&

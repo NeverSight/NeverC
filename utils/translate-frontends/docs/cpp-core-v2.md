@@ -2015,6 +2015,11 @@ The default form also accepts const or mutable raw or authenticated wrapped
 ranges of one exact function-pointer element type, including `noexcept`
 pointers. Its value has that same pointer type; equality compares pointers
 without invoking them and preserves the value reference and iterator form.
+The five-argument `search_n` form also accepts these ranges with an exact
+`bool(Callback, Callback)` predicate. It passes the current function pointer
+and the original value in that order, preserves one evaluation of the count,
+value and predicate expressions, and returns the first iterator for a
+non-positive count without invoking the predicate.
 Checked function-pointer predicate overloads also accept authenticated
 wrapped scalar ranges and keep the wrapped result position.
 They additionally admit exact trivial source-record raw or wrapped ranges and
