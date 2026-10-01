@@ -285,9 +285,8 @@ casts and subsequent checked `get` projections use the same proof. Queries
 perform no moves, copies, assignments or cleanup; evaluated casts retain the
 same object and reference-field bindings. Volatile containers, unsupported
 elements, source substitutions, indirect callees and rvalues forwarded as
-lvalues retain rejection. `move_if_noexcept` container queries,
-nontrivial owned value elements and query-only factories retain separate source
-requirements.
+lvalues retain rejection. Nontrivial owned value elements and query-only
+factories retain separate source requirements.
 
 Exact pinned `std::as_const` calls support the same admitted scalar and pointer
 result-source queries. An lvalue argument selects the nondeleted
@@ -352,6 +351,27 @@ unsupported types/pointees, direct array/record/function/owner references,
 and reference template arguments yielding lvalues remain outside this scalar
 query boundary. The record copy-fallback branch needs its own source proof and
 is not admitted by this scalar extension.
+
+The same `move_if_noexcept` rvalue-reference branch also supports result-source
+queries on admitted `std::array`, `std::pair` and `std::tuple` objects. This
+includes empty containers, reference and mixed fields, trivial record and
+wrapper values, and admitted nested compositions. The selected `T&` parameter
+and `T&&` result must retain the same cv-qualified object type; const objects
+retain `const T&&`, including explicit const parameters bound to existing
+rvalues. The tuple-like descriptor authenticates storage while the exact
+adapter proof retains the pinned declaration chain and reference-cast source.
+Direct and parenthesized calls, imports and reexports, query-only
+specializations, nested utility casts and checked `get` projections use this
+proof. Original elements, bounds, receiver initializers, template arguments,
+signatures, defaults and temporary lifetimes remain checked independently.
+Queries execute no effects or container operations, and evaluated casts retain
+the same object address and reference-field bindings. Trait or function
+replacements, indirect callees, volatile containers, unsupported or nontrivial
+owned elements, and reference arguments yielding lvalues remain rejected.
+The `const T&` copy-fallback branch retains its separate source requirements,
+including for otherwise admitted trivially copyable elements with potentially
+throwing moves. A wrapper borrowing a `std::pair` member also retains its
+separate initializer-source requirement when projected from a queried tuple.
 
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is

@@ -2889,7 +2889,7 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
         Move && Move->getNumArgs() == 1
             ? dyn_cast<DeclRefExpr>(Move->getArg(0)->IgnoreParenImpCasts())
             : nullptr;
-    // The scalar branch returns only the exact pinned move of its unchanged
+    // The rvalue branch returns only the exact pinned move of its unchanged
     // lvalue parameter. Querying it must not instantiate either SDK body.
     return Body->size() == 1 && Value && Value->isXValue() &&
            A.Context.hasSameType(Value->getType(), Call->getType()) &&
@@ -2964,7 +2964,6 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
   const bool MoveOrForward = *Operation == UtilityOperation::Move ||
                              *Operation == UtilityOperation::Forward;
   const bool TupleLike =
-      (MoveOrForward || *Operation == UtilityOperation::AsConst) &&
       Type->isRecordType() &&
       approvedUtilityTupleLikeSource(A.S, A.Sources, Type, A.Context);
   return (Scalar || TupleLike ||
