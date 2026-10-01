@@ -17232,6 +17232,14 @@ public:
             Operand->isVariablyModifiedType() || Operand->isDependentType())
           A.reject(Query->getExprLoc(), "size/alignment query",
                    "Only standard constant sizeof and type-form alignof are supported.");
+        else if (Query->isArgumentType() &&
+                 Operand.getNonReferenceType()->isPointerType() &&
+                 (incompleteArrayMetadataType(Operand) ||
+                  incompleteRecordMetadataType(Operand)))
+          // A pointer has its own layout even when its pointee only has type
+          // identity. Preserve the full written type/source checks without
+          // completing that pointee or admitting a runtime pointer carrier.
+          A.checkQueryType(Operand, Query->getExprLoc(), true, true);
         else if (!approvedCstddefTypeQuery(A.S, A.Sources, Query,
                                            A.Context))
           A.type(Operand, Query->getExprLoc());

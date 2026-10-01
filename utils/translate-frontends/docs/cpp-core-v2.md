@@ -2104,9 +2104,10 @@ Written aliases, template arguments, bounds and exception specifications remain
 checked. No class or method is instantiated to manufacture identity, and no
 wrapper storage, helper or invented layout is emitted. A materialized specialization,
 actual object, runtime parameter or layout/operation query retains its existing
-complete-layout and source requirements. This includes `sizeof`/`alignof` of
-pointers to lazy wrapper specializations and pointer expressions under
-`decltype`/`noexcept`; type identity alone does not admit these separate paths.
+complete-layout and source requirements. Type-form `sizeof`/`alignof` of
+pointers to lazy wrapper specializations use the
+[pointer query contract](#pointer-layout-queries) without completing the wrapper.
+Pointer expressions under `decltype`/`noexcept` retain their separate requirements.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
@@ -5375,6 +5376,27 @@ functions, unsupported or variable-length types, GNU preferred alignment,
 expression-form alignment are rejected. Resolved `sizeof...` follows the
 [parameter-pack contract](#concrete-parameter-packs).
 
+### Pointer layout queries
+
+Type-form `sizeof(P)` and `alignof(P)` also admit pointers to checked
+unknown-bound arrays and incomplete record identities, including the existing
+pinned SDK metadata types such as `std::reference_wrapper<T>`, `std::array`,
+`std::pair` and `std::tuple`. References to these pointer types retain the
+pointer's size and alignment. For example, `struct F;` permits `sizeof(F*)`,
+`alignof(F*&)` and `sizeof(F(*)[][3])`. The actual pointee need not acquire a
+definition, layout or runtime carrier; an uninstantiated class template's body
+is not instantiated for this check.
+
+The result is the pinned frontend's constant integer for the selected target.
+Recursive referent validation, qualifiers, original aliases, template arguments,
+selected defaults, bounds, exception specifications and expansion/storage limits
+remain checked before folding. A known pointer width cannot erase an unsupported
+referent or source expression. These queries emit no pointee record or helper.
+Actual runtime pointer variables, fields, parameters, results and expressions
+keep their existing carrier checks, as do layout queries of arrays containing
+those pointers. `decltype` around a pointer expression retains that expression's
+source checks. No size or alignment is invented for the incomplete pointee itself.
+
 ## Builtin type classification
 
 The pinned source frontend's resolved boolean classification queries are admitted
@@ -5514,6 +5536,8 @@ This metadata creates no IR record, storage, helper or invented size. Bounds,
 qualifiers, source expressions and expansion budgets remain checked, including
 unsupported source hidden behind a constant result. Actual objects, fields,
 parameters, results and callback signatures keep their complete-carrier checks.
+Type-form [pointer layout queries](#pointer-layout-queries) can inspect a
+pointer's own size/alignment without completing its pointee.
 Operation queries use the [separate retained-operation proof](#incomplete-record-operation-types).
 The eight-ABI identity fixture asserts seven constant
 boolean exports with no records, globals, parameters or additional functions;

@@ -65924,6 +65924,203 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerMetadataLayoutQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("pointer-metadata-layout.cpp");
+  const auto Output = tmpFile("pointer-metadata-layout.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using Size = decltype(sizeof(0));
+struct Forward;
+template<class T> struct Lazy { typename T::missing field; };
+template<class T> using Pointer = T *;
+using W = std::reference_wrapper<int>;
+using CW = std::reference_wrapper<const int>;
+using FW = std::reference_wrapper<Forward>;
+using Unknown = const int[];
+using ForwardArray = Forward[][3];
+using Function = int &(int &) noexcept;
+int effects;
+namespace Types { using P = W *; }
+using Types::P;
+namespace Alias = Types;
+template<class T> bool pointer_layout() {
+  using P = Pointer<T>;
+  using L = P &;
+  using R = const P &&;
+  static_assert(__is_same(decltype(sizeof(P)), Size));
+  static_assert(sizeof(P) == sizeof(void *));
+  static_assert(alignof(P) == alignof(void *));
+  return sizeof(P) == sizeof(void *) && alignof(P) == alignof(void *) &&
+         sizeof(L) == sizeof(void *) && alignof(L) == alignof(void *) &&
+         sizeof(R) == sizeof(void *) && alignof(R) == alignof(void *) &&
+         sizeof(P *) == sizeof(void *) && alignof(P *) == alignof(void *);
+}
+extern "C" Size wrapper_pointer_size() { return sizeof(W *); }
+extern "C" Size wrapper_pointer_alignment() { return alignof(CW *); }
+extern "C" Size forward_pointer_size() { return sizeof(Forward *); }
+extern "C" Size unknown_array_pointer_alignment() { return alignof(Unknown *); }
+static_assert(sizeof(P) == sizeof(Alias::P));
+static_assert(alignof(typename std::add_pointer<W>::type) == alignof(void *));
+static_assert(sizeof(typename std::remove_reference<CW *&>::type) == sizeof(void *));
+static_assert(sizeof(std::reference_wrapper<int[(sizeof(++effects), 3)]> *) ==
+              sizeof(void *));
+static_assert(alignof(std::reference_wrapper<decltype((++effects, 0))> *) ==
+              alignof(void *));
+static_assert(sizeof(std::reference_wrapper<int() noexcept(sizeof(++effects) > 0)> *) ==
+              sizeof(void *));
+int main() {
+  if (wrapper_pointer_size() != sizeof(void *) ||
+      wrapper_pointer_alignment() != alignof(void *) ||
+      forward_pointer_size() != sizeof(void *) ||
+      unknown_array_pointer_alignment() != alignof(void *)) return 1;
+  if (!pointer_layout<W>() || !pointer_layout<const W>() ||
+      !pointer_layout<CW>() || !pointer_layout<FW>() ||
+      !pointer_layout<Forward>() || !pointer_layout<Lazy<int>>() ||
+      !pointer_layout<Unknown>() || !pointer_layout<ForwardArray>() ||
+      !pointer_layout<std::reference_wrapper<Function>>() ||
+      !pointer_layout<std::reference_wrapper<Unknown>>() ||
+      !pointer_layout<std::reference_wrapper<const W>>() ||
+      !pointer_layout<std::array<Forward, 3>>() ||
+      !pointer_layout<std::pair<Forward, int>>() ||
+      !pointer_layout<std::tuple<Forward, int>>() ||
+      !pointer_layout<int>() || !pointer_layout<void>()) return 2;
+  return effects ? 3 : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("nct_reference_wrapper_pointer"), std::string::npos);
+  EXPECT_EQ(Generated.find("nct_reference_wrapper_base_storage"),
+            std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pointer-metadata-layout" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerMetadataLayoutQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"wide-referent", R"cpp(
+static_assert(sizeof(std::reference_wrapper<long double>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"volatile-referent", R"cpp(
+struct F;static_assert(sizeof(volatile F*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"volatile-pointer", R"cpp(
+struct F;static_assert(alignof(F*volatile)==alignof(void*));
+)cpp",
+       "TR0201"},
+      {"restricted-pointer", R"cpp(
+struct F;using P=F*__restrict;static_assert(sizeof(P)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"address-space", R"cpp(
+struct F;using Foreign=F __attribute__((address_space(1)));static_assert(sizeof(Foreign*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"union-identity", R"cpp(
+union F;static_assert(sizeof(F*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"original-array-bound", R"cpp(
+struct F;using A=F[(sizeof(long double),2)];static_assert(sizeof(A*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"array-extent-budget", R"cpp(
+struct F;static_assert(sizeof(F(*)[65537])==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"array-storage-budget", R"cpp(
+struct F;static_assert(sizeof(F(*)[512][512])==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"erased-type-argument", R"cpp(
+struct F;template<class T>using Erased=F;static_assert(sizeof(Erased<long double>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"erased-value-argument", R"cpp(
+struct F;int object;template<auto P>using Erased=F;static_assert(sizeof(Erased<&object>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+template<class T=long double>struct F;static_assert(alignof(F<>*)==alignof(void*));
+)cpp",
+       "TR0201"},
+      {"original-decltype-expression", R"cpp(
+static_assert(sizeof(std::reference_wrapper<decltype((sizeof(long double),0))>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"original-exception-specification", R"cpp(
+using F=int()noexcept(sizeof(long double)>0);static_assert(sizeof(std::reference_wrapper<F>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"variadic-function-wrapper", R"cpp(
+static_assert(sizeof(std::reference_wrapper<int(int,...)>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>class reference_wrapper<int>;}}static_assert(sizeof(std::reference_wrapper<int>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"unsupported-sdk-identity", R"cpp(
+static_assert(sizeof(std::function<int()>*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"runtime-forward-pointer", R"cpp(
+struct F;bool f(F*p){return p==nullptr;}
+)cpp",
+       "TR0201"},
+      {"runtime-wrapper-pointer", R"cpp(
+std::reference_wrapper<int>*p=nullptr;
+)cpp",
+       "TR0201"},
+      {"expression-size-query", R"cpp(
+static_assert(sizeof(static_cast<std::reference_wrapper<int>*>(nullptr))==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"decltype-pointer-expression", R"cpp(
+static_assert(sizeof(decltype(static_cast<std::reference_wrapper<int>*>(nullptr)))==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"pointer-array-layout", R"cpp(
+struct F;static_assert(sizeof(F*[2])==2*sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"preferred-alignment", R"cpp(
+struct F;static_assert(__alignof__(F*)==alignof(void*));
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("pointer-metadata-layout-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("pointer-metadata-layout-reject-") + Case.Name + ".nc");
+    writeFile(Source, "#include <functional>\n" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperMetadataRunAtBothOptimizations) {
   const auto Source = tmpFile("reference-wrapper-metadata.cpp");
   const auto Output = tmpFile("reference-wrapper-metadata.nc");
@@ -66109,14 +66306,6 @@ namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{
        "TR0201"},
       {"runtime-incomplete-wrapper", R"cpp(
 using W=std::reference_wrapper<int>;bool f(W*p){return p==nullptr;}
-)cpp",
-       "TR0201"},
-      {"pointer-size-query", R"cpp(
-using W=std::reference_wrapper<int>;static_assert(sizeof(W*)==sizeof(void*));
-)cpp",
-       "TR0201"},
-      {"pointer-alignment-query", R"cpp(
-using W=std::reference_wrapper<int>;static_assert(alignof(W*)==alignof(void*));
 )cpp",
        "TR0201"},
       {"pointer-expression-query", R"cpp(
