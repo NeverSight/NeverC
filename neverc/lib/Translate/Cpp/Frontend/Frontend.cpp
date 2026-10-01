@@ -3438,6 +3438,39 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
                                        Arguments->get(1), Target);
 }
 
+static const CXXMethodDecl *functionalUserInvokeSource(Adapter &A,
+                                                      const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
+    return nullptr;
+  const auto Invoke =
+      approvedFunctionalUserInvokeCall(A.S, A.Sources, Call, A.Context);
+  if (!Invoke)
+    return nullptr;
+  const auto *Target = Invoke->Method->getType()->getAs<FunctionProtoType>();
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Dispatch = functionalReturnedCall(Function);
+  const auto *Inner =
+      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
+  // The runtime descriptor proves this exact receiver, overload and argument
+  // flow. Pin the public adapter and internal dispatch for the query, then
+  // retain the selected source method as an independent definition dependency.
+  // Do not instantiate a missing SDK or source body on behalf of a query.
+  if (!Target || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type || !Inner ||
+      Inner->getDirectCallee() != Invoke->Method ||
+      operationCalleePrototype(Inner) != Target ||
+      Inner->getValueKind() != Call->getValueKind() ||
+      !A.Context.hasSameType(Inner->getType(), Call->getType()) ||
+      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h") ||
+      !utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                               "__type_traits/invoke.h") ||
+      !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                     Arguments->get(1), Target))
+    return nullptr;
+  return Invoke->Method;
+}
+
 static bool utilityUniquePtrElementConstructionSource(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   const auto *Prototype =
@@ -7945,6 +7978,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
   std::map<const Expr *, const CallExpr *> AuthenticatedUtilityReferences;
+  std::map<const CallExpr *, const CXXMethodDecl *> AuthenticatedUserInvokeSources;
   std::map<const DeclRefExpr *, const CallExpr *>
       AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
@@ -10848,7 +10882,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                     A.chargeExpansion(1, Call->getExprLoc());
             }
           }
-        if (functionalReferenceAccessSource(A, Call) ||
+        const auto *UserInvoke = functionalUserInvokeSource(A, Call);
+        if (UserInvoke || functionalReferenceAccessSource(A, Call) ||
             functionalReferenceInvokeSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
             functionalObjectInvokeSource(A, Call) ||
@@ -10860,6 +10895,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               A.chargeExpansion(1, Call->getExprLoc());
             if (Entry->second == Call) {
               AuthenticatedUtilityCall = Call;
+              if (UserInvoke) {
+                auto [Source, New] =
+                    AuthenticatedUserInvokeSources.emplace(Call, UserInvoke);
+                if (New)
+                  A.chargeExpansion(1, Call->getExprLoc());
+                else if (Source->second != UserInvoke)
+                  A.reject(Call->getExprLoc(), "invoke target source",
+                           "An exact invoke call requires one selected source operator.");
+              }
               if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
                 if (const auto *Cast = dyn_cast<ImplicitCastExpr>(
                         Operator->getArg(0)->IgnoreParens());
@@ -11009,12 +11053,20 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // roots.
         if (Function == AuthenticatedVectorEndpoint)
           return;
-        // Only this exact SDK utility call supplies its signature and
-        // resolved exception metadata. Receiver/argument source and owning
-        // temporaries still close through their ordinary dependencies.
+        // Only this exact SDK utility call supplies its signature and resolved
+        // exception metadata. A user invocation retains its selected source
+        // operator's signature, exception source and completed definition.
         if (AuthenticatedUtilityCall &&
-            Function == AuthenticatedUtilityCall->getDirectCallee())
-          return;
+            Function == AuthenticatedUtilityCall->getDirectCallee()) {
+          const auto Source =
+              AuthenticatedUserInvokeSources.find(AuthenticatedUtilityCall);
+          if (Source == AuthenticatedUserInvokeSources.end())
+            return;
+          Function = Source->second;
+          for (auto *Dependencies : ActiveOperationSources)
+            if (Dependencies->Definitions.insert(Function).second)
+              A.chargeExpansion(1, Function->getLocation());
+        }
         // The exact factory supplies the pinned SDK signature and body. Its
         // owning allocation, construction, defaults and cleanup close
         // separately.

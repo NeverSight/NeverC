@@ -2228,7 +2228,7 @@ The proof belongs to that call alone. Original receiver and argument
 expressions, initializers, aliases, function signatures, selected defaults and
 temporary destruction remain independently checked. Queries execute none of
 their effects. Query-only lazy invocation bodies, other argument
-specializations without bodies, `std::invoke` queries on other callable objects,
+specializations without bodies, invocation forms outside the boundaries below,
 and independent function or member addresses retain their separate
 requirements; this does not instantiate an SDK body for a query.
 
@@ -2248,6 +2248,25 @@ pointer initializers and written types remain independent source roots.
 A direct target call or a different `invoke` specialization does not supply
 a missing adapter body. Cast or indirect adapter callees, source replacements
 and unsupported callable/result types retain their separate requirements.
+
+Materialized `std::invoke` adapters around admitted source-owned record
+callables also support result-source queries. The exact receiver, selected
+`operator()` and argument flow keep their runtime checks, including lvalue,
+const-lvalue and rvalue-qualified overloads, admitted scalar conversions, exact
+reference parameters/results, record values and `void` results. In-class
+non-template operators of admitted concrete class templates retain the ordinary
+template source requirements. The public adapter, internal dispatch and exact
+conditional invocability variable require pinned SDK declaration families.
+The selected source operator remains a separate dependency: its definition must
+finish source traversal, and its original signature, aliases, array bounds and
+exception expression remain checked. Reading the adapter's body does not supply
+that source proof. Caller expressions, initializers, written types, selected
+defaults and temporary destruction also remain independent sources. `decltype`,
+result traits, `sizeof`, `alignof`, array extents and `noexcept` execute none of
+their effects. Each callable category and argument pack still needs its own
+materialized adapter. Lazy adapters, replaced SDK declarations, independent
+adapter addresses and source methods without a completed definition remain
+rejected. Wrapped source-owned callables retain their separate query requirements.
 
 Materialized `std::invoke` adapters around the admitted typed and transparent
 arithmetic, bitwise, comparison and logical function objects also support
@@ -2284,8 +2303,8 @@ operator prototype. Original wrapper and referent initializers, expressions,
 written types, selected defaults and temporary lifetimes remain independent
 source roots and have no query-time effects. Lazy bodies, replaced SDK
 operators or adapters, source substitutions of either invocability variable,
-and independent adapter addresses remain rejected. Source-owned callable
-objects retain their separate query-source requirements.
+and independent adapter addresses remain rejected. Wrappers around source-owned
+callable objects retain their separate query-source requirements.
 
 Direct integral hashes from `bool` through `unsigned long`, plus the
 `nullptr_t` specialization, support result-source queries for direct calls,
