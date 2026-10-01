@@ -2301,11 +2301,28 @@ The empty carrier, unary typedef base and hash primary/forward declaration
 families are pinned separately. Stored, const, copied, dereferenced and temporary
 hash objects and wrappers use that same proof. Original expressions, written
 types, initializers, selected defaults and temporary cleanup remain independent
-source roots and execute no query effects. `long long`, `unsigned long long`,
-floating and enum hashes retain their separate query-source requirements;
+source roots and execute no query effects. Floating and enum hashes retain
+their separate query-source requirements;
 their existing evaluated calls continue to use the runtime hash contract above.
 The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
 its native C++ unavailability diagnostic.
+
+The `long long` and `unsigned long long` specializations also support direct,
+`std::invoke` and wrapped result-source queries after evaluated calls materialize
+their inherited scalar operator and each selected adapter. The public hash owns
+the exact `__scalar_hash` base and its empty unary typedef base; both base levels,
+the scalar primary/partial specialization, the public hash declaration family
+and the selected operator retain pinned SDK sources. The existing wide-integer
+hash descriptor supplies the implementation and `size_t` result. Scalar argument
+conversions, const/copied/dereferenced/temporary receivers and nested empty base
+initializers preserve that ownership. A direct call's implicit scalar-base view
+retains the original public receiver source and belongs only to that exact call.
+Each callable category and argument pack still needs its own materialized adapter.
+Independent private-base objects or method addresses gain no source proof from a
+public hash call; private-base layout expressions used inside a call query remain
+independent source dependencies.
+Original written types, expressions, initializers, selected defaults and temporary
+cleanup remain separate source roots and execute no query-time effects.
 
 Admitted object-pointer, `void`-pointer and fixed-arity function-pointer hashes
 also support direct, `std::invoke` and wrapped result-source queries. Their

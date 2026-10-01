@@ -2713,6 +2713,7 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
   if (!Object)
     return std::nullopt;
   const bool Hash = Object->Record->getName() == "hash";
+  bool WideHash = false;
   if (Hash) {
     const auto *Specialization =
         cast<ClassTemplateSpecializationDecl>(Object->Record);
@@ -2720,38 +2721,47 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
     if (!Value->isIntegralType(A.Context) && !Value->isNullPtrType() &&
         !Value->isPointerType())
       return std::nullopt;
+    WideHash = Value->isSpecificBuiltinType(BuiltinType::LongLong) ||
+               Value->isSpecificBuiltinType(BuiltinType::ULongLong);
   }
-  // Arithmetic/comparison objects and direct integral/null/pointer hashes own
-  // only their one-byte carrier and at most one empty SDK typedef base. Wide
-  // hashes with scalar-hash bases retain their separate source requirements.
-  // Pin the typedef base's declaration family too; source replacements must
-  // not supply hidden special-member declarations.
-  const CXXRecordDecl *Records[] = {Object->Record, nullptr};
-  if (Object->Record->getNumBases() > 1)
-    return std::nullopt;
-  if (Object->Record->getNumBases()) {
-    const auto &Base = *Object->Record->bases_begin();
+  // Pin every declaration family in the empty carrier's SDK base chain.
+  // Wide integer hashes add __scalar_hash between the public hash and its
+  // unary typedef base; no source replacement may supply lifecycle metadata.
+  const CXXRecordDecl *Records[] = {Object->Record, nullptr, nullptr};
+  for (unsigned I = 0; I != (WideHash ? 2u : 1u); ++I) {
+    if (!Records[I]->getNumBases()) {
+      if (WideHash)
+        return std::nullopt;
+      break;
+    }
+    if (Records[I]->getNumBases() != 1)
+      return std::nullopt;
+    const auto &Base = *Records[I]->bases_begin();
     if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public)
       return std::nullopt;
-    Records[1] = Base.getType()->getAsCXXRecordDecl();
-    if (!Records[1])
+    Records[I + 1] = Base.getType()->getAsCXXRecordDecl();
+    if (!Records[I + 1])
       return std::nullopt;
-    Records[1] = Records[1]->getDefinition();
-    if (!Records[1])
+    Records[I + 1] = Records[I + 1]->getDefinition();
+    if (!Records[I + 1])
       return std::nullopt;
   }
-  for (unsigned I = 0; I != 2 && Records[I]; ++I) {
+  for (unsigned I = 0; I != 3 && Records[I]; ++I) {
     const auto *Current =
         dyn_cast<ClassTemplateSpecializationDecl>(Records[I]);
     const auto *Template = Current ? Current->getSpecializedTemplate() : nullptr;
     if (!Current || !Template || Current->hasUserDeclaredConstructor() ||
         Current->hasUserDeclaredDestructor() || !Current->hasTrivialDestructor() ||
         !Current->isEmpty() || !Current->isTriviallyCopyable() ||
-        !Current->field_empty() || (I && Current->getNumBases()))
+        !Current->field_empty() ||
+        (I && !(WideHash && I == 1) && Current->getNumBases()))
       return std::nullopt;
     llvm::StringRef Path = Hash ? "__functional/hash.h"
                                 : "__functional/operations.h";
-    if (I) {
+    if (WideHash && I == 1) {
+      if (Current->getName() != "__scalar_hash")
+        return std::nullopt;
+    } else if (I) {
       if (Current->getName() == "__binary_function_keep_layout_base")
         Path = "__functional/binary_function.h";
       else if (Current->getName() == "__unary_function_keep_layout_base")
@@ -2777,8 +2787,8 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
       if (!Pinned(Declaration, true) ||
           !Pinned(Declaration->getTemplatedDecl(), true))
         return std::nullopt;
-    // Pointer hashes instantiate a partial specialization. Its declaration
-    // family owns the carrier and must be pinned separately from the primary.
+    // Pointer hashes and scalar-hash bases instantiate partial specializations.
+    // Pin those declaration families separately from their primary templates.
     if (const auto *Partial = Current->getSpecializedTemplateOrPartial()
                                  .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
       for (const auto *Declaration : Partial->redecls())
@@ -3196,20 +3206,33 @@ static bool functionalInvocabilitySource(
 }
 
 static const FunctionProtoType *functionalObjectInvokeTargetSource(
-    Adapter &A, const CXXMethodDecl *Method) {
-  if (!Method || !functionalObjectStorageSource(A, Method->getParent()))
+    Adapter &A, const CXXMethodDecl *Method, const CXXRecordDecl *Receiver) {
+  const auto Object = functionalObjectStorageSource(A, Receiver);
+  if (!Method || !Object)
+    return nullptr;
+  const bool Inherited = Method->getParent()->getCanonicalDecl() !=
+                         Object->Record->getCanonicalDecl();
+  // The call descriptor proves a wide hash's exact public-to-scalar base cast.
+  // Retain its public owner here; the private base is not itself an admitted
+  // function object and must not acquire an independent query source.
+  if (Inherited &&
+      (Object->Record->getName() != "hash" ||
+       Object->Record->getNumBases() != 1 ||
+       Method->getParent()->getName() != "__scalar_hash" ||
+       Object->Record->bases_begin()->getType()->getAsCXXRecordDecl()
+               ->getCanonicalDecl() != Method->getParent()->getCanonicalDecl()))
     return nullptr;
   const auto *Target = Method->getType()->getAs<FunctionProtoType>();
-  if (Method->getParent()->getName() == "hash") {
-    // The exact operation descriptor proves the integral/null operation or
-    // pointer-bit hashing contract, including the pointer hash's SDK delegate.
+  if (Object->Record->getName() == "hash") {
+    // The exact operation descriptor proves the integral/null, wide integer
+    // or pointer hashing contract, including any SDK implementation delegate.
     if (!Target || !Method->getDefinition() ||
         Target->getExceptionSpecType() != EST_BasicNoexcept ||
         Target->getNoexceptExpr())
       return nullptr;
     const auto *Record =
-        cast<ClassTemplateSpecializationDecl>(Method->getParent());
-    if (Record->getTemplateArgs().get(0).getAsType()->isPointerType())
+        cast<ClassTemplateSpecializationDecl>(Object->Record);
+    if (Inherited || Record->getTemplateArgs().get(0).getAsType()->isPointerType())
       return utilitySDKFunctionSource(A, Method, "__functional/hash.h")
                  ? Target : nullptr;
     // Members of the explicit integral/null specializations have no function
@@ -3251,7 +3274,8 @@ static bool functionalHashCallSource(Adapter &A, const CallExpr *Call) {
   if (!Operation || Operation->Operation != FunctionalOperation::Hash)
     return false;
   const auto *Target = functionalObjectInvokeTargetSource(
-      A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()));
+      A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()),
+      Call->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl());
   return Target && operationCalleePrototype(Call) == Target;
 }
 
@@ -3286,7 +3310,8 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
   const FunctionProtoType *Target = nullptr;
   if (Invoke->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
     if (Invoke->Operation)
-      Target = functionalObjectInvokeTargetSource(A, Invoke->Method);
+      Target = functionalObjectInvokeTargetSource(
+          A, Invoke->Method, Invoke->Wrapper.ReferentType->getAsCXXRecordDecl());
   } else if (Invoke->Kind == FunctionalReferenceInvokeKind::Function ||
              Invoke->Kind == FunctionalReferenceInvokeKind::FunctionPointer) {
     Target = Invoke->FunctionPointerType->getPointeeType()
@@ -3360,7 +3385,8 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
       approvedFunctionalInvokeObjectOperation(A.S, A.Sources, Call, A.Context);
   if (!Invoke)
     return false;
-  const auto *Target = functionalObjectInvokeTargetSource(A, Invoke->Method);
+  const auto *Target = functionalObjectInvokeTargetSource(
+      A, Invoke->Method, Call->getArg(0)->getType()->getAsCXXRecordDecl());
   if (!Target)
     return false;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
@@ -7893,6 +7919,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       AuthenticatedAlgorithmReferences;
   std::map<const InitListExpr *, const InitListExpr *> ZeroArrayStorageSources;
   std::map<const InitListExpr *, const InitListExpr *> FunctionalObjectBaseSources;
+  std::map<const ImplicitCastExpr *, const CallExpr *> FunctionalHashBaseCastSources;
   std::set<const Expr *> TypeSourceQueries;
   std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
   std::set<const Stmt *> OperationValueRoots;
@@ -10733,6 +10760,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // Only this exact empty base initializer belongs to the authenticated
         // function object; independent uses of the private base gain no proof.
         S = Found->second;
+    if (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(S);
+        Cast && FunctionalHashBaseCastSources.count(Cast))
+      // Only this checked hash call owns the implicit public-to-scalar view.
+      // Retain the original receiver's type and initializer source instead of
+      // demanding a project traversal of the private scalar base's TypeLocs.
+      S = Cast->getSubExpr();
     // Collect from the actual source traversal, including unevaluated operands
     // and expressions reached through TypeLoc or retained template source edges.
     // Capture before ownership/cache skips; only a query selecting this exact
@@ -10787,8 +10820,22 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
             if (Inserted)
               A.chargeExpansion(1, Call->getExprLoc());
-            if (Entry->second == Call)
+            if (Entry->second == Call) {
               AuthenticatedUtilityCall = Call;
+              if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
+                if (const auto *Cast = dyn_cast<ImplicitCastExpr>(
+                        Operator->getArg(0)->IgnoreParens());
+                    Cast && approvedFunctionalObjectBaseCast(
+                                A.S, A.Sources, Cast, A.Context)) {
+                  auto [Owner, New] =
+                      FunctionalHashBaseCastSources.emplace(Cast, Call);
+                  if (New)
+                    A.chargeExpansion(1, Call->getExprLoc());
+                  else if (Owner->second != Call)
+                    A.reject(Call->getExprLoc(), "hash base cast source",
+                             "An implicit scalar base view requires one exact hash call.");
+                }
+            }
           }
         if (utilityUniquePtrSwapSource(A, Call) ||
             utilityUniquePtrNullComparisonSource(A, Call) ||
@@ -11319,23 +11366,38 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         A, List->getType()->getAsCXXRecordDecl());
     if (!Object || Object->Record->getNumBases() != 1)
       return;
-    const auto *Base = dyn_cast_or_null<InitListExpr>(List->getInit(0));
-    const auto *Written = Base ? Base->getSyntacticForm() : nullptr;
-    if (!Base || !Base->isSemanticForm() || !Base->isPRValue() ||
-        Base->getNumInits() || Base->getArrayFiller() ||
-        (Written && (Written->getNumInits() || Written->getArrayFiller())) ||
-        !A.Context.hasSameType(Base->getType(),
-                              Object->Record->bases_begin()->getType()))
-      return;
-    for (const auto *Node : {Base, Written})
-      if (Node) {
-        auto [Entry, Inserted] = FunctionalObjectBaseSources.emplace(Node, List);
-        if (Inserted)
-          A.chargeExpansion(1, List->getExprLoc());
-        else if (Entry->second != List)
-          A.reject(List->getExprLoc(), "function object initializer source",
-                   "An empty base initializer requires one exact owning object.");
-      }
+    llvm::SmallVector<const InitListExpr *, 4> Nodes;
+    const auto *Record = Object->Record;
+    const auto *Parent = List;
+    // Wide integer hashes have two nested empty base initializers. Map both
+    // only after the entire authenticated chain has matched the public owner.
+    for (unsigned Depth = 0; Record->getNumBases(); ++Depth) {
+      if (Depth == 2 || Record->getNumBases() != 1 ||
+          Parent->getNumInits() != 1)
+        return;
+      const auto BaseType = Record->bases_begin()->getType();
+      const auto *Base = dyn_cast_or_null<InitListExpr>(Parent->getInit(0));
+      const auto *Written = Base ? Base->getSyntacticForm() : nullptr;
+      Record = BaseType->getAsCXXRecordDecl();
+      Record = Record ? Record->getDefinition() : nullptr;
+      if (!Record || !Base || !Base->isSemanticForm() || !Base->isPRValue() ||
+          Base->getNumInits() != Record->getNumBases() || Base->getArrayFiller() ||
+          (Written && (Written->getNumInits() || Written->getArrayFiller())) ||
+          !A.Context.hasSameType(Base->getType(), BaseType))
+        return;
+      Nodes.push_back(Base);
+      if (Written)
+        Nodes.push_back(Written);
+      Parent = Base;
+    }
+    for (const auto *Node : Nodes) {
+      auto [Entry, Inserted] = FunctionalObjectBaseSources.emplace(Node, List);
+      if (Inserted)
+        A.chargeExpansion(1, List->getExprLoc());
+      else if (Entry->second != List)
+        A.reject(List->getExprLoc(), "function object initializer source",
+                 "An empty base initializer requires one exact owning object.");
+    }
   }
   bool checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
     // RAV visits only the written form of a braced initializer by default.
