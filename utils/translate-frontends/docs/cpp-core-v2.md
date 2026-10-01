@@ -1444,9 +1444,8 @@ defaults, allocate no storage and invoke no construction, deletion or cleanup.
 Ordinary comparisons evaluate each operand once in an unspecified C++17 order.
 Missing result-query bodies, different overloads/specializations, source wrapper
 or selected Boolean-member replacements and independent function addresses
-remain rejected. Explicit calls to the operator function receive no new
-result-source authentication. Pure free comparison `noexcept` queries keep their
-existing signature-source boundary and need no unused wrapper body.
+remain rejected. Pure free comparison `noexcept` queries keep their existing
+signature-source boundary and need no unused wrapper body.
 
 The same result-source boundary also admits already materialized pinned C++17
 owner-to-owner `==` and `!=`. Both preserve a `bool` prvalue result and their
@@ -1476,8 +1475,7 @@ source. Unevaluated queries preserve both pointers and invoke no operand,
 default, allocation, construction, deletion or cleanup. Ordinary comparisons
 evaluate both operands once in an unspecified C++17 order. Missing result-query
 bodies, different unmaterialized pairs/specializations, source comparison or
-selected-getter replacements, independent function addresses and explicit
-operator-function calls remain rejected.
+selected-getter replacements and independent function addresses remain rejected.
 
 Already materialized pinned owner-to-owner `<`, `>`, `<=` and `>=` also admit
 result-source queries. The scalar/array, common unqualified element, qualified
@@ -1503,9 +1501,8 @@ invokes no operand, default, allocation, ownership transfer or cleanup. Ordinary
 ordering keeps the existing flat-address total order and evaluates each operand
 once in an unspecified C++17 order. Missing result-query bodies or pairs, source
 wrapper/delegate/getter/comparator/common-type replacements, independent
-function addresses and explicit operator-function calls remain rejected. Pure
-comparison `noexcept` queries retain their existing signature-source boundary
-without selecting unused wrapper bodies.
+function addresses remain rejected. Pure comparison `noexcept` queries retain
+their existing signature-source boundary without selecting unused wrapper bodies.
 
 The same ordering source boundary also admits already materialized pinned
 C++17 owner/null `<`, `>`, `<=` and `>=`, in both operand orders. Scalar and
@@ -1530,9 +1527,33 @@ nor null operand or default, and invokes no allocation, move, deletion or cleanu
 Ordinary ordering retains the existing flat-address total order and evaluates
 each operand once in an unspecified C++17 order. Missing result-query bodies,
 other unmaterialized specializations, source wrapper/delegate/getter/comparator
-replacements, independent function addresses and explicit operator-function
-calls remain rejected. Pure `noexcept` queries keep the existing signature-source
-boundary and need no unused wrapper body.
+replacements and independent function addresses remain rejected. Pure
+`noexcept` queries keep the existing signature-source boundary and need no unused
+wrapper body.
+
+All six admitted `unique_ptr` comparisons also accept direct explicit
+operator-function calls, such as `std::operator==(owner, other)` or
+`std::operator>=(nullptr, owner)`. This covers owner/owner and both owner/null
+orders for scalar and array owners, qualified pointees, bounded inner arrays,
+admitted custom deleters and borrowed const or mutable/const xvalue owners.
+Qualified names, parenthesized direct function names, argument-dependent lookup
+and well-formed explicit template arguments must select the exact pinned free
+overload with its checked two-parameter signature and `bool` prvalue result.
+Explicit calls evaluate each argument once in an unspecified C++17 order and
+retain the same pointer equality or flat-address ordering semantics. Borrowed
+owners retain their pointer identity; owning temporaries retain full-expression
+destruction. Null equality remains nonthrowing; owner equality and all ordering
+overloads retain their potentially throwing C++17 signatures.
+Result-source queries on these calls consume the corresponding already
+materialized wrapper, getter/Boolean/comparator and delegate proofs above.
+They check each written argument, template argument, original alias/signature,
+exception specification, selected default and temporary/factory lifetime source
+without evaluating arguments, allocating or transferring ownership. Pure
+`noexcept` queries use the signature source without requiring unused comparison
+bodies. Independent function addresses, casts or compound postfix callees,
+callable values and `using` imports of SDK comparison overloads remain outside
+this direct-call boundary; source replacements and missing result-query bodies
+remain rejected.
 
 For these owner xvalue queries, exact pinned `std::move` and `std::forward`
 specializations supply their reference-cast source. Any

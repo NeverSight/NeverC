@@ -23465,12 +23465,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getArg(1)->getType().isConstQualified())
       return UtilityOperation::MemoryUniquePtrSwap;
   }
-  if (Origin->Path == "__memory/unique_ptr.h" && Call->getNumArgs() == 2 &&
+  if (Origin->Path == "__memory/unique_ptr.h" && !Method &&
+      Function->isOverloadedOperator() && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    const auto Kind = Operator ? Operator->getOperator() : OO_None;
+    // An explicit operator-function call selects the same pinned overload.
+    // The direct SDK reference and exact parameter checks remain required;
+    // compound postfix expressions and callable values are not direct calls.
+    const auto Kind = Function->getOverloadedOperator();
     const auto Left = approvedUtilityUniquePtrRecord(
         S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
     const auto Right = approvedUtilityUniquePtrRecord(
@@ -23478,7 +23482,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool LeftNull = Call->getArg(0)->getType()->isNullPtrType();
     const bool RightNull = Call->getArg(1)->getType()->isNullPtrType();
     std::optional<UtilityOperation> Comparison;
-    if (Operator) {
+    if (!Operator || Operator->getOperator() == Kind) {
       switch (Kind) {
       case OO_EqualEqual:
         Comparison = UtilityOperation::MemoryUniquePtrEqual;
