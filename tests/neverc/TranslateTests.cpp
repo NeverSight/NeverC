@@ -43030,6 +43030,247 @@ int f(int&p){static_assert(noexcept(std::as_const(std::move(p))));return p;}
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleLikeCopyFallbackQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-like-copy-fallback-queries.cpp");
+  const auto Output = tmpFile("tuple-like-copy-fallback-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+struct Element {
+  int value;
+  Element() = default;
+  Element(const Element &) = default;
+  Element(Element &&) noexcept(false) = default;
+};
+struct CopyMayThrow {
+  int value;
+  CopyMayThrow() = default;
+  CopyMayThrow(const CopyMayThrow &) noexcept(false) = default;
+  CopyMayThrow(CopyMayThrow &&) noexcept(false) = default;
+};
+static_assert(__is_trivial(Element));
+static_assert(__is_trivial(CopyMayThrow));
+using Row = std::array<Element, 2>;
+using Pair = std::pair<Element, int>;
+using Tuple = std::tuple<Element, int>;
+using MixedPair = std::pair<Element, int &>;
+using ReverseMixed = std::pair<int &, Element>;
+using MixedTuple = std::tuple<Element &, Element, int &>;
+using Noncopyable = std::tuple<Element &&, Element, int &>;
+using Wrapper = std::reference_wrapper<int>;
+using Wrapped = std::pair<Element, Wrapper>;
+using Nested = std::tuple<Pair, Row>;
+using ConstRow = std::array<CopyMayThrow, 2>;
+int calls, defaults, live, destroyed;
+int mark(int value = (++defaults, 1)) noexcept { ++calls; return value; }
+Row &source(Row &row, int value = (++defaults, 1)) noexcept {
+  ++calls; return row;
+}
+struct Ticket {
+  int value;
+  explicit Ticket(int n) noexcept : value(n) { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+Row &with_temporary(Row &row, Ticket ticket = Ticket(mark())) noexcept {
+  ++calls; return row;
+}
+template <class T> bool fallback(T &value) {
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(value)), const T &));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(value)), const T &));
+  static_assert(__is_same(decltype(Reexport::move_if_noexcept<T>(value)), const T &));
+  static_assert(__is_same(decltype(move_if_noexcept(std::forward<T &>(value))), const T &));
+  static_assert(__is_same(decltype(std::as_const(move_if_noexcept(value))), const T &));
+  static_assert(__is_same(decltype(std::move(move_if_noexcept(value))), const T &&));
+  static_assert(__is_same(decltype(std::forward<const T>(move_if_noexcept(value))), const T &&));
+  static_assert(__is_lvalue_reference(decltype(move_if_noexcept(value))));
+  static_assert(!__is_rvalue_reference(decltype(move_if_noexcept(value))));
+  static_assert(sizeof(move_if_noexcept((++calls, value))) == sizeof(T));
+  static_assert(alignof(decltype(move_if_noexcept(value))) == alignof(T));
+  static_assert(noexcept(move_if_noexcept(value)));
+  const T &view = (Alias::move_if_noexcept)(value);
+  return &view == &value;
+}
+int query_only(std::pair<Element, unsigned> &pair) {
+  using Only = std::pair<Element, unsigned>;
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(pair)), const Only &));
+  static_assert(__is_same(decltype((Alias::move_if_noexcept(pair).first)), const Element &));
+  return 0;
+}
+int main() {
+  Row row{{Element{1}, Element{2}}};
+  Pair pair(Element{3}, 4);
+  Tuple tuple(Element{5}, 6);
+  int target = 7;
+  MixedPair mixed_pair(Element{8}, target);
+  ReverseMixed reverse_mixed(target, Element{9});
+  Element referent{10};
+  MixedTuple mixed_tuple(referent, Element{11}, target);
+  Noncopyable noncopyable(static_cast<Element &&>(referent), Element{20}, target);
+  Wrapped wrapped(Element{12}, std::ref(target));
+  Nested nested(pair, row);
+  ConstRow const_row{{CopyMayThrow{13}, CopyMayThrow{14}}};
+  const ConstRow &constant = const_row;
+  std::pair<Element, unsigned> only(Element{15}, 16u);
+  if (!fallback(row) || !fallback(pair) || !fallback(tuple) ||
+      !fallback(mixed_pair) || !fallback(reverse_mixed) || !fallback(mixed_tuple) ||
+      !fallback(wrapped) || !fallback(nested) || !fallback(const_row) ||
+      !fallback(constant) || query_only(only)) return 1;
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(noncopyable)), Noncopyable &&));
+  Noncopyable &&moved = Alias::move_if_noexcept(noncopyable);
+  static_assert(__is_same(decltype(std::get<0>(Alias::move_if_noexcept(row))), const Element &));
+  static_assert(__is_same(decltype(std::get<Element>(Alias::move_if_noexcept(pair))), const Element &));
+  static_assert(__is_same(decltype(std::get<int>(Alias::move_if_noexcept(tuple))), const int &));
+  static_assert(__is_same(decltype(std::get<1>(Alias::move_if_noexcept(mixed_pair))), int &));
+  static_assert(__is_same(decltype((Alias::move_if_noexcept(reverse_mixed).first)), int &));
+  static_assert(__is_same(decltype(std::get<0>(Alias::move_if_noexcept(mixed_tuple))), Element &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(wrapped).second.get()), int &));
+  static_assert(__is_same(decltype(std::get<1>(std::get<1>(Alias::move_if_noexcept(nested)))), const Element &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(std::as_const(row))), const Row &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(std::as_const(const_row))), const ConstRow &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const ConstRow>(std::move(const_row))), const ConstRow &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const ConstRow>(std::move(constant))), const ConstRow &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const ConstRow>(Alias::move_if_noexcept(const_row))), const ConstRow &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(source(row))), const Row &));
+  static_assert(sizeof(Alias::move_if_noexcept(with_temporary(row))) == sizeof(Row));
+  static_assert(noexcept(Alias::move_if_noexcept(with_temporary(row, Ticket(mark())))));
+  if (calls || defaults || live || destroyed) return 2;
+  const Row &view = Alias::move_if_noexcept(source(row));
+  const Row &temporary_view = Alias::move_if_noexcept(with_temporary(row));
+  const ConstRow &bound = Alias::move_if_noexcept<const ConstRow>(std::move(const_row));
+  const Element &element = std::get<Element>(Alias::move_if_noexcept(pair));
+  int &reference = std::get<1>(Alias::move_if_noexcept(mixed_pair));
+  reference = 17;
+  Alias::move_if_noexcept(wrapped).second.get() = 18;
+  std::get<0>(Alias::move_if_noexcept(mixed_tuple)).value = 19;
+  return &moved == &noncopyable && &view == &row && &temporary_view == &row &&
+                 &bound == &const_row &&
+                 &element == &pair.first && &reference == &target &&
+                 target == 18 && referent.value == 19 && row[0].value == 1 &&
+                 row[1].value == 2 && pair.first.value == 3 &&
+                 calls == 3 && defaults == 2 && !live && destroyed == 1 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-like-copy-fallback-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeCopyFallbackQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __move_if_noexcept_result_t<T>move_if_noexcept(T&)noexcept;}}int f(Row&r){static_assert(__is_same(decltype(Alias::move_if_noexcept(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const Pair&move_if_noexcept<Pair>(Pair&p)noexcept{return p;}}}int f(Pair&p){static_assert(__is_same(decltype(Alias::move_if_noexcept(p)),const Pair&));return 0;}
+)cpp", "TR0201"},
+      {"move-trait-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct is_nothrow_move_constructible<Tuple>{static constexpr bool value=false;};}}int f(Tuple&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),const Tuple&));return 0;}
+)cpp", "TR0202"},
+      {"copy-trait-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct is_copy_constructible<Pair>{static constexpr bool value=true;};}}int f(Pair&p){static_assert(__is_same(decltype(Alias::move_if_noexcept(p)),const Pair&));return 0;}
+)cpp", "TR0202"},
+      {"independent-function-address", R"cpp(
+using F=const Row&(*)(Row&)noexcept;int f(Row&r){static_assert(noexcept(Alias::move_if_noexcept(r)));static_assert(sizeof(static_cast<F>(&Alias::move_if_noexcept<Row>))>0);return 0;}
+)cpp", "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=const Pair&(*)(Pair&)noexcept;int f(Pair&p){static_assert(__is_same(decltype(static_cast<F>(&Alias::move_if_noexcept<Pair>)(p)),const Pair&));return 0;}
+)cpp", "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=const Tuple&(*)(Tuple&);int f(Tuple&t){static_assert(!noexcept(static_cast<F>(&Alias::move_if_noexcept<Tuple>)(t)));return 0;}
+)cpp", "TR0201"},
+      {"reference-template-argument", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Alias::move_if_noexcept<Row&>(r)),Row&));return 0;}
+)cpp", "TR0201"},
+      {"const-reference-template-argument", R"cpp(
+int f(const Pair&p){static_assert(__is_same(decltype(Alias::move_if_noexcept<const Pair&>(p)),const Pair&));return 0;}
+)cpp", "TR0201"},
+      {"operand-expression", R"cpp(
+int f(Row&r){static_assert(sizeof(Alias::move_if_noexcept((sizeof(long double),r)))==sizeof(Row));return 0;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+Pair&source(Pair&p,int n=sizeof(long double))noexcept{return p;}int f(Pair&p){static_assert(__is_same(decltype(Alias::move_if_noexcept(source(p))),const Pair&));return 0;}
+)cpp", "TR0201"},
+      {"original-exception", R"cpp(
+Tuple&source(Tuple&t)noexcept(sizeof(long double)>0);Tuple&source(Tuple&t)noexcept{return t;}int f(Tuple&t){static_assert(noexcept(Alias::move_if_noexcept(source(t))));return 0;}
+)cpp", "TR0201"},
+      {"adjusted-signature-bound", R"cpp(
+Row&source(Row&r,int v[(sizeof(long double),2)]=nullptr)noexcept{return r;}int f(Row&r){static_assert(sizeof(Alias::move_if_noexcept(source(r)))==sizeof(Row));return 0;}
+)cpp", "TR0201"},
+      {"receiver-initializer", R"cpp(
+int f(){Row row{{Element{static_cast<int>(sizeof(long double))},Element{1}}};static_assert(__is_same(decltype(Alias::move_if_noexcept(row)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"written-template-argument", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(Alias::move_if_noexcept<typename std::remove_reference<decltype((sizeof(long double),p))>::type>(p)),const Pair&));return 0;}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(
+int object;template<auto V>using Erased=Tuple;int f(Tuple&t){static_assert(__is_same(decltype(Alias::move_if_noexcept<Erased<&object>>(t)),const Tuple&));return 0;}
+)cpp", "TR0201"},
+      {"array-original-bound", R"cpp(
+using Original=std::array<Element,(sizeof(long double),2)>;int f(Original&r){static_assert(__is_same(decltype(Alias::move_if_noexcept(r)),const Original&));return 0;}
+)cpp", "TR0201"},
+      {"element-original-extent", R"cpp(
+struct Bad{int value[(sizeof(long double),2)];Bad()=default;Bad(const Bad&)=default;Bad(Bad&&)noexcept(false)=default;};using T=std::pair<Bad,int>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),const T&));return 0;}
+)cpp", "TR0201"},
+      {"element-copy-exception-source", R"cpp(
+struct Bad{int value;Bad()=default;Bad(const Bad&)noexcept(sizeof(long double)>0)=default;Bad(Bad&&)noexcept(false)=default;};using T=std::array<Bad,2>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),const T&));return 0;}
+)cpp", "TR0201"},
+      {"element-move-exception-source", R"cpp(
+struct Bad{int value;Bad()=default;Bad(const Bad&)=default;Bad(Bad&&)noexcept((sizeof(long double),false))=default;};using T=std::tuple<Bad,int>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),const T&));return 0;}
+)cpp", "TR0201"},
+      {"nontrivial-owned-element", R"cpp(
+struct Owned{int value;Owned(const Owned&){}Owned(Owned&&){}};using T=std::pair<Owned,int>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),const T&));return 0;}
+)cpp", "TR0201"},
+      {"noncontainer-record", R"cpp(
+int f(Element&e){static_assert(__is_same(decltype(Alias::move_if_noexcept(e)),const Element&));return 0;}
+)cpp", "TR0201"},
+      {"temporary-destructor-source", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};Row&source(Row&r,Ticket t=Ticket())noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Alias::move_if_noexcept(source(r))),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept;};Row&source(Row&r,Ticket t=Ticket())noexcept{return r;}int f(Row&r){static_assert(noexcept(Alias::move_if_noexcept(source(r))));return 0;}
+)cpp", "TR0203"},
+      {"invalid-rvalue", R"cpp(
+int f(Tuple&t){static_assert(noexcept(Alias::move_if_noexcept(std::move(t))));return 0;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("tuple-like-copy-fallback-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("tuple-like-copy-fallback-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported{using std::move_if_noexcept;}namespace Alias{using Imported::move_if_noexcept;}
+struct Element{int value;Element()=default;Element(const Element&)=default;Element(Element&&)noexcept(false)=default;};
+using Row=std::array<Element,2>;using Pair=std::pair<Element,int>;using Tuple=std::tuple<Element,int>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2TupleLikeMoveIfNoexceptQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-like-move-if-noexcept-queries.cpp");

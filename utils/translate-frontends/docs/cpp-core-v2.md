@@ -368,9 +368,22 @@ Queries execute no effects or container operations, and evaluated casts retain
 the same object address and reference-field bindings. Trait or function
 replacements, indirect callees, volatile containers, unsupported or nontrivial
 owned elements, and reference arguments yielding lvalues remain rejected.
-The `const T&` copy-fallback branch retains its separate source requirements,
-including for otherwise admitted trivially copyable elements with potentially
-throwing moves.
+
+The exact pinned Clang builtin also supplies query source for the `const T&`
+copy-fallback branch on these tuple-like containers, including admitted
+trivial record elements with potentially throwing moves. Its
+single concrete template argument must be an object type equal to the selected
+`T&` parameter's referent, and the result must be exactly `const T&`. Const
+objects retain their selected branch; explicit const parameters can bind
+admitted existing xvalues without changing the result's lvalue category.
+Direct/parenthesized calls, imports, utility-cast nesting and checked member or
+`get` projections preserve the same original-source checks. The adapter binds
+the same object without copying or moving it; reference fields and borrowed
+wrappers keep their referents even when the container result is const. This
+proof does not admit reference template arguments merely because `T&&`
+collapses to an lvalue, indirect/cast callees, source or trait replacements,
+nontrivial owned elements or standalone source-owned record queries. An
+unrecognized builtin or an independent library body still needs its own proof.
 
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is

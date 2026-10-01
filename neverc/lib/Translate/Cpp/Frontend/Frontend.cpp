@@ -2844,10 +2844,22 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   const bool BuiltinCast = Builtin && Builtin->isImplicit() &&
                            Builtin->getID() == BuiltinID &&
                            Function->getBuiltinID() == BuiltinID;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  // The exact builtin can also bind its unchanged object as const T&. Keep
+  // this branch distinct from a reference template argument collapsing T&&
+  // to an lvalue; that does not prove the copy-fallback signature.
+  const bool CopyFallback =
+      ConditionalMove && BuiltinCast && Call->isLValue() &&
+      Function->getReturnType()->isLValueReferenceType() && Arguments &&
+      Arguments->size() == 1 &&
+      Arguments->get(0).getKind() == TemplateArgument::Type &&
+      Arguments->get(0).getAsType()->isObjectType();
   const bool RValueResult = !AsConst && Function && Call->isXValue() &&
                             Function->getReturnType()->isRValueReferenceType();
   const bool LValueResult =
-      Function && (Operation == UtilityOperation::Forward || AsConst) &&
+      Function &&
+      (Operation == UtilityOperation::Forward || AsConst || CopyFallback) &&
       Call->isLValue() && Function->getReturnType()->isLValueReferenceType();
   if (!Function || !Function->getIdentifier() || Function->getName() != Name ||
       isa<CXXMethodDecl>(Function) || !Reference ||
@@ -2855,15 +2867,19 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
       Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       Function->getParamDecl(0)->hasDefaultArg() ||
       (!RValueResult && !LValueResult) || !Call->getArg(0)->isGLValue() ||
-      (LValueResult && !Call->getArg(0)->isLValue()) ||
+      (LValueResult && !CopyFallback && !Call->getArg(0)->isLValue()) ||
       ((LValueResult || ConditionalMove) &&
        !Function->getParamDecl(0)->getType()->isLValueReferenceType()) ||
       !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
       Prototype->getNoexceptExpr() ||
       operationCalleePrototype(Call) != Prototype ||
-      !A.Context.hasSameType(AsConst ? Call->getArg(0)->getType().withConst()
-                                     : Call->getArg(0)->getType(),
+      !A.Context.hasSameType(AsConst || CopyFallback
+                                 ? Call->getArg(0)->getType().withConst()
+                                 : Call->getArg(0)->getType(),
                              Call->getType()) ||
+      (CopyFallback &&
+       !A.Context.hasSameType(Arguments->get(0).getAsType(),
+                              Call->getArg(0)->getType())) ||
       ((AsConst || ConditionalMove) &&
        (!A.Context.hasSameType(
             Function->getParamDecl(0)->getType()->getPointeeType(),
