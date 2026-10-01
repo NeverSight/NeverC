@@ -69540,6 +69540,296 @@ using V=std::reference_wrapper<G>;
   }
 }
 
+TEST_F(TranslateTest, CoreV2InvokeMemFnQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("invoke-mem-fn-queries.cpp");
+  const auto Output = tmpFile("invoke-mem-fn-queries.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <type_traits>
+int calls, defaults, methods, live, destroyed;
+using Callback = int (*)(int) noexcept;
+int one(int n) noexcept { return n + 1; }
+int two(int n) noexcept { return n + 2; }
+struct Box { int value; };
+struct C {
+  int value;
+  const int fixed;
+  int *pointer;
+  Callback callback;
+  int run(short n) & noexcept { ++methods; return value + n; }
+  long read(short n) const { ++methods; return value + n; }
+  int &slot() & noexcept { ++methods; return value; }
+  int &&moved() && noexcept { ++methods; return static_cast<int &&>(value); }
+  void set(int n) noexcept { ++methods; value = n; }
+  Box copy(Box n) const noexcept { ++methods; return Box{value + n.value}; }
+};
+template<class T> struct Typed {
+  T value;
+  T &get(T &n) const noexcept { ++methods; return n; }
+};
+using Array = int[2];
+struct Arrays { Array &get(Array &n) const noexcept { ++methods; return n; } };
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+int mark(int n = (++defaults, 3)) noexcept { ++calls; return n; }
+int argument(Ticket t = Ticket()) noexcept { ++calls; return 4; }
+int throwing_argument() { ++calls; return 5; }
+C &receiver(C &c, int n = (++defaults, 1)) noexcept { ++calls; return c; }
+C temporary(Ticket t = Ticket()) noexcept {
+  ++calls; return C{50, 60, nullptr, one};
+}
+int main() {
+  int first = 1, second = 2;
+  C c{10, 20, &first, one};
+  const C constant{30, 40, &second, two};
+  auto p = &C::run;
+  const auto p_copy = p;
+  auto run = std::mem_fn(p_copy);
+  const auto run_copy = run;
+  auto run_chain = run_copy;
+  auto field = std::mem_fn(&C::value);
+  const auto field_copy = field;
+  auto field_chain = field_copy;
+  auto wrapped = std::ref(c);
+  const auto const_wrapper = wrapped;
+  auto readonly = std::cref(constant);
+  if (std::invoke(std::mem_fn(&C::run), c, 0) != 10 ||
+      std::invoke(run, c, 1) != 11 || std::invoke(run_copy, &c, 2) != 12 || std::invoke(run_chain, wrapped, 3) != 13 ||
+      std::invoke(run, const_wrapper, 4) != 14 || std::invoke(std::mem_fn(&C::run), std::ref(c), 5) != 15)
+    return 1;
+  std::invoke(field, c) = 11;
+  std::invoke(field_copy, &c) = 12;
+  std::invoke(field_chain, wrapped) = 13;
+  std::invoke(std::mem_fn(&C::value), const_wrapper) = 14;
+  if (&std::invoke(field, c) != &c.value || std::invoke(field, constant) != 30 ||
+      std::invoke(field, readonly) != 30 || std::invoke(std::mem_fn(&C::value), std::cref(c)) != 14 ||
+      std::invoke(field, static_cast<const C &&>(constant)) != 30 ||
+      std::invoke(field, C{50, 60, nullptr, one}) != 50) return 2;
+  auto fixed = std::mem_fn(&C::fixed);
+  auto pointer = std::mem_fn(&C::pointer);
+  auto callback = std::mem_fn(&C::callback);
+  std::invoke(pointer, c) = &second;
+  std::invoke(callback, c) = two;
+  if (std::invoke(fixed, c) != 20 || std::invoke(pointer, constant) != &second ||
+      std::invoke(callback, constant)(1) != 3 || std::invoke(callback, readonly)(2) != 4) return 3;
+  auto read = std::mem_fn(&C::read);
+  auto slot = std::mem_fn(&C::slot);
+  auto moved = std::mem_fn(&C::moved);
+  auto set = std::mem_fn(&C::set);
+  auto copy = std::mem_fn(&C::copy);
+  std::invoke(slot, c) = 15;
+  std::invoke(set, c, 16);
+  Box result = std::invoke(copy, constant, Box{2});
+  if (std::invoke(read, constant, 1) != 31 || std::invoke(moved, C{50, 60, nullptr, one}) != 50 ||
+      result.value != 32) return 4;
+  Typed<short> typed{7};
+  short number = 8;
+  auto typed_field = std::mem_fn(&Typed<short>::value);
+  auto typed_get = std::mem_fn(&Typed<short>::get);
+  std::invoke(typed_field, typed) = 9;
+  std::invoke(typed_get, typed, number) = 10;
+  Arrays arrays;
+  Array array{1, 2};
+  auto array_get = std::mem_fn(&Arrays::get);
+  std::invoke(array_get, arrays, array)[0] = 3;
+  if (typed.value != 9 || number != 10 || array[0] != 3) return 5;
+  calls = defaults = methods = live = destroyed = 0;
+  static_assert(__is_same(decltype(std::invoke(run, c, mark())), int));
+  static_assert(__is_same(decltype(std::invoke(run_copy, &c, mark())), int));
+  static_assert(__is_same(decltype(std::invoke(run_chain, wrapped, mark())), int));
+  static_assert(__is_same(decltype(std::invoke(run, const_wrapper, mark())), int));
+  static_assert(__is_same(decltype(std::invoke(std::mem_fn(&C::run), c, mark())), int));
+  static_assert(__is_same(decltype(std::invoke(std::mem_fn(&C::run), std::ref(c), mark())), int));
+  static_assert(__is_same(decltype((std::invoke)(field, c)), int &));
+  static_assert(__is_same(decltype(std::invoke(field_copy, &c)), int &));
+  static_assert(__is_same(decltype(std::invoke(field_chain, wrapped)), int &));
+  static_assert(__is_same(decltype(std::invoke(std::mem_fn(&C::value), const_wrapper)), int &));
+  static_assert(__is_same(decltype(std::invoke(field, constant)), const int &));
+  static_assert(__is_same(decltype(std::invoke(field, readonly)), const int &));
+  static_assert(__is_same(decltype(std::invoke(std::mem_fn(&C::value), std::cref(c))), const int &));
+  static_assert(__is_same(decltype(std::invoke(field, temporary())), int &&));
+  static_assert(__is_same(decltype(std::invoke(field, static_cast<const C &&>(constant))), const int &&));
+  static_assert(__is_same(decltype(std::invoke(fixed, c)), const int &));
+  static_assert(__is_same(decltype(std::invoke(pointer, c)), int *&));
+  static_assert(__is_same(decltype(std::invoke(pointer, constant)), int *const &));
+  static_assert(__is_same(decltype(std::invoke(callback, c)), Callback &));
+  static_assert(__is_same(decltype(std::invoke(callback, constant)), Callback const &));
+  static_assert(__is_same(decltype(std::invoke(callback, readonly)), Callback const &));
+  static_assert(__is_same(decltype(std::invoke(read, constant, mark())), long));
+  static_assert(__is_same(decltype(std::invoke(slot, c)), int &));
+  static_assert(__is_same(decltype(std::invoke(moved, temporary())), int &&));
+  static_assert(__is_same(decltype(std::invoke(set, c, mark())), void));
+  static_assert(__is_same(decltype(std::invoke(copy, constant, Box{mark()})), Box));
+  static_assert(__is_same(decltype(std::invoke(typed_field, typed)), short &));
+  static_assert(__is_same(decltype(std::invoke(typed_get, typed, number)), short &));
+  static_assert(__is_same(decltype(std::invoke(array_get, arrays, array)), Array &));
+  static_assert(std::is_signed<decltype(std::invoke(run, c, mark()))>::value);
+  static_assert(sizeof(std::invoke(run, receiver(c), mark())) == sizeof(int));
+  static_assert(sizeof(std::invoke(array_get, arrays, array)) == sizeof(array));
+  static_assert(alignof(decltype(std::invoke(callback, c))) == alignof(Callback));
+  static_assert(noexcept(std::invoke(run, c, argument())) && noexcept(std::invoke(field, receiver(c))));
+  static_assert(!noexcept(std::invoke(read, constant, mark())));
+  static_assert(!noexcept(std::invoke(run, c, throwing_argument())));
+  static_assert(noexcept(std::invoke(moved, temporary())));
+  static_assert(sizeof(std::invoke(std::mem_fn(&C::run), receiver(c), argument(Ticket()))) == sizeof(int));
+  int extent[sizeof(std::invoke(run, c, mark())) == sizeof(int) ? 2 : 1]{};
+  if (sizeof(extent) != 2 * sizeof(int) || c.value != 16 ||
+      calls || defaults || methods || live || destroyed) return 6;
+  if (std::invoke(run, receiver(c), mark()) != 19 || calls != 2 || defaults != 2 || methods != 1)
+    return 7;
+  const int observed = std::invoke(run, c, argument());
+  if (observed != 20 || calls != 3 || methods != 2 || live || destroyed != 1)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("invoke-mem-fn-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvokeMemFnQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"lazy-invoke", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);static_assert(__is_same(decltype(std::invoke(m, c,1)),int));return 0;}
+)cpp", "TR0203"},
+      {"direct-operator-does-not-supply-invoke", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=m(c,1);static_assert(__is_same(decltype(std::invoke(m,c,1)),int));return n;}
+)cpp", "TR0203"},
+      {"different-receiver-category", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m, c,1);static_assert(__is_same(decltype(std::invoke(m, &c,1)),int));return n;}
+)cpp", "TR0203"},
+      {"different-argument-pack", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m, c,1);static_assert(__is_same(decltype(std::invoke(m, c,short(1))),int));return n;}
+)cpp", "TR0203"},
+      {"different-callable-category", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);const auto copy=m;int n=std::invoke(m,c,1);static_assert(__is_same(decltype(std::invoke(copy,c,1)),int));return n;}
+)cpp", "TR0203"},
+      {"immediate-callable-category", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m,c,1);static_assert(__is_same(decltype(std::invoke(std::mem_fn(&C::run),c,1)),int));return n;}
+)cpp", "TR0203"},
+      {"independent-invoke-address", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m,c,1);static_assert(__is_same(decltype(std::invoke(m,c,1)),int));static_assert(sizeof(&std::invoke<decltype(m)&,C&,int>)>0);return n;}
+)cpp", "TR0201"},
+      {"cast-invoke-callee", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);using I=int(*)(decltype(m)&,C&,int&&)noexcept;int n=std::invoke(m,c,1);static_assert(__is_same(decltype(static_cast<I>(&std::invoke<decltype(m)&,C&,int>)(m,c,1)),int));return n;}
+)cpp", "TR0201"},
+      {"invoke-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int&invoke<__mem_fn<int C::*>&,C&>(__mem_fn<int C::*>&m,C&c)noexcept{return m(c);}}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m,c);static_assert(__is_same(decltype(std::invoke(m,c)),int&));return n;}
+)cpp", "TR0201"},
+      {"outer-dispatch-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int&__invoke<__mem_fn<int C::*>&,C&>(__mem_fn<int C::*>&m,C&c)noexcept{return m(c);}}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m,c);static_assert(__is_same(decltype(std::invoke(m,c)),int&));return n;}
+)cpp", "TR0201"},
+      {"outer-exception-variable-specialization", R"cpp(
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<__mem_fn<int C::*>&,C&> = true;}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m,c);static_assert(__is_same(decltype(std::invoke(m,c)),int&));return n;}
+)cpp", "TR0202"},
+      {"independent-factory-address", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));static_assert(sizeof(&std::mem_fn<int,C>)>0);return n;}
+)cpp", "TR0201"},
+      {"independent-factory-result", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(std::is_trivially_copyable<decltype(std::mem_fn(&C::value))>::value);return n;}
+)cpp", "TR0201"},
+      {"factory-specialization", R"cpp(
+namespace std{inline namespace __1{template<>__mem_fn<int C::*>mem_fn<int,C>(int C::*p)noexcept{return __mem_fn<int C::*>(p);}}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"constructor-specialization", R"cpp(
+namespace std{inline namespace __1{template<>__mem_fn<int C::*>::__mem_fn(type p)noexcept:__f_(p){}}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"operator-specialization", R"cpp(
+namespace std{inline namespace __1{template<>template<>int&__mem_fn<int C::*>::operator()<C&>(C&c)const noexcept{return c.value;}}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"exception-variable-specialization", R"cpp(
+namespace std{inline namespace __1{template<>inline const bool __is_nothrow_invocable_v<int C::*const&,C&> = true;}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"wrapper-get-specialization", R"cpp(
+C global;namespace std{inline namespace __1{template<>C&reference_wrapper<C>::get()const noexcept{return ::global;}}}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, std::ref(c));static_assert(__is_same(decltype(std::invoke(m, std::ref(c))),int&));return n;}
+)cpp", "TR0201"},
+      {"member-pointer-parameter", R"cpp(
+int f(C&c,int C::*p){auto m=std::mem_fn(p);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"reassigned-wrapper", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::value);m=std::mem_fn(&C::other);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"null-member-pointer", R"cpp(
+int f(C&c){auto p=static_cast<int C::*>(nullptr);auto m=std::mem_fn(p);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, c)),int&));return n;}
+)cpp", "TR0201"},
+      {"method-body", R"cpp(
+struct D{int run(int n)noexcept{long double hidden=0;return n;}};int f(D&d){auto m=std::mem_fn(&D::run);int n=std::invoke(m, d,1);static_assert(__is_same(decltype(std::invoke(m, d,1)),int));return n;}
+)cpp", "TR0201"},
+      {"method-original-exception", R"cpp(
+struct D{int run(int n)noexcept(sizeof(long double)>0);};int D::run(int n)noexcept{return n;}int f(D&d){auto m=std::mem_fn(&D::run);int n=std::invoke(m, d,1);static_assert(__is_same(decltype(std::invoke(m, d,1)),int));return n;}
+)cpp", "TR0201"},
+      {"missing-method-definition", R"cpp(
+struct D{int run(int n)noexcept;};int f(D&d){auto m=std::mem_fn(&D::run);int n=std::invoke(m, d,1);static_assert(__is_same(decltype(std::invoke(m, d,1)),int));return n;}
+)cpp", "TR0203"},
+      {"field-type-alias", R"cpp(
+using T=decltype((sizeof(long double),int{}));struct D{T value;};int f(D&d){auto m=std::mem_fn(&D::value);int n=std::invoke(m, d);static_assert(__is_same(decltype(std::invoke(m, d)),int&));return n;}
+)cpp", "TR0201"},
+      {"wrapped-field-owner-layout", R"cpp(
+struct D{int value;char hidden[(sizeof(long double),1)];};int f(std::reference_wrapper<D>w){auto m=std::mem_fn(&D::value);int n=std::invoke(m, w);static_assert(__is_same(decltype(std::invoke(m, w)),int&));return n;}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, (sizeof(long double),c))),int&));return n;}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m, c,1);static_assert(__is_same(decltype(std::invoke(m, c,(sizeof(long double),1))),int));return n;}
+)cpp", "TR0201"},
+      {"selected-receiver-default", R"cpp(
+C&source(C&c,int n=sizeof(long double))noexcept{return c;}int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, source(c))),int&));return n;}
+)cpp", "TR0201"},
+      {"written-factory-template-argument", R"cpp(
+using T=decltype((sizeof(long double),int{}));int f(C&c){int n=std::invoke(std::mem_fn(&C::value), c);static_assert(__is_same(decltype(std::invoke(std::mem_fn<T,C>(&C::value), c)),int&));return n;}
+)cpp", "TR0201"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m, c,1);static_assert(__is_same(decltype(std::invoke(m, c,arg())),int));return n;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m, c,1);static_assert(__is_same(decltype(std::invoke(m, c,arg())),int));return n;}
+)cpp", "TR0203"},
+      {"missing-receiver-definition", R"cpp(
+C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=std::invoke(m, c);static_assert(__is_same(decltype(std::invoke(m, source(c))),int&));return n;}
+)cpp", "TR0203"},
+      {"adapted-wrapper-source", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(std::move(m), c,1);static_assert(__is_same(decltype(std::invoke(std::move(m), c,1)),int));return n;}
+)cpp", "TR0201"},
+      {"adapted-copy-source", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);auto copy=std::move(m);int n=std::invoke(copy, c,1);static_assert(__is_same(decltype(std::invoke(copy, c,1)),int));return n;}
+)cpp", "TR0201"},
+      {"written-wrapper-type", R"cpp(
+int f(C&c){auto m=std::mem_fn(&C::run);decltype(m)copy=m;int n=std::invoke(copy, c,1);static_assert(__is_same(decltype(std::invoke(copy, c,1)),int));return n;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("invoke-mem-fn-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("invoke-mem-fn-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+struct C{int value;int other;int run(int n)noexcept{return value+n;}};
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemFnQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("mem-fn-queries.cpp");
   const auto Output = tmpFile("mem-fn-queries.nc");
@@ -69783,9 +70073,6 @@ struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}i
       {"missing-receiver-definition", R"cpp(
 C&source(C&c)noexcept;int f(C&c){auto m=std::mem_fn(&C::value);int n=m(c);static_assert(__is_same(decltype(m(source(c))),int&));return n;}
 )cpp", "TR0203"},
-      {"outer-invoke-source", R"cpp(
-int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(m,c,1);static_assert(__is_same(decltype(std::invoke(m,c,1)),int));return n;}
-)cpp", "TR0201"},
       {"adapted-wrapper-source", R"cpp(
 int f(C&c){auto m=std::mem_fn(&C::run);int n=std::move(m)(c,1);static_assert(__is_same(decltype(std::move(m)(c,1)),int));return n;}
 )cpp", "TR0201"},

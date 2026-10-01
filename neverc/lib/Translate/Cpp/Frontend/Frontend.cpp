@@ -3576,6 +3576,18 @@ struct FunctionalMemFnSource {
 static std::optional<FunctionalMemFnSource>
 functionalMemFnSource(Adapter &A, const CallExpr *Call) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const FunctionDecl *Outer = nullptr;
+  const CallExpr *OuterDispatch = nullptr;
+  if (!Operator) {
+    Outer = Call ? Call->getDirectCallee() : nullptr;
+    if (!Outer || !Outer->getIdentifier() || Outer->getName() != "invoke")
+      return std::nullopt;
+    OuterDispatch = functionalReturnedCall(Outer);
+    Operator = dyn_cast_or_null<CXXOperatorCallExpr>(
+        OuterDispatch
+            ? functionalReturnedExpression(OuterDispatch->getDirectCallee())
+            : nullptr);
+  }
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
       Operator ? Operator->getDirectCallee() : nullptr);
   if (!Method || Method->getOverloadedOperator() != OO_Call ||
@@ -3601,10 +3613,28 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
       Prototype->getNoexceptExpr() ||
       !utilitySDKFunctionSource(A, Function, "__functional/mem_fn.h") ||
       !utilitySDKFunctionSource(A, Method, "__functional/mem_fn.h") ||
-      !functionalInvocabilitySource(A, Call, Callable, Arguments->get(0),
+      !functionalInvocabilitySource(A, Operator, Callable, Arguments->get(0),
                                    Target ? Target->isNothrow() : true,
                                    "__is_nothrow_invocable_v"))
     return std::nullopt;
+  if (Outer) {
+    const auto *OuterArguments = Outer->getTemplateSpecializationArgs();
+    const auto *OperatorType = Method->getType()->getAs<FunctionProtoType>();
+    // The same runtime descriptor proves the outer forwarding edges. Pin both
+    // outer adapters and their public trait separately from mem_fn's private
+    // trait; a direct wrapper call does not supply a missing invoke body.
+    if (!OuterArguments || OuterArguments->size() != 2 ||
+        OuterArguments->get(0).getKind() != TemplateArgument::Type ||
+        Operator->getValueKind() != Call->getValueKind() ||
+        !A.Context.hasSameType(Operator->getType(), Call->getType()) ||
+        !utilitySDKFunctionSource(A, Outer, "__functional/invoke.h") ||
+        !utilitySDKFunctionSource(A, OuterDispatch->getDirectCallee(),
+                                 "__type_traits/invoke.h") ||
+        !functionalInvocabilitySource(
+            A, Call, OuterArguments->get(0).getAsType(),
+            OuterArguments->get(1), OperatorType))
+      return std::nullopt;
+  }
   const auto *Member = functionalMemberDispatchSource(
       A, Call, *Invoke, functionalReturnedCall(Method));
   const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(
