@@ -3571,7 +3571,122 @@ struct FunctionalMemFnSource {
   const ValueDecl *Member;
   const Expr *Callable;
   llvm::SmallVector<const Expr *, 16> Carriers;
+  llvm::SmallVector<const TypeSourceInfo *, 8> TemplateSources;
 };
+
+static std::optional<FunctionalMemFnSource> functionalMemFnCarrierSource(
+    Adapter &A, const Expr *Expression, const CallExpr *Factory,
+    const ValueDecl *Member, const CallExpr *Adapter) {
+  const Expr *CallableSource = Factory->getArg(0)->IgnoreParenImpCasts();
+  if (const auto *Address = dyn_cast<UnaryOperator>(CallableSource);
+      Address && Address->getOpcode() == UO_AddrOf)
+    CallableSource = Address->getSubExpr()->IgnoreParenImpCasts();
+  if (!isa<DeclRefExpr>(CallableSource))
+    return std::nullopt;
+  FunctionalMemFnSource Result{Member, CallableSource, {}, {}};
+  llvm::SmallVector<const CallExpr *, 8> Adapters;
+  auto RetainAdapter = [&](const CallExpr *Call) {
+    if (llvm::is_contained(Adapters, Call))
+      return true;
+    const auto Operation =
+        approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+    if (!Operation || !utilitySDKValueAdapterSource(A, Call, *Operation))
+      return false;
+    Adapters.push_back(Call);
+    return true;
+  };
+  if (Adapter && !RetainAdapter(Adapter))
+    return std::nullopt;
+  // The caller supplies the runtime-proven factory and optional exact adapter.
+  // Each deduced auto local must lead to that factory. Authenticate every
+  // initializer adapter separately before retaining its erased carrier and
+  // callee expressions; preserve the original member and written type sources.
+  auto Retain = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
+    if (!E || Depth >= 64)
+      return false;
+    A.chargeExpansion(1, E->getExprLoc());
+    Result.Carriers.push_back(E);
+    if (E == Factory || llvm::is_contained(Adapters, dyn_cast<CallExpr>(E))) {
+      const auto *Carrier = cast<CallExpr>(E);
+      const auto *Leaf = directFunctionReference(Carrier);
+      const Expr *Callee = Carrier->getCallee();
+      while (Callee) {
+        Result.Carriers.push_back(Callee);
+        if (Callee == Leaf)
+          return E == Factory || Self(Self, Carrier->getArg(0), Depth + 1);
+        if (const auto *P = dyn_cast<ParenExpr>(Callee))
+          Callee = P->getSubExpr();
+        else if (const auto *C = dyn_cast<ImplicitCastExpr>(Callee))
+          Callee = C->getSubExpr();
+        else
+          return false;
+      }
+      return false;
+    }
+    if (const auto *P = dyn_cast<ParenExpr>(E))
+      return Self(Self, P->getSubExpr(), Depth + 1);
+    if (const auto *C = dyn_cast<ImplicitCastExpr>(E))
+      return Self(Self, C->getSubExpr(), Depth + 1);
+    if (const auto *T = dyn_cast<MaterializeTemporaryExpr>(E))
+      return Self(Self, T->getSubExpr(), Depth + 1);
+    if (const auto *T = dyn_cast<CXXBindTemporaryExpr>(E))
+      return Self(Self, T->getSubExpr(), Depth + 1);
+    if (const auto *C = dyn_cast<ExprWithCleanups>(E))
+      return Self(Self, C->getSubExpr(), Depth + 1);
+    if (const auto *C = dyn_cast<CXXConstructExpr>(E))
+      return C->getNumArgs() == 1 && C->getConstructor()->isImplicit() &&
+             C->getConstructor()->isTrivial() &&
+             C->getConstructor()->isCopyOrMoveConstructor() &&
+             approvedStandardSDKDeclaration(A.S, A.Sources, C->getConstructor()) &&
+             Self(Self, C->getArg(0), Depth + 1);
+    const auto *Reference = dyn_cast<DeclRefExpr>(E);
+    const auto *Variable = Reference
+        ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    const auto *Info = Variable ? Variable->getTypeSourceInfo() : nullptr;
+    const auto Stored =
+        approvedFunctionalStoredMemFn(A.S, A.Sources, Variable, A.Context);
+    return Info && Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
+           Stored && Stored->Factory == Factory &&
+           (!Stored->Adapter || RetainAdapter(Stored->Adapter)) &&
+           Self(Self, Stored->Initializer, Depth + 1);
+  };
+  if (!Retain(Retain, Expression, 0))
+    return std::nullopt;
+  // A written decltype can retain another copy in the same factory chain.
+  // Process each discovered adapter once without replaying source traversal.
+  for (unsigned I = 0; I < Adapters.size(); ++I) {
+    const auto *Reference =
+        cast<DeclRefExpr>(directFunctionReference(Adapters[I]));
+    for (const auto &Argument : Reference->template_arguments()) {
+      const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
+          ? Argument.getTypeSourceInfo() : nullptr;
+      TypeLoc Location = Info ? Info->getTypeLoc() : TypeLoc();
+      const Expr *Source = nullptr;
+      for (unsigned Depth = 0; Location && Depth < 64; ++Depth) {
+        Location = Location.getUnqualifiedLoc();
+        A.chargeExpansion(1, Location.getBeginLoc());
+        if (const auto Ref = Location.getAs<ReferenceTypeLoc>())
+          Location = Ref.getPointeeLoc();
+        else if (const auto Paren = Location.getAs<ParenTypeLoc>())
+          Location = Paren.getInnerLoc();
+        else {
+          if (const auto Deduced = Location.getAs<DecltypeTypeLoc>())
+            Source = Deduced.getUnderlyingExpr();
+          break;
+        }
+      }
+      // An explicit decltype(wrapper) has its own reference expression. Keep
+      // its normal TypeLoc/expression traversal, but retain the same proven
+      // auto carrier instead of its deliberately untraversed auto TypeLoc.
+      // Aliases, compound expressions and other factories gain no such proof.
+      if (!Source || !isa<DeclRefExpr>(Source->IgnoreParens()) ||
+          !Retain(Retain, Source, 0))
+        return std::nullopt;
+      Result.TemplateSources.push_back(Info);
+    }
+  }
+  return Result;
+}
 
 static std::optional<FunctionalMemFnSource>
 functionalMemFnSource(Adapter &A, const CallExpr *Call) {
@@ -3597,12 +3712,6 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
       approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
   if (!Invoke || !Invoke->ErasedFactory)
     return std::nullopt;
-  if (const auto *Adapter = Invoke->ErasedAdapter) {
-    const auto Operation =
-        approvedUtilityOperation(A.S, A.Sources, Adapter, A.Context);
-    if (!Operation || !utilitySDKValueAdapterSource(A, Adapter, *Operation))
-      return std::nullopt;
-  }
   const auto *Factory = Invoke->ErasedFactory;
   const auto *Function = Factory->getDirectCallee();
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
@@ -3664,98 +3773,8 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
       !utilitySDKFunctionSource(A, Constructor, "__functional/mem_fn.h"))
     return std::nullopt;
 
-  const Expr *CallableSource = Factory->getArg(0)->IgnoreParenImpCasts();
-  if (const auto *Address = dyn_cast<UnaryOperator>(CallableSource);
-      Address && Address->getOpcode() == UO_AddrOf)
-    CallableSource = Address->getSubExpr()->IgnoreParenImpCasts();
-  if (!isa<DeclRefExpr>(CallableSource))
-    return std::nullopt;
-  FunctionalMemFnSource Result{Member, CallableSource, {}};
-  // Retain only the exact side-effect-free carrier chain. Each local has a
-  // deduced auto type; written wrapper types and adapted initializers keep their
-  // separate query boundary. Only the descriptor's exact call-site adapter may
-  // be erased after its SDK source check. Retain the original member expression.
-  auto Retain = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
-    if (!E || Depth >= 64)
-      return false;
-    A.chargeExpansion(1, E->getExprLoc());
-    Result.Carriers.push_back(E);
-    if (E == Factory || E == Invoke->ErasedAdapter) {
-      const auto *Carrier = cast<CallExpr>(E);
-      const auto *Leaf = directFunctionReference(Carrier);
-      const Expr *Callee = Carrier->getCallee();
-      while (Callee) {
-        Result.Carriers.push_back(Callee);
-        if (Callee == Leaf)
-          return E == Factory || Self(Self, Carrier->getArg(0), Depth + 1);
-        if (const auto *P = dyn_cast<ParenExpr>(Callee))
-          Callee = P->getSubExpr();
-        else if (const auto *C = dyn_cast<ImplicitCastExpr>(Callee))
-          Callee = C->getSubExpr();
-        else
-          return false;
-      }
-      return false;
-    }
-    if (const auto *P = dyn_cast<ParenExpr>(E))
-      return Self(Self, P->getSubExpr(), Depth + 1);
-    if (const auto *C = dyn_cast<ImplicitCastExpr>(E))
-      return Self(Self, C->getSubExpr(), Depth + 1);
-    if (const auto *T = dyn_cast<MaterializeTemporaryExpr>(E))
-      return Self(Self, T->getSubExpr(), Depth + 1);
-    if (const auto *T = dyn_cast<CXXBindTemporaryExpr>(E))
-      return Self(Self, T->getSubExpr(), Depth + 1);
-    if (const auto *C = dyn_cast<ExprWithCleanups>(E))
-      return Self(Self, C->getSubExpr(), Depth + 1);
-    if (const auto *C = dyn_cast<CXXConstructExpr>(E))
-      return C->getNumArgs() == 1 && C->getConstructor()->isImplicit() &&
-             C->getConstructor()->isTrivial() &&
-             C->getConstructor()->isCopyOrMoveConstructor() &&
-             approvedStandardSDKDeclaration(A.S, A.Sources, C->getConstructor()) &&
-             Self(Self, C->getArg(0), Depth + 1);
-    const auto *Reference = dyn_cast<DeclRefExpr>(E);
-    const auto *Variable = Reference
-        ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
-    const auto *Info = Variable ? Variable->getTypeSourceInfo() : nullptr;
-    const auto Stored =
-        approvedFunctionalStoredMemFn(A.S, A.Sources, Variable, A.Context);
-    return Info && Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
-           Stored && Stored->Factory == Factory &&
-           Self(Self, Stored->Initializer, Depth + 1);
-  };
-  if (!Retain(Retain, Call->getArg(0), 0))
-    return std::nullopt;
-  if (const auto *Adapter = Invoke->ErasedAdapter) {
-    const auto *Reference =
-        cast<DeclRefExpr>(directFunctionReference(Adapter));
-    for (const auto &Argument : Reference->template_arguments()) {
-      const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
-          ? Argument.getTypeSourceInfo() : nullptr;
-      TypeLoc Location = Info ? Info->getTypeLoc() : TypeLoc();
-      const Expr *Source = nullptr;
-      for (unsigned Depth = 0; Location && Depth < 64; ++Depth) {
-        Location = Location.getUnqualifiedLoc();
-        A.chargeExpansion(1, Location.getBeginLoc());
-        if (const auto Ref = Location.getAs<ReferenceTypeLoc>())
-          Location = Ref.getPointeeLoc();
-        else if (const auto Paren = Location.getAs<ParenTypeLoc>())
-          Location = Paren.getInnerLoc();
-        else {
-          if (const auto Deduced = Location.getAs<DecltypeTypeLoc>())
-            Source = Deduced.getUnderlyingExpr();
-          break;
-        }
-      }
-      // An explicit decltype(wrapper) has its own reference expression. Keep
-      // its normal TypeLoc/expression traversal, but retain the same proven
-      // auto carrier instead of its deliberately untraversed auto TypeLoc.
-      // Aliases, compound expressions and other factories gain no such proof.
-      if (!Source || !isa<DeclRefExpr>(Source->IgnoreParens()) ||
-          !Retain(Retain, Source, 0))
-        return std::nullopt;
-    }
-  }
-  return Result;
+  return functionalMemFnCarrierSource(A, Call->getArg(0), Factory, Member,
+                                      Invoke->ErasedAdapter);
 }
 
 static bool utilityUniquePtrElementConstructionSource(
@@ -11106,6 +11125,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return nullptr;
     return Method;
   }
+  void retainMemFnCarriers(const FunctionalMemFnSource &MemFn) {
+    for (const auto *Carrier : MemFn.Carriers) {
+      auto [Source, New] =
+          MemFnCarrierSources.emplace(Carrier, MemFn.Callable);
+      if (New)
+        A.chargeExpansion(1, Carrier->getExprLoc());
+      else if (Source->second != MemFn.Callable)
+        A.reject(Carrier->getExprLoc(), "mem_fn carrier source",
+                 "An erased wrapper requires one original member source.");
+    }
+  }
   void collectOperationSource(const Stmt *S) {
     if (auto Found = MemFnCarrierSources.find(S);
         Found != MemFnCarrierSources.end()) {
@@ -11188,15 +11218,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           if (!UserInvoke)
             if (const auto MemFn = functionalMemFnSource(A, Call)) {
               UserInvoke = MemFn->Member;
-              for (const auto *Carrier : MemFn->Carriers) {
-                auto [Source, New] =
-                    MemFnCarrierSources.emplace(Carrier, MemFn->Callable);
-                if (New)
-                  A.chargeExpansion(1, Carrier->getExprLoc());
-                else if (Source->second != MemFn->Callable)
-                  A.reject(Carrier->getExprLoc(), "mem_fn carrier source",
-                           "An erased wrapper requires one original member source.");
-              }
+              retainMemFnCarriers(*MemFn);
+              for (const auto *Source : MemFn->TemplateSources)
+                operationTypeDependency(Source);
             }
         }
         if (ReferenceInvoke || UserInvoke ||
@@ -11931,12 +11955,27 @@ public:
       if (auto Stored =
               approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
         // The deduced __mem_fn specialization is an authenticated, erased
-        // carrier. Its `auto` declaration has no written template arguments to
-        // validate, so traverse only a direct factory initializer. An
-        // authenticated copy initializer is erased with its declaration.
-        return WalkUpFromVarDecl(D) &&
-               (Stored->Initializer != Stored->Factory ||
-                TraverseStmt(D->getInit()));
+        // carrier. Traverse a direct factory normally. A copy's adapter can
+        // have written arguments even though the local itself uses auto; visit
+        // those at their declaration with the exact retained member source.
+        if (!WalkUpFromVarDecl(D))
+          return false;
+        if (Stored->Initializer == Stored->Factory)
+          return TraverseStmt(D->getInit());
+        if (Stored->Adapter) {
+          const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+              directFunctionReference(Stored->Adapter));
+          if (Reference && Reference->hasExplicitTemplateArgs()) {
+            if (const auto Source = functionalMemFnCarrierSource(
+                    A, Stored->Initializer, Stored->Factory, Stored->Member,
+                    Stored->Adapter))
+              retainMemFnCarriers(*Source);
+            for (const auto &Argument : Reference->template_arguments())
+              if (!TraverseTemplateArgumentLoc(Argument))
+                return false;
+          }
+        }
+        return true;
       }
     }
     return RecursiveASTVisitor<Allowlist>::TraverseVarDecl(D);

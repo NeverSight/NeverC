@@ -10943,6 +10943,7 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     const ASTContext &Context) {
   const auto *Requested = Variable;
   const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
+  const CallExpr *RequestedAdapter = nullptr;
   std::set<const VarDecl *> Seen;
   while (functionalErasedLocalVariable(S, SM, Variable)) {
     if (!Seen.insert(Variable->getCanonicalDecl()).second)
@@ -10967,6 +10968,8 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
            *Operation != UtilityOperation::MoveIfNoexcept &&
            *Operation != UtilityOperation::AsConst))
         return std::nullopt;
+      if (Variable == Requested)
+        RequestedAdapter = Adapter;
       Argument = functionalInvokeStrippedExpression(Adapter->getArg(0));
     }
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Argument);
@@ -11048,8 +11051,8 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     return std::nullopt;
   if (!supportedFunctionalStoredMember(S, SM, Context, Member))
     return std::nullopt;
-  return FunctionalStoredMemFn{Requested, RequestedInitializer, Factory,
-                               Address, Member};
+  return FunctionalStoredMemFn{Requested, RequestedInitializer, RequestedAdapter,
+                               Factory, Address, Member};
 }
 
 static bool functionalInvokeParameterReference(

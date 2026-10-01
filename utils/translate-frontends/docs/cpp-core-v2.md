@@ -2611,8 +2611,19 @@ source. Other aliases, compound expressions and independently initialized
 wrappers gain no type-source exemption. Written template arguments, the
 original selected member and receiver/argument/default/temporary sources
 remain independently checked.
-Nested call-site adapters, adapter-based copy/move initializer chains and
-explicitly written wrapper types retain separate source requirements.
+The same four adapters may appear in an exact local `auto` copy/move
+initializer chain used by these queries. Each copied wrapper must trace to the
+same original factory; every initializer adapter independently supplies its
+pinned declaration family, exact reference flow and nonthrowing signature.
+Ordinary copies, const copies and these adapted copies may be combined, then
+called directly, through `std::invoke` or through one final call-site adapter.
+Written adapter type arguments retain the same `decltype` boundary above.
+They are traversed at their owning copy declaration, and queries retain those
+actual completed type sources as well as the original member. Erasing a copy
+does not skip its written arguments or replay their traversal at a later query.
+Nested adapters within one initializer or final use, adapted temporary factory
+initializers and explicitly written wrapper types retain separate source
+requirements.
 
 Other cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
