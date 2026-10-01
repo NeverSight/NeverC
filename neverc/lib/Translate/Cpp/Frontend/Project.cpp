@@ -141,6 +141,26 @@ static bool hasNoexceptFunctionType(QualType Type, unsigned Depth = 0) {
   return false;
 }
 
+static void appendNoexceptArgumentIdentity(const TemplateArgument &Argument,
+                                           const std::string &Position,
+                                           std::string &Identity,
+                                           unsigned Depth = 0) {
+  if (Depth > 64)
+    return;
+  if (Argument.getKind() == TemplateArgument::Type) {
+    const auto Type = Argument.getAsType().getCanonicalType();
+    if (hasNoexceptFunctionType(Type, Depth + 1))
+      Identity +=
+          ":noexcept-argument:" + Position + ":" + digest(Type.getAsString());
+  } else if (Argument.getKind() == TemplateArgument::Pack) {
+    unsigned Index = 0;
+    for (const auto &Element : Argument.pack_elements())
+      appendNoexceptArgumentIdentity(Element,
+                                     Position + "." + std::to_string(Index++),
+                                     Identity, Depth + 1);
+  }
+}
+
 std::string Adapter::identity(const NamedDecl *D) {
   if (S.project()) {
     if (const auto *F = dyn_cast<FieldDecl>(D))
@@ -206,8 +226,19 @@ std::string Adapter::identity(const NamedDecl *D) {
       }
       // Clang's specialization USR omits its primary template. The same
       // prefix also separates static locals and local record/field identities.
-      if (Owner)
+      if (Owner) {
         Identity = identity(Owner->getPrimaryTemplate()) + ":instance:" + Identity;
+        // The USR can also omit noexcept in a function's type arguments,
+        // including unused arguments absent from its callable signature.
+        // Apply the same canonical argument/pack positions to instance-local
+        // declarations so fields, parameters and static storage stay distinct.
+        if (const auto *Arguments = Owner->getTemplateSpecializationArgs()) {
+          unsigned Index = 0;
+          for (const auto &Argument : Arguments->asArray())
+            appendNoexceptArgumentIdentity(Argument, std::to_string(Index++),
+                                           Identity);
+        }
+      }
     }
   }
   if (S.project()) {

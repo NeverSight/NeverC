@@ -8956,14 +8956,26 @@ fields, parameters and scalar static variables inherit that identity. Repeated
 calls and redeclarations share storage; distinct instances or primaries do not.
 No generic source blob, opaque IR or new runtime dispatch is emitted.
 
+Function-template type arguments containing a nonthrowing function type also
+retain their canonical `noexcept` identity, including callback pointers through
+pointer/reference/array layers and class-template arguments. Clang's
+specialization USR can omit this distinction, so the producer supplements it
+with each such canonical type and its argument position, including positions
+within packs. This applies even to unused type arguments absent from the
+emitted function signature. Fields, parameters, methods and static storage in
+instance-local records use the same owning specialization arguments. A callback
+with `noexcept(false)` shares its potentially throwing instance; aliases of
+`noexcept` or `noexcept(true)` share their nonthrowing instance. The two
+categories retain separate callable addresses, local record types and static
+storage. Actual callback invocation, explicit instantiations and redeclarations,
+SDK array arguments and scalar reference-cast queries keep their existing source
+and signature checks. No new callback signatures, template-argument kinds or
+original-source exceptions are admitted by this identity correction.
+
 The current single-unit definition restriction remains: selected calls need a
 body, explicit declarations need an in-unit definition, and a signature-only
 call still fails under `sizeof` or `noexcept`. Generic uninstantiated declarations
 and unselected implicit overload candidates alone do not require a body.
-Function-template instances whose callback-pointer template arguments differ
-only by `noexcept` can still share a Clang specialization USR and fail IR
-validation when both are emitted. The scalar reference-cast query source above
-does not change that remaining function-identity gap.
 These remaining closure limits mean full C++ template support is unfinished.
 Core v2 enables the pinned post-C++17 extension diagnostic groups and rejects
 those warnings as TR0201 even in uninstantiated patterns or discarded branches.

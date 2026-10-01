@@ -21264,6 +21264,122 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundari
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2CallbackFunctionTemplatesPreserveNoexceptIdentityAndStorage) {
+  const auto Source = tmpFile("callback-function-template-identities.cpp");
+  const auto Output = tmpFile("callback-function-template-identities.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <array>
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+using FalseCallback = int (*)(int) noexcept(false);
+using TrueCallback = int (*)(int) noexcept(true);
+using NoexceptFunction = int(int) noexcept;
+int one(int n) { return n + 1; }
+int two(int n) noexcept { return n + 2; }
+int live, destroyed;
+template <class T> int invoke(T &p) { return p(1); }
+template <class T> int &counter() { static int n = 0; return n; }
+template <class... T> int &packed() { static int n = 0; return n; }
+template <class A, class B> int &positioned() { static int n = 0; return n; }
+template <class T> struct Wrapper { T value; };
+template <class T> auto make(T pointer) {
+  struct Local {
+    T pointer;
+    explicit Local(T p) noexcept : pointer(p) { ++live; }
+    ~Local() noexcept { --live; ++destroyed; }
+    int get(int n) const { return pointer(n); }
+    int &count() { static int n = 0; return n; }
+  };
+  return Local(pointer);
+}
+template <class T> T &alias(T &p) { return std::forward<T &>(p); }
+template <class T> int repeat(T p) { return p(3); }
+template <class T> int repeat(T p);
+template int repeat<Callback>(Callback);
+extern template int repeat<NoexceptCallback>(NoexceptCallback);
+template int repeat<TrueCallback>(TrueCallback);
+int main() {
+  Callback a = one;
+  NoexceptCallback b = two;
+  if (invoke(a) != 2 || invoke(b) != 3 || repeat(a) != 4 || repeat(b) != 5)
+    return 1;
+  int &ca = counter<Callback>(), &cb = counter<NoexceptCallback>();
+  ca = 11; cb = 22;
+  if (&ca == &cb || counter<FalseCallback>() != 11 || counter<TrueCallback>() != 22 ||
+      &counter<FalseCallback>() != &ca || &counter<TrueCallback>() != &cb)
+    return 2;
+  ++counter<Callback>();
+  if (ca != 12 || cb != 22)
+    return 3;
+  auto fa = &counter<Callback>, fb = &counter<NoexceptCallback>;
+  if (fa == fb || fa != &counter<FalseCallback> || fb != &counter<TrueCallback> ||
+      &fa() != &ca || &fb() != &cb)
+    return 4;
+  int &cc = packed<Callback, Callback>(), &cn = packed<Callback, NoexceptCallback>();
+  int &nc = packed<NoexceptCallback, Callback>(), &nn = packed<NoexceptCallback, NoexceptCallback>();
+  cc = 1; cn = 2; nc = 3; nn = 4;
+  if (&cc == &cn || &cc == &nc || &cc == &nn || &cn == &nc || &cn == &nn || &nc == &nn ||
+      packed<FalseCallback, TrueCallback>() != 2 || packed<TrueCallback, FalseCallback>() != 3)
+    return 5;
+  int &left = positioned<NoexceptCallback, Callback>();
+  int &right = positioned<Callback, NoexceptCallback>();
+  left = 5; right = 6;
+  if (&left == &right || positioned<TrueCallback, FalseCallback>() != 5 ||
+      positioned<FalseCallback, TrueCallback>() != 6)
+    return 6;
+  using Pointer = NoexceptCallback *;
+  using Array = NoexceptCallback[2];
+  counter<Callback *>() = 31;
+  counter<Pointer>() = 32;
+  counter<Callback[2]>() = 33;
+  counter<Array>() = 34;
+  counter<Wrapper<Callback>>() = 35;
+  counter<Wrapper<NoexceptCallback>>() = 36;
+  counter<std::array<Callback, 2>>() = 37;
+  counter<std::array<NoexceptCallback, 2>>() = 38;
+  counter<NoexceptFunction>() = 39;
+  if (counter<Callback *>() != 31 || counter<Pointer>() != 32 ||
+      counter<Callback[2]>() != 33 || counter<Array>() != 34 ||
+      counter<Wrapper<Callback>>() != 35 || counter<Wrapper<NoexceptCallback>>() != 36 ||
+      counter<std::array<Callback, 2>>() != 37 || counter<std::array<NoexceptCallback, 2>>() != 38 ||
+      counter<NoexceptFunction>() != 39)
+    return 7;
+  {
+    auto first = make(a), second = make(a);
+    auto third = make(b);
+    static_assert(!__is_same(decltype(first), decltype(third)));
+    static_assert(__is_same(decltype(first), decltype(second)));
+    first.count() = 41;
+    third.count() = 42;
+    if (live != 3 || destroyed || &first.count() != &second.count() ||
+        &first.count() == &third.count() || second.count() != 41 ||
+        third.count() != 42 || first.get(4) != 5 || third.get(4) != 6)
+      return 8;
+  }
+  if (live || destroyed != 3 || &alias(a) != &a || &alias(b) != &b)
+    return 9;
+  static_assert(__is_same(decltype(std::move(alias(a))), Callback &&));
+  static_assert(__is_same(decltype(std::forward<NoexceptCallback &>(alias(b))), NoexceptCallback &));
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-function-template-identities" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTemplatesPreserveSpecializationIdentityAndLifetime) {
   const auto Source = tmpFile("function_templates.cpp");
   const auto Output = tmpFile("function_templates.nc");
@@ -41388,9 +41504,6 @@ void materialize_default_deleters() {
 TEST_F(TranslateTest, CoreV2ScalarValueAdapterQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("scalar-value-adapter-queries.cpp");
   const auto Output = tmpFile("scalar-value-adapter-queries.nc");
-  // Distinct callback instances keep this fixture focused on cast/query source.
-  // Function-template identities differing only by noexcept remain a separate
-  // gap.
   writeFile(Source, R"cpp(
 #include <utility>
 namespace Imported {
@@ -41440,7 +41553,7 @@ int nonthrowing(int n) noexcept { return n + 3; }
 enum class Wide : unsigned long long { Value = 4 };
 enum Small : unsigned char { First = 5 };
 struct Box { int n; };
-template <int Category = 0, class T> bool queries(T &value, const T &cv) {
+template <class T> bool queries(T &value, const T &cv) {
   T &&moved = (Imported::move)(value);
   T &same = Alias::forward<T &>(value);
   const T &&view = Directed::forward<const T>(cv);
@@ -41507,7 +41620,7 @@ int main() {
       !queries(null, null) || !queries(pointer, pointer) ||
       !queries(qualified_pointer, qualified_pointer) || !queries(nested_pointer, nested_pointer) ||
       !queries(opaque, opaque) || !queries(array_pointer, array_pointer) ||
-      !queries(record_pointer, record_pointer) || !queries(fn, fn) || !queries<1>(nf, nf))
+      !queries(record_pointer, record_pointer) || !queries(fn, fn) || !queries(nf, nf))
     return 1;
   const Callback cfn = fn;
   static_assert(__is_same(decltype(Alias::move(cfn)), const Callback &&));
