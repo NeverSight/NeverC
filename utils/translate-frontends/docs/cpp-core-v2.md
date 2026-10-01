@@ -2144,8 +2144,22 @@ referent address and copy only wrapper pointer storage; cleanup never owns the
 referent. Source substitutions, independent function addresses, cast/indirect
 callees, erased exception specifications and unsupported referents remain
 rejected. Deleted rvalue overloads retain native C++ diagnostics. Imported
-factory names use the same proof; wrapper access/invocation query sources
-retain separate requirements.
+factory names use the same proof.
+
+Exact `reference_wrapper::get()` and object-reference conversions also support
+result-source queries, including direct, parenthesized, const and raw-pointer
+receivers and admitted temporary wrappers. The result retains the referent's
+type, qualification and lvalue identity; `get()` also preserves admitted
+function signatures. A selected member without an instantiated body uses the
+pinned primary's exact `return *this->__f_` body, tied to the specialization's
+authenticated pointer field. No method body is instantiated for a query.
+The source proof belongs to the exact bound member call and its nonthrowing
+prototype. Original receiver expressions and initializers, aliases, template
+arguments, array bounds, signatures, selected defaults and temporary cleanup
+remain independently checked and execute no effects in unevaluated queries.
+Source member specializations, independent member addresses, indirect member
+calls, erased exception specifications and unsupported referents remain
+rejected. Wrapper invocation queries retain their separate requirements.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent

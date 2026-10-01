@@ -2992,6 +2992,21 @@ static bool functionalReferenceFactorySource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
+static bool functionalReferenceAccessSource(Adapter &A, const CallExpr *Call) {
+  if (!approvedFunctionalReferenceAccessCall(A.S, A.Sources, Call, A.Context))
+    return false;
+  const auto *Method = Call->getDirectCallee();
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  // Only this bound member call receives the SDK source proof. Receiver
+  // expressions, written types and temporary lifetimes close independently.
+  return Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !Prototype->getNoexceptExpr() &&
+         operationCalleePrototype(Call) == Prototype &&
+         utilitySDKFunctionSource(A, Method,
+                                  "__functional/reference_wrapper.h",
+                                  /*RequireDefinition=*/false);
+}
+
 static bool utilityUniquePtrElementConstructionSource(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   const auto *Prototype =
@@ -10375,6 +10390,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   if (Dependencies->UniquePtrDeletions.insert(Call).second)
                     A.chargeExpansion(1, Call->getExprLoc());
             }
+          }
+        if (functionalReferenceAccessSource(A, Call))
+          if (const auto *Reference = directMethodReference(Call)) {
+            auto [Entry, Inserted] =
+                AuthenticatedUtilityReferences.emplace(Reference, Call);
+            if (Inserted)
+              A.chargeExpansion(1, Call->getExprLoc());
+            if (Entry->second == Call)
+              AuthenticatedUtilityCall = Call;
           }
         if (utilityUniquePtrSwapSource(A, Call) ||
             utilityUniquePtrNullComparisonSource(A, Call) ||

@@ -8943,7 +8943,7 @@ approvedFunctionalReferenceAccessCallImpl(
   if (!MemberCall || !Method || !Reference || !Object || !Wrapper ||
       !Prototype || !Prototype->isNothrow() || (!Get && !Conversion) ||
       Method->isStatic() || Method->isVariadic() || !Method->isConst() ||
-      !Method->isInlined() || !Method->hasBody() || Method->getNumParams() ||
+      !Method->isInlined() || Method->getNumParams() ||
       Call->getNumArgs() || !Call->isLValue() ||
       !Method->getReturnType()->isLValueReferenceType() ||
       !Context.hasSameType(Method->getReturnType()->getPointeeType(),
@@ -8958,7 +8958,57 @@ approvedFunctionalReferenceAccessCallImpl(
        !(Conversion ? S.owns(SM, Call->getExprLoc())
                     : S.owns(SM, Reference->getExprLoc()))))
     return std::nullopt;
-  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *BodyMethod = Method;
+  const auto *StoredPointer = Wrapper->Pointer;
+  if (!Method->hasBody()) {
+    // Unevaluated access selects the member without instantiating its body.
+    // Authenticate only the primary's exact `return *this->__f_` pattern;
+    // the selected receiver, result and concrete pointer layout above still
+    // belong to this specialization, not to the dependent pattern.
+    const auto *Specialization =
+        dyn_cast<ClassTemplateSpecializationDecl>(Wrapper->Record);
+    const auto *Primary =
+        Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+    const auto *RecordPattern =
+        Primary ? Primary->getTemplatedDecl()->getDefinition() : nullptr;
+    BodyMethod = dyn_cast_or_null<CXXMethodDecl>(
+        Method->getInstantiatedFromMemberFunction());
+    if (!Specialization || !RecordPattern || !BodyMethod ||
+        Specialization->getSpecializedTemplateOrPartial()
+            .is<ClassTemplatePartialSpecializationDecl *>() ||
+        Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        BodyMethod->getParent() != RecordPattern ||
+        BodyMethod->getInstantiatedFromMemberFunction() ||
+        !BodyMethod->hasBody() ||
+        BodyMethod->getLocation() != Method->getLocation() ||
+        std::distance(RecordPattern->field_begin(),
+                      RecordPattern->field_end()) != 1)
+      return std::nullopt;
+    StoredPointer = *RecordPattern->field_begin();
+    unsigned Declarations = 0;
+    auto Pinned = [&](const Decl *Declaration) {
+      return Declaration && ++Declarations <= 64 &&
+             !Declaration->isInvalidDecl() &&
+             approvedStandardSDKDeclaration(S, SM, Declaration) &&
+             cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                            "__functional/reference_wrapper.h");
+    };
+    if (!Pinned(RecordPattern) || !Pinned(StoredPointer) ||
+        !Pinned(BodyMethod->getDefinition()) ||
+        StoredPointer->getLocation() != Wrapper->Pointer->getLocation() ||
+        !StoredPointer->getType()->isPointerType() ||
+        !BodyMethod->getReturnType()->isLValueReferenceType() ||
+        !Context.hasSameType(BodyMethod->getReturnType()->getPointeeType(),
+                             StoredPointer->getType()->getPointeeType()))
+      return std::nullopt;
+    for (const auto *Declaration : Method->redecls())
+      if (!Pinned(Declaration))
+        return std::nullopt;
+    for (const auto *Declaration : BodyMethod->redecls())
+      if (!Pinned(Declaration))
+        return std::nullopt;
+  }
+  const auto *Body = dyn_cast<CompoundStmt>(BodyMethod->getBody());
   const auto *Return = Body && Body->size() == 1
                            ? dyn_cast<ReturnStmt>(*Body->body_begin())
                            : nullptr;
@@ -8972,7 +9022,8 @@ approvedFunctionalReferenceAccessCallImpl(
           ? dyn_cast<MemberExpr>(
                 Dereference->getSubExpr()->IgnoreParenImpCasts())
           : nullptr;
-  if (!Field || Field->getMemberDecl() != Wrapper->Pointer)
+  if (!Field || Field->getMemberDecl() != StoredPointer || !Field->isArrow() ||
+      !isa<CXXThisExpr>(Field->getBase()->IgnoreParenImpCasts()))
     return std::nullopt;
   return FunctionalReferenceAccessCall{*Wrapper, Object, ObjectIsArrow};
 }
