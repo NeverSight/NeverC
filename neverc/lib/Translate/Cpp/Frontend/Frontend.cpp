@@ -3648,7 +3648,7 @@ static std::optional<FunctionalMemFnSource> functionalMemFnCarrierSource(
         approvedFunctionalStoredMemFn(A.S, A.Sources, Variable, A.Context);
     return Info && Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
            Stored && Stored->Factory == Factory &&
-           (!Stored->Adapter || RetainAdapter(Stored->Adapter)) &&
+           llvm::all_of(Stored->Adapters, RetainAdapter) &&
            Self(Self, Stored->Initializer, Depth + 1);
   };
   if (!Retain(Retain, Expression, 0))
@@ -11956,21 +11956,27 @@ public:
       if (auto Stored =
               approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
         // The deduced __mem_fn specialization is an authenticated, erased
-        // carrier. Traverse a direct factory normally. A copy's adapter can
+        // carrier. Traverse a direct factory normally. Each copy adapter can
         // have written arguments even though the local itself uses auto; visit
-        // those at their declaration with the exact retained member source.
+        // every layer at its declaration with the exact retained member source.
         if (!WalkUpFromVarDecl(D))
           return false;
         if (Stored->Initializer == Stored->Factory)
           return TraverseStmt(D->getInit());
-        if (Stored->Adapter) {
+        bool CheckedCarriers = false;
+        for (const auto *Adapter : Stored->Adapters) {
           const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
-              directFunctionReference(Stored->Adapter));
+              directFunctionReference(Adapter));
           if (Reference && Reference->hasExplicitTemplateArgs()) {
-            if (const auto Source = functionalMemFnCarrierSource(
-                    A, Stored->Initializer, Stored->Factory, Stored->Member,
-                    {Stored->Adapter}))
-              retainMemFnCarriers(*Source);
+            // Retain the whole initializer chain once before visiting any of
+            // its written arguments; inner adapters have independent sources.
+            if (!CheckedCarriers) {
+              if (const auto Source = functionalMemFnCarrierSource(
+                      A, Stored->Initializer, Stored->Factory, Stored->Member,
+                      Stored->Adapters))
+                retainMemFnCarriers(*Source);
+              CheckedCarriers = true;
+            }
             for (const auto &Argument : Reference->template_arguments())
               if (!TraverseTemplateArgumentLoc(Argument))
                 return false;
