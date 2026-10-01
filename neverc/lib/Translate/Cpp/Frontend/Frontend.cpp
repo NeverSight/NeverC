@@ -2923,11 +2923,14 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
                        Type->isSpecificBuiltinType(BuiltinType::Float) ||
                        Type->isSpecificBuiltinType(BuiltinType::Double) ||
                        Type->isPointerType() || Type->isNullPtrType());
-  // This authenticates only the reference cast. Pointer pointees, callback
-  // signatures and every written operand/type source still close separately.
+  // The tuple-like descriptor supplies only authenticated storage. The exact
+  // reference cast, element layouts and every original operand/type source
+  // still close separately; this proof does not perform container lifecycle.
   return (Scalar || ((*Operation == UtilityOperation::Move ||
                       *Operation == UtilityOperation::Forward) &&
-                     utilityUniquePtrSource(A, Type->getAsCXXRecordDecl()))) &&
+                     (utilityUniquePtrSource(A, Type->getAsCXXRecordDecl()) ||
+                      approvedUtilityTupleLikeSource(A.S, A.Sources, Type,
+                                                     A.Context)))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 

@@ -257,6 +257,23 @@ outside this scalar query boundary. Rvalue arguments forwarded as lvalue
 results, source replacements, independent function addresses, casts or
 compound postfix callees and erased nonthrowing signatures remain rejected.
 
+The same exact `move`/`forward` reference-cast proof also supports result-source
+queries on admitted `std::array`, `std::pair` and `std::tuple` objects, including
+empty containers, reference fields, mixed reference/value fields, trivial
+record and wrapper values, and admitted nested compositions. Their existing
+tuple-like descriptor authenticates storage; original element types, bounds,
+layouts, receiver expressions, defaults, exception specifications and temporary
+lifetimes still complete independently. Mutable and const objects retain their
+cv-qualified rvalue results or collapsed `forward<T&>` lvalue results. Direct
+and parenthesized names, namespace/block imports, reexports, nested reference
+casts and subsequent checked `get` projections use the same proof. Queries
+perform no moves, copies, assignments or cleanup; evaluated casts retain the
+same object and reference-field bindings. Volatile containers, unsupported
+elements, source substitutions, indirect callees and rvalues forwarded as
+lvalues retain rejection. `as_const`/`move_if_noexcept` container queries,
+nontrivial owned value elements and query-only factories retain separate source
+requirements.
+
 Exact pinned `std::as_const` calls support the same admitted scalar and pointer
 result-source queries. An lvalue argument selects the nondeleted
 `const T& (T&) noexcept` overload and retains const already present on the
@@ -344,8 +361,7 @@ wrapper storage does not consume its referent's layout. The proof belongs to
 the exact call and its callee reference; independent getter addresses,
 indirect/cast callees, source specializations,
 invalid indices and ambiguous type selections retain their existing rejection.
-Pair `move`/`forward` result queries and query-only factory construction retain
-their separate source requirements.
+Query-only pair factory construction retains its separate source requirements.
 
 Direct element-wise construction and `std::make_pair` additionally store
 source-owned nontrivial standard-layout record fields when each selected
@@ -502,9 +518,8 @@ Nested tuple, pair, array and wrapper projections use their admitted layout
 source; constant getters may supply checked array dimensions. The proof belongs
 to the exact call and its callee reference. Independent getter addresses,
 indirect/cast callees, source specializations, invalid indices and nonunique or
-absent type selections retain rejection. Tuple `move`/`forward` result queries,
-owning temporaries and query-only factories retain their separate source
-requirements.
+absent type selections retain rejection. Owning temporaries and query-only
+factories retain their separate source requirements.
 
 Direct element-wise construction and `std::make_tuple` may also store
 source-owned nontrivial standard-layout records. Each selected libc++ tuple,
