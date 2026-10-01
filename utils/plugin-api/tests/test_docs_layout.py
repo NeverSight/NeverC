@@ -90,6 +90,50 @@ class DocumentationLayoutTests(unittest.TestCase):
             {"compile-time-type_traits": 0, "compile-time-type_traits-1": 1},
         )
 
+    def test_inline_code_is_not_a_navigation_link(self):
+        text = (
+            "The `operator new[](size_t,\nvoid *)` and "
+            "`operator[](size_t)` signatures are literal.\n"
+            "``[fake`label](missing-code.md)`` is literal too.\n"
+            "[real](README.md)"
+        )
+        self.assertEqual(nav.page_hrefs(text), ["README.md"])
+        report = nav.Report()
+        nav.check_links(DOCS / "translate.md", text, report, set())
+        self.assertEqual(report.failures, [])
+        with patch.object(Path, "read_text", return_value=text):
+            self.assertEqual(
+                nav.linked_files([DOCS / "translate.md"]), {"docs/README.md"}
+            )
+
+    def test_inline_code_labels_keep_real_links(self):
+        text = "[`type_traits`](README.md) and [plain](build.md)"
+        self.assertEqual(
+            nav.inline_links(text),
+            [("`type_traits`", "README.md"), ("plain", "build.md")],
+        )
+
+    def test_backticks_in_link_destinations_do_not_start_code(self):
+        text = "[one](a`b.md) [two](c`d.md)"
+        self.assertEqual(
+            nav.inline_links(text),
+            [("one", "a`b.md"), ("two", "c`d.md")],
+        )
+
+    def test_inline_code_does_not_hide_adjacent_or_unclosed_links(self):
+        cases = [
+            "`code`[bad](missing.md)",
+            "`unclosed [bad](missing.md)",
+            r"\`[bad](missing.md)\`",
+            "`unclosed\n\n[bad](missing.md)\n`",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(nav.page_hrefs(text), ["missing.md"])
+                report = nav.Report()
+                nav.check_links(DOCS / "translate.md", text, report, set())
+                self.assertTrue(report.failures)
+
     def test_language_selector_requires_all_locales(self):
         page = DOCS / "zh-CN/build.md"
         text = page.read_text().replace(nav.bar_entry(page, "ja"), "missing-japanese.md")

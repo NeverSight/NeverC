@@ -160,6 +160,16 @@ HEADING = re.compile(r"^(#{1,6})\s")
 TABLE_ROW = re.compile(r"^\s*\|")
 TICK = re.compile(r"`([^`\n]+)`")
 INLINE_LINK = re.compile(r"(?<!\!)\[([^\]\[]*(?:\[[^\]]*\][^\]\[]*)*)\]\(([^)]+)\)")
+# Consume code spans and real links in source order. A link destination may
+# itself contain backticks; those must not hide a later genuine link.
+# Escaped backslashes/backticks cannot open a span, and a code span may cross
+# a soft line break but not a paragraph break.
+LINK_OR_CODE = re.compile(
+    r"\\[\\`]|(?<!`)(?P<ticks>`+)(?!`)"
+    r"(?:(?!\n[ \t]*\n).)*?(?<!`)(?P=ticks)(?!`)"
+    r"|(?P<link>" + INLINE_LINK.pattern + ")",
+    re.DOTALL,
+)
 ANY_LINK = re.compile(
     r"(?<!\!)\[([^\]\[]*(?:\[[^\]]*\][^\]\[]*)*)\](\([^)]*\)|\[[^\]]*\])?"
 )
@@ -555,10 +565,20 @@ def check_target(
         )
 
 
+def inline_links(text: str) -> list[tuple[str, str]]:
+    """Read links in prose without treating code examples as navigation."""
+    links: list[tuple[str, str]] = []
+    for match in LINK_OR_CODE.finditer(text):
+        link = match.group("link")
+        if link is not None:
+            links.extend(INLINE_LINK.findall(link))
+    return links
+
+
 def check_links(
     page: Path, text: str, report: Report, debt: set[str]
 ) -> None:
-    for label, href in INLINE_LINK.findall(body(text)):
+    for label, href in inline_links(body(text)):
         href = href.strip()
         check_target(page, f"[{label}]({href})", href, report, debt)
 
@@ -716,7 +736,7 @@ def page_hrefs(text: str) -> list[str]:
     compares which labels a page defines and stops there, so a definition
     repointed in one locale alone changes where that locale's readers land
     with the two indexes still matching."""
-    hrefs = [href for _, href in INLINE_LINK.findall(body(text))]
+    hrefs = [href for _, href in inline_links(body(text))]
     for _, line in prose_lines(text):
         definition = DEFINITION.match(line)
         if definition:
