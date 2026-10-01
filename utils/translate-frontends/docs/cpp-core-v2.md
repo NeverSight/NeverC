@@ -329,6 +329,24 @@ admitted `std::pair` values. Mutation
 requires every recursive leaf to be assignable. Pair objects retain their two
 fields and ordinary value behavior. Type-based `get` is accepted only when
 libc++ resolves it unambiguously.
+
+Exact admitted index- and unique-type pair `get` calls also supply their pinned
+SDK signature and body source for result-type queries without instantiating an
+otherwise unused concrete getter body. Mutable and const lvalues and xvalues
+retain their cv qualification and reference categories, including reference
+fields, whose referents do not acquire const from a const pair. Classification,
+`decltype`, `sizeof`, `alignof` and `noexcept` queries retain the original element,
+written template-argument, receiver-expression and selected-default source
+checks without evaluating their operands. Constant getters may supply checked
+array dimensions. Projected `reference_wrapper` values use their authenticated
+pointer/empty-base layout while retaining the original referent type source;
+wrapper storage does not consume its referent's layout. The proof belongs to
+the exact call and its callee reference; independent getter addresses,
+indirect/cast callees, source specializations,
+invalid indices and ambiguous type selections retain their existing rejection.
+Pair `move`/`forward` result queries, tuple getter queries and query-only factory
+construction retain their separate source requirements.
+
 Direct element-wise construction and `std::make_pair` additionally store
 source-owned nontrivial standard-layout record fields when each selected
 libc++ member initializer identifies that field's source-owned copy or move

@@ -35972,9 +35972,6 @@ int probe(std::array<std::byte,2>& a){static_assert(__is_same(decltype(std::get<
       {"tuple-get-stays-independent", R"cpp(#include <tuple>
 int probe(std::tuple<int&>& a){static_assert(__is_same(decltype(std::get<0>(a)),int&));return 0;}
 )cpp", "TR0201"},
-      {"pair-get-stays-independent", R"cpp(#include <utility>
-int probe(std::pair<int,long>& a){static_assert(__is_same(decltype(std::get<0>(a)),int&));return 0;}
-)cpp", "TR0201"},
       {"move-call-stays-independent", R"cpp(#include <array>
 #include <utility>
 int probe(std::array<int,2>& a){static_assert(__is_same(decltype(std::get<0>(std::move(a))),int&&));return 0;}
@@ -36008,6 +36005,262 @@ int probe(std::array<int,2>& row) {
     writeFile(Source, Case.Source);
     expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
                Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairGetQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-get-queries.cpp");
+  const auto Output = tmpFile("pair-get-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <utility>
+namespace Imported { using std::get; }
+namespace Reexport { using Imported::get; }
+namespace Alias = Reexport;
+using Pair = std::pair<int, double>;
+using References = std::pair<int &, const long &>;
+using RvalueReferences = std::pair<int &&, long &>;
+using Mixed = std::pair<int &, double>;
+struct Element { int value; int source_extent[2]; };
+using Records = std::pair<Element, int>;
+using Row = std::array<int, 2>;
+using Nested = std::pair<Pair, Row>;
+using Wrapper = std::reference_wrapper<Element>;
+using Wrapped = std::pair<Wrapper, int>;
+int effects, defaults;
+Pair &source(Pair &pair, int n = (++defaults, 1)) noexcept {
+  ++effects; return pair;
+}
+template <class T> int query(T &pair) {
+  using Alias::get;
+  static_assert(__is_same(decltype(get<0>(pair)), int &));
+  static_assert(__is_same(decltype((get<int>)(pair)), int &));
+  static_assert(sizeof(get<0>((++effects, pair))) == sizeof(int));
+  return effects;
+}
+int scalar_queries(Pair &pair, const Pair &constant) {
+  static_assert(__is_same(decltype(Alias::get<0>(pair)), int &));
+  static_assert(__is_same(decltype(Alias::get<1>(constant)), const double &));
+  static_assert(__is_same(decltype(Alias::get<int>(constant)), const int &));
+  static_assert(__is_same(decltype(Alias::get<0>(static_cast<Pair &&>(pair))), int &&));
+  static_assert(__is_same(decltype(Alias::get<double>(static_cast<const Pair &&>(constant))), const double &&));
+  static_assert(__is_lvalue_reference(decltype(Alias::get<int>(pair))));
+  static_assert(__is_rvalue_reference(decltype(Alias::get<0>(static_cast<Pair &&>(pair)))));
+  static_assert(!__is_same(decltype(Alias::get<0>(constant)), int &));
+  static_assert(__is_same(decltype((Alias::get<0>)(pair)), int &));
+  static_assert(__is_same(decltype(Alias::get<(sizeof(int), 0), int, double>(pair)), int &));
+  static_assert(__is_same(decltype(Alias::get<int, double>(pair)), int &));
+  static_assert(__is_same(decltype(Alias::get<double>(source(pair))), double &));
+  static_assert(sizeof(Alias::get<0>(source(pair))) == sizeof(int));
+  static_assert(alignof(decltype(Alias::get<1>(constant))) == alignof(double));
+  static_assert(noexcept(Alias::get<0>(source(pair))));
+  return effects || defaults || query(pair);
+}
+int reference_queries(References &references, const References &constant,
+                      RvalueReferences &rvalues, Mixed &mixed) {
+  static_assert(__is_same(decltype(Alias::get<0>(constant)), int &));
+  static_assert(__is_same(decltype(Alias::get<int &>(constant)), int &));
+  static_assert(__is_same(decltype(Alias::get<1>(references)), const long &));
+  static_assert(__is_same(decltype(Alias::get<0>(static_cast<const References &&>(constant))), int &));
+  static_assert(__is_same(decltype(Alias::get<1>(static_cast<References &&>(references))), const long &));
+  static_assert(__is_same(decltype(Alias::get<0>(rvalues)), int &));
+  static_assert(__is_same(decltype(Alias::get<0>(static_cast<RvalueReferences &&>(rvalues))), int &&));
+  static_assert(__is_same(decltype(Alias::get<1>(static_cast<RvalueReferences &&>(rvalues))), long &));
+  static_assert(__is_same(decltype(Alias::get<0>(mixed)), int &));
+  static_assert(__is_same(decltype(Alias::get<1>(static_cast<const Mixed &&>(mixed))), const double &&));
+  return effects || defaults;
+}
+int composite_queries(Records &records, const Records &constant,
+                      Nested &nested, Wrapped &wrapped) {
+  static_assert(__is_same(decltype(Alias::get<0>(records)), Element &));
+  static_assert(__is_same(decltype(Alias::get<Element>(constant)), const Element &));
+  static_assert(__is_same(decltype(Alias::get<0>(static_cast<Records &&>(records))), Element &&));
+  static_assert(sizeof(Alias::get<0>(records)) == sizeof(Element));
+  static_assert(__is_same(decltype(Alias::get<0>(nested)), Pair &));
+  static_assert(__is_same(decltype(Alias::get<1>(nested)), Row &));
+  static_assert(__is_same(decltype(Alias::get<1>(Alias::get<0>(nested))), double &));
+  static_assert(__is_same(decltype(Alias::get<0>(Alias::get<1>(nested))), int &));
+  static_assert(__is_same(decltype(Alias::get<0>(wrapped)), Wrapper &));
+  static_assert(__is_same(decltype(Alias::get<0>(static_cast<const Wrapped &>(wrapped))), const Wrapper &));
+  static_assert(sizeof(Alias::get<0>(wrapped)) == sizeof(Wrapper));
+  return effects || defaults;
+}
+int main() {
+  Pair pair(1, 2.5);
+  const Pair constant(3, 4.5);
+  int target = 5;
+  long other = 6;
+  References references(target, other);
+  RvalueReferences rvalues(static_cast<int &&>(target), other);
+  Mixed mixed(target, 7.5);
+  Records records(Element{8, {9, 10}}, 11);
+  Nested nested(Pair(12, 13.5), Row{{14, 15}});
+  Wrapped wrapped(std::ref(records.first), 16);
+  if (scalar_queries(pair, constant) ||
+      reference_queries(references, references, rvalues, mixed) ||
+      composite_queries(records, records, nested, wrapped) || effects || defaults)
+    return 1;
+  constexpr std::pair<int, int> dimensions(2, 3);
+  using Fixed = int[Alias::get<0>(dimensions)];
+  static_assert(__is_same(Fixed, int[2]));
+  int &first = Alias::get<0>(source(pair));
+  first = 17;
+  int &referent = Alias::get<0>(static_cast<const References &>(references));
+  referent = 18;
+  double &&second = Alias::get<1>(static_cast<Pair &&>(pair));
+  second = 19.5;
+  Element &record_alias = Alias::get<0>(wrapped).get();
+  record_alias.value = 20;
+  return &first == &pair.first && pair.first == 17 && pair.second == 19.5 &&
+                 &referent == &target && target == 18 &&
+                 &record_alias == &records.first && records.first.value == 20 &&
+                 effects == 1 && defaults == 1 ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-get-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairGetQueriesRequireSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"index-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class T,class U>constexpr typename tuple_element<I,pair<T,U>>::type&get(pair<T,U>&)noexcept;}}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"const-index-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class T,class U>constexpr const typename tuple_element<I,pair<T,U>>::type&get(const pair<T,U>&)noexcept;}}int f(const Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),const int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"type-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,class U>constexpr T&get(pair<T,U>&)noexcept;}}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<int>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"get-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr int&get<0,int,double>(pair<int,double>&p)noexcept{return p.first;}}}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"const-rvalue-get-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr const double&&get<1,int,double>(const pair<int,double>&&p)noexcept{return static_cast<const double&&>(p.second);}}}int f(const Pair&p){static_assert(__is_same(decltype(Reexport::get<1>(static_cast<const Pair&&>(p))),const double&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"pair-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct pair<int,double>{int first;double second;};}}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),int&));return 0;}
+)cpp",
+       "TR0203"},
+      {"independent-get-address", R"cpp(
+using F=int&(*)(Pair&)noexcept;int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),int&));static_assert(sizeof(static_cast<F>(&Reexport::get<0,int,double>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"cast-get-callee", R"cpp(
+using F=int&(*)(Pair&)noexcept;int f(Pair&p){static_assert(__is_same(decltype(static_cast<F>(&Reexport::get<0,int,double>)(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-get-operand", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>((sizeof(long double),p))),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-get-index", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<(sizeof(long double),0)>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-get-type", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<decltype(static_cast<int>(sizeof(long double)))>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"element-original-extent", R"cpp(
+struct Element{int value[(sizeof(long double),1)];};int f(std::pair<Element,int>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),Element&));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointer-original-array-bound", R"cpp(
+using Row=int[(sizeof(long double),2)];int f(std::pair<Row*,int>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),Row*&));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-original-array-bound", R"cpp(
+using Row=int[(sizeof(long double),2)];using Wrapper=std::reference_wrapper<Row>;int f(std::pair<Wrapper,int>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),Wrapper&));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-original-referent-extent", R"cpp(
+struct Element{int value[(sizeof(long double),1)];};using Wrapper=std::reference_wrapper<Element>;int f(std::pair<Wrapper,int>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),Wrapper&));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+Pair&source(Pair&p,int n=sizeof(long double))noexcept{return p;}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(source(p))),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-source-exception", R"cpp(
+Pair&source(Pair&p)noexcept(sizeof(long double)>0);Pair&source(Pair&p)noexcept{return p;}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(source(p))),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"erased-receiver-template-argument", R"cpp(
+int object;template<auto V>using Erased=Pair;int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(static_cast<Erased<&object>&>(p))),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"invalid-index", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<2>(p)),int&));return 0;}
+)cpp",
+       "TR0202"},
+      {"ambiguous-type", R"cpp(
+int f(std::pair<int,int>&p){static_assert(__is_same(decltype(Reexport::get<int>(p)),int&));return 0;}
+)cpp",
+       "TR0202"},
+      {"long-double-element", R"cpp(
+int f(std::pair<long double,int>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),long double&));return 0;}
+)cpp",
+       "TR0201"},
+      {"tuple-get-stays-independent", R"cpp(
+int f(std::tuple<int,double>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"pair-move-query-stays-independent", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(std::move(p))),int&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-factory-stays-independent", R"cpp(
+int f(){static_assert(__is_same(decltype(Reexport::get<0>(std::make_pair(1,2.5))),int&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"sdk-byte-element", R"cpp(
+int f(std::pair<std::byte,int>&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),std::byte&));return 0;}
+)cpp",
+       "TR0201"},
+      {"internal-get-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr int&__get_pair<0>::get<int,double>(pair<int,double>&p)noexcept{return p.first;}}}int f(Pair&p){static_assert(__is_same(decltype(Reexport::get<0>(p)),int&));return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("pair-get-query-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pair-get-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <array>
+#include <cstddef>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace Imported{using std::get;}
+namespace Reexport{using Imported::get;}
+using Pair=std::pair<int,double>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }

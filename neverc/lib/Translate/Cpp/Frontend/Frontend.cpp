@@ -10124,6 +10124,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Iterator->IteratorType, false, Depth + 1);
           return;
         }
+        if (const auto Wrapper = approvedFunctionalReferenceRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // A projected wrapper retains its authenticated pointer storage and
+          // empty base. Its referent type keeps ordinary source dependencies;
+          // wrapper layout neither owns nor consumes the referent's layout.
+          Self(Self, Wrapper->PointerType, false, Depth + 1);
+          return;
+        }
         if (const auto List = approvedUtilityInitializerListRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // Authenticate the pointer/size view layout without borrowing its
@@ -10351,9 +10359,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // declaration. The pinned get overloads have no written noexcept input.
         if (Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
             !Prototype->getNoexceptExpr()) {
-          if (auto Operation = approvedUtilityOperation(A.S, A.Sources, Call,
-                                                       A.Context);
-              (Operation && *Operation == UtilityOperation::ArrayGet) ||
+          if (auto Operation =
+                  approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+              (Operation &&
+               (*Operation == UtilityOperation::ArrayGet ||
+                ((*Operation == UtilityOperation::PairGetFirst ||
+                  *Operation == UtilityOperation::PairGetSecond) &&
+                 utilitySDKFunctionSource(A, Function, "__utility/pair.h",
+                                          /*RequireDefinition=*/false)))) ||
               A.DecompositionGetBindings.count(Call)) {
             if (const auto *Reference =
                     dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
@@ -10413,7 +10426,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       auto FunctionSource = [&](const FunctionDecl *Function) {
         if (!Function)
           return;
-        // Exact array-get or decomposition admission supplies its SDK definition.
+        // Exact array/pair get or decomposition admission supplies its SDK
+        // definition; a pair query need not instantiate its concrete body.
         // Result/argument types, caller expressions and written template
         // arguments still complete through their ordinary source traversal.
         if (Function == AuthenticatedProjectionGet)
