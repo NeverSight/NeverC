@@ -29222,7 +29222,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
     }
   }
-  if (Origin->Path == "tuple" && Name == "get" && Call->getNumArgs() == 1) {
+  if ((Origin->Path == "tuple" || Origin->Path == "__fwd/tuple.h") &&
+      Name == "get" && Call->getNumArgs() == 1) {
     const auto *Arguments = Function->getTemplateSpecializationArgs();
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
@@ -29265,6 +29266,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
     }
     if (Index) {
+      if (Arguments->get(0).getKind() == TemplateArgument::Integral) {
+        // A using declaration can retain the index getter's forward
+        // declaration. Prove its real definition and complete pinned chain,
+        // just as apply and structured bindings do, before projecting it.
+        const UtilityTupleLikeSource Source{Tuple->Elements, nullptr, {}, 0};
+        return approvedUtilityTupleLikeGet(S, SM, Call, Parameter, Source,
+                                           *Index, Context)
+                   ? std::optional<UtilityOperation>(UtilityOperation::TupleGet)
+                   : std::nullopt;
+      }
+      if (Origin->Path != "tuple")
+        return std::nullopt;
       const auto Stored = Tuple->Elements[*Index]->getType();
       const auto Selected =
           Stored->isReferenceType() ? Stored->getPointeeType() : Stored;

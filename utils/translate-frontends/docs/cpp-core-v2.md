@@ -344,8 +344,8 @@ wrapper storage does not consume its referent's layout. The proof belongs to
 the exact call and its callee reference; independent getter addresses,
 indirect/cast callees, source specializations,
 invalid indices and ambiguous type selections retain their existing rejection.
-Pair `move`/`forward` result queries, tuple getter queries and query-only factory
-construction retain their separate source requirements.
+Pair `move`/`forward` result queries and query-only factory construction retain
+their separate source requirements.
 
 Direct element-wise construction and `std::make_pair` additionally store
 source-owned nontrivial standard-layout record fields when each selected
@@ -485,6 +485,27 @@ member and free `swap`, `tuple_size`, `tuple_element`, and index-based or
 unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
+
+Exact admitted index- and unique-type tuple `get` calls supply their pinned SDK
+signature and body source for result-type queries without instantiating an
+otherwise unused concrete getter body. The selected overload and every
+redeclaration remain authenticated. Index getters imported before `<tuple>`
+authenticate their retained forward declaration and real SDK definition through
+the same checked projection proof used by `apply` and structured bindings.
+Mutable and const lvalues and xvalues retain their element cv qualification and
+reference categories, including
+lvalue and rvalue reference fields: const tuples do not add const to their
+referents. `decltype`, classification, `sizeof`, `alignof` and `noexcept` queries
+retain the original element, written template-argument, receiver-expression,
+selected-default and exception source checks without evaluating their operands.
+Nested tuple, pair, array and wrapper projections use their admitted layout
+source; constant getters may supply checked array dimensions. The proof belongs
+to the exact call and its callee reference. Independent getter addresses,
+indirect/cast callees, source specializations, invalid indices and nonunique or
+absent type selections retain rejection. Tuple `move`/`forward` result queries,
+owning temporaries and query-only factories retain their separate source
+requirements.
+
 Direct element-wise construction and `std::make_tuple` may also store
 source-owned nontrivial standard-layout records. Each selected libc++ tuple,
 implementation and leaf initializer must identify an admitted source-owned

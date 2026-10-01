@@ -10366,7 +10366,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 ((*Operation == UtilityOperation::PairGetFirst ||
                   *Operation == UtilityOperation::PairGetSecond) &&
                  utilitySDKFunctionSource(A, Function, "__utility/pair.h",
-                                          /*RequireDefinition=*/false)))) ||
+                                          /*RequireDefinition=*/false)) ||
+                (*Operation == UtilityOperation::TupleGet &&
+                 (utilitySDKFunctionSource(A, Function, "tuple",
+                                           /*RequireDefinition=*/false) ||
+                  utilitySDKFunctionSource(A, Function, "__fwd/tuple.h",
+                                           /*RequireDefinition=*/false))))) ||
               A.DecompositionGetBindings.count(Call)) {
             if (const auto *Reference =
                     dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
@@ -10426,8 +10431,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       auto FunctionSource = [&](const FunctionDecl *Function) {
         if (!Function)
           return;
-        // Exact array/pair get or decomposition admission supplies its SDK
-        // definition; a pair query need not instantiate its concrete body.
+        // Exact array/pair/tuple get or decomposition admission supplies its
+        // SDK definition without instantiating an unused concrete getter body.
         // Result/argument types, caller expressions and written template
         // arguments still complete through their ordinary source traversal.
         if (Function == AuthenticatedProjectionGet)
