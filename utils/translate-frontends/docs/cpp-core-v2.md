@@ -1340,8 +1340,7 @@ keep their separate lifetime source. Unevaluated reset neither changes the
 pointer nor evaluates a receiver, replacement, default or allocation, and makes
 no deleter or destruction call. Missing query-only bodies, different array
 overloads/specializations, independent member addresses and source SDK
-replacements remain rejected. Move assignment receives no new result-source
-authentication.
+replacements remain rejected.
 
 The same query boundary admits already materialized member `swap` and the exact
 pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` overload. Both retain a
@@ -1445,8 +1444,8 @@ defaults, allocate no storage and invoke no construction, deletion or cleanup.
 Ordinary comparisons evaluate each operand once in an unspecified C++17 order.
 Missing result-query bodies, different overloads/specializations, source wrapper
 or selected Boolean-member replacements and independent function addresses
-remain rejected. Ordering comparisons and explicit calls to the operator
-function receive no new result-source authentication. Pure free
+remain rejected. Owner/null ordering comparisons and explicit calls to the
+operator function receive no new result-source authentication. Pure free
 comparison `noexcept` queries keep their existing signature-source boundary and
 need no unused wrapper body.
 
@@ -1478,8 +1477,36 @@ source. Unevaluated queries preserve both pointers and invoke no operand,
 default, allocation, construction, deletion or cleanup. Ordinary comparisons
 evaluate both operands once in an unspecified C++17 order. Missing result-query
 bodies, different unmaterialized pairs/specializations, source comparison or
-selected-getter replacements, independent function addresses, ordering queries
-and explicit operator-function calls remain rejected.
+selected-getter replacements, independent function addresses and explicit
+operator-function calls remain rejected.
+
+Already materialized pinned owner-to-owner `<`, `>`, `<=` and `>=` also admit
+result-source queries. The scalar/array, common unqualified element, qualified
+pointee and deleter boundaries match owner equality, including bounded inner
+arrays, borrowed const owners, mutable/const xvalues and source-owned pointees.
+All four retain a `bool` prvalue and potentially throwing C++17 signature. The
+`<` wrapper must keep its exact two pointer aliases and SDK `common_type`
+specialization, including the selected SDK type identity. Its actual call must
+construct the pinned empty trivial `std::less<CommonPointer>` and compare the
+unchanged parameter getters through that comparator's materialized pointer
+comparison body. Every selected getter, comparator method, class template and
+redeclaration must remain SDK source; replacing a common-type or comparator
+specialization with the same canonical type or layout does not supply this
+proof. `>` delegates to reversed `<`; `<=` negates reversed `<`; `>=` negates
+original-order `<`. Each derived wrapper must retain that exact parameter order
+and the matching materialized `<` specialization.
+This consumes existing SDK definitions without traversing private expressions
+as project source or instantiating bodies. Original operand expressions, aliases,
+signatures, defaults, `std::move`/`std::forward` source and owning temporary/factory
+lifetimes remain independently checked. Borrowing selects no unused construction,
+deleter callback or destruction. Unevaluated ordering reads no pointer and
+invokes no operand, default, allocation, ownership transfer or cleanup. Ordinary
+ordering keeps the existing flat-address total order and evaluates each operand
+once in an unspecified C++17 order. Missing result-query bodies or pairs, source
+wrapper/delegate/getter/comparator/common-type replacements, independent
+function addresses, explicit operator-function calls and owner/null ordering
+result queries remain rejected. Pure comparison `noexcept` queries retain their
+existing signature-source boundary without selecting unused wrapper bodies.
 
 For these owner xvalue queries, exact pinned `std::move` and `std::forward`
 specializations supply their reference-cast source. Any

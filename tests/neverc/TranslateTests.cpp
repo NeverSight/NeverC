@@ -40664,10 +40664,6 @@ namespace std{inline namespace __1{template<>int*unique_ptr<int[]>::get()const n
 using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int f(P&p,P&q){p==q;static_assert(sizeof(static_cast<F>(&std::operator==))>0);return 0;}
 )cpp",
        "TR0201"},
-      {"other-ordering-comparison", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"explicit-function-call", R"cpp(
 using P=std::unique_ptr<int>;int f(P&p,P&q){p==q;static_assert(__is_same(decltype(std::operator==(p,q)),bool));return 0;}
 )cpp",
@@ -40694,6 +40690,356 @@ void materialize_default_deleters() {
   std::default_delete<const int>{}(nullptr);
 }
 )cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrOrderingResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-unique-ptr-ordering-result-queries.cpp");
+  const auto Output = tmpFile("memory-unique-ptr-ordering-result-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+int allocated, released, created, destroyed, live, callbacks, ignored;
+int designators, defaults, arguments, effects;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Box {
+  int n;
+  explicit Box(int v = 4) noexcept : n(v) { ++created; ++live; }
+  ~Box() noexcept { ++destroyed; --live; }
+  static void *operator new(Size n) { ++allocated; return malloc(n); }
+  static void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+};
+struct Cold { int n; Cold() = delete; Cold(const Cold &) = delete; };
+struct NoDestroy { int n; NoDestroy() = delete; ~NoDestroy() = delete; };
+struct Ignore { void operator()(NoDestroy *) const noexcept { ++ignored; } };
+struct Count { void operator()(int *) const noexcept { ++callbacks; } };
+struct ConstCount { void operator()(const int *) noexcept { ++callbacks; } };
+struct BoxCount { void operator()(const Box *) const noexcept { ++callbacks; } };
+struct MatrixCount { void operator()(const int (*)[2]) const noexcept { ++callbacks; } };
+using Scalar = std::unique_ptr<int>;
+Scalar &select(Scalar &p, int n = (++defaults, 9)) noexcept {
+  ++designators; effects = effects * 10 + n; return p;
+}
+Scalar *select(Scalar *p, int n = (++defaults, 9)) noexcept {
+  ++designators; effects = effects * 10 + n; return p;
+}
+Scalar &&rvalue(Scalar &p) noexcept { ++designators; return std::move(p); }
+const Scalar &&const_rvalue(const Scalar &p) noexcept { ++designators; return std::move(p); }
+bool condition() noexcept { ++designators; return true; }
+int mark(int n = (++defaults, 8)) noexcept { ++arguments; return n; }
+template<class P, class Q> bool queries(P &p, Q &q) {
+  auto left = p.get(); auto right = q.get();
+  std::less<decltype(true ? p.get() : q.get())> less;
+  bool lt = less(left, right), gt = less(right, left);
+  if ((p < q) != lt || (p > q) != gt || (p <= q) != !gt || (p >= q) != !lt ||
+      (q < p) != gt || (q > p) != lt || (q <= p) != !lt || (q >= p) != !gt) return false;
+  const P &cp = p; const Q &cq = q;
+  static_assert(__is_same(decltype(p < q), bool));
+  static_assert(__is_same(decltype(cp > cq), bool));
+  static_assert(__is_same(decltype(*(&cp) <= *(&cq)), bool));
+  static_assert(__is_same(decltype(cp >= cq), bool));
+  static_assert(__is_same(decltype(std::move(p) < std::forward<Q>(q)), bool));
+  static_assert(__is_same(decltype(std::forward<P>(p) > std::move(q)), bool));
+  static_assert(__is_same(decltype(std::move(cp) <= std::move(cq)), bool));
+  static_assert(__is_same(decltype(static_cast<const P &&>(cp) >= static_cast<Q &&>(q)), bool));
+  static_assert(sizeof(p < q) == sizeof(bool) && sizeof(q > p) == sizeof(bool));
+  static_assert(alignof(decltype(p <= q)) == alignof(bool));
+  static_assert(sizeof((p >= q, 0)) == sizeof(int));
+  static_assert(!noexcept(p < q) && !noexcept(p > q));
+  static_assert(!noexcept(p <= q) && !noexcept(p >= q));
+  static_assert(__is_same(decltype(q < p), bool) && __is_same(decltype(q > p), bool));
+  static_assert(__is_same(decltype(q <= p), bool) && __is_same(decltype(q >= p), bool));
+  return p.get() == left && q.get() == right;
+}
+int check() {
+  Scalar p(new int(3)), q(new int(4)), empty;
+  std::unique_ptr<const int> qualified(new int(5));
+  std::unique_ptr<int[]> array(new int[2]{1, 2});
+  std::unique_ptr<const int[]> qualified_array(new int[2]{3, 4});
+  std::unique_ptr<int[][2]> matrix(new int[2][2]{});
+  std::unique_ptr<Box> box(new Box(6));
+  std::unique_ptr<Box[]> boxes(new Box[2]);
+  std::unique_ptr<Cold> cold, cold_peer;
+  std::unique_ptr<NoDestroy, Ignore> ignored_owner, ignored_peer;
+  int data[2] = {7, 8};
+  std::unique_ptr<int, Count> custom(data);
+  std::unique_ptr<const int, ConstCount> custom_peer(data + 1), scalar_alias(p.get());
+  std::unique_ptr<const int[], ConstCount> array_alias(array.get());
+  std::unique_ptr<const int[][2], MatrixCount> matrix_alias(matrix.get());
+  std::unique_ptr<const Box, BoxCount> box_alias(box.get());
+  std::unique_ptr<const Box[], BoxCount> boxes_alias(boxes.get());
+  auto factory = std::make_unique<int>(mark(10));
+  auto array_factory = std::make_unique<int[]>(Size(2));
+  if (!queries(p, p) || !queries(p, q) || !queries(p, qualified) || !queries(p, empty) ||
+      !queries(empty, empty) || !queries(p, scalar_alias) || !queries(custom, custom_peer) ||
+      !queries(array, qualified_array) || !queries(array, array_alias) || !queries(matrix, matrix_alias) ||
+      !queries(box, box_alias) || !queries(boxes, boxes_alias) || !queries(cold, cold_peer) ||
+      !queries(ignored_owner, ignored_peer) || !queries(factory, p) || !queries(array_factory, array)) return 1;
+  auto left = p.get(); auto right = q.get();
+  std::less<int *> less;
+  effects = 0;
+  if ((select(p, 1) < select(q, 2)) != less(left, right) ||
+      (effects != 12 && effects != 21)) return 2;
+  effects = 0;
+  if ((*select(&p, 3) >= *select(&q, 4)) != !less(left, right) ||
+      (effects != 34 && effects != 43)) return 3;
+  if ((rvalue(p) > const_rvalue(q)) != less(right, left) || p.get() != left || q.get() != right) return 4;
+  if ((condition() ? std::move(p) : std::move(q)) <= q) {
+    if (less(right, left)) return 5;
+  } else if (!less(right, left)) return 6;
+  int saved_allocated = allocated, saved_released = released, saved_created = created;
+  int saved_destroyed = destroyed, saved_callbacks = callbacks, saved_designators = designators;
+  int saved_defaults = defaults, saved_arguments = arguments, saved_effects = effects;
+  static_assert(__is_same(decltype(select(p) < select(q)), bool));
+  static_assert(__is_same(decltype(*select(&p) > *select(&q)), bool));
+  static_assert(__is_same(decltype(rvalue(p) <= const_rvalue(q)), bool));
+  static_assert(__is_same(decltype((condition() ? std::move(p) : std::move(q)) >= q), bool));
+  static_assert(sizeof(select(p) < std::move(select(q))) == sizeof(bool));
+  static_assert(alignof(decltype(*select(&p) > std::forward<Scalar>(select(q)))) == alignof(bool));
+  static_assert(!noexcept(select(p) <= q) && !noexcept(p >= *select(&q)));
+  static_assert(__is_same(decltype(Scalar{} < Scalar{}), bool));
+  static_assert(__is_same(decltype(Scalar(new int(mark())) > q), bool));
+  static_assert(__is_same(decltype(p <= std::make_unique<int>(mark())), bool));
+  static_assert(__is_same(decltype(std::make_unique<int[]>(Size(3)) >= array), bool));
+  static_assert(__is_same(decltype(std::unique_ptr<int, Count>(data) < custom_peer), bool));
+  static_assert(__is_same(decltype(std::unique_ptr<NoDestroy, Ignore>{} >= ignored_peer), bool));
+  if (allocated != saved_allocated || released != saved_released || created != saved_created ||
+      destroyed != saved_destroyed || callbacks != saved_callbacks || designators != saved_designators ||
+      defaults != saved_defaults || arguments != saved_arguments || effects != saved_effects ||
+      p.get() != left || q.get() != right || *p != 3 || *q != 4 || ignored || defaults) return 7;
+  return 0;
+}
+int main() {
+  int result = check(); if (result) return result;
+  return live == 0 && created == destroyed && created == 3 && allocated == released &&
+         callbacks == 7 && ignored == 0 && defaults == 0 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-unique-ptr-ordering-result-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrOrderingResultQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"left-expression", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype((sizeof(long double),p)<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"right-expression", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p>=q;static_assert(!noexcept(p>=(sizeof(long double),q)));return 0;}
+)cpp",
+       "TR0201"},
+      {"left-default", R"cpp(
+using P=std::unique_ptr<int>;P&select(P&p,int=sizeof(long double))noexcept{return p;}int f(P&p,P&q){select(p,1)<q;static_assert(__is_same(decltype(select(p)<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"right-default", R"cpp(
+using P=std::unique_ptr<int>;P&select(P&p,int=sizeof(long double))noexcept{return p;}int f(P&p,P&q){p>=select(q,1);static_assert(!noexcept(p>=select(q)));return 0;}
+)cpp",
+       "TR0201"},
+      {"left-noexcept", R"cpp(
+using P=std::unique_ptr<int>;P*select(P*p)noexcept(sizeof(long double)>0){return p;}int f(P*p,P&q){*select(p)<q;static_assert(!noexcept(*select(p)<q));return 0;}
+)cpp",
+       "TR0201"},
+      {"right-noexcept", R"cpp(
+using P=std::unique_ptr<int>;P&select(P&p)noexcept(sizeof(long double)>0){return p;}int f(P&p,P&q){p>=select(q);static_assert(__is_same(decltype(p>=select(q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-left-signature", R"cpp(
+int object;template<int*>using P=std::unique_ptr<int>;P<&object>&select(P<&object>&p)noexcept{return p;}int f(P<&object>&p,P<&object>&q){select(p)<q;static_assert(__is_same(decltype(select(p)<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-right-signature", R"cpp(
+int object;template<int*>using P=std::unique_ptr<int>;P<&object>*select(P<&object>*p)noexcept{return p;}int f(P<&object>&p,P<&object>*q){p>=*select(q);static_assert(!noexcept(p>=*select(q)));return 0;}
+)cpp",
+       "TR0201"},
+      {"owner-alias", R"cpp(
+int object;template<int*>using P=std::unique_ptr<int>;int f(P<&object>&p,P<&object>&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointee-layout", R"cpp(
+struct R{long double n;};using P=std::unique_ptr<R>;int f(P&p,P&q){std::default_delete<R>{}(nullptr);p>=q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"inner-array-bound", R"cpp(
+using E=int[sizeof(long double)];using P=std::unique_ptr<E[]>;int f(P&p,P&q){std::default_delete<E[]>{}(static_cast<E*>(nullptr));p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-left-operand", R"cpp(
+using P=std::unique_ptr<int>;int f(P&q,int*raw){P p;p<q;static_assert(__is_same(decltype(P((sizeof(long double),raw))<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-right-operand", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,int*raw){P q;p>=q;static_assert(__is_same(decltype(p>=P((sizeof(long double),raw))),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"left-allocation-default", R"cpp(
+int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int>;int f(P&q){P p;p<q;static_assert(__is_same(decltype(P(new int(value()))<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"right-factory-default", R"cpp(
+int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int>;int f(P&p){auto q=std::make_unique<int>(value(1));p>=q;static_assert(__is_same(decltype(p>=std::make_unique<int>(value())),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-destruction-noexcept", R"cpp(
+struct R{int n;~R()noexcept(sizeof(long double)>0){}};using P=std::unique_ptr<R>;int f(P&q){P p;p<q;static_assert(__is_same(decltype(P{}<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-class-delete-noexcept", R"cpp(
+struct R{int n;static void operator delete(void*p)noexcept(sizeof(long double)>0){free(p);}};using P=std::unique_ptr<R>;int f(P&q){P p;p<q;static_assert(__is_same(decltype(P{}<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-callback-noexcept", R"cpp(
+struct D{void operator()(int*)const noexcept(sizeof(long double)>0){}};using P=std::unique_ptr<int,D>;int f(P&p){P q;p>=q;static_assert(__is_same(decltype(p>=P{}),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"temporary-callback-redeclaration", R"cpp(
+int object;template<int*>using T=int;struct D{void operator()(T<&object>*)const noexcept;};void D::operator()(int*)const noexcept{}using P=std::unique_ptr<int,D>;int f(P&q){P p;p<q;static_assert(__is_same(decltype(P{}<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-left-getter-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-right-getter-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const int*unique_ptr<const int>::get()const noexcept{return nullptr;}}}using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p>q;static_assert(__is_same(decltype(p>q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-array-getter-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int*unique_ptr<int[]>::get()const noexcept{return nullptr;}}}using P=std::unique_ptr<int[]>;int f(P&p,P&q){p<=q;static_assert(__is_same(decltype(p<=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-function-address", R"cpp(
+using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int f(P&p,P&q){p<q;static_assert(sizeof(static_cast<F>(&std::operator<))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"explicit-function-call", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(std::operator<(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-less", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();q.get();static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-greater", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p>q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-less-equal", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p<=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-greater-equal", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-reverse", R"cpp(
+using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(q<p),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-array", R"cpp(
+using P=std::unique_ptr<int[]>;int f(P&p,P&q){p.get();q.get();static_assert(__is_same(decltype(p<=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"query-only-custom", R"cpp(
+struct D{void operator()(int*)const noexcept{}};struct E{void operator()(int*)noexcept{}};using P=std::unique_ptr<int,D>;using Q=std::unique_ptr<int,E>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"less-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"greater-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator><int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p>q;static_assert(__is_same(decltype(p>q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"less-equal-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator<=<int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p<=q;static_assert(__is_same(decltype(p<=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"greater-equal-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator>=<int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p>=q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"reversed-delegate-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator< <const int,default_delete<const int>,int,default_delete<int>>(const unique_ptr<const int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p>q;static_assert(__is_same(decltype(p>q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"common-pointer-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct common_type<int*,const int*>{using type=const int*;};}}using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"common-identity-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct __type_identity<const int*>{using type=const int*;};}}using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"comparator-member-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr bool less<int*>::operator()(int*const&,int*const&)const{return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p>=q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"comparator-record-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct less<int*>{bool operator()(int*const&,int*const&)const{return true;}};}}using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-comparator-address", R"cpp(
+using P=std::unique_ptr<int>;using F=bool(std::less<int*>::*)(int*const&,int*const&)const;int f(P&p,P&q){p<q;static_assert(sizeof(static_cast<F>(&std::less<int*>::operator()))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"null-ordering-query", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;p<nullptr;static_assert(__is_same(decltype(p<nullptr),bool));return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("unique-ptr-ordering-query-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("unique-ptr-ordering-query-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+)cpp" + std::string(Case.Source) +
+                          R"cpp(
+void materialize_default_deleters() {
+  std::default_delete<int>{}(nullptr);
+  std::default_delete<int[]>{}(static_cast<int *>(nullptr));
+  std::default_delete<const int>{}(nullptr);
+}
+)cpp");
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         Case.Code);
@@ -40931,10 +41277,6 @@ using P=std::unique_ptr<int>;using F=P&&(*)(P&&)noexcept;int f(P&p,P&q){std::for
        "TR0201"},
       {"erased-adapter-noexcept", R"cpp(
 using P=std::unique_ptr<int>;using F=P&&(*)(P&);int f(P&p,P&q){std::move(p)!=q;static_assert(__is_same(decltype((static_cast<F>(&std::move<P&>))(p)!=q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"ordering-query", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){std::move(p)<q;static_assert(__is_same(decltype(std::move(p)<q),bool));return 0;}
 )cpp",
        "TR0201"},
       {"explicit-function-call", R"cpp(
