@@ -3484,6 +3484,60 @@ static const CXXMethodDecl *functionalUserInvokeSource(Adapter &A,
   return Invoke->Method;
 }
 
+static const CXXMethodDecl *functionalMemberFunctionInvokeSource(
+    Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "invoke" ||
+      !Call->getNumArgs() || !Call->getArg(0)->getType()->isMemberPointerType())
+    return nullptr;
+  const auto Invoke =
+      approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
+  if (!Invoke || !Invoke->Method || Invoke->ErasedFactory || Invoke->ErasedAdapter)
+    return nullptr;
+  const auto *Target = Invoke->Method->getType()->getAs<FunctionProtoType>();
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Dispatch = functionalReturnedCall(Function);
+  const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(
+      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr);
+  const auto *Member =
+      Inner ? dyn_cast<BinaryOperator>(Inner->getCallee()->IgnoreParens()) : nullptr;
+  const auto *Pointer =
+      Member ? Member->getRHS()->getType()->getAs<MemberPointerType>() : nullptr;
+  // The runtime descriptor resolves the exact original member address/carrier
+  // and proves the receiver and argument flow. Authenticate the materialized
+  // public/internal adapters, including their actual member-pointer signature.
+  if (!Target || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type || !Member ||
+      Member->getOpcode() != BO_PtrMemD || !Pointer ||
+      !A.Context.hasSameType(Pointer->getPointeeType(), Invoke->Method->getType()) ||
+      Inner->getValueKind() != Call->getValueKind() ||
+      !A.Context.hasSameType(Inner->getType(), Call->getType()) ||
+      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h") ||
+      !utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                               "__type_traits/invoke.h") ||
+      !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                     Arguments->get(1), Target))
+    return nullptr;
+  if (Invoke->ObjectWrapper) {
+    // Wrapped receivers use the descriptor's exact get() edge. Pin its source
+    // independently; the caller's wrapper storage and initializer still close
+    // through their ordinary expression/type sources.
+    const auto *Access =
+        dyn_cast<CallExpr>(Member->getLHS()->IgnoreParenImpCasts());
+    const auto *Get = Access ? Access->getDirectCallee() : nullptr;
+    const auto *Prototype =
+        Get ? Get->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!Prototype || operationCalleePrototype(Access) != Prototype ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() ||
+        !utilitySDKFunctionSource(A, Get, "__functional/reference_wrapper.h"))
+      return nullptr;
+  }
+  // A pinned SDK dispatch is not the selected source method's definition.
+  // Retain that original signature, exception expression and completed body.
+  return Invoke->Method;
+}
+
 static bool utilityUniquePtrElementConstructionSource(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   const auto *Prototype =
@@ -10898,8 +10952,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const CXXMethodDecl *UserInvoke = nullptr;
         const bool ReferenceInvoke =
             functionalReferenceInvokeSource(A, Call, UserInvoke);
-        if (!ReferenceInvoke)
+        if (!ReferenceInvoke) {
           UserInvoke = functionalUserInvokeSource(A, Call);
+          if (!UserInvoke)
+            UserInvoke = functionalMemberFunctionInvokeSource(A, Call);
+        }
         if (ReferenceInvoke || UserInvoke ||
             functionalReferenceAccessSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
@@ -10919,7 +10976,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   A.chargeExpansion(1, Call->getExprLoc());
                 else if (Source->second != UserInvoke)
                   A.reject(Call->getExprLoc(), "invoke target source",
-                           "An exact invocation requires one selected source operator.");
+                           "An exact invocation requires one selected source method.");
               }
               if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
                 if (const auto *Cast = dyn_cast<ImplicitCastExpr>(
@@ -11072,7 +11129,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           return;
         // Only this exact SDK utility call supplies its signature and resolved
         // exception metadata. A user invocation retains its selected source
-        // operator's signature, exception source and completed definition.
+        // method's signature, exception source and completed definition.
         if (AuthenticatedUtilityCall &&
             Function == AuthenticatedUtilityCall->getDirectCallee()) {
           const auto Source =

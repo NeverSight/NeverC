@@ -2523,6 +2523,27 @@ member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.
 
+Materialized `std::invoke` adapters for admitted source-owned member functions
+also support result-source queries. Direct named addresses and ordinary exact
+local member-pointer copy initializer chains retain the selected method.
+Exact object, pointer and `reference_wrapper` receivers, const methods and
+lvalue/rvalue-qualified methods keep their runtime receiver rules. The public
+adapter, internal member dispatcher and exact invocability variable require
+pinned SDK declaration families; wrapped receivers additionally require the
+exact internal `get()` source. The dispatched member-pointer signature and
+result category must agree with the selected method, whose completed definition,
+original signature and exception expression remain independent dependencies.
+Queries preserve admitted scalar conversions, exact reference results including
+array/record/function-pointer references, record values and `void`. `decltype`,
+result traits, `sizeof`, `alignof`, array extents and `noexcept` execute no
+receiver, argument, selected-default or temporary-lifetime effects. Each callable
+and receiver category and argument pack needs its own materialized adapter;
+a native member call does not supply a missing `std::invoke` body. Caller
+expressions, written types and carrier initializers remain independently checked.
+Lazy adapters, indirect public adapter calls, source SDK replacements and
+unresolved or reassigned member pointers remain rejected. Data-member and
+`mem_fn` result queries retain their separate source requirements.
+
 An exact `std::mem_fn` wrapper built from either admitted direct named address
 or an authenticated local member-pointer initializer chain may be called
 immediately, directly or as the callable of `std::invoke`,
