@@ -199,8 +199,9 @@ lvalues and unqualified rvalues use a checked pointer read and the same pointer
 conversion. Source specializations remain rejected.
 Resolved namespace and nondependent block using-declarations may import the
 pinned `std::move`, `std::forward`, `std::as_const`, `std::move_if_noexcept`,
-`std::swap`, `std::exchange`, `std::make_pair` and `std::get` names, including
-repeated/comma imports and source-owned namespace reexports.
+`std::swap`, `std::exchange`, `std::make_pair`, `std::get`, `std::ref` and
+`std::cref` names, including repeated/comma imports and source-owned namespace
+reexports.
 These names retain Clang's selected overload, reference category and cv
 qualification; they create no wrapper or extra move. Each actual call still
 requires its existing operation descriptor and source proof. When `<algorithm>`
@@ -230,6 +231,20 @@ with each argument evaluated once and no added copy, move or cleanup.
 Source-owned ADL overloads remain available through ordinary lookup. Unused
 overload signatures and bodies remain metadata; imports do not broaden element,
 container, index, original-source or indirect-callee boundaries.
+
+`ref` and `cref` imports pin every primary and redeclaration to
+`__functional/reference_wrapper.h`, including both lvalue-taking and
+wrapper-taking overloads and the deleted rvalue overloads. Unused overloads
+remain lookup metadata. Namespace/block imports, repeated/comma imports and
+source-owned namespace reexports preserve ordinary overload resolution and
+ADL. Aliases and directives over those reexport namespaces use the same lookup
+path. Each selected SDK factory still needs its exact call and original-source
+proof. Result-source queries retain the factory's
+wrapper type and referent qualification without evaluating operands, defaults,
+constructors or cleanup. Evaluated factories capture each argument once and
+copy only pointer storage, preserving the referent's lifetime. Imports do not
+admit source redeclarations or specializations, independent factory addresses,
+cast/indirect callees, unsupported referents or other functional-header names.
 
 Result-source queries on exact pinned `std::move` and `std::forward` calls also
 accept admitted scalar objects: integral and enum types through 64 bits,
@@ -2110,8 +2125,9 @@ those effects, constructors or cleanup. Evaluated factories preserve the
 referent address and copy only wrapper pointer storage; cleanup never owns the
 referent. Source substitutions, independent function addresses, cast/indirect
 callees, erased exception specifications and unsupported referents remain
-rejected. Deleted rvalue overloads retain native C++ diagnostics. `ref`/`cref`
-name imports and access/invocation query sources retain separate requirements.
+rejected. Deleted rvalue overloads retain native C++ diagnostics. Imported
+factory names use the same proof; wrapper access/invocation query sources
+retain separate requirements.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent

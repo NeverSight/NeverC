@@ -65924,6 +65924,324 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2SDKReferenceFactoryNameImportsRunAtBothOptimizations) {
+  const auto Source = tmpFile("sdk-reference-factory-imports.cpp");
+  const auto Output = tmpFile("sdk-reference-factory-imports.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace Imported {
+using std::ref, std::cref;
+using std::ref;
+using std::cref;
+}
+namespace Reexport { using Imported::ref, Imported::cref; }
+namespace Again { using Reexport::ref, Reexport::cref; }
+namespace Alias = Again;
+namespace Directed { using namespace Alias; }
+namespace Unused { using std::ref, std::cref; }
+using std::ref, std::cref;
+using W = std::reference_wrapper<int>;
+using CW = std::reference_wrapper<const int>;
+int calls, defaults, live, copies, moves, destroyed, adl;
+int global_value = 2;
+W global_wrapper = ref(global_value);
+struct Owner {
+  int value;
+  explicit Owner(int n) noexcept : value(n) { ++live; }
+  Owner(const Owner &other) noexcept : value(other.value) { ++live; ++copies; }
+  Owner(Owner &&other) noexcept : value(other.value) { ++live; ++moves; }
+  ~Owner() noexcept { --live; ++destroyed; }
+};
+int &source(int &value, int n = (++defaults, 1)) noexcept { ++calls; return value; }
+int mark(int n = (++defaults, 2)) noexcept { ++calls; return n; }
+int &with_temporary(int &value, Owner ticket = Owner(mark())) noexcept {
+  ++calls; return value;
+}
+namespace User {
+struct Item { int value; };
+int ref(Item &item) noexcept { ++adl; return item.value + 10; }
+int cref(const Item &item) noexcept { ++adl; return item.value + 20; }
+}
+namespace Mixed {
+using Imported::ref, Imported::cref;
+int ref(int value, int extra) noexcept { return value + extra; }
+int cref(int value, int extra) noexcept { return value - extra; }
+}
+int function(int n) { return n + 1; }
+int nonthrowing(int n) noexcept { return n + 2; }
+template <class T> bool objects(T &value, const T &constant) {
+  using Imported::ref, Imported::cref;
+  using Wrapper = std::reference_wrapper<T>;
+  using View = std::reference_wrapper<const T>;
+  static_assert(__is_same(decltype(ref(value)), Wrapper));
+  static_assert(__is_same(decltype(cref(constant)), View));
+  static_assert(__is_same(decltype((Alias::ref)(constant)), View));
+  static_assert(__is_same(decltype(Directed::cref<T>(value)), View));
+  static_assert(sizeof(Again::ref((++calls, value))) == sizeof(Wrapper));
+  static_assert(alignof(decltype(Reexport::cref(value))) == alignof(View));
+  static_assert(noexcept(ref(value)) && noexcept(cref(value)));
+  Wrapper wrapper = ref(value);
+  const Wrapper stored = wrapper;
+  View view = cref(constant);
+  static_assert(__is_same(decltype(ref(stored)), Wrapper));
+  static_assert(__is_same(decltype(cref(wrapper)), View));
+  static_assert(__is_same(decltype(ref(view)), View));
+  static_assert(__is_same(decltype(ref(ref(value))), Wrapper));
+  static_assert(__is_same(decltype(cref(ref(value))), View));
+  static_assert(__is_same(decltype(ref(cref(value))), View));
+  static_assert(__is_same(decltype(cref(cref(value))), View));
+  auto copied = Directed::ref(wrapper);
+  auto converted = (Reexport::cref)(stored);
+  return &copied.get() == &value && &converted.get() == &value &&
+         &Alias::ref(view).get() == &constant;
+}
+int query_only(unsigned short &value, std::reference_wrapper<unsigned short> &wrapper) {
+  using Alias::ref, Alias::cref;
+  using Wrapper = std::reference_wrapper<unsigned short>;
+  using View = std::reference_wrapper<const unsigned short>;
+  static_assert(__is_same(decltype(ref(value)), Wrapper));
+  static_assert(__is_same(decltype(cref(value)), View));
+  static_assert(__is_same(decltype(ref(wrapper)), Wrapper));
+  static_assert(__is_same(decltype(cref(wrapper)), View));
+  static_assert(noexcept(ref(wrapper)) && noexcept(cref(value)));
+  return 0;
+}
+bool functions() {
+  using Alias::ref, Alias::cref;
+  using F = int(int);
+  using NF = int(int) noexcept;
+  static_assert(__is_same(decltype(ref(function)), std::reference_wrapper<F>));
+  static_assert(__is_same(decltype(cref(function)), std::reference_wrapper<F>));
+  static_assert(__is_same(decltype(ref(nonthrowing)), std::reference_wrapper<NF>));
+  static_assert(__is_same(decltype(cref(ref(nonthrowing))), std::reference_wrapper<NF>));
+  auto callable = ref(function);
+  auto nonthrowing_callable = cref(ref(nonthrowing));
+  return callable(1) == 2 && std::invoke(nonthrowing_callable, 1) == 3;
+}
+int run() {
+  using Alias::ref, Alias::cref;
+  using Alias::ref;
+  int value = 3, other = 4;
+  const int constant = 5;
+  double real = 6.5;
+  int *pointer = &value;
+  int (*callback)(int) = function;
+  int (*safe_callback)(int) noexcept = nonthrowing;
+  int array[2] = {7, 8};
+  Owner owner(9);
+  std::array<int, 2> row{{10, 11}};
+  std::pair<int, double> pair(12, 13.5);
+  std::tuple<int, double> tuple(14, 15.5);
+  unsigned short only = 16;
+  std::reference_wrapper<unsigned short> only_wrapper(only);
+  if (!objects(value, constant) || !objects(real, real) ||
+      !objects(pointer, pointer) || !objects(callback, callback) ||
+      !objects(safe_callback, safe_callback) || !objects(array, array) ||
+      !objects(owner, owner) || !objects(row, row) || !objects(pair, pair) ||
+      !objects(tuple, tuple) || !functions() || query_only(only, only_wrapper) ||
+      calls || defaults || live != 1 || copies || moves || destroyed)
+    return 1;
+  using Pair = std::pair<W, CW>;
+  using Tuple = std::tuple<W, CW>;
+  Pair refs(ref(value), cref(constant));
+  Tuple views(Directed::ref(value), Directed::cref(constant));
+  static_assert(__is_same(decltype(std::as_const(refs)), const Pair &));
+  static_assert(__is_same(decltype(std::get<0>(std::as_const(views))), const W &));
+  static_assert(__is_same(decltype(ref(source(value))), W));
+  static_assert(sizeof(cref(with_temporary(value))) == sizeof(CW));
+  static_assert(noexcept(Directed::ref(with_temporary(value))));
+  if (calls || defaults || live != 1 || copies || moves || destroyed) return 2;
+  auto selected = ref(source(value));
+  auto temporary_view = cref(with_temporary(value));
+  auto copied = ref(selected);
+  auto converted = cref(selected);
+  selected = W(other);
+  copied.get() = 17;
+  auto temporary_copy = Alias::ref(Reexport::ref(value));
+  auto temporary_const_copy = Directed::cref(Imported::ref(value));
+  auto owner_view = cref(ref(owner));
+  User::Item item{18};
+  const User::Item fixed{19};
+  if (ref(item) != 28 || cref(fixed) != 39 ||
+      Mixed::ref(6, 2) != 8 || Mixed::cref(6, 2) != 4 ||
+      &Mixed::ref(value).get() != &value || &Alias::ref(item).get() != &item ||
+      adl != 2)
+    return 3;
+  return &copied.get() == &value && &converted.get() == &value &&
+                 &selected.get() == &other && &temporary_view.get() == &value &&
+                 &temporary_copy.get() == &value &&
+                 &temporary_const_copy.get() == &value &&
+                 &owner_view.get() == &owner && owner_view.get().value == 9 &&
+                 refs.first.get() == 17 && refs.second.get() == 5 &&
+                 std::get<0>(views).get() == 17 && global_wrapper.get() == 2 &&
+                 calls == 3 && defaults == 2 && live == 1 && !copies && !moves &&
+                 destroyed == 1 ? 0 : 4;
+}
+int main() {
+  int result = run();
+  if (result) return result;
+  return !live && !copies && !moves && destroyed == 2 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("sdk-reference-factory-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2SDKReferenceFactoryNameImportsRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"ref-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<T>ref(T&)noexcept;}}int f(int&v){static_assert(__is_same(decltype(Reexport::ref(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<const T>cref(const T&)noexcept;}}int f(int&v){static_assert(__is_same(decltype(Reexport::cref(v)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"ref-wrapper-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<T>ref(reference_wrapper<T>)noexcept;}}int f(W&w){static_assert(__is_same(decltype(Reexport::ref(w)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-wrapper-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<const T>cref(reference_wrapper<T>)noexcept;}}int f(W&w){static_assert(__is_same(decltype(Reexport::cref(w)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"ref-deleted-overload-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>void ref(const T&&);}}
+)cpp",
+       "TR0201"},
+      {"cref-deleted-overload-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>void cref(const T&&);}}
+)cpp",
+       "TR0201"},
+      {"ref-source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<int>ref<int>(int&v)noexcept{return reference_wrapper<int>(v);}}}int f(int&v){static_assert(__is_same(decltype(Reexport::ref(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<const int>cref<int>(const int&v)noexcept{return reference_wrapper<const int>(v);}}}int f(int&v){static_assert(__is_same(decltype(Reexport::cref(v)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"ref-wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<int>ref<int>(reference_wrapper<int>w)noexcept{return w;}}}int f(W&w){static_assert(__is_same(decltype(Reexport::ref(w)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<const int>cref<int>(reference_wrapper<int>w)noexcept{return w;}}}int f(W&w){static_assert(__is_same(decltype(Reexport::cref(w)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-ref-address", R"cpp(
+using F=W(*)(int&)noexcept;int f(int&v){static_assert(__is_same(decltype(Reexport::ref(v)),W));static_assert(sizeof(static_cast<F>(&Reexport::ref<int>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-cref-address", R"cpp(
+using F=CW(*)(const int&)noexcept;int f(int&v){static_assert(__is_same(decltype(Reexport::cref(v)),CW));static_assert(sizeof(static_cast<F>(&Reexport::cref<int>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=W(*)(int&)noexcept;int f(int&v){static_assert(__is_same(decltype(static_cast<F>(&Reexport::ref<int>)(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=CW(*)(const int&);int f(int&v){static_assert(__is_same(decltype(Reexport::cref(v)),CW));static_assert(!noexcept(static_cast<F>(&Reexport::cref<int>)(v)));return 0;}
+)cpp",
+       "TR0201"},
+      {"operand-expression", R"cpp(
+int f(int&v){static_assert(__is_same(decltype(Reexport::ref((sizeof(long double),v))),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+int&source(int&v,int n=sizeof(long double))noexcept{return v;}int f(int&v){static_assert(sizeof(Reexport::cref(source(v)))==sizeof(CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-exception", R"cpp(
+int&source(int&v)noexcept(sizeof(long double)>0);int&source(int&v)noexcept{return v;}int f(int&v){static_assert(noexcept(Reexport::ref(source(v))));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-template-argument", R"cpp(
+int f(int&v){static_assert(__is_same(decltype(Reexport::ref<decltype(static_cast<int>(sizeof(long double)))>(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"array-original-bound", R"cpp(
+using Original=int[(sizeof(long double),2)];int f(Original&v){static_assert(__is_same(decltype(Reexport::ref(v)),std::reference_wrapper<Original>));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-original-initializer", R"cpp(
+int&source(int&v,int n=sizeof(long double))noexcept{return v;}int f(int&v){W wrapper(source(v));static_assert(__is_same(decltype(Reexport::cref(wrapper)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"long-double-referent", R"cpp(
+int f(long double&v){static_assert(__is_same(decltype(Reexport::ref(v)),std::reference_wrapper<long double>));return 0;}
+)cpp",
+       "TR0201"},
+      {"volatile-referent", R"cpp(
+int f(volatile int&v){static_assert(__is_same(decltype(Reexport::ref(v)),std::reference_wrapper<volatile int>));return 0;}
+)cpp",
+       "TR0201"},
+      {"deleted-ref-rvalue", R"cpp(
+int f(){static_assert(noexcept(Reexport::ref(1)));return 0;}
+)cpp",
+       "TR0202"},
+      {"deleted-cref-rvalue", R"cpp(
+int f(){static_assert(noexcept(Reexport::cref(1)));return 0;}
+)cpp",
+       "TR0202"},
+      {"unsupported-owned-overload", R"cpp(
+namespace User{int ref(int&v,int){long double n=1;return v;}using Reexport::ref;}
+)cpp",
+       "TR0201"},
+      {"missing-owned-definition", R"cpp(
+namespace User{int cref(int&,int);using Reexport::cref;}
+)cpp",
+       "TR0203"},
+      {"other-functional-name", R"cpp(
+using std::invoke;
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("sdk-reference-factory-import-reject-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("sdk-reference-factory-import-reject-") +
+                Case.Name + ".nc");
+    // Complete the shared aliases so lazy wrapper metadata cannot mask the
+    // source diagnostic this case is intended to exercise.
+    writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using W=std::reference_wrapper<int>;using CW=std::reference_wrapper<const int>;
+static_assert(sizeof(W)>0 && sizeof(CW)>0);
+namespace Imported{using std::ref,std::cref;}
+namespace Reexport{using Imported::ref,Imported::cref;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceFactoryQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("reference-factory-queries.cpp");
   const auto Output = tmpFile("reference-factory-queries.nc");
@@ -66206,10 +66524,6 @@ int f(){static_assert(noexcept(std::ref(1)));return 0;}
 int f(){static_assert(noexcept(std::cref(1)));return 0;}
 )cpp",
        "TR0202"},
-      {"ref-name-import-stays-independent", R"cpp(
-using std::ref;int f(int&v){static_assert(__is_same(decltype(ref(v)),W));return 0;}
-)cpp",
-       "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

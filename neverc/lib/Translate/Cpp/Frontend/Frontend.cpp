@@ -9447,6 +9447,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__utility/exchange.h";
       else if (Name->getName() == "make_pair")
         ExpectedPath = "__utility/pair.h";
+      else if (Name->getName() == "ref" || Name->getName() == "cref")
+        ExpectedPath = "__functional/reference_wrapper.h";
       else if (Name->getName() != "move" && Name->getName() != "forward" &&
                Name->getName() != "swap" && Name->getName() != "get")
         return false;
@@ -9494,8 +9496,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     // Import the pinned overload set for lookup only. Unused dependent SDK
     // signatures and bodies are not instantiated or admitted by this proof.
-    // Deleted as_const overloads remain lookup metadata, not callable sources;
-    // every actual reference still needs its operation's source descriptor.
+    // Deleted as_const/ref/cref overloads remain lookup metadata, not callable
+    // sources; every actual reference still needs its source descriptor.
     return true;
   }
   void usingTarget(const UsingShadowDecl *D) {
