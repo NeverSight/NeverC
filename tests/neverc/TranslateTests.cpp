@@ -43297,12 +43297,293 @@ namespace Reexport{using Imported::as_const,Imported::move_if_noexcept;}
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2SDKSwapAndExchangeNameImportsRunAtBothOptimizations) {
+  const auto Source = tmpFile("sdk-swap-exchange-imports.cpp");
+  const auto Output = tmpFile("sdk-swap-exchange-imports.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <memory>
+#include <utility>
+namespace Imported {
+using std::swap, std::exchange;
+// Repeated imports preserve the same overload sets.
+using std::swap;
+using std::exchange;
+}
+namespace Reexport {
+using Imported::swap, Imported::exchange;
+}
+namespace Alias = Reexport;
+namespace Directed {
+using namespace Alias;
+}
+using std::exchange;
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, live, destroyed, moves, copies, assignments;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Tracked {
+  int n;
+  explicit Tracked(int v) noexcept : n(v) { ++live; }
+  Tracked(const Tracked &p) noexcept : n(p.n) { ++live; ++copies; }
+  Tracked(Tracked &&p) noexcept : n(p.n) { p.n = -1; ++live; ++moves; }
+  Tracked &operator=(Tracked &&p) noexcept {
+    n = p.n; p.n = -1; ++assignments; return *this;
+  }
+  ~Tracked() noexcept { --live; ++destroyed; }
+};
+int one(int n) { return n + 1; }
+int two(int n) { return n + 2; }
+int three(int n) noexcept { return n + 3; }
+using Callback = int (*)(int);
+using NoexceptCallback = int (*)(int) noexcept;
+namespace User {
+struct Arg { int n; };
+int one(Arg n) { return n.n + 1; }
+int two(Arg n) { return n.n + 2; }
+using Callback = int (*)(Arg);
+int swaps, exchanges;
+void swap(Callback &, Callback &) noexcept { ++swaps; }
+Callback exchange(Callback &p, Callback) noexcept { ++exchanges; return p; }
+using Imported::swap, Imported::exchange;
+}
+template <class T> void block_swap(T &left, T &right) {
+  using Alias::swap;
+  swap(left, right);
+}
+int scalars_and_callbacks() {
+  int value = 5, other = 9, replacement = 7;
+  int reads = 0, replacement_reads = 0;
+  int old = exchange((++reads, value), (++replacement_reads, replacement));
+  if (old != 5 || value != 7 || reads != 1 || replacement_reads != 1)
+    return 1;
+  const int &view = value;
+  (Alias::swap)(value, other);
+  if (value != 9 || other != 7 || view != 9 ||
+      Directed::exchange(value, value) != 9 || value != 9)
+    return 2;
+  double a = 1.5, b = 2.5;
+  block_swap(a, b);
+  if (a != 2.5 || b != 1.5)
+    return 3;
+  int *pointer = &value;
+  int *previous = (Reexport::exchange)(pointer, &other);
+  if (previous != &value || pointer != &other)
+    return 4;
+  Callback first = one, second = two;
+  Callback old_callback = Alias::exchange(first, second);
+  Callback old_function = Alias::exchange(first, three);
+  Callback cleared = Alias::exchange(first, nullptr);
+  const Callback immutable = one;
+  Callback empty_old = Alias::exchange(first, immutable);
+  NoexceptCallback nonthrowing = three;
+  Callback const_old = Alias::exchange(first, nonthrowing);
+  if (old_callback(1) != 2 || old_function(1) != 3 || cleared(1) != 4 ||
+      empty_old != nullptr || const_old(1) != 2 || first(1) != 4)
+    return 5;
+  {
+    using Alias::swap, Alias::exchange;
+    swap(first, second);
+    if (first(1) != 3 || second(1) != 4)
+      return 6;
+    User::Callback left = User::one, right = User::two;
+    Alias::swap(left, right);
+    if (User::swaps || left(User::Arg{1}) != 3 || right(User::Arg{1}) != 2)
+      return 7;
+    swap(left, right);
+    User::Callback saved = exchange(left, right);
+    if (User::swaps != 1 || User::exchanges != 1 || saved(User::Arg{1}) != 3 ||
+        left(User::Arg{1}) != 3 || right(User::Arg{1}) != 2)
+      return 8;
+  }
+  return 0;
+}
+int arrays_and_pairs() {
+  int left[2][2] = {{1, 2}, {3, 4}}, right[2][2] = {{5, 6}, {7, 8}};
+  Alias::swap(left, right);
+  if (left[0][0] != 5 || left[1][1] != 8 || right[0][1] != 2 || right[1][0] != 3)
+    return 9;
+  std::pair<int, int> first(1, 2), second(3, 4);
+  (Alias::swap)(first, second);
+  if (first.first != 3 || first.second != 4 || second.first != 1 || second.second != 2)
+    return 10;
+  std::array<int, 2> row{{5, 6}}, other{{7, 8}};
+  block_swap(row, other);
+  if (row[0] != 7 || row[1] != 8 || other[0] != 5 || other[1] != 6)
+    return 11;
+  Alias::swap(row, row);
+  std::array<int, 0> empty{}, another{};
+  Alias::swap(empty, another);
+  return row[0] == 7 && row[1] == 8 && !empty.size() && !another.size() ? 0 : 12;
+}
+int owned_moves_and_cleanup() {
+  Tracked first(11), second(12);
+  int first_reads = 0, second_reads = 0;
+  Alias::swap((++first_reads, first), (++second_reads, second));
+  if (first.n != 12 || second.n != 11 || first_reads != 1 || second_reads != 1 ||
+      moves != 1 || assignments != 2 || copies || live != 2 || destroyed != 1)
+    return 13;
+  using Owner = std::unique_ptr<int>;
+  Owner left(new int(13)), right(new int(14));
+  int *left_address = left.get(), *right_address = right.get();
+  {
+    using Alias::swap;
+    swap(left, right);
+    if (left.get() != right_address || right.get() != left_address ||
+        *left != 14 || *right != 13 || allocated != 2 || released)
+      return 14;
+    swap(left, left);
+    if (left.get() != right_address || *left != 14 || allocated != 2 || released)
+      return 15;
+  }
+  return 0;
+}
+int main() {
+  int result = scalars_and_callbacks();
+  if (!result) result = arrays_and_pairs();
+  if (!result) result = owned_moves_and_cleanup();
+  if (result) return result;
+  return !live && destroyed == 3 && moves == 1 && assignments == 2 && !copies &&
+                 allocated == 2 && released == 2 ? 0 : 16;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-swap-exchange-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2SDKSwapAndExchangeNameImportsRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"swap-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>__swap_result_t<T>swap(T&,T&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_move_assignable<T>::value);}}
+)cpp",
+       "TR0201"},
+      {"swap-array-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,size_t N,__enable_if_t<__is_swappable_v<T>,int>>void swap(T(&)[N],T(&)[N])noexcept(__is_nothrow_swappable_v<T>);}}
+)cpp",
+       "TR0201"},
+      {"swap-pair-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,class U,__enable_if_t<__is_swappable_v<T>&&__is_swappable_v<U>,int>>void swap(pair<T,U>&,pair<T,U>&)noexcept(__is_nothrow_swappable_v<T>&&__is_nothrow_swappable_v<U>);}}
+)cpp",
+       "TR0201"},
+      {"exchange-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,class U>T exchange(T&,U&&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_assignable<T&,U>::value);}}
+)cpp",
+       "TR0201"},
+      {"swap-specialization", R"cpp(
+namespace std{inline namespace __1{template<>void swap<int>(int&,int&)noexcept{}}}void f(int&a,int&b){Reexport::swap(a,b);}
+)cpp",
+       "TR0201"},
+      {"exchange-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int exchange<int,int>(int&a,int&&b)noexcept{return a;}}}int f(int&p){return Reexport::exchange(p,2);}
+)cpp",
+       "TR0201"},
+      {"callback-exchange-move-specialization", R"cpp(
+using Callback=int(*)(int);namespace std{inline namespace __1{template<>Callback&&move<Callback&>(Callback&p)noexcept{return static_cast<Callback&&>(p);}}}Callback f(Callback&a,Callback&b){return Reexport::exchange(a,b);}
+)cpp",
+       "TR0201"},
+      {"swap-independent-address", R"cpp(
+using F=void(*)(int&,int&)noexcept;void f(int&a,int&b){Reexport::swap(a,b);static_assert(sizeof(static_cast<F>(&Reexport::swap<int>))>0);}
+)cpp",
+       "TR0201"},
+      {"exchange-cast-callee", R"cpp(
+using F=int(*)(int&,int&&)noexcept;int f(int&p){return static_cast<F>(&Reexport::exchange<int,int>)(p,2);}
+)cpp",
+       "TR0201"},
+      {"unsupported-owned-overload", R"cpp(
+namespace User{void swap(int&,int&){long double v=1;}using Reexport::swap;}
+)cpp",
+       "TR0201"},
+      {"missing-owned-definition", R"cpp(
+namespace User{int exchange(int&,int);using Reexport::exchange;}
+)cpp",
+       "TR0203"},
+      {"swap-original-operand", R"cpp(
+void f(int&a,int&b){Reexport::swap((sizeof(long double),a),b);}
+)cpp",
+       "TR0201"},
+      {"exchange-selected-default", R"cpp(
+int replacement(int n=sizeof(long double)){return n;}int f(int&p){return Reexport::exchange(p,replacement());}
+)cpp",
+       "TR0201"},
+      {"swap-original-callback-exception", R"cpp(
+using Callback=int(*)(int)noexcept(sizeof(long double)>0);void f(Callback&a,Callback&b){Reexport::swap(a,b);}
+)cpp",
+       "TR0201"},
+      {"exchange-written-template-argument", R"cpp(
+int f(int&p){return Reexport::exchange<decltype(static_cast<int>(sizeof(long double)))>(p,2);}
+)cpp",
+       "TR0201"},
+      {"swap-long-double", R"cpp(
+void f(long double&a,long double&b){Reexport::swap(a,b);}
+)cpp",
+       "TR0201"},
+      {"exchange-long-double", R"cpp(
+long double f(long double&p){return Reexport::exchange(p,1.0L);}
+)cpp",
+       "TR0201"},
+      {"swap-zero-array-volatile-element", R"cpp(
+using Row=std::array<volatile int,0>;void f(Row&a,Row&b){Reexport::swap(a,b);}
+)cpp",
+       "TR0201"},
+      {"swap-native-array-adl-element", R"cpp(
+namespace User{struct Arg{int n;};using Callback=int(*)(Arg);void swap(Callback&,Callback&)noexcept{}}void f(User::Callback(&a)[1],User::Callback(&b)[1]){Reexport::swap(a,b);}
+)cpp",
+       "TR0201"},
+      {"swap-const-object", R"cpp(
+void f(const int&a,const int&b){Reexport::swap(a,b);}
+)cpp",
+       "TR0202"},
+      {"swap-rvalue", R"cpp(
+void f(){Reexport::swap(1,2);}
+)cpp",
+       "TR0202"},
+      {"exchange-const-object", R"cpp(
+int f(const int&p){return Reexport::exchange(p,2);}
+)cpp",
+       "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("sdk-swap-exchange-import-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("sdk-swap-exchange-import-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <array>
+#include <memory>
+#include <utility>
+namespace Imported{using std::swap,std::exchange;}
+namespace Reexport{using Imported::swap,Imported::exchange;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SDKValueAdapterNameImportsRetainSourceBoundaries) {
   const struct {
     const char *Name, *Source, *Code;
   } Cases[] = {
       {"other-sdk-function", R"cpp(
-using std::exchange;
+using std::make_pair;
 )cpp",
        "TR0201"},
       {"sdk-class-template", R"cpp(
@@ -43622,7 +43903,7 @@ void materialize_default_deleters() {
     const char *Name, *Source, *Code;
   } Cases[] = {
       {"other-sdk-function", R"cpp(
-using std::swap;
+using std::make_pair;
 )cpp",
        "TR0201"},
       {"sdk-class-template", R"cpp(

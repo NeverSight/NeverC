@@ -198,8 +198,9 @@ throwing callback pointer. Matching mutable or const `noexcept` callback-pointer
 lvalues and unqualified rvalues use a checked pointer read and the same pointer
 conversion. Source specializations remain rejected.
 Resolved namespace and nondependent block using-declarations may import the
-pinned `std::move`, `std::forward`, `std::as_const` and `std::move_if_noexcept`
-names, including repeated/comma imports and source-owned namespace reexports.
+pinned `std::move`, `std::forward`, `std::as_const`, `std::move_if_noexcept`,
+`std::swap` and `std::exchange` names, including repeated/comma imports and
+source-owned namespace reexports.
 These names retain Clang's selected overload, reference category and cv
 qualification; they create no wrapper or extra move. Each actual call still
 requires its existing operation descriptor and source proof. When `<algorithm>`
@@ -210,6 +211,16 @@ library function names are not admitted by this lookup exception. The
 `__utility/as_const.h` and `__utility/move.h`, respectively. Importing the
 deleted `as_const` rvalue overload retains its lookup metadata; unused overload
 signatures and bodies are not instantiated or emitted by the import proof.
+`exchange` imports pin every primary/redeclaration to `__utility/exchange.h`.
+`swap` imports retain the pinned SDK overload set from all admitted headers,
+including its generic/native-array, pair, `std::array` and `unique_ptr`
+overloads. Each selected swap still needs its existing scalar, element,
+owned-operation or owner source proof; importing an unused overload does not
+admit its types or body. Qualified imported calls retain the selected SDK
+overload, while unqualified calls retain ordinary ADL and source-owned
+overloads. Imports introduce no extra operand evaluations, moves, assignments,
+allocations or cleanup. Independent function addresses and indirect/cast
+callees retain their existing rejection.
 
 Result-source queries on exact pinned `std::move` and `std::forward` calls also
 accept admitted scalar objects: integral and enum types through 64 bits,
