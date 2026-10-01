@@ -401,7 +401,7 @@ struct FunctionalMemberInvokeCall {
   const clang::CXXMethodDecl *Method;
   const clang::FieldDecl *Field;
   const clang::CallExpr *ErasedFactory;
-  const clang::CallExpr *ErasedAdapter;
+  std::vector<const clang::CallExpr *> ErasedAdapters;
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
   std::vector<const clang::CXXConstructExpr *> SelectedCopies;

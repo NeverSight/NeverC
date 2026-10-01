@@ -2595,10 +2595,11 @@ executing receiver, argument, selected-default or temporary-lifetime effects.
 Missing operator bodies, replacement SDK declarations and unresolved member
 sources remain rejected.
 
-A single `std::move`, `std::forward`, `std::move_if_noexcept` or `std::as_const`
-adapter at the final direct call or outer `std::invoke` use also supplies these
-result queries. It requires the exact runtime-proven wrapper chain and pinned
-adapter declaration family, reference category, unchanged underlying object type and
+Bounded chains of `std::move`, `std::forward`, `std::move_if_noexcept` and
+`std::as_const` adapters at the final direct call or outer `std::invoke` use also
+supply these result queries. Each actual adapter requires the exact
+runtime-proven wrapper chain and pinned declaration family, reference category,
+unchanged underlying object type and
 nonthrowing signature. An authenticated compiler reference-cast builtin may
 supply this proof without a concrete SDK body; other adapters require their
 completed, exact return flow. The proof belongs to that invocation's adapter
@@ -2610,18 +2611,21 @@ still complete through normal traversal while retaining the original member
 source. Other aliases, compound expressions and independently initialized
 wrappers gain no type-source exemption. Written template arguments, the
 original selected member and receiver/argument/default/temporary sources
-remain independently checked.
+remain independently checked, including those on inner adapters. These final
+adapter chains also lower for runtime `std::apply` over the admitted tuple,
+pair and array carriers. They do not supply `apply` result-source queries or
+broaden the raw member-pointer callable boundary.
 The same four adapters may appear in an exact local `auto` copy/move
 initializer chain used by these queries. Each copied wrapper must trace to the
 same original factory; every initializer adapter independently supplies its
 pinned declaration family, exact reference flow and nonthrowing signature.
 Ordinary copies, const copies and these adapted copies may be combined, then
-called directly, through `std::invoke` or through one final call-site adapter.
+called directly, through `std::invoke` or through a final call-site adapter chain.
 Written adapter type arguments retain the same `decltype` boundary above.
 They are traversed at their owning copy declaration, and queries retain those
 actual completed type sources as well as the original member. Erasing a copy
 does not skip its written arguments or replay their traversal at a later query.
-Nested adapters within one initializer or final use, adapted temporary factory
+Nested adapters within one initializer, adapted temporary factory
 initializers and explicitly written wrapper types retain separate source
 requirements.
 

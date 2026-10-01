@@ -3551,7 +3551,7 @@ static const ValueDecl *functionalMemberInvokeSource(
     return nullptr;
   const auto Invoke =
       approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || Invoke->ErasedFactory || Invoke->ErasedAdapter)
+  if (!Invoke || Invoke->ErasedFactory || !Invoke->ErasedAdapters.empty())
     return nullptr;
   const auto *Target = Invoke->Method
       ? Invoke->Method->getType()->getAs<FunctionProtoType>() : nullptr;
@@ -3576,7 +3576,7 @@ struct FunctionalMemFnSource {
 
 static std::optional<FunctionalMemFnSource> functionalMemFnCarrierSource(
     Adapter &A, const Expr *Expression, const CallExpr *Factory,
-    const ValueDecl *Member, const CallExpr *Adapter) {
+    const ValueDecl *Member, llvm::ArrayRef<const CallExpr *> UseAdapters) {
   const Expr *CallableSource = Factory->getArg(0)->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(CallableSource);
       Address && Address->getOpcode() == UO_AddrOf)
@@ -3595,9 +3595,10 @@ static std::optional<FunctionalMemFnSource> functionalMemFnCarrierSource(
     Adapters.push_back(Call);
     return true;
   };
-  if (Adapter && !RetainAdapter(Adapter))
-    return std::nullopt;
-  // The caller supplies the runtime-proven factory and optional exact adapter.
+  for (const auto *Adapter : UseAdapters)
+    if (!RetainAdapter(Adapter))
+      return std::nullopt;
+  // The caller supplies the runtime-proven factory and exact use adapters.
   // Each deduced auto local must lead to that factory. Authenticate every
   // initializer adapter separately before retaining its erased carrier and
   // callee expressions; preserve the original member and written type sources.
@@ -3774,7 +3775,7 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
     return std::nullopt;
 
   return functionalMemFnCarrierSource(A, Call->getArg(0), Factory, Member,
-                                      Invoke->ErasedAdapter);
+                                      Invoke->ErasedAdapters);
 }
 
 static bool utilityUniquePtrElementConstructionSource(
@@ -11968,7 +11969,7 @@ public:
           if (Reference && Reference->hasExplicitTemplateArgs()) {
             if (const auto Source = functionalMemFnCarrierSource(
                     A, Stored->Initializer, Stored->Factory, Stored->Member,
-                    Stored->Adapter))
+                    {Stored->Adapter}))
               retainMemFnCarriers(*Source);
             for (const auto &Argument : Reference->template_arguments())
               if (!TraverseTemplateArgumentLoc(Argument))
@@ -17808,6 +17809,9 @@ public:
               else if (const auto *Cast =
                            dyn_cast<ImplicitCastExpr>(Expression))
                 Expression = Cast->getSubExpr();
+              else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
+                       llvm::is_contained(Member->ErasedAdapters, Adapter))
+                Expression = Adapter->getArg(0);
               else
                 break;
             }
@@ -17828,8 +17832,8 @@ public:
               }
             }
           }
-          if (Member->ErasedAdapter)
-            ApprovedErasedUtilityCalls.insert(Member->ErasedAdapter);
+          ApprovedErasedUtilityCalls.insert(Member->ErasedAdapters.begin(),
+                                            Member->ErasedAdapters.end());
         }
         const Expr *Leaf = directFunctionReference(Call);
         if (!Leaf)
