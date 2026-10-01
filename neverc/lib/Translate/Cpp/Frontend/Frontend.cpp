@@ -2787,16 +2787,23 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   const bool BuiltinCast = Builtin && Builtin->isImplicit() &&
                            Builtin->getID() == BuiltinID &&
                            Function->getBuiltinID() == BuiltinID;
+  const bool RValueResult = Function && Call->isXValue() &&
+                            Function->getReturnType()->isRValueReferenceType();
+  const bool LValueForward =
+      Function && Operation == UtilityOperation::Forward && Call->isLValue() &&
+      Function->getReturnType()->isLValueReferenceType();
   if (!Function || !Function->getIdentifier() ||
       Function->getName() !=
           (Operation == UtilityOperation::Move ? "move" : "forward") ||
       isa<CXXMethodDecl>(Function) || !Reference ||
       Reference->getDecl() != Function || !Function->getPrimaryTemplate() ||
       Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
-      Function->getParamDecl(0)->hasDefaultArg() || !Call->isXValue() ||
-      !Call->getArg(0)->isGLValue() ||
-      !Function->getReturnType()->isRValueReferenceType() || !Prototype ||
-      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Function->getParamDecl(0)->hasDefaultArg() ||
+      (!RValueResult && !LValueForward) || !Call->getArg(0)->isGLValue() ||
+      (LValueForward &&
+       (!Call->getArg(0)->isLValue() ||
+        !Function->getParamDecl(0)->getType()->isLValueReferenceType())) ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
       Prototype->getNoexceptExpr() ||
       operationCalleePrototype(Call) != Prototype ||
       !A.Context.hasSameType(Call->getArg(0)->getType(), Call->getType()) ||
@@ -2818,7 +2825,8 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   const auto *Parameter =
       Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts())
            : nullptr;
-  if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+  if (!Cast || Cast->getCastKind() != CK_NoOp ||
+      Cast->getValueKind() != Call->getValueKind() ||
       !A.Context.hasSameType(Cast->getTypeAsWritten(),
                              Function->getReturnType()) ||
       !A.Context.hasSameType(Cast->getType(), Call->getType()) || !Parameter ||

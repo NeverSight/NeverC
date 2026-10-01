@@ -1566,25 +1566,35 @@ source proofs. Independent function addresses, casts or compound postfix
 callees and callable values remain outside this direct-call boundary; source
 replacements and missing result-query bodies remain rejected.
 
-For these owner xvalue queries, exact pinned `std::move` and `std::forward`
+For owner queries on `std::move` and `std::forward`, the exact pinned
 specializations supply their reference-cast source. Resolved using-declarations
 and namespace reexports of those names use the same source proof. Any
 selected definition, instantiation pattern, primary and every redeclaration
 must remain in `__utility/move.h` or `__utility/forward.h`. Clang's matching
 implicit library builtin must retain the exact nonthrowing signature, owner
-cv qualification and rvalue-reference result. This source needs no concrete
-body; Clang may omit that body even for an ordinary builtin call. Other selected
-specializations require their already materialized return to cast the unchanged
-parameter to the exact owner rvalue reference;
+cv qualification and reference-result category. `move` retains its xvalue
+result. `forward<T&>` may instead produce an owner lvalue when its actual
+argument is an lvalue and its selected parameter is an lvalue reference. The
+collapsed return must be the matching owner lvalue reference. This source needs
+no concrete body; Clang may omit that body even for an ordinary builtin call.
+Other selected specializations require their already materialized return to
+cast the unchanged parameter to the exact owner reference with the call's value
+category;
 only the pinned type alias or compile-time reference-category check may precede
 it. This consumes no private SDK traversal or new body instantiation. Direct
-result queries retain the qualified owner `T&&` type, and nested calls keep
+result queries retain the qualified owner `T&` or `T&&` type. Nested calls keep
 their original argument, template argument, default and temporary-lifetime
 dependencies. Missing non-builtin adapter bodies, source replacements,
 independent adapter function addresses and erased nonthrowing signatures remain
-rejected. Importing the names does not extend this owner xvalue result-query
-proof to lvalue `forward<T&>` results; the existing runtime lvalue-reference
-operation and admitted signature-only queries keep their separate boundaries.
+rejected. Lvalue forwarding queries cover mutable and const owners, scalar and
+array owners (including bounded inner arrays), admitted custom deleters,
+parenthesized direct names, namespace/block imports and nested reference casts.
+Member/getter queries and all six comparison queries keep their independently
+selected SDK bodies and source proofs. Written operand effects, selected
+defaults and owning temporary/factory arguments are checked without executing
+them, allocating, moving ownership, invoking deleters or changing the borrowed
+owner. Scalar result queries, volatile owners, rvalue arguments forwarded as
+lvalue results and unadmitted owner families remain outside this boundary.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
