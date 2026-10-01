@@ -2558,7 +2558,6 @@ selected defaults and temporary cleanup retain their own exception sources
 and remain unevaluated in queries. Each callable/receiver category still needs
 its own materialized adapter. Volatile and mutable fields, unresolved member
 pointers, SDK replacements and independent adapter addresses remain rejected.
-`mem_fn` result queries retain their separate source requirements.
 
 An exact `std::mem_fn` wrapper built from either admitted direct named address
 or an authenticated local member-pointer initializer chain may be called
@@ -2574,6 +2573,23 @@ initializer chains are admitted, including authenticated `std::move`,
 moves from parameters and reassignment remain outside the runtime boundary.
 The same adapters may wrap an authenticated local wrapper at its final direct
 call or `std::invoke` use.
+
+Materialized direct `mem_fn` calls also supply result sources for `decltype`,
+result traits, `sizeof`, `alignof`, array extents and `noexcept`. Immediate
+factories and locally stored `auto` wrappers, including const wrappers and
+ordinary exact copy-initializer chains, retain their original member address.
+The factory, selected member-storing constructor, call operator, private
+invocability variable, internal member dispatcher and any receiver `get()` must
+have their exact pinned SDK sources. This proof applies only to the exact
+invocation and carrier expressions; independent factory-result type queries
+keep their existing source requirements. Source method definitions, original
+signatures, field types and owner layouts still close independently. Queries preserve admitted const
+and reference categories, scalar conversions, record values and `void`, without
+executing receiver, argument, selected-default or temporary-lifetime effects.
+Missing operator bodies, replacement SDK declarations and unresolved member
+sources remain rejected. Result queries through outer `std::invoke(mem_fn, ...)`,
+call-site value adapters, adapter-based copy/move chains or explicitly written
+wrapper types retain separate source requirements.
 
 Other cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do

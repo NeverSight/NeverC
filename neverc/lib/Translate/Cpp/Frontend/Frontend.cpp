@@ -3159,7 +3159,8 @@ static const CallExpr *functionalReturnedCall(const FunctionDecl *Function) {
 
 static bool functionalInvocabilitySource(
     Adapter &A, const CallExpr *Call, QualType Callable,
-    const TemplateArgument &Arguments, bool TargetIsNothrow) {
+    const TemplateArgument &Arguments, bool TargetIsNothrow,
+    llvm::StringRef TraitName = "is_nothrow_invocable_v") {
   const auto *Function = Call->getDirectCallee();
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   if (!Prototype || operationCalleePrototype(Call) != Prototype ||
@@ -3179,7 +3180,7 @@ static bool functionalInvocabilitySource(
   const auto *Variable = Reference
       ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
   if (!Variable || !Variable->getIdentifier() ||
-      Variable->getName() != "is_nothrow_invocable_v" ||
+      Variable->getName() != TraitName ||
       Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
       Variable->getSpecializedTemplateOrPartial()
           .is<VarTemplatePartialSpecializationDecl *>())
@@ -3495,49 +3496,33 @@ static const CXXMethodDecl *functionalUserInvokeSource(Adapter &A,
   return Invoke->Method;
 }
 
-static const ValueDecl *functionalMemberInvokeSource(
-    Adapter &A, const CallExpr *Call) {
-  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-  if (!Function || !Function->getIdentifier() || Function->getName() != "invoke" ||
-      !Call->getNumArgs() || !Call->getArg(0)->getType()->isMemberPointerType())
+static const ValueDecl *functionalMemberDispatchSource(
+    Adapter &A, const CallExpr *Call, const FunctionalMemberInvokeCall &Invoke,
+    const CallExpr *Dispatch) {
+  if ((!Invoke.Method && !Invoke.Field) || !Dispatch)
     return nullptr;
-  const auto Invoke =
-      approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || (!Invoke->Method && !Invoke->Field) || Invoke->ErasedFactory ||
-      Invoke->ErasedAdapter)
-    return nullptr;
-  const ValueDecl *Source = Invoke->Method
-      ? static_cast<const ValueDecl *>(Invoke->Method) : Invoke->Field;
-  const auto *Target = Invoke->Method
-      ? Invoke->Method->getType()->getAs<FunctionProtoType>() : nullptr;
-  const auto *Arguments = Function->getTemplateSpecializationArgs();
-  const auto *Dispatch = functionalReturnedCall(Function);
-  const auto *Returned = Dispatch
-      ? functionalReturnedExpression(Dispatch->getDirectCallee()) : nullptr;
+  const ValueDecl *Source = Invoke.Method
+      ? static_cast<const ValueDecl *>(Invoke.Method) : Invoke.Field;
+  const auto *Returned =
+      functionalReturnedExpression(Dispatch->getDirectCallee());
   const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
   const auto *Member = dyn_cast_or_null<BinaryOperator>(
-      Invoke->Method ? (Inner ? Inner->getCallee()->IgnoreParens() : nullptr)
+      Invoke.Method ? (Inner ? Inner->getCallee()->IgnoreParens() : nullptr)
                      : Returned);
-  const Expr *Result = Invoke->Method ? static_cast<const Expr *>(Inner) : Member;
+  const Expr *Result = Invoke.Method ? static_cast<const Expr *>(Inner) : Member;
   const auto *Pointer =
       Member ? Member->getRHS()->getType()->getAs<MemberPointerType>() : nullptr;
   // The runtime descriptor resolves the exact original member address/carrier
   // and proves the receiver and argument flow. Authenticate the materialized
   // public/internal adapters, including their actual member-pointer signature.
-  if ((Invoke->Method && !Target) || !Arguments || Arguments->size() != 2 ||
-      Arguments->get(0).getKind() != TemplateArgument::Type || !Member ||
-      Member->getOpcode() != BO_PtrMemD || !Pointer ||
+  if (!Member || Member->getOpcode() != BO_PtrMemD || !Pointer ||
       !A.Context.hasSameType(Pointer->getPointeeType(), Source->getType()) ||
       Result->getValueKind() != Call->getValueKind() ||
       !A.Context.hasSameType(Result->getType(), Call->getType()) ||
-      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h") ||
       !utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
-                               "__type_traits/invoke.h") ||
-      !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                     Arguments->get(1),
-                                     Target ? Target->isNothrow() : true))
+                               "__type_traits/invoke.h"))
     return nullptr;
-  if (Invoke->ObjectWrapper) {
+  if (Invoke.ObjectWrapper) {
     // Wrapped receivers use the descriptor's exact get() edge. Pin its source
     // independently; the caller's wrapper storage and initializer still close
     // through their ordinary expression/type sources.
@@ -3556,6 +3541,152 @@ static const ValueDecl *functionalMemberInvokeSource(
   // Methods retain their original signature, exception expression and body;
   // fields retain their written type and owning record layout.
   return Source;
+}
+
+static const ValueDecl *functionalMemberInvokeSource(
+    Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "invoke" ||
+      !Call->getNumArgs() || !Call->getArg(0)->getType()->isMemberPointerType())
+    return nullptr;
+  const auto Invoke =
+      approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
+  if (!Invoke || Invoke->ErasedFactory || Invoke->ErasedAdapter)
+    return nullptr;
+  const auto *Target = Invoke->Method
+      ? Invoke->Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if ((Invoke->Method && !Target) || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h") ||
+      !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                   Arguments->get(1),
+                                   Target ? Target->isNothrow() : true))
+    return nullptr;
+  return functionalMemberDispatchSource(A, Call, *Invoke,
+                                        functionalReturnedCall(Function));
+}
+
+struct FunctionalMemFnSource {
+  const ValueDecl *Member;
+  const Expr *Callable;
+  llvm::SmallVector<const Expr *, 16> Carriers;
+};
+
+static std::optional<FunctionalMemFnSource>
+functionalMemFnSource(Adapter &A, const CallExpr *Call) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Operator ? Operator->getDirectCallee() : nullptr);
+  if (!Method || Method->getOverloadedOperator() != OO_Call ||
+      Method->getParent()->getName() != "__mem_fn")
+    return std::nullopt;
+  const auto Invoke =
+      approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
+  if (!Invoke || !Invoke->ErasedFactory || Invoke->ErasedAdapter)
+    return std::nullopt;
+  const auto *Factory = Invoke->ErasedFactory;
+  const auto *Function = Factory->getDirectCallee();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  const auto *Target = Invoke->Method
+      ? Invoke->Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto Callable = A.Context.getLValueReferenceType(
+      Factory->getArg(0)->getType().withConst());
+  // The runtime descriptor proves the exact erased wrapper, stored member and
+  // forwarding chain. Its operator uses libc++'s private invocability variable.
+  if ((Invoke->Method && !Target) || !Arguments || Arguments->size() != 1 ||
+      !Prototype || operationCalleePrototype(Factory) != Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      !utilitySDKFunctionSource(A, Function, "__functional/mem_fn.h") ||
+      !utilitySDKFunctionSource(A, Method, "__functional/mem_fn.h") ||
+      !functionalInvocabilitySource(A, Call, Callable, Arguments->get(0),
+                                   Target ? Target->isNothrow() : true,
+                                   "__is_nothrow_invocable_v"))
+    return std::nullopt;
+  const auto *Member = functionalMemberDispatchSource(
+      A, Call, *Invoke, functionalReturnedCall(Method));
+  const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(
+      functionalReturnedExpression(Function));
+  const auto *Construction = Cast && Cast->getCastKind() == CK_ConstructorConversion
+      ? dyn_cast<CXXConstructExpr>(Cast->getSubExpr()) : nullptr;
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto *ConstructorType = Constructor
+      ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Argument = Construction && Construction->getNumArgs() == 1
+      ? dyn_cast<DeclRefExpr>(Construction->getArg(0)->IgnoreParenImpCasts())
+      : nullptr;
+  // Pin the selected factory constructor as well: authenticating mem_fn alone
+  // must not hide a source replacement of the wrapper's member-storing ctor.
+  if (!Member || !Constructor || !ConstructorType || !Argument ||
+      Argument->getDecl() != Function->getParamDecl(0) ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Method->getParent()->getCanonicalDecl() ||
+      ConstructorType->getExceptionSpecType() != EST_BasicNoexcept ||
+      ConstructorType->getNoexceptExpr() ||
+      !utilitySDKFunctionSource(A, Constructor, "__functional/mem_fn.h"))
+    return std::nullopt;
+
+  const Expr *CallableSource = Factory->getArg(0)->IgnoreParenImpCasts();
+  if (const auto *Address = dyn_cast<UnaryOperator>(CallableSource);
+      Address && Address->getOpcode() == UO_AddrOf)
+    CallableSource = Address->getSubExpr()->IgnoreParenImpCasts();
+  if (!isa<DeclRefExpr>(CallableSource))
+    return std::nullopt;
+  FunctionalMemFnSource Result{Member, CallableSource, {}};
+  // Retain only the exact side-effect-free carrier chain. Each local has a
+  // deduced auto type; written wrapper types and call-site adapters keep their
+  // separate query boundary. The original member expression remains a source.
+  auto Retain = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
+    if (!E || Depth >= 64)
+      return false;
+    A.chargeExpansion(1, E->getExprLoc());
+    Result.Carriers.push_back(E);
+    if (E == Factory) {
+      const auto *Leaf = directFunctionReference(Factory);
+      const Expr *Callee = Factory->getCallee();
+      while (Callee) {
+        Result.Carriers.push_back(Callee);
+        if (Callee == Leaf)
+          return true;
+        if (const auto *P = dyn_cast<ParenExpr>(Callee))
+          Callee = P->getSubExpr();
+        else if (const auto *C = dyn_cast<ImplicitCastExpr>(Callee))
+          Callee = C->getSubExpr();
+        else
+          return false;
+      }
+      return false;
+    }
+    if (const auto *P = dyn_cast<ParenExpr>(E))
+      return Self(Self, P->getSubExpr(), Depth + 1);
+    if (const auto *C = dyn_cast<ImplicitCastExpr>(E))
+      return Self(Self, C->getSubExpr(), Depth + 1);
+    if (const auto *T = dyn_cast<MaterializeTemporaryExpr>(E))
+      return Self(Self, T->getSubExpr(), Depth + 1);
+    if (const auto *T = dyn_cast<CXXBindTemporaryExpr>(E))
+      return Self(Self, T->getSubExpr(), Depth + 1);
+    if (const auto *C = dyn_cast<ExprWithCleanups>(E))
+      return Self(Self, C->getSubExpr(), Depth + 1);
+    if (const auto *C = dyn_cast<CXXConstructExpr>(E))
+      return C->getNumArgs() == 1 && C->getConstructor()->isImplicit() &&
+             C->getConstructor()->isTrivial() &&
+             C->getConstructor()->isCopyOrMoveConstructor() &&
+             approvedStandardSDKDeclaration(A.S, A.Sources, C->getConstructor()) &&
+             Self(Self, C->getArg(0), Depth + 1);
+    const auto *Reference = dyn_cast<DeclRefExpr>(E);
+    const auto *Variable = Reference
+        ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    const auto *Info = Variable ? Variable->getTypeSourceInfo() : nullptr;
+    const auto Stored =
+        approvedFunctionalStoredMemFn(A.S, A.Sources, Variable, A.Context);
+    return Info && Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
+           Stored && Stored->Factory == Factory &&
+           Self(Self, Stored->Initializer, Depth + 1);
+  };
+  return Retain(Retain, Call->getArg(0), 0)
+      ? std::optional<FunctionalMemFnSource>(std::move(Result)) : std::nullopt;
 }
 
 static bool utilityUniquePtrElementConstructionSource(
@@ -8066,6 +8197,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       AuthenticatedVectorEndpointReferences;
   std::map<const Expr *, const CallExpr *> AuthenticatedUtilityReferences;
   std::map<const CallExpr *, const ValueDecl *> AuthenticatedUserInvokeSources;
+  std::map<const Stmt *, const Expr *> MemFnCarrierSources;
   std::map<const DeclRefExpr *, const CallExpr *>
       AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
@@ -10906,6 +11038,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return Method;
   }
   void collectOperationSource(const Stmt *S) {
+    if (auto Found = MemFnCarrierSources.find(S);
+        Found != MemFnCarrierSources.end()) {
+      // This invocation proved the erased factory/copy chain. Retain its exact
+      // original member/carrier reference, not the SDK wrapper's private layout or
+      // the skipped auto TypeLoc. Independent wrapper uses get no such proof.
+      S = Found->second;
+    }
     if (const auto *List = dyn_cast_or_null<InitListExpr>(S))
       if (auto Found = ZeroArrayStorageSources.find(List);
           Found != ZeroArrayStorageSources.end())
@@ -10977,6 +11116,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           UserInvoke = functionalUserInvokeSource(A, Call);
           if (!UserInvoke)
             UserInvoke = functionalMemberInvokeSource(A, Call);
+          if (!UserInvoke)
+            if (const auto MemFn = functionalMemFnSource(A, Call)) {
+              UserInvoke = MemFn->Member;
+              for (const auto *Carrier : MemFn->Carriers) {
+                auto [Source, New] =
+                    MemFnCarrierSources.emplace(Carrier, MemFn->Callable);
+                if (New)
+                  A.chargeExpansion(1, Carrier->getExprLoc());
+                else if (Source->second != MemFn->Callable)
+                  A.reject(Carrier->getExprLoc(), "mem_fn carrier source",
+                           "An erased wrapper requires one original member source.");
+              }
+            }
         }
         if (ReferenceInvoke || UserInvoke ||
             functionalReferenceAccessSource(A, Call) ||
