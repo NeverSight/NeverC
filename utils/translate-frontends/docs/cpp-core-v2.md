@@ -1536,9 +1536,10 @@ operator-function calls, such as `std::operator==(owner, other)` or
 `std::operator>=(nullptr, owner)`. This covers owner/owner and both owner/null
 orders for scalar and array owners, qualified pointees, bounded inner arrays,
 admitted custom deleters and borrowed const or mutable/const xvalue owners.
-Qualified names, parenthesized direct function names, argument-dependent lookup
-and well-formed explicit template arguments must select the exact pinned free
-overload with its checked two-parameter signature and `bool` prvalue result.
+Qualified names, parenthesized direct function names, argument-dependent lookup,
+resolved namespace/block using-declarations and well-formed explicit template
+arguments must select the exact pinned free overload with its checked
+two-parameter signature and `bool` prvalue result.
 Explicit calls evaluate each argument once in an unspecified C++17 order and
 retain the same pointer equality or flat-address ordering semantics. Borrowed
 owners retain their pointer identity; owning temporaries retain full-expression
@@ -1550,10 +1551,12 @@ They check each written argument, template argument, original alias/signature,
 exception specification, selected default and temporary/factory lifetime source
 without evaluating arguments, allocating or transferring ownership. Pure
 `noexcept` queries use the signature source without requiring unused comparison
-bodies. Independent function addresses, casts or compound postfix callees,
-callable values and `using` imports of SDK comparison overloads remain outside
-this direct-call boundary; source replacements and missing result-query bodies
-remain rejected.
+bodies. `using std::operator==` and the other five comparison names may import
+the pinned overload sets, including source-owned namespace reexports. Imports
+supply lookup metadata only; each selected call or query retains these same
+source proofs. Independent function addresses, casts or compound postfix
+callees and callable values remain outside this direct-call boundary; source
+replacements and missing result-query bodies remain rejected.
 
 For these owner xvalue queries, exact pinned `std::move` and `std::forward`
 specializations supply their reference-cast source. Any
@@ -9022,6 +9025,27 @@ qualified lookup, access control, argument-dependent lookup and hidden friends
 retain those resolved meanings. The producer never repeats lookup against the
 final namespace contents or creates alias wrapper functions.
 
+Ordinary resolved using-declarations may additionally import the six pinned
+libc++ free comparison names `operator==`, `operator!=`, `operator<`,
+`operator>`, `operator<=` and `operator>=` from `std` or its inline namespaces.
+Namespace and nondependent block imports, repeated/comma imports and
+source-owned namespace reexports preserve the overload set selected by Clang.
+An owned namespace alias or using-directive may refer to such a reexport
+namespace under the existing ownership rules. Aliases and directives to the
+SDK `std` namespace itself remain excluded.
+
+This SDK exception authenticates lookup declarations.
+Every imported free function or function-template declaration and its
+redeclarations must remain in the pinned libc++ SDK. Other unused overloads
+made visible by the same name need no concrete instantiation, body traversal
+or emitted entity. Each actually selected SDK call or result query still needs
+its admitted operation descriptor and original type, signature, argument,
+default, body and lifetime proofs. For example, imported `unique_ptr`
+comparisons use the direct-call boundary above; importing their names does
+not admit `shared_ptr` comparisons or SDK function pointers. Non-comparison
+SDK function imports, SDK class/typedef imports, source replacements and
+independent SDK function addresses remain excluded.
+
 Lookup declarations add no runtime storage, initialization or cleanup. Imported
 and qualified names address the same object, preserve const permissions, and
 use the same record layout and typed call signatures. Block imports preserve
@@ -9038,14 +9062,19 @@ source remains checked even when unused or statically skipped. Source errors ret
 Admitted free function templates may also be imported; their lazy patterns and
 materialized bodies follow the separate template rules above. Class-member
 imports, inherited constructors, unsupported class-template forms and dependent/pack import forms,
-foreign targets and unsupported source types or bodies remain
+other foreign targets and unsupported source types or bodies remain
 excluded. C++20 using-enum and scoped-enumerator imports remain rejected under
 the C++17 contract even when the embedded library only issues an extension
 warning. Old profiles and header/library restrictions are unchanged.
 
 Native O0/O2 fixtures cover lookup differences, canonical addresses, mutation,
-type identity and cleanup. Protocol checks verify original IDs, exact overload
-signatures, defaults, layouts, declaration erasure and deterministic relocation.
+type identity, SDK comparison reexports and cleanup. SDK import fixtures also
+cover all 18 owner/owner and owner/null comparison forms, direct template and
+parenthesized names, borrowed xvalues, unevaluated arguments and factory
+temporary destruction. Negative fixtures retain missing comparison-body,
+source-replacement, callable-value and unsupported-import boundaries.
+Protocol checks verify original IDs, exact overload signatures, defaults,
+layouts, declaration erasure and deterministic relocation.
 Native validation requires CI for the implementing revision. Full C++/STL
 remains unfinished.
 

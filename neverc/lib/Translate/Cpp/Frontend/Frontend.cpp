@@ -9282,6 +9282,69 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
+  bool sdkComparisonUsingTarget(const NamedDecl *Target, SourceLocation L) {
+    const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(Target);
+    const auto *Function = Template ? Template->getTemplatedDecl()
+                                    : dyn_cast_or_null<FunctionDecl>(Target);
+    if (!Function || isa<CXXMethodDecl>(Function) ||
+        Function->isInvalidDecl() || !Function->isOverloadedOperator())
+      return false;
+    switch (Function->getOverloadedOperator()) {
+    case OO_EqualEqual:
+    case OO_ExclaimEqual:
+    case OO_Less:
+    case OO_Greater:
+    case OO_LessEqual:
+    case OO_GreaterEqual:
+      break;
+    default:
+      return false;
+    }
+    const DeclContext *Context = Function->getDeclContext();
+    unsigned Namespaces = 0;
+    bool Standard = false;
+    while (const auto *Namespace = dyn_cast_or_null<NamespaceDecl>(Context)) {
+      A.chargeExpansion(1, L);
+      if (++Namespaces > 64)
+        return false;
+      if (Namespace->isStdNamespace()) {
+        Standard = true;
+        break;
+      }
+      if (!Namespace->isInline())
+        return false;
+      Context = Namespace->getParent();
+    }
+    if (!Standard)
+      return false;
+    auto Pinned = [&](const Decl *Declaration) {
+      A.chargeExpansion(1, L);
+      const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+      return !Declaration->isInvalidDecl() && Origin &&
+             Origin->Root == "libcxx" &&
+             approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+    };
+    auto PinnedFunction = [&](const FunctionDecl *Declaration) {
+      if (!Declaration)
+        return false;
+      for (const auto *Redeclaration : Declaration->redecls())
+        if (!Pinned(Redeclaration))
+          return false;
+      return true;
+    };
+    if (Template) {
+      for (const auto *Redeclaration : Template->redecls())
+        if (!Pinned(Redeclaration) || !PinnedFunction(dyn_cast<FunctionDecl>(
+                                          Redeclaration->getTemplatedDecl())))
+          return false;
+    } else if (!PinnedFunction(Function)) {
+      return false;
+    }
+    // Import the pinned overload set for lookup only. Unused dependent SDK
+    // signatures and bodies are not instantiated or admitted by this proof;
+    // every actual reference still needs its operation's source descriptor.
+    return true;
+  }
   void usingTarget(const UsingShadowDecl *D) {
     if (CheckedUsingShadows.count(D))
       return;
@@ -9317,15 +9380,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                     importContext(Target->getDeclContext());
       }
     }
+    if (!Supported)
+      Supported = sdkComparisonUsingTarget(Target, D->getLocation());
     if (!Supported) {
-      A.reject(D->getLocation(), "using target",
-               "An owned namespace or block declaration, or an unscoped non-member enumerator, is required.");
+      A.reject(
+          D->getLocation(), "using target",
+          "Expected an owned namespace or block declaration, an unscoped "
+          "non-member enumerator, or a pinned SDK free comparison overload.");
       return;
     }
     A.chargeExpansion(1, D->getLocation());
     CheckedUsingShadows.insert(D);
-    // The normal traversal still checks every original target's type, body and
-    // definition. Imports add no source entities or emitted storage of their own.
+    // The normal traversal checks original owned targets; selected SDK uses
+    // retain their own source proofs. Imports add no entities or storage.
   }
   // Clang 20 does not consistently mark discarded uses as NOUR_Discarded.
   // Track only the potential results of actual discarded-value contexts, never

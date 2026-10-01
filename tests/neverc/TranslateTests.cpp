@@ -9699,6 +9699,7 @@ TEST_F(TranslateTest, CoreV2NameImportsAcceptResolvedNamespaceAndBlockDeclaratio
 }
 
 TEST_F(TranslateTest, CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries) {
+  writeFile(tmpFile("imports-foreign.h"), "namespace Foreign{int n=3;}");
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"scoped-enumerator", "enum class E{n=3};using E::n;int f(){return static_cast<int>(n);}", "TR0201"},
       {"scoped-enumerator-local", "int f(){enum class E{n=3};using E::n;return static_cast<int>(n);}", "TR0201"},
@@ -9713,7 +9714,7 @@ TEST_F(TranslateTest, CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries)
       {"skipped-body", "namespace N{int f(){if(false){long double n=3;}return 0;}}using N::f;", "TR0201"},
       {"folded-body", "namespace N{constexpr int f(){return static_cast<int>(3.0L);}}using N::f;const int value=f();", "TR0201"},
       {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nnamespace N{int n=3;}using N::n;", "TR0201"},
-      {"active-include", "#include <vector>\nnamespace N{int n=3;}using N::n;", "TR0201"},
+      {"active-include", "#include \"imports-foreign.h\"\nusing Foreign::n;", "TR0201"},
       {"missing-namespace", "namespace A=Missing;", "TR0202"},
       {"missing-name", "namespace N{}using N::missing;", "TR0202"},
       {"namespace-as-using", "namespace N{namespace Inner{}}using N::Inner;", "TR0202"},
@@ -41384,6 +41385,279 @@ void materialize_default_deleters() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SDKComparisonNameImportsRunAtBothOptimizations) {
+  const auto Source = tmpFile("sdk-comparison-imports.cpp");
+  const auto Output = tmpFile("sdk-comparison-imports.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace Imported {
+using std::operator==, std::operator!=, std::operator<;
+using std::operator>, std::operator<=, std::operator>=;
+using std::operator<;
+}
+namespace Reexport {
+using Imported::operator==, Imported::operator!=, Imported::operator<;
+using Imported::operator>, Imported::operator<=, Imported::operator>=;
+}
+namespace Alias = Reexport;
+namespace Directed { using namespace Alias; }
+using std::operator==;
+using Size = decltype(sizeof(0)); using Null = decltype(nullptr);
+extern "C" void *malloc(Size); extern "C" void free(void *);
+int allocated, released, live, destroyed, designators, nulls, defaults, effects;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+using P = std::unique_ptr<int>;
+P &select(P &p, int n = (++defaults, 9)) noexcept {
+  ++designators; effects = effects * 10 + n; return p;
+}
+Null zero(int n = (++defaults, 8)) noexcept {
+  ++nulls; effects = effects * 10 + n; return nullptr;
+}
+struct Box { int n; Box(int v) noexcept : n(v) { ++live; } ~Box() noexcept { --live; ++destroyed; } };
+struct SignatureOnly { int n; SignatureOnly() = delete; ~SignatureOnly() = delete; };
+struct Ignore { void operator()(SignatureOnly *) const noexcept {} };
+void signatures(std::unique_ptr<SignatureOnly, Ignore> &p,
+                std::unique_ptr<SignatureOnly, Ignore> &q) {
+  static_assert(!noexcept(Imported::operator==(p, q)) && !noexcept(Alias::operator!=(p, q)));
+  static_assert(!noexcept(Alias::operator<(p, q)) && !noexcept(Alias::operator>(p, q)));
+  static_assert(!noexcept(Alias::operator<=(p, q)) && !noexcept(Alias::operator>=(p, q)));
+  static_assert(noexcept(Imported::operator==(p, nullptr)) && noexcept(Alias::operator!=(nullptr, p)));
+}
+namespace User {
+struct R { int n; };
+bool operator==(const R &p, const R &q) { return p.n == q.n; }
+using Imported::operator==;
+}
+template<class Left, class Right> bool comparisons(Left &p, Right &q) {
+  auto left = p.get(); auto right = q.get();
+  std::less<decltype(right)> less;
+  const Null null = nullptr;
+  if (Alias::operator==(p, q) != (left == right) ||
+      Alias::operator==(p, null) != (left == nullptr) ||
+      Alias::operator==(null, p) != (nullptr == left)) return false;
+  if (Alias::operator!=(p, q) != (left != right) ||
+      Alias::operator!=(p, null) != (left != nullptr) ||
+      Alias::operator!=(null, p) != (nullptr != left)) return false;
+  if (Alias::operator<(p, q) != less(left, right) ||
+      Alias::operator<(p, null) != less(left, nullptr) ||
+      Alias::operator<(null, p) != less(nullptr, left)) return false;
+  if (Alias::operator>(p, q) != less(right, left) ||
+      Alias::operator>(p, null) != less(nullptr, left) ||
+      Alias::operator>(null, p) != less(left, nullptr)) return false;
+  if (Alias::operator<=(p, q) != !less(right, left) ||
+      Alias::operator<=(p, null) != !less(nullptr, left) ||
+      Alias::operator<=(null, p) != !less(left, nullptr)) return false;
+  if (Alias::operator>=(p, q) != !less(left, right) ||
+      Alias::operator>=(p, null) != !less(left, nullptr) ||
+      Alias::operator>=(null, p) != !less(nullptr, left)) return false;
+  static_assert(__is_same(decltype(Alias::operator==(p, q)), bool));
+  static_assert(__is_same(decltype(Alias::operator!=(p, null)), bool));
+  static_assert(__is_same(decltype(Alias::operator<(null, p)), bool));
+  static_assert(__is_same(decltype(Alias::operator>(p, q)), bool));
+  static_assert(__is_same(decltype(Alias::operator<=(p, null)), bool));
+  static_assert(__is_same(decltype(Alias::operator>=(null, p)), bool));
+  static_assert(sizeof(Alias::operator==(p, q)) == sizeof(bool));
+  static_assert(alignof(decltype(Alias::operator<=(null, p))) == alignof(bool));
+  static_assert(noexcept(Alias::operator==(p, null)) && !noexcept(Alias::operator<(p, q)));
+  return p.get() == left && q.get() == right;
+}
+int check() {
+  P p(new int(3)), empty;
+  std::unique_ptr<const int> q(new int(4));
+  std::unique_ptr<int[]> array(new int[2]{5, 6});
+  std::unique_ptr<const int[]> const_array(new int[2]{7, 8});
+  if (!comparisons(p, q) || !comparisons(p, p) || !comparisons(p, empty) ||
+      !comparisons(array, const_array)) return 1;
+  auto raw = p.get(); std::less<int *> less;
+  {
+    using Reexport::operator==, Reexport::operator!=, Reexport::operator<;
+    using Reexport::operator>, Reexport::operator<=, Reexport::operator>=;
+    using Reexport::operator<;
+    if (!operator==(p, p) || operator!=(p, p) || operator<(p, p) ||
+        operator>(p, p) || !operator<=(p, p) || !operator>=(p, p)) return 2;
+    if (operator<(select(p, 1), zero(2)) != less(raw, nullptr) ||
+        designators != 1 || nulls != 1 || (effects != 12 && effects != 21)) return 3;
+    static_assert(__is_same(decltype(operator==(select(p), zero())), bool));
+    static_assert(sizeof(operator>=(zero(), select(p))) == sizeof(bool));
+    static_assert(noexcept(operator!=(zero(), select(p))));
+  }
+  if (!User::operator==(User::R{9}, User::R{9}) || !User::operator==(p, p)) return 4;
+  if (!Directed::operator==(std::move(p), std::forward<P>(p)) || p.get() != raw) return 5;
+  if (!(Alias::operator==<int, std::default_delete<int>, const int, std::default_delete<const int>>(p, q) == false)) return 6;
+  if ((Imported::operator<)(p, nullptr) != less(raw, nullptr)) return 7;
+  bool temporary = Reexport::operator!=(std::make_unique<Box>(11), nullptr);
+  if (!temporary || live || destroyed != 1) return 8;
+  int before_allocated = allocated, before_released = released;
+  static_assert(__is_same(decltype(Alias::operator!=(std::make_unique<Box>(12), zero())), bool));
+  static_assert(__is_same(decltype(Imported::operator<(std::forward<P>(select(p)), zero())), bool));
+  static_assert(alignof(decltype(Alias::operator>=(zero(), std::move(select(p))))) == alignof(bool));
+  if (allocated != before_allocated || released != before_released || designators != 1 ||
+      nulls != 1 || defaults || p.get() != raw || *p != 3) return 9;
+  return 0;
+}
+int main() {
+  int result = check(); if (result) return result;
+  return allocated == released && !live && destroyed == 1 && !defaults ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-comparison-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SDKComparisonNameImportsRetainSourceBoundaries) {
+  auto Reject = [&](const std::string &Name, const std::string &Code,
+                    const std::string &Diagnostic) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile("sdk-comparison-import-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("sdk-comparison-import-reject-" + Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+using Size = decltype(sizeof(0)); using Null = decltype(nullptr);
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+namespace Imported {
+using std::operator==, std::operator!=, std::operator<;
+using std::operator>, std::operator<=, std::operator>=;
+}
+namespace Reexport {
+using Imported::operator==, Imported::operator!=, Imported::operator<;
+using Imported::operator>, Imported::operator<=, Imported::operator>=;
+}
+)cpp" + Code + R"cpp(
+void materialize_default_deleters() {
+  std::default_delete<int>{}(nullptr);
+  std::default_delete<int[]>{}(static_cast<int *>(nullptr));
+  std::default_delete<const int>{}(nullptr);
+}
+)cpp");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Diagnostic);
+    expectNoArtifacts(Output);
+  };
+  const std::pair<std::string, std::string> Operators[] = {
+      {"equal", "=="}, {"not-equal", "!="}, {"less", "<"},
+      {"greater", ">"}, {"less-equal", "<="}, {"greater-equal", ">="}};
+  const std::pair<std::string, std::string> Operands[] = {
+      {"owners", "p,q"}, {"owner-null", "p,nullptr"},
+      {"null-owner", "nullptr,p"}};
+  for (const auto &[OperatorName, Operator] : Operators)
+    for (const auto &[ArgumentName, Arguments] : Operands)
+      Reject("query-only-" + OperatorName + "-" + ArgumentName,
+             "using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();"
+             "static_assert(__is_same(decltype(Reexport::operator" + Operator +
+                 "(" + Arguments + ")),bool));return 0;}",
+             "TR0201");
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"other-sdk-function", R"cpp(
+using std::swap;
+)cpp",
+       "TR0201"},
+      {"sdk-class-template", R"cpp(
+using std::unique_ptr;
+)cpp",
+       "TR0201"},
+      {"sdk-typedef", R"cpp(
+using std::nullptr_t;
+)cpp",
+       "TR0201"},
+      {"sdk-namespace-alias", R"cpp(
+namespace SDK=std;
+)cpp",
+       "TR0201"},
+      {"sdk-using-directive", R"cpp(
+using namespace std;
+)cpp",
+       "TR0201"},
+      {"unadmitted-comparison", R"cpp(
+bool f(std::shared_ptr<int>&p,std::shared_ptr<int>&q){return Reexport::operator==(p,q);}
+)cpp",
+       "TR0201"},
+      {"unsupported-owned-overload", R"cpp(
+namespace User{struct R{int n;};bool operator==(const R&,const R&){long double value=1;return value==1;}using Reexport::operator==;}
+)cpp",
+       "TR0201"},
+      {"missing-owned-definition", R"cpp(
+namespace User{int missing();using Reexport::operator==;}
+)cpp",
+       "TR0203"},
+      {"sdk-source-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,class D,class U,class E>bool operator==(const unique_ptr<T,D>&,const unique_ptr<U,E>&);}}using std::operator==;
+)cpp",
+       "TR0201"},
+      {"owner-wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator==<int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){Reexport::operator==(p,q);static_assert(__is_same(decltype(Reexport::operator==(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"null-wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator<=<int,default_delete<int>>(nullptr_t,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p){Reexport::operator<=(nullptr,p);static_assert(__is_same(decltype(Reexport::operator<=(nullptr,p)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-getter-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){Reexport::operator==(p,q);static_assert(__is_same(decltype(Reexport::operator==(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-boolean-specialization", R"cpp(
+namespace std{inline namespace __1{template<>unique_ptr<int>::operator bool()const noexcept{return true;}}}using P=std::unique_ptr<int>;int f(P&p){Reexport::operator==(p,nullptr);static_assert(__is_same(decltype(Reexport::operator==(p,nullptr)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-comparator-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr bool less<int*>::operator()(int*const&,int*const&)const{return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){Reexport::operator>(p,q);static_assert(__is_same(decltype(Reexport::operator>(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"common-type-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct common_type<int*,int*>{using type=int*;};}}using P=std::unique_ptr<int>;int f(P&p,P&q){Reexport::operator<(p,q);static_assert(__is_same(decltype(Reexport::operator<(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"reversed-delegate-specialization", R"cpp(
+namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>>(nullptr_t,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p){Reexport::operator<=(p,nullptr);static_assert(__is_same(decltype(Reexport::operator<=(p,nullptr)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"compound-postfix", R"cpp(
+using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int mark(){return 1;}int f(P&p,P&q){Reexport::operator==(p,q);static_assert(__is_same(decltype((mark(),static_cast<F>(&Reexport::operator==))(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"cast-postfix", R"cpp(
+using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int f(P&p,P&q){Reexport::operator==(p,q);static_assert(__is_same(decltype(static_cast<F>(&Reexport::operator==)(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"function-reference-call", R"cpp(
+using P=std::unique_ptr<int>;bool(&target)(const P&,const P&)=Reexport::operator==;int f(P&p,P&q){Reexport::operator==(p,q);static_assert(__is_same(decltype(target(p,q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-function-address", R"cpp(
+using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int f(P&p,P&q){Reexport::operator==(p,q);static_assert(sizeof(static_cast<F>(&Reexport::operator==))>0);return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases)
+    Reject(Case.Name, Case.Source, Case.Code);
+}
+
 TEST_F(TranslateTest,
        CoreV2MemoryUniquePtrExplicitComparisonsRunAtBothOptimizations) {
   const auto Source = tmpFile("memory-unique-ptr-explicit-comparisons.cpp");
@@ -41774,10 +42048,6 @@ using P=std::unique_ptr<int>;bool(&target)(const P&,const P&)=std::operator==;in
        "TR0201"},
       {"independent-function-address", R"cpp(
 using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int f(P&p,P&q){std::operator==(p,q);static_assert(sizeof(static_cast<F>(&std::operator==))>0);return 0;}
-)cpp",
-       "TR0201"},
-      {"using-comparison-import", R"cpp(
-using std::operator<;using P=std::unique_ptr<int>;int f(P&p,P&q){std::operator<(p,q);static_assert(__is_same(decltype(operator<(p,q)),bool));return 0;}
 )cpp",
        "TR0201"},
   };
