@@ -67827,6 +67827,308 @@ int target(int n)noexcept{return n;}
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerHashQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("pointer-hash-queries.cpp");
+  const auto Output = tmpFile("pointer-hash-queries.nc");
+  writeFile(Source, R"cpp(
+#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+int calls, defaults, live, destroyed, callback_calls;
+int value = 7;
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+using Hash = std::hash<int *>;
+using Wrapper = std::reference_wrapper<Hash>;
+int callback(int n) { ++callback_calls; return n; }
+int nonthrowing_callback(int n) noexcept { ++callback_calls; return n; }
+int *mark(int n = (++defaults, 1)) noexcept { ++calls; return &value; }
+int *argument(Ticket ticket = Ticket()) noexcept { ++calls; return &value; }
+int *potentially_throwing() { ++calls; return &value; }
+Hash &receiver(Hash &h, int n = (++defaults, 1)) noexcept { ++calls; return h; }
+Hash temporary_receiver(Ticket ticket = Ticket()) noexcept { ++calls; return Hash{}; }
+Wrapper &wrapper_receiver(Wrapper &w, int n = (++defaults, 1)) noexcept { ++calls; return w; }
+Wrapper temporary_wrapper(Hash &h, Ticket ticket = Ticket()) noexcept {
+  ++calls; return std::ref(h);
+}
+template<class T> bool family(T pointer) {
+  std::hash<T> hash;
+  auto wrapper = std::ref(hash);
+  const auto constant = std::cref(hash);
+  // Unlike integral hash operators, the pointer partial specialization needs
+  // an evaluated call to materialize its exact operator body before a query.
+  const auto expected = hash(pointer);
+  if (std::invoke(hash, pointer) != expected || wrapper(pointer) != expected ||
+      constant(pointer) != expected || std::invoke(wrapper, pointer) != expected ||
+      std::invoke(constant, pointer) != expected ||
+      hash(nullptr) != std::invoke(hash, nullptr) ||
+      wrapper(nullptr) != hash(nullptr) || constant(nullptr) != hash(nullptr) ||
+      std::invoke(wrapper, nullptr) != hash(nullptr)) return false;
+  static_assert(__is_same(decltype(hash(pointer)), std::size_t));
+  static_assert(__is_same(decltype(hash(nullptr)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, pointer)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, nullptr)), std::size_t));
+  static_assert(__is_same(decltype(wrapper(pointer)), std::size_t));
+  static_assert(__is_same(decltype(wrapper(nullptr)), std::size_t));
+  static_assert(__is_same(decltype(constant(pointer)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, pointer)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, nullptr)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant, pointer)), std::size_t));
+  static_assert(noexcept(hash(pointer)) && noexcept(std::invoke(hash, pointer)));
+  static_assert(noexcept(wrapper(pointer)) && noexcept(std::invoke(wrapper, pointer)));
+  static_assert(sizeof(hash(pointer)) == sizeof(std::size_t));
+  static_assert(alignof(decltype(std::invoke(wrapper, pointer))) == alignof(std::size_t));
+  return true;
+}
+int main() {
+  bool flag = true;
+  double fraction = 0.5;
+  using Function = int (*)(int);
+  using Nonthrowing = int (*)(int) noexcept;
+  if (!family(&value) || !family(static_cast<const int *>(&value)) ||
+      !family(static_cast<void *>(&value)) || !family(static_cast<const void *>(&value)) ||
+      !family(&flag) || !family(&fraction) ||
+      !family(static_cast<Function>(&callback)) ||
+      !family(static_cast<Nonthrowing>(&nonthrowing_callback))) return 1;
+  Hash hash;
+  const Hash constant = hash;
+  auto *pointer = &hash;
+  auto wrapper = std::ref(hash);
+  const auto constant_wrapper = wrapper;
+  auto *wrapper_pointer = &wrapper;
+  const auto expected = hash(&value);
+  if (std::invoke(hash, &value) != expected ||
+      std::invoke(constant, &value) != expected ||
+      std::invoke(Hash{}, &value) != expected ||
+      std::invoke(static_cast<Hash &&>(hash), &value) != expected ||
+      wrapper(&value) != expected || std::invoke(wrapper, &value) != expected ||
+      std::invoke(constant_wrapper, &value) != expected ||
+      std::invoke(std::ref(hash), &value) != expected ||
+      std::invoke(std::cref(hash), &value) != expected) return 2;
+  calls = defaults = live = destroyed = 0;
+  static_assert(__is_same(decltype(constant(mark())), std::size_t));
+  static_assert(__is_same(decltype((*pointer)(mark())), std::size_t));
+  static_assert(__is_same(decltype(Hash(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant, mark())), std::size_t));
+  static_assert(__is_same(decltype((std::invoke)(*pointer, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Hash{}, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Hash(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(static_cast<Hash &&>(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype((constant_wrapper)(mark())), std::size_t));
+  static_assert(__is_same(decltype((*wrapper_pointer)(mark())), std::size_t));
+  static_assert(__is_same(decltype(Wrapper(wrapper)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::ref(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::cref(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant_wrapper, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Wrapper(wrapper), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(std::ref(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(std::cref(hash), mark())), std::size_t));
+  static_assert(std::is_unsigned<decltype(hash(mark()))>::value);
+  static_assert(__is_integral(decltype(std::invoke(wrapper, mark()))));
+  static_assert(noexcept(hash(argument())) && noexcept(std::invoke(hash, argument())));
+  static_assert(noexcept(wrapper(argument())) && noexcept(std::invoke(wrapper, argument())));
+  static_assert(!noexcept(hash(potentially_throwing())));
+  static_assert(!noexcept(std::invoke(wrapper, potentially_throwing())));
+  static_assert(sizeof(receiver(hash)(mark())) == sizeof(std::size_t));
+  static_assert(sizeof(std::invoke(temporary_receiver(), mark())) == sizeof(std::size_t));
+  static_assert(sizeof(wrapper_receiver(wrapper)(argument())) == sizeof(std::size_t));
+  static_assert(sizeof(std::invoke(temporary_wrapper(hash), mark())) == sizeof(std::size_t));
+  static_assert(sizeof((++calls, hash)((++calls, mark()))) == sizeof(std::size_t));
+  using Result = decltype(std::invoke(hash, argument(Ticket())));
+  static_assert(__is_same(Result, std::size_t));
+  int extent[sizeof(std::invoke(wrapper, mark())) == sizeof(std::size_t) ? 2 : 1]{};
+  if (sizeof(extent) != 2 * sizeof(int) || calls || defaults || live || destroyed ||
+      callback_calls) return 3;
+  auto observed = std::invoke(receiver(hash), mark());
+  auto temporary = std::invoke(temporary_receiver(), mark());
+  auto wrapped = wrapper_receiver(wrapper)(argument());
+  auto outer = std::invoke(temporary_wrapper(hash), mark());
+  return observed == expected && temporary == expected && wrapped == expected &&
+         outer == expected && calls == 8 && defaults == 5 && live == 0 &&
+         destroyed == 3 && callback_calls == 0 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  EXPECT_EQ(readFile(Output).find("__murmur2_or_cityhash"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pointer-hash-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerHashQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  // Keep hash aliases in the cases that consume them. An unused incomplete
+  // specialization must not reject a case before its intended boundary.
+  const Case Cases[] = {
+      {"lazy-direct", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){static_assert(__is_same(decltype(h(p)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-invoke", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){static_assert(__is_same(decltype(std::invoke(h,p)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-wrapper", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(W&w,int*p){static_assert(__is_same(decltype(w(p)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-outer-wrapper", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(W&w,int*p){static_assert(__is_same(decltype(std::invoke(w,p)),S));return 0;}
+)cpp", "TR0203"},
+      {"direct-call-does-not-supply-adapter", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(std::invoke(h,p)),S));return n!=0;}
+)cpp", "TR0203"},
+      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(W&w,int*p){auto n=w(p);static_assert(__is_same(decltype(std::invoke(w,p)),S));return n!=0;}
+)cpp", "TR0203"},
+      {"different-argument-pack", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){auto n=std::invoke(h,p);static_assert(__is_same(decltype(std::invoke(h,nullptr)),S));return n!=0;}
+)cpp", "TR0203"},
+      {"different-callable-category", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,const H&c,int*p){auto n=std::invoke(h,p);static_assert(__is_same(decltype(std::invoke(c,p)),S));return n!=0;}
+)cpp", "TR0203"},
+      {"hash-primary-redeclaration", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"hash-partial-redeclaration", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<class T>struct hash<T*>;}}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"user-hash-specialization", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>struct hash<int*>{S operator()(int*)const noexcept{return 0;}};}}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"hash-operator-specialization", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>S hash<int*>::operator()(int*)const noexcept{return 0;}}}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"private-base-redeclaration", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<class A,class R>struct __unary_function_keep_layout_base;}}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"invoke-specialization", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>S invoke<H&,int*>(H&h,int*&&p)noexcept{return h(p);}}}int f(H&h){auto n=std::invoke(h,static_cast<int*>(nullptr));static_assert(__is_same(decltype(std::invoke(h,static_cast<int*>(nullptr))),S));return n!=0;}
+)cpp", "TR0201"},
+      {"wrapper-specialization", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>template<>S reference_wrapper<H>::operator()<int*>(int*&&p)const noexcept{return 0;}}}int f(W&w){auto n=w(static_cast<int*>(nullptr));static_assert(__is_same(decltype(w(static_cast<int*>(nullptr))),S));return n!=0;}
+)cpp", "TR0201"},
+      {"inner-exception-variable-specialization", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<H&,int*> = true;}}int f(W&w){auto n=w(static_cast<int*>(nullptr));static_assert(__is_same(decltype(w(static_cast<int*>(nullptr))),S));return n!=0;}
+)cpp", "TR0202"},
+      {"outer-exception-variable-specialization", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<W&,int*> = true;}}int f(W&w){auto n=std::invoke(w,static_cast<int*>(nullptr));static_assert(__is_same(decltype(std::invoke(w,static_cast<int*>(nullptr))),S));return n!=0;}
+)cpp", "TR0202"},
+      {"independent-member-address", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));static_assert(sizeof(&H::operator())>0);return n!=0;}
+)cpp", "TR0201"},
+      {"independent-invoke-address", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){auto n=std::invoke(h,p);static_assert(__is_same(decltype(std::invoke(h,p)),S));static_assert(sizeof(&std::invoke<H&,int*&>)>0);return n!=0;}
+)cpp", "TR0201"},
+      {"erased-invoke-noexcept", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+using I=S(*)(H&,int*&);int f(H&h,int*p){auto n=std::invoke(h,p);static_assert(!noexcept(static_cast<I>(&std::invoke<H&,int*&>)(h,p)));return n!=0;}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype((sizeof(long double),h)(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h((sizeof(long double),p))),S));return n!=0;}
+)cpp", "TR0201"},
+      {"receiver-initializer", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(int*p){H h=(sizeof(long double),H{});auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"pointer-initializer", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int f(H&h){int*p=(sizeof(long double),nullptr);auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"hash-written-pointer-type", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+using P=decltype((sizeof(long double),static_cast<int*>(nullptr)));using T=std::hash<P>;int f(T&h,P p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+int*arg(int n=sizeof(long double))noexcept{return nullptr;}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(arg())),S));return n!=0;}
+)cpp", "TR0201"},
+      {"missing-receiver-definition", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+H&source(H&h)noexcept;int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(source(h)(p)),S));return n!=0;}
+)cpp", "TR0203"},
+      {"temporary-destructor-body", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};int*arg(Ticket t=Ticket())noexcept{return nullptr;}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(arg())),S));return n!=0;}
+)cpp", "TR0201"},
+      {"temporary-destructor-exception", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int*arg(Ticket t=Ticket())noexcept{return nullptr;}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(arg())),S));return n!=0;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+using H=std::hash<int*>;using W=std::reference_wrapper<H>;
+struct Ticket{~Ticket()noexcept;};int*arg(Ticket t=Ticket())noexcept{return nullptr;}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(arg())),S));return n!=0;}
+)cpp", "TR0203"},
+      {"function-pointer-original-exception", R"cpp(
+using F=int(*)(int)noexcept(sizeof(long double)>0);int f(F p){std::hash<F> h;auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"function-pointer-signature-conversion", R"cpp(
+using F=int(*)(int);using N=int(*)(int)noexcept;int f(N p){std::hash<F> h;auto w=std::ref(h);auto n=w(p);static_assert(__is_same(decltype(w(p)),S));return n!=0;}
+)cpp", "TR0203"},
+      {"function-pointer-user-conversion", R"cpp(
+using F=int(*)(int);struct A{operator F()const noexcept{return nullptr;}};int f(){std::hash<F> h;auto w=std::ref(h);auto n=std::invoke(w,A{});static_assert(__is_same(decltype(std::invoke(w,A{})),S));return n!=0;}
+)cpp", "TR0203"},
+      {"variadic-function-pointer", R"cpp(
+using F=int(*)(int,...);int f(F p){std::hash<F> h;auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+      {"volatile-pointee", R"cpp(
+int f(volatile int*p){std::hash<volatile int*> h;auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pointer-hash-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pointer-hash-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using S=std::size_t;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DirectHashQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("direct-hash-queries.cpp");
   const auto Output = tmpFile("direct-hash-queries.nc");
@@ -67998,9 +68300,6 @@ int f(){std::hash<double> h;auto w=std::ref(h);auto n=w(1.0);static_assert(__is_
 )cpp", "TR0201"},
       {"enum-hash", R"cpp(
 enum E{value=1};int f(){std::hash<E> h;auto n=std::invoke(h,value);static_assert(__is_same(decltype(std::invoke(h,value)),S));return n;}
-)cpp", "TR0201"},
-      {"pointer-hash", R"cpp(
-int f(int*p){std::hash<int*> h;auto w=std::ref(h);auto n=std::invoke(w,p);static_assert(__is_same(decltype(std::invoke(w,p)),S));return n;}
 )cpp", "TR0201"},
       {"user-hash-specialization", R"cpp(
 struct A{int n;};namespace std{inline namespace __1{template<>struct hash<A>{S operator()(A a)const noexcept{return a.n;}};}}int f(){std::hash<A> h;auto n=h(A{1});static_assert(__is_same(decltype(h(A{1})),S));return n;}

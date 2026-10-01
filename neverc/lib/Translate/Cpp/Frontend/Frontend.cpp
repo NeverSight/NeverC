@@ -2717,12 +2717,13 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
     const auto *Specialization =
         cast<ClassTemplateSpecializationDecl>(Object->Record);
     const auto Value = Specialization->getTemplateArgs().get(0).getAsType();
-    if (!Value->isIntegralType(A.Context) && !Value->isNullPtrType())
+    if (!Value->isIntegralType(A.Context) && !Value->isNullPtrType() &&
+        !Value->isPointerType())
       return std::nullopt;
   }
-  // Arithmetic/comparison objects and direct integral/null hashes own only
-  // their one-byte carrier and at most one empty SDK typedef base. Wide hashes
-  // with scalar-hash bases retain their separate source requirements.
+  // Arithmetic/comparison objects and direct integral/null/pointer hashes own
+  // only their one-byte carrier and at most one empty SDK typedef base. Wide
+  // hashes with scalar-hash bases retain their separate source requirements.
   // Pin the typedef base's declaration family too; source replacements must
   // not supply hidden special-member declarations.
   const CXXRecordDecl *Records[] = {Object->Record, nullptr};
@@ -2776,6 +2777,13 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
       if (!Pinned(Declaration, true) ||
           !Pinned(Declaration->getTemplatedDecl(), true))
         return std::nullopt;
+    // Pointer hashes instantiate a partial specialization. Its declaration
+    // family owns the carrier and must be pinned separately from the primary.
+    if (const auto *Partial = Current->getSpecializedTemplateOrPartial()
+                                 .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+      for (const auto *Declaration : Partial->redecls())
+        if (!Pinned(Declaration))
+          return std::nullopt;
     if (const auto *Destructor = Current->getDestructor())
       for (const auto *Declaration : Destructor->redecls()) {
         const auto *Method = cast<CXXDestructorDecl>(Declaration);
@@ -3193,14 +3201,20 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
     return nullptr;
   const auto *Target = Method->getType()->getAs<FunctionProtoType>();
   if (Method->getParent()->getName() == "hash") {
-    // The exact operation descriptor proves the direct size_t conversion or
-    // nullptr constant. Neither path calls another SDK hashing implementation.
-    // These members of explicit class specializations are not function-template
-    // instantiations, so they have no template pattern to authenticate.
-    if (!Target || Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        !Method->getDefinition() ||
+    // The exact operation descriptor proves the integral/null operation or
+    // pointer-bit hashing contract, including the pointer hash's SDK delegate.
+    if (!Target || !Method->getDefinition() ||
         Target->getExceptionSpecType() != EST_BasicNoexcept ||
         Target->getNoexceptExpr())
+      return nullptr;
+    const auto *Record =
+        cast<ClassTemplateSpecializationDecl>(Method->getParent());
+    if (Record->getTemplateArgs().get(0).getAsType()->isPointerType())
+      return utilitySDKFunctionSource(A, Method, "__functional/hash.h")
+                 ? Target : nullptr;
+    // Members of the explicit integral/null specializations have no function
+    // template pattern; authenticate their concrete declaration family.
+    if (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
       return nullptr;
     for (const auto *Declaration : Method->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());

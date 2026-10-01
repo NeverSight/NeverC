@@ -11959,6 +11959,18 @@ approvedFunctionalMemberInvokeCall(
   return approvedFunctionalMemberInvokeCallImpl(S, SM, Call, Context);
 }
 
+static bool functionalObjectArgumentConversion(
+    const ASTContext &Context, const FunctionalOperationInfo &Operation,
+    QualType From, QualType To) {
+  const bool ExactFunctionPointerHash =
+      Operation.Operation == FunctionalOperation::Hash &&
+      Operation.LeftType->isFunctionPointerType() &&
+      Context.hasSameType(To, Operation.LeftType) &&
+      (Context.hasSameType(From, To) || From->isNullPtrType());
+  return utilityScalarDirectConversion(Context, From, To) ||
+         ExactFunctionPointerHash;
+}
+
 std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -11993,18 +12005,11 @@ std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperatio
       OperationCall->getNumArgs() != Call->getNumArgs() ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
-  for (unsigned I = 1; I < Call->getNumArgs(); ++I) {
-    const auto From = Call->getArg(I)->getType();
-    const auto To = OperationCall->getArg(I)->getType();
-    const bool ExactFunctionPointerHash =
-        Operation->Operation == FunctionalOperation::Hash &&
-        Operation->LeftType->isFunctionPointerType() &&
-        Context.hasSameType(To, Operation->LeftType) &&
-        (Context.hasSameType(From, To) || From->isNullPtrType());
-    if (!utilityScalarDirectConversion(Context, From, To) &&
-        !ExactFunctionPointerHash)
+  for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+    if (!functionalObjectArgumentConversion(
+            Context, *Operation, Call->getArg(I)->getType(),
+            OperationCall->getArg(I)->getType()))
       return std::nullopt;
-  }
   return FunctionalInvokeObjectCall{*Operation, Method};
 }
 
@@ -12971,8 +12976,8 @@ approvedFunctionalReferenceDirectInvoke(
         !Context.hasSameType(Operation->ResultType, Call->getType()))
       return std::nullopt;
     for (unsigned I = 1; I < Call->getNumArgs(); ++I)
-      if (!utilityScalarDirectConversion(
-              Context, Call->getArg(I)->getType(),
+      if (!functionalObjectArgumentConversion(
+              Context, *Operation, Call->getArg(I)->getType(),
               OperationCall->getArg(I)->getType()))
         return std::nullopt;
     return FunctionalReferenceInvokeCall{
@@ -13147,9 +13152,12 @@ approvedFunctionalReferenceInvokeCall(
       !Context.hasSameType(Call->getType(), InnerCall->getType()))
     return std::nullopt;
   if (Inner->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
+    if (!Inner->Operation)
+      return std::nullopt;
     for (unsigned I = 1; I < Call->getNumArgs(); ++I)
-      if (!utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
-                                         InnerCall->getArg(I)->getType()))
+      if (!functionalObjectArgumentConversion(
+              Context, *Inner->Operation, Call->getArg(I)->getType(),
+              InnerCall->getArg(I)->getType()))
         return std::nullopt;
     return Inner;
   }

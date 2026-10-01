@@ -2302,10 +2302,31 @@ families are pinned separately. Stored, const, copied, dereferenced and temporar
 hash objects and wrappers use that same proof. Original expressions, written
 types, initializers, selected defaults and temporary cleanup remain independent
 source roots and execute no query effects. `long long`, `unsigned long long`,
-floating, enum and pointer hashes retain their separate query-source requirements;
+floating and enum hashes retain their separate query-source requirements;
 their existing evaluated calls continue to use the runtime hash contract above.
 The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
 its native C++ unavailability diagnostic.
+
+Admitted object-pointer, `void`-pointer and fixed-arity function-pointer hashes
+also support direct, `std::invoke` and wrapped result-source queries. Their
+pointer partial specialization, primary template, empty unary typedef base,
+selected operator and materialized adapters retain separate pinned SDK
+declaration families. The existing pointer-bit hashing descriptor supplies the
+SDK implementation source; the public result remains `size_t`. Unlike the
+explicit integral/null specializations, a pointer hash operator needs an
+evaluated call to materialize its body before a query can consume it. Each
+outer adapter still needs its own callable category and argument pack. Const,
+copied, dereferenced and temporary hash objects and wrappers, null pointer
+conversions and qualified object pointers preserve those rules. Function-pointer
+hashing neither calls the pointed-to function nor erases its original signature
+and exception source requirements. Both `invoke` and wrapper adapters admit an
+exact function-pointer argument or `nullptr`; other function-signature and
+user-defined conversions retain their separate requirements.
+Written pointer types, initializers, caller
+expressions, selected defaults and temporary cleanup are checked independently
+and cause no query-time effects. User specializations or redeclarations of the
+SDK families, independent method/adapter addresses, unmaterialized bodies and
+unsupported pointer types retain their existing diagnostics.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
