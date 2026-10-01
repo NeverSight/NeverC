@@ -2706,6 +2706,74 @@ functionalReferenceDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   return Wrapper;
 }
 
+static std::optional<FunctionalObjectRecord>
+functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Object =
+      approvedFunctionalObjectRecord(A.S, A.Sources, Record, A.Context);
+  if (!Object || Object->Record->getName() == "hash")
+    return std::nullopt;
+  // Arithmetic/comparison objects own only their one-byte carrier and at
+  // most one empty SDK typedef base. Pin that base's declaration family too;
+  // a source replacement must not supply hidden special-member declarations.
+  const CXXRecordDecl *Records[] = {Object->Record, nullptr};
+  if (Object->Record->getNumBases() > 1)
+    return std::nullopt;
+  if (Object->Record->getNumBases()) {
+    const auto &Base = *Object->Record->bases_begin();
+    if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public)
+      return std::nullopt;
+    Records[1] = Base.getType()->getAsCXXRecordDecl();
+    if (!Records[1])
+      return std::nullopt;
+    Records[1] = Records[1]->getDefinition();
+    if (!Records[1])
+      return std::nullopt;
+  }
+  for (unsigned I = 0; I != 2 && Records[I]; ++I) {
+    const auto *Current =
+        dyn_cast<ClassTemplateSpecializationDecl>(Records[I]);
+    const auto *Template = Current ? Current->getSpecializedTemplate() : nullptr;
+    if (!Current || !Template || Current->hasUserDeclaredConstructor() ||
+        Current->hasUserDeclaredDestructor() || !Current->hasTrivialDestructor() ||
+        !Current->isEmpty() || !Current->isTriviallyCopyable() ||
+        !Current->field_empty() || (I && Current->getNumBases()))
+      return std::nullopt;
+    llvm::StringRef Path = "__functional/operations.h";
+    if (I) {
+      if (Current->getName() == "__binary_function_keep_layout_base")
+        Path = "__functional/binary_function.h";
+      else if (Current->getName() == "__unary_function_keep_layout_base")
+        Path = "__functional/unary_function.h";
+      else
+        return std::nullopt;
+    }
+    auto Pinned = [&](const Decl *Declaration) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+      return Origin && Origin->Root == "libcxx" &&
+             Origin->Path == Path &&
+             approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+    };
+    for (const auto *Declaration : Current->redecls())
+      if (!Pinned(Declaration))
+        return std::nullopt;
+    for (const auto *Declaration : Template->redecls())
+      if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
+        return std::nullopt;
+    if (const auto *Destructor = Current->getDestructor())
+      for (const auto *Declaration : Destructor->redecls()) {
+        const auto *Method = cast<CXXDestructorDecl>(Declaration);
+        if (!Pinned(Method) || !Method->isImplicit() || !Method->isDefaulted() ||
+            !Method->isTrivial() || Method->isDeleted() || Method->isInvalidDecl() ||
+            Method->isVirtual() || Method->isVariadic() || Method->getNumParams() ||
+            Method->getAccess() != AS_public || Method->getTypeSourceInfo() ||
+            Method->getLexicalDeclContext() != Method->getParent())
+          return std::nullopt;
+      }
+  }
+  return Object;
+}
+
 static std::optional<UtilityInitializerListRecord>
 utilityInitializerListDestructionSource(Adapter &A,
                                         const CXXRecordDecl *Record) {
@@ -3189,6 +3257,42 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
          utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                   "__type_traits/invoke.h") &&
+         functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                       Arguments->get(1), Target);
+}
+
+static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
+    return false;
+  const auto Invoke =
+      approvedFunctionalInvokeObjectOperation(A.S, A.Sources, Call, A.Context);
+  if (!Invoke || Invoke->Operation.Operation == FunctionalOperation::Hash ||
+      !functionalObjectStorageSource(A, Invoke->Method->getParent()))
+    return false;
+  const auto *Method = Invoke->Method;
+  const auto *Target = Method->getType()->getAs<FunctionProtoType>();
+  const auto *Noexcept = Target && Target->getNoexceptExpr()
+      ? dyn_cast<CXXNoexceptExpr>(Target->getNoexceptExpr()->IgnoreParenImpCasts())
+      : nullptr;
+  // The exact scalar-operation descriptor authenticates the selected method
+  // body and forwarding. Typed objects have no exception specification;
+  // transparent objects query their admitted built-in operator, which cannot
+  // throw. Caller-side argument evaluation still keeps its own exception source.
+  if (!Target || (Method->getPrimaryTemplate()
+          ? (Target->getExceptionSpecType() != EST_NoexceptTrue ||
+             !Noexcept || !Noexcept->getValue())
+          : (Target->getExceptionSpecType() != EST_None ||
+             Target->getNoexceptExpr())))
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Dispatch = functionalReturnedCall(Function);
+  return Arguments && Arguments->size() == 2 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type && Dispatch &&
+         utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
+         utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                                  "__type_traits/invoke.h") &&
+         utilitySDKFunctionSource(A, Method, "__functional/operations.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
                                        Arguments->get(1), Target);
 }
@@ -4796,6 +4900,8 @@ public:
     // The authenticated reference wrapper owns only pointer storage. Its
     // referent's lifetime belongs to the caller and is not consumed here.
     if (functionalReferenceDestructionSource(A, Record))
+      return true;
+    if (functionalObjectStorageSource(A, Record))
       return true;
     // The authenticated iterator wrapper likewise owns only a pointer.
     if (utilityWrapIteratorDestructionSource(A, Record))
@@ -7709,6 +7815,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
            std::pair<const CallExpr *, AlgorithmCallableSource>>
       AuthenticatedAlgorithmReferences;
   std::map<const InitListExpr *, const InitListExpr *> ZeroArrayStorageSources;
+  std::map<const InitListExpr *, const InitListExpr *> FunctionalObjectBaseSources;
   std::set<const Expr *> TypeSourceQueries;
   std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
   std::set<const Stmt *> OperationValueRoots;
@@ -10400,6 +10507,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Wrapper->PointerType, false, Depth + 1);
           return;
         }
+        if (const auto Object = functionalObjectStorageSource(A, Declaration)) {
+          // The authenticated empty carrier and typedef base supply layout
+          // source. Keep the value type's original source without traversing
+          // the SDK-only base TypeLoc as though it belonged to the project.
+          const auto *Specialization =
+              cast<ClassTemplateSpecializationDecl>(Object->Record);
+          Self(Self, Specialization->getTemplateArgs().get(0).getAsType(),
+               true, Depth + 1);
+          return;
+        }
         if (const auto List = approvedUtilityInitializerListRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // Authenticate the pointer/size view layout without borrowing its
@@ -10533,6 +10650,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // Its owner proves SDK layout/destruction while retaining the actual
         // element source; do not consume __empty or SDK sizeof metadata.
         S = Found->second;
+    if (const auto *List = dyn_cast_or_null<InitListExpr>(S))
+      if (auto Found = FunctionalObjectBaseSources.find(List);
+          Found != FunctionalObjectBaseSources.end())
+        // Only this exact empty base initializer belongs to the authenticated
+        // function object; independent uses of the private base gain no proof.
+        S = Found->second;
     // Collect from the actual source traversal, including unevaluated operands
     // and expressions reached through TypeLoc or retained template source edges.
     // Capture before ownership/cache skips; only a query selecting this exact
@@ -10579,7 +10702,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         if (functionalReferenceAccessSource(A, Call) ||
             functionalReferenceInvokeSource(A, Call) ||
-            functionalFunctionInvokeSource(A, Call))
+            functionalFunctionInvokeSource(A, Call) ||
+            functionalObjectInvokeSource(A, Call))
           if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
@@ -10737,6 +10861,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Function);
             Destructor &&
             (functionalReferenceDestructionSource(A, Destructor->getParent()) ||
+             functionalObjectStorageSource(A, Destructor->getParent()) ||
              utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
              utilityInitializerListDestructionSource(A,
                                                      Destructor->getParent()) ||
@@ -10887,6 +11012,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               *UniqueConstruction !=
                   UtilityUniquePtrConstruction::PointerDeleter));
         bool SDKConstruction =
+            (functionalObjectStorageSource(
+                 A, Construction->getType()->getAsCXXRecordDecl()) &&
+             approvedFunctionalObjectConstruction(A.S, A.Sources, Construction,
+                                                   A.Context)) ||
             approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                             A.Context)
                 .has_value() ||
@@ -11104,6 +11233,32 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         }
     }
   }
+  void retainFunctionalObjectBaseSource(const InitListExpr *List) {
+    if (!List || List->getType().isNull() || !List->isSemanticForm() ||
+        !List->isPRValue() || List->getNumInits() != 1 || List->getArrayFiller())
+      return;
+    const auto Object = functionalObjectStorageSource(
+        A, List->getType()->getAsCXXRecordDecl());
+    if (!Object || Object->Record->getNumBases() != 1)
+      return;
+    const auto *Base = dyn_cast_or_null<InitListExpr>(List->getInit(0));
+    const auto *Written = Base ? Base->getSyntacticForm() : nullptr;
+    if (!Base || !Base->isSemanticForm() || !Base->isPRValue() ||
+        Base->getNumInits() || Base->getArrayFiller() ||
+        (Written && (Written->getNumInits() || Written->getArrayFiller())) ||
+        !A.Context.hasSameType(Base->getType(),
+                              Object->Record->bases_begin()->getType()))
+      return;
+    for (const auto *Node : {Base, Written})
+      if (Node) {
+        auto [Entry, Inserted] = FunctionalObjectBaseSources.emplace(Node, List);
+        if (Inserted)
+          A.chargeExpansion(1, List->getExprLoc());
+        else if (Entry->second != List)
+          A.reject(List->getExprLoc(), "function object initializer source",
+                   "An empty base initializer requires one exact owning object.");
+      }
+  }
   bool checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
     // RAV visits only the written form of a braced initializer by default.
     // Follow its semantic elements and shared array filler once for admission;
@@ -11114,8 +11269,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *I = dyn_cast<InitListExpr>(E);
           I && I->isSyntacticForm() && I->getSemanticForm())
         E = I->getSemanticForm();
-      if (const auto *I = dyn_cast<InitListExpr>(E))
+      if (const auto *I = dyn_cast<InitListExpr>(E)) {
         retainZeroArrayStorageSource(I);
+        retainFunctionalObjectBaseSource(I);
+      }
       // Record cached edges too: a nested default can reuse semantic source
       // first checked outside this parameter, or while another frame is active.
       for (auto *Dependencies : ActiveOperationSources)

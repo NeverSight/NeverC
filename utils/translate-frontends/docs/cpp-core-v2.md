@@ -2228,7 +2228,7 @@ The proof belongs to that call alone. Original receiver and argument
 expressions, initializers, aliases, function signatures, selected defaults and
 temporary destruction remain independently checked. Queries execute none of
 their effects. Query-only lazy invocation bodies, other argument
-specializations without bodies, `std::invoke` queries on callable objects,
+specializations without bodies, `std::invoke` queries on other callable objects,
 and independent function or member addresses retain their separate
 requirements; this does not instantiate an SDK body for a query.
 
@@ -2248,6 +2248,26 @@ pointer initializers and written types remain independent source roots.
 A direct target call or a different `invoke` specialization does not supply
 a missing adapter body. Cast or indirect adapter callees, source replacements
 and unsupported callable/result types retain their separate requirements.
+
+Materialized `std::invoke` adapters around the admitted typed and transparent
+arithmetic, bitwise, comparison and logical function objects also support
+result-source queries. Their existing operation descriptors supply the exact
+selected built-in operation and scalar conversions, including typed narrowing,
+transparent promotions and admitted object-pointer comparisons. Typed operators
+keep their potentially throwing signatures; transparent operators keep their
+nonthrowing built-in expression, while original argument evaluation contributes
+its own exception source. The exact public adapter, internal dispatch, selected
+operator and invocability variable all retain their pinned declaration families.
+Stored, const, dereferenced, copied and temporary objects use the same proof.
+Their one-byte carrier and optional empty unary/binary typedef base require
+pinned SDK declarations and trivial implicit construction/destruction; a source
+replacement of that base cannot supply lifecycle metadata. Empty base
+initializer nodes use only the proof for their exact owning object. Original
+callable and argument expressions, written template arguments, initializers, defaults
+and source-owned temporary cleanup remain independently checked and execute no
+query effects. Each callable category and argument pack still needs its own
+materialized adapter. Hash objects, wrappers around function objects and
+source-owned callable objects retain their separate query-source requirements.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent

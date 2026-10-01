@@ -67830,6 +67830,219 @@ int target(int n)noexcept{return n;}
   }
 }
 
+TEST_F(TranslateTest, CoreV2ObjectInvokeQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("object-invoke-queries.cpp");
+  const auto Output = tmpFile("object-invoke-queries.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <type_traits>
+#include <utility>
+int calls, defaults, live, destroyed;
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+using Add = std::plus<int>;
+int mark(int n = (++defaults, 3)) noexcept { ++calls; return n; }
+int argument(Ticket ticket = Ticket()) noexcept { ++calls; return 5; }
+int potentially_throwing() { ++calls; return 6; }
+Add &receiver(Add &f, int n = (++defaults, 1)) noexcept { ++calls; return f; }
+Add temporary_receiver(Ticket ticket = Ticket()) noexcept { ++calls; return Add{}; }
+int main() {
+  Add add;
+  const Add constant = add;
+  Add *pointer = &add;
+  std::plus<> mixed;
+  std::minus<double> minus;
+  std::divides<unsigned char> divide;
+  std::negate<short> negate;
+  std::bit_xor<unsigned> bits;
+  std::bit_not<> not_bits;
+  std::less<> less;
+  std::equal_to<const int *> equal;
+  std::logical_not<unsigned char> logical;
+  std::logical_and<> both;
+  std::greater<const int> compare;
+  int value = 7;
+  int *address = &value;
+  const int *view = &value;
+  // Every queried callable category and argument pack has its own evaluated
+  // adapter. Typed narrowing and transparent promotions retain their results.
+  if (std::invoke(add, 1, 2) != 3 || std::invoke(constant, 2, 3) != 5 ||
+      std::invoke(Add{}, 3, 4) != 7 ||
+      std::invoke(static_cast<Add &&>(add), 4, 5) != 9 ||
+      std::invoke(mixed, short(2), 3u) != 5u || std::invoke(mixed, 1, 2) != 3 ||
+      std::invoke(minus, 5.5, 2.0) != 3.5 || std::invoke(divide, 256, 2) != 0 ||
+      std::invoke(negate, short(4)) != -4 || std::invoke(bits, 6u, 3u) != 5u ||
+      std::invoke(not_bits, short(3)) != -4 || !std::invoke(less, short(2), 3.0) ||
+      !std::invoke(equal, address, view) || !std::invoke(logical, 256) ||
+      !std::invoke(both, 1, 2u) || !std::invoke(compare, 3, 2)) return 1;
+  calls = defaults = live = destroyed = 0;
+  static_assert(__is_same(decltype(std::invoke(add, mark(), argument())), int));
+  static_assert(__is_same(decltype(std::invoke(constant, 1, 2)), int));
+  static_assert(__is_same(decltype((std::invoke)(*pointer, 1, 2)), int));
+  static_assert(__is_same(decltype(std::invoke(Add{}, 1, 2)), int));
+  static_assert(__is_same(decltype(std::invoke(Add(add), 1, 2)), int));
+  static_assert(__is_same(decltype(std::invoke(static_cast<Add &&>(add), 1, 2)), int));
+  static_assert(__is_same(decltype(std::invoke(mixed, short(2), 3u)), unsigned));
+  static_assert(__is_same(decltype(std::invoke(minus, 5.5, 2.0)), double));
+  static_assert(__is_same(decltype(std::invoke(divide, 256, 2)), unsigned char));
+  static_assert(__is_same(decltype(std::invoke(negate, short(4))), short));
+  static_assert(__is_same(decltype(std::invoke(bits, 6u, 3u)), unsigned));
+  static_assert(__is_same(decltype(std::invoke(not_bits, short(3))), int));
+  static_assert(__is_same(decltype(std::invoke(less, short(2), 3.0)), bool));
+  static_assert(__is_same(decltype(std::invoke(equal, address, view)), bool));
+  static_assert(__is_same(decltype(std::invoke(logical, 256)), bool));
+  static_assert(__is_same(decltype(std::invoke(both, 1, 2u)), bool));
+  static_assert(__is_same(decltype(std::invoke(compare, 3, 2)), bool));
+  static_assert(__is_integral(decltype(std::invoke(bits, 6u, 3u))));
+  static_assert(__is_floating_point(decltype(std::invoke(minus, 5.5, 2.0))));
+  static_assert(std::is_same<decltype(std::invoke(less, short(2), 3.0)), bool>::value);
+  static_assert(!noexcept(std::invoke(add, mark(), argument())));
+  static_assert(noexcept(std::invoke(mixed, mark(), argument())));
+  static_assert(!noexcept(std::invoke(mixed, potentially_throwing(), 1)));
+  static_assert(sizeof(decltype(std::invoke(receiver(add), mark(), argument()))) == sizeof(int));
+  static_assert(alignof(decltype(std::invoke(divide, 256, 2))) == alignof(unsigned char));
+  static_assert(sizeof(decltype(std::invoke(temporary_receiver(), mark(), 1))) == sizeof(int));
+  static_assert(sizeof(decltype(std::invoke((++calls, add), (++calls, 1), (++calls, 2)))) == sizeof(int));
+  using Result = decltype(std::invoke(add, argument(Ticket()), mark()));
+  static_assert(__is_same(Result, int));
+  int extent[sizeof(decltype(std::invoke(add, mark(), argument()))) == sizeof(int) ? 2 : 1]{};
+  if (sizeof(extent) != 2 * sizeof(int) || calls || defaults || live || destroyed) return 2;
+  int observed = std::invoke(receiver(add), mark(), argument());
+  int temporary = std::invoke(temporary_receiver(), mark(), 1);
+  return observed == 8 && temporary == 4 && calls == 5 && defaults == 3 &&
+         live == 0 && destroyed == 2 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("object-invoke-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ObjectInvokeQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"lazy-adapter-body", R"cpp(
+int f(F&v){static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return 0;}
+)cpp", "TR0203"},
+      {"direct-call-does-not-supply-adapter-body", R"cpp(
+int f(F&v){int n=v(1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0203"},
+      {"different-argument-specialization", R"cpp(
+int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,short(1),2)),int));return n;}
+)cpp", "TR0203"},
+      {"different-callable-specialization", R"cpp(
+int f(F&v,const F&c){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(c,1,2)),int));return n;}
+)cpp", "TR0203"},
+      {"independent-invoke-address", R"cpp(
+int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));static_assert(sizeof(&std::invoke<F&,int,int>)>0);return n;}
+)cpp", "TR0201"},
+      {"cast-invoke-callee", R"cpp(
+using I=int(*)(F&,int&&,int&&);int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(static_cast<I>(&std::invoke<F&,int,int>)(v,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"erased-invoke-noexcept", R"cpp(
+using I=int(*)(G&,int&&,int&&);int f(G&v){int n=std::invoke(v,1,2);static_assert(!noexcept(static_cast<I>(&std::invoke<G&,int,int>)(v,1,2)));return n;}
+)cpp", "TR0201"},
+      {"invoke-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int invoke<F&,int,int>(F&v,int&&a,int&&b)noexcept(false){return v(a,b);}}}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"operator-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr int plus<int>::operator()(const int&a,const int&b)const{return a+b;}}}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"exception-variable-specialization", R"cpp(
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<F&,int,int> = false;}}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0202"},
+      {"exception-trait-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct is_nothrow_invocable<G&,int,int>:true_type{};}}int f(G&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0202"},
+      {"private-empty-base-source", R"cpp(
+namespace std{inline namespace __1{template<>struct __binary_function_keep_layout_base<int,int,int>{~__binary_function_keep_layout_base()noexcept(sizeof(long double)>0)=default;};}}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"hash-source", R"cpp(
+int f(){std::hash<int> h;auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(h,1)),decltype(n)));return n;}
+)cpp", "TR0201"},
+      {"owned-callable-source", R"cpp(
+struct C{int operator()(int n)noexcept{return n;}};int f(){C c;int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(c,1)),int));return n;}
+)cpp", "TR0201"},
+      {"wrapped-callable-source", R"cpp(
+int f(F&v){auto w=std::ref(v);int n=std::invoke(w,1,2);static_assert(__is_same(decltype(std::invoke(w,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"callable-expression", R"cpp(
+int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke((sizeof(long double),v),1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(
+int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,(sizeof(long double),1),2)),int));return n;}
+)cpp", "TR0201"},
+      {"callable-initializer", R"cpp(
+int f(){F v=(sizeof(long double),F{});int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"argument-initializer", R"cpp(
+int f(F&v){int a=(sizeof(long double),1);int n=std::invoke(v,a,2);static_assert(__is_same(decltype(std::invoke(v,a,2)),int));return n;}
+)cpp", "TR0201"},
+      {"selected-argument-default", R"cpp(
+int arg(int n=sizeof(long double))noexcept{return n;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,arg(),2)),int));return n;}
+)cpp", "TR0201"},
+      {"selected-callable-default", R"cpp(
+F&source(F&v,int n=sizeof(long double))noexcept{return v;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(source(v),1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"callable-original-exception", R"cpp(
+F&source(F&v)noexcept(sizeof(long double)>0);F&source(F&v)noexcept{return v;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(source(v),1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"argument-written-alias", R"cpp(
+using T=decltype((sizeof(long double),int{}));int f(F&v,T&a){int n=std::invoke(v,a,2);static_assert(__is_same(decltype(std::invoke(v,a,2)),int));return n;}
+)cpp", "TR0201"},
+      {"callable-written-template-argument", R"cpp(
+using T=std::plus<decltype((sizeof(long double),int{}))>;int f(T&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,arg(),2)),int));return n;}
+)cpp", "TR0201"},
+      {"temporary-destructor-exception", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,arg(),2)),int));return n;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,arg(),2)),int));return n;}
+)cpp", "TR0203"},
+      {"missing-callable-definition", R"cpp(
+F&source()noexcept;int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(source(),1,2)),int));return n;}
+)cpp", "TR0203"},
+      {"unsupported-scalar", R"cpp(
+int f(){std::plus<long double> v;auto n=std::invoke(v,1.0L,2.0L);static_assert(__is_same(decltype(std::invoke(v,1.0L,2.0L)),long double));return n;}
+)cpp", "TR0201"},
+      {"user-argument-conversion", R"cpp(
+struct A{operator int()const noexcept{return 1;}};int f(F&v){int n=std::invoke(v,A{},2);static_assert(__is_same(decltype(std::invoke(v,A{},2)),int));return n;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("object-invoke-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("object-invoke-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=std::plus<int>;
+using G=std::plus<>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionInvokeQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("function-invoke-queries.cpp");
   const auto Output = tmpFile("function-invoke-queries.nc");
@@ -67983,9 +68196,6 @@ namespace std{inline namespace __1{template<>struct is_nothrow_invocable<F&,int>
 )cpp", "TR0202"},
       {"owned-callable-source", R"cpp(
 struct C{int operator()(int n)noexcept{return n;}};int f(){C c;int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(c,1)),int));return n;}
-)cpp", "TR0201"},
-      {"sdk-callable-source", R"cpp(
-int f(){std::plus<int> p;int n=std::invoke(p,1,2);static_assert(__is_same(decltype(std::invoke(p,1,2)),int));return n;}
 )cpp", "TR0201"},
       {"callable-expression", R"cpp(
 int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke((sizeof(long double),target),1)),int));return n;}
