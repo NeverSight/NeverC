@@ -41385,6 +41385,396 @@ void materialize_default_deleters() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SDKValueAdapterNameImportsRunAtBothOptimizations) {
+  const auto Source = tmpFile("sdk-value-adapter-imports.cpp");
+  const auto Output = tmpFile("sdk-value-adapter-imports.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <memory>
+#include <utility>
+namespace Imported {
+using std::move, std::forward;
+} // namespace Imported
+namespace Reexport {
+using Imported::move, Imported::forward;
+}
+namespace Alias = Reexport;
+namespace Directed {
+using namespace Alias;
+}
+using std::forward;
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, moves, copies, live, destroyed, calls, defaults,
+    effects;
+void *operator new(Size n) {
+  ++allocated;
+  return malloc(n);
+}
+void *operator new[](Size n) {
+  ++allocated;
+  return malloc(n);
+}
+void operator delete(void *p) noexcept {
+  if (p)
+    ++released;
+  free(p);
+}
+void operator delete(void *p, Size) noexcept {
+  if (p)
+    ++released;
+  free(p);
+}
+void operator delete[](void *p) noexcept {
+  if (p)
+    ++released;
+  free(p);
+}
+void operator delete[](void *p, Size) noexcept {
+  if (p)
+    ++released;
+  free(p);
+}
+struct Box {
+  int n;
+  explicit Box(int v) noexcept : n(v) { ++live; }
+  Box(const Box &p) noexcept : n(p.n) {
+    ++live;
+    ++copies;
+  }
+  Box(Box &&p) noexcept : n(p.n) {
+    p.n = -1;
+    ++live;
+    ++moves;
+  }
+  ~Box() noexcept {
+    --live;
+    ++destroyed;
+  }
+};
+namespace User {
+struct R {
+  int n;
+};
+int move(R &p) noexcept { return p.n + 10; }
+} // namespace User
+using P = std::unique_ptr<int>;
+P &select(P &p, int n = (++defaults, 9)) noexcept {
+  ++calls;
+  effects = effects * 10 + n;
+  return p;
+}
+P &throwing(P &p) {
+  ++calls;
+  return p;
+}
+int mark(int n = (++defaults, 8)) noexcept {
+  ++calls;
+  return n;
+}
+int callback(int n) { return n + 1; }
+void signatures(P &p) {
+  using Owner = P;
+  static_assert(noexcept(Alias::move(p)) && noexcept(Alias::forward<Owner>(p)));
+  static_assert(noexcept(Alias::forward<Owner &>(p)));
+  static_assert(__is_same(decltype(Alias::move(p)), Owner &&));
+}
+int scalars() {
+  int value = 3;
+  const int constant = 4;
+  int *pointer = &value;
+  int &&moved = Alias::move(value);
+  int &same = forward<int &>(value);
+  const int &&view = Directed::move(constant);
+  int &&nested = Alias::forward<int>(Alias::move(value));
+  if (&moved != &value || &same != &value || &view != &constant ||
+      &nested != &value)
+    return 1;
+  same = 5;
+  if (moved != 5 || nested != 5 || constant != 4)
+    return 2;
+  int *&&pointer_view = (Imported::move)(pointer);
+  if (&pointer_view != &pointer || pointer_view != &value)
+    return 3;
+  using Callback = int (*)(int);
+  Callback fn = callback;
+  Callback &&fn_view = Alias::move(fn);
+  if (&fn_view != &fn || Alias::forward<Callback &>(fn)(6) != 7)
+    return 4;
+  using Null = decltype(nullptr);
+  Null null = nullptr;
+  Null &&null_view = Alias::forward<Null>(null);
+  if (&null_view != &null || null_view != nullptr)
+    return 5;
+  int array[2] = {6, 7};
+  auto &&array_view = Alias::move(array);
+  auto &array_alias = Alias::forward<int (&)[2]>(array);
+  if (&array_view != &array || &array_alias != &array || array_view[1] != 7)
+    return 6;
+  int out[2] = {};
+  if (Alias::move(array, array + 2, out) != out + 2 || out[0] != 6 ||
+      out[1] != 7)
+    return 7;
+  User::R record{11};
+  {
+    using Alias::move, Alias::forward;
+    User::R &&alias = Alias::move(record);
+    if (move(record) != 21 || &alias != &record || forward<int &>(value) != 5)
+      return 8;
+  }
+  static_assert(noexcept(Alias::move(pointer)) &&
+                noexcept(Alias::forward<Callback &>(fn)));
+  return 0;
+}
+int check() {
+  int result = scalars();
+  if (result)
+    return result;
+  Box a(12);
+  Box &&borrowed = Alias::move(a);
+  if (&borrowed != &a || a.n != 12 || moves || copies)
+    return 9;
+  Box b(Alias::forward<Box>(a));
+  if (a.n != -1 || b.n != 12 || moves != 1 || copies)
+    return 10;
+  const Box &view = b;
+  Box copied(Alias::move(view));
+  if (b.n != 12 || copied.n != 12 || copies != 1 || live != 3)
+    return 11;
+  P p(new int(1)), q(new int(2));
+  int *raw = p.get();
+  P &&reference = Alias::move(p);
+  if (&reference != &p || p.get() != raw)
+    return 12;
+  const P &cp = p;
+  const P &&const_reference = Alias::forward<const P>(cp);
+  if (&const_reference != &p || const_reference.get() != raw)
+    return 13;
+  const P &&const_nested = Alias::move(Alias::forward<const P &>(cp));
+  if (&const_nested != &p || const_nested.get() != raw)
+    return 14;
+  P target(Alias::move(select(p, 1)));
+  if (p || target.get() != raw || calls != 1 || effects != 1)
+    return 15;
+  int before = released;
+  {
+    using Alias::move, Alias::forward;
+    target = forward<P>(select(q, 2));
+    if (q || *target != 2 || released != before + 1 || calls != 2 ||
+        effects != 12)
+      return 16;
+    if (!std::operator==(move(target), forward<const P &>(target)))
+      return 17;
+    static_assert(__is_same(decltype(move(select(target))), P &&));
+    static_assert(noexcept(move(select(target))) &&
+                  !noexcept(move(throwing(target))));
+  }
+  std::unique_ptr<int[]> array(new int[2]{3, 4});
+  auto array_target = std::unique_ptr<int[]>(Alias::move(array));
+  if (array || array_target[Size(1)] != 4)
+    return 18;
+  auto pair = std::pair<int, int>(5, 6);
+  auto pair_target = std::pair<int, int>(Alias::forward<decltype(pair)>(pair));
+  if (pair_target.first != 5 || pair_target.second != 6)
+    return 19;
+  bool temporary =
+      std::operator!=(Alias::move(std::make_unique<Box>(mark(13))), nullptr);
+  if (!temporary || live != 3 || destroyed != 1 || calls != 3)
+    return 20;
+  int before_allocated = allocated, before_released = released,
+      before_moves = moves;
+  int before_copies = copies, before_calls = calls,
+      before_destroyed = destroyed;
+  auto address = target.get();
+  static_assert(__is_same(decltype(Alias::move(select(target))), P &&));
+  static_assert(__is_same(decltype(Alias::forward<P>(select(target))), P &&));
+  static_assert(
+      __is_same(decltype(std::operator==(Alias::move(select(target)),
+                                         Alias::forward<const P>(target))),
+                bool));
+  static_assert(sizeof(Alias::move(select(target))) == sizeof(P));
+  static_assert(alignof(decltype(Alias::forward<P>(select(target)))) ==
+                alignof(P));
+  static_assert(__is_same(decltype(Alias::move(std::make_unique<Box>(mark()))),
+                          std::unique_ptr<Box> &&));
+  static_assert(noexcept(Alias::forward<P>(select(target))) &&
+                !noexcept(Alias::move(throwing(target))));
+  if (allocated != before_allocated || released != before_released ||
+      moves != before_moves || copies != before_copies ||
+      calls != before_calls || destroyed != before_destroyed || defaults ||
+      target.get() != address || *target != 2)
+    return 21;
+  return 0;
+}
+int main() {
+  int result = check();
+  if (result)
+    return result;
+  return !live && destroyed == 4 && moves == 1 && copies == 1 &&
+                 allocated == released && !defaults
+             ? 0
+             : 22;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-value-adapter-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SDKValueAdapterNameImportsRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"other-sdk-function", R"cpp(
+using std::exchange;
+)cpp",
+       "TR0201"},
+      {"sdk-class-template", R"cpp(
+using std::unique_ptr;
+)cpp",
+       "TR0201"},
+      {"sdk-typedef", R"cpp(
+using std::nullptr_t;
+)cpp",
+       "TR0201"},
+      {"sdk-namespace-alias", R"cpp(
+namespace SDK=std;
+)cpp",
+       "TR0201"},
+      {"sdk-using-directive", R"cpp(
+using namespace std;
+)cpp",
+       "TR0201"},
+      {"move-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>typename remove_reference<T>::type&&move(T&&)noexcept;}}using std::move;
+)cpp",
+       "TR0201"},
+      {"forward-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>T&&forward(typename remove_reference<T>::type&)noexcept;}}using std::forward;
+)cpp",
+       "TR0201"},
+      {"move-specialization", R"cpp(
+namespace std{inline namespace __1{template<>unique_ptr<int>&&move<unique_ptr<int>&>(unique_ptr<int>&p)noexcept{return static_cast<unique_ptr<int>&&>(p);}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p!=q;static_assert(__is_same(decltype(Reexport::move(p)!=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"forward-specialization", R"cpp(
+namespace std{inline namespace __1{template<>unique_ptr<int>&&forward<unique_ptr<int>>(unique_ptr<int>&p)noexcept{return static_cast<unique_ptr<int>&&>(p);}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p==q;static_assert(__is_same(decltype(p==Reexport::forward<P>(q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-move-specialization", R"cpp(
+using Callback=int(*)(int);namespace std{inline namespace __1{template<>Callback&&move<Callback&>(Callback&p)noexcept{return static_cast<Callback&&>(p);}}}int one(int n){return n+1;}int f(){Callback p=one;return Reexport::move(p)(2);}
+)cpp",
+       "TR0201"},
+      {"unsupported-owned-overload", R"cpp(
+namespace User{struct R{int n;};int move(R&r){long double v=1;return v==r.n;}using Reexport::move;}
+)cpp",
+       "TR0201"},
+      {"missing-owned-definition", R"cpp(
+namespace User{int move(int);using Reexport::move;}
+)cpp",
+       "TR0203"},
+      {"independent-move-address", R"cpp(
+using P=std::unique_ptr<int>;using F=P&&(*)(P&)noexcept;int f(P&p){p.get();static_assert(sizeof(static_cast<F>(&Reexport::move<P&>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-forward-address", R"cpp(
+using P=std::unique_ptr<int>;using F=P&&(*)(P&&)noexcept;int f(P&p){p.get();static_assert(sizeof(static_cast<F>(&Reexport::forward<P>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"scalar-function-address", R"cpp(
+auto f(){return &Reexport::move<int>;}
+)cpp",
+       "TR0201"},
+      {"function-reference-call", R"cpp(
+using P=std::unique_ptr<int>;P&&(&target)(P&)noexcept=Reexport::move<P&>;int f(P&p){p.get();static_assert(__is_same(decltype(target(p)),P&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"erased-adapter-noexcept", R"cpp(
+using P=std::unique_ptr<int>;using F=P&&(*)(P&);int f(P&p,P&q){Reexport::move(p)!=q;static_assert(__is_same(decltype((static_cast<F>(&Reexport::move<P&>))(p)!=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"compound-postfix", R"cpp(
+using P=std::unique_ptr<int>;using F=P&&(*)(P&)noexcept;int mark(){return 1;}int f(P&p){p.get();static_assert(__is_same(decltype((mark(),static_cast<F>(&Reexport::move<P&>))(p)),P&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"operand-expression", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p==q;static_assert(__is_same(decltype(Reexport::move((sizeof(long double),p))==q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+using P=std::unique_ptr<int>;P&source(P&p,int n=sizeof(long double))noexcept{return p;}int f(P&p,P&q){p==q;static_assert(__is_same(decltype(Reexport::move(source(p))==q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-source-exception", R"cpp(
+using P=std::unique_ptr<int>;P&source(P&p)noexcept(sizeof(long double)>0);P&source(P&p)noexcept{return p;}int f(P&p,P&q){p!=q;static_assert(__is_same(decltype(Reexport::forward<P>(source(p))!=q),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-source-signature", R"cpp(
+using P=std::unique_ptr<int>;P&source(P&p,long double n=0)noexcept{return p;}int f(P&p){p!=nullptr;static_assert(sizeof(Reexport::move(source(p))!=nullptr)==sizeof(bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-move-template-argument", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move<decltype((sizeof(long double),p))>(p)),P&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-forward-template-argument", R"cpp(
+using Erased=decltype((sizeof(long double),int()));int f(int&p){int&&r=Reexport::forward<Erased>(p);return r;}
+)cpp",
+       "TR0201"},
+      {"missing-owner-comparison-body", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(std::operator==(Reexport::move(p),q)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"missing-null-comparison-body", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(std::operator!=(Reexport::forward<P>(p),nullptr)),bool));return 0;}
+)cpp",
+       "TR0201"},
+      {"owner-lvalue-forward-result-query", R"cpp(
+using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::forward<P&>(p)),P&));return 0;}
+)cpp",
+       "TR0201"},
+      {"scalar-move-result-query", R"cpp(
+int f(int&p){int&&r=Reexport::move(p);static_assert(__is_same(decltype(Reexport::move(p)),int&&));return r;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("sdk-value-adapter-import-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("sdk-value-adapter-import-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+#include <algorithm>
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+void operator delete(void *p,Size)noexcept{free(p);}
+namespace Imported{using std::move,std::forward;}
+namespace Reexport{using Imported::move,Imported::forward;}
+)cpp" + std::string(Case.Source) +
+                          R"cpp(
+void materialize_default_deleter(){std::default_delete<int>{}(nullptr);}
+)cpp");
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SDKComparisonNameImportsRunAtBothOptimizations) {
   const auto Source = tmpFile("sdk-comparison-imports.cpp");
   const auto Output = tmpFile("sdk-comparison-imports.nc");
@@ -42311,10 +42701,6 @@ using P=std::unique_ptr<int>;using F=P&&(*)(P&&)noexcept;int f(P&p,P&q){std::for
        "TR0201"},
       {"erased-adapter-noexcept", R"cpp(
 using P=std::unique_ptr<int>;using F=P&&(*)(P&);int f(P&p,P&q){std::move(p)!=q;static_assert(__is_same(decltype((static_cast<F>(&std::move<P&>))(p)!=q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"explicit-function-call", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){std::move(p)==q;static_assert(__is_same(decltype(std::operator==(std::move(p),q)),bool));return 0;}
 )cpp",
        "TR0201"},
   };

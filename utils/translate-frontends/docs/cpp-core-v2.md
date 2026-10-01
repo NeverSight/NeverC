@@ -197,6 +197,14 @@ accepted when that decay is followed by the selected conversion to a possibly
 throwing callback pointer. Matching mutable or const `noexcept` callback-pointer
 lvalues and unqualified rvalues use a checked pointer read and the same pointer
 conversion. Source specializations remain rejected.
+Resolved namespace and nondependent block using-declarations may import the
+pinned `std::move` and `std::forward` names, including repeated/comma imports
+and source-owned namespace reexports. These names retain Clang's selected
+overload, reference category and cv qualification; they create no wrapper or
+extra move. Each actual call still requires its existing operation descriptor
+and source proof. When `<algorithm>` is also admitted, importing `move` can
+expose its supported pointer-range overload under that descriptor. Other
+library function names are not admitted by this lookup exception.
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested
@@ -1559,7 +1567,8 @@ callees and callable values remain outside this direct-call boundary; source
 replacements and missing result-query bodies remain rejected.
 
 For these owner xvalue queries, exact pinned `std::move` and `std::forward`
-specializations supply their reference-cast source. Any
+specializations supply their reference-cast source. Resolved using-declarations
+and namespace reexports of those names use the same source proof. Any
 selected definition, instantiation pattern, primary and every redeclaration
 must remain in `__utility/move.h` or `__utility/forward.h`. Clang's matching
 implicit library builtin must retain the exact nonthrowing signature, owner
@@ -1573,7 +1582,9 @@ result queries retain the qualified owner `T&&` type, and nested calls keep
 their original argument, template argument, default and temporary-lifetime
 dependencies. Missing non-builtin adapter bodies, source replacements,
 independent adapter function addresses and erased nonthrowing signatures remain
-rejected.
+rejected. Importing the names does not extend this owner xvalue result-query
+proof to lvalue `forward<T&>` results; the existing runtime lvalue-reference
+operation and admitted signature-only queries keep their separate boundaries.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
@@ -9025,9 +9036,10 @@ qualified lookup, access control, argument-dependent lookup and hidden friends
 retain those resolved meanings. The producer never repeats lookup against the
 final namespace contents or creates alias wrapper functions.
 
-Ordinary resolved using-declarations may additionally import the six pinned
-libc++ free comparison names `operator==`, `operator!=`, `operator<`,
-`operator>`, `operator<=` and `operator>=` from `std` or its inline namespaces.
+Ordinary resolved using-declarations may additionally import the pinned libc++
+free function names `move` and `forward` and the six comparison names
+`operator==`, `operator!=`, `operator<`, `operator>`, `operator<=` and
+`operator>=` from `std` or its inline namespaces.
 Namespace and nondependent block imports, repeated/comma imports and
 source-owned namespace reexports preserve the overload set selected by Clang.
 An owned namespace alias or using-directive may refer to such a reexport
@@ -9042,8 +9054,10 @@ or emitted entity. Each actually selected SDK call or result query still needs
 its admitted operation descriptor and original type, signature, argument,
 default, body and lifetime proofs. For example, imported `unique_ptr`
 comparisons use the direct-call boundary above; importing their names does
-not admit `shared_ptr` comparisons or SDK function pointers. Non-comparison
-SDK function imports, SDK class/typedef imports, source replacements and
+not admit `shared_ptr` comparisons or SDK function pointers. Imported `move`
+and `forward` retain their selected scalar, record and owner reference-cast
+operations and existing query boundaries. Other SDK function imports,
+SDK class/typedef imports, source replacements and
 independent SDK function addresses remain excluded.
 
 Lookup declarations add no runtime storage, initialization or cleanup. Imported
@@ -9071,8 +9085,12 @@ Native O0/O2 fixtures cover lookup differences, canonical addresses, mutation,
 type identity, SDK comparison reexports and cleanup. SDK import fixtures also
 cover all 18 owner/owner and owner/null comparison forms, direct template and
 parenthesized names, borrowed xvalues, unevaluated arguments and factory
-temporary destruction. Negative fixtures retain missing comparison-body,
-source-replacement, callable-value and unsupported-import boundaries.
+temporary destruction. Value-adapter imports additionally cover scalar and
+array aliases, callback pointers, ADL selection, pointer-range moves, selected
+record moves/copies, owner construction/assignment and unevaluated source
+effects. Negative fixtures retain missing comparison-body, original written
+type/signature/default, source-replacement, callable-value and unsupported-import
+boundaries.
 Protocol checks verify original IDs, exact overload signatures, defaults,
 layouts, declaration erasure and deterministic relocation.
 Native validation requires CI for the implementing revision. Full C++/STL

@@ -9282,23 +9282,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
-  bool sdkComparisonUsingTarget(const NamedDecl *Target, SourceLocation L) {
+  bool sdkFunctionUsingTarget(const NamedDecl *Target, SourceLocation L) {
     const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(Target);
     const auto *Function = Template ? Template->getTemplatedDecl()
                                     : dyn_cast_or_null<FunctionDecl>(Target);
-    if (!Function || isa<CXXMethodDecl>(Function) ||
-        Function->isInvalidDecl() || !Function->isOverloadedOperator())
+    if (!Function || isa<CXXMethodDecl>(Function) || Function->isInvalidDecl())
       return false;
-    switch (Function->getOverloadedOperator()) {
-    case OO_EqualEqual:
-    case OO_ExclaimEqual:
-    case OO_Less:
-    case OO_Greater:
-    case OO_LessEqual:
-    case OO_GreaterEqual:
-      break;
-    default:
-      return false;
+    if (Function->isOverloadedOperator()) {
+      switch (Function->getOverloadedOperator()) {
+      case OO_EqualEqual:
+      case OO_ExclaimEqual:
+      case OO_Less:
+      case OO_Greater:
+      case OO_LessEqual:
+      case OO_GreaterEqual:
+        break;
+      default:
+        return false;
+      }
+    } else {
+      const auto *Name = Function->getIdentifier();
+      if (!Name || (Name->getName() != "move" && Name->getName() != "forward"))
+        return false;
     }
     const DeclContext *Context = Function->getDeclContext();
     unsigned Namespaces = 0;
@@ -9381,12 +9386,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
     }
     if (!Supported)
-      Supported = sdkComparisonUsingTarget(Target, D->getLocation());
+      Supported = sdkFunctionUsingTarget(Target, D->getLocation());
     if (!Supported) {
       A.reject(
           D->getLocation(), "using target",
           "Expected an owned namespace or block declaration, an unscoped "
-          "non-member enumerator, or a pinned SDK free comparison overload.");
+          "non-member enumerator, or an admitted pinned SDK free function.");
       return;
     }
     A.chargeExpansion(1, D->getLocation());
