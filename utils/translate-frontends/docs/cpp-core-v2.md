@@ -2091,6 +2091,23 @@ pointer parameter before hashing.
 `long double`, volatile-object, volatile-void, variadic function-pointer and
 member-pointer hash specializations remain outside this boundary.
 
+The pinned `std::reference_wrapper<T>` primary also supplies type identity when
+the actual specialization has no definition. Type-only aliases, identity and
+classification queries, pointer/reference spelling, type transforms and array
+rank/extent queries can retain that lazy specialization. The referent keeps its
+recursive type and original-source checks, including admitted incomplete object
+and array metadata, ordinary function signatures and nested wrappers. This
+proof pins the primary, its forward declaration and every redeclaration to
+`__functional/reference_wrapper.h` or `__fwd/functional.h`; source redeclarations
+and explicit or partial specializations cannot borrow the primary's identity.
+Written aliases, template arguments, bounds and exception specifications remain
+checked. No class or method is instantiated to manufacture identity, and no
+wrapper storage, helper or invented layout is emitted. A materialized specialization,
+actual object, runtime parameter or layout/operation query retains its existing
+complete-layout and source requirements. This includes `sizeof`/`alignof` of
+pointers to lazy wrapper specializations and pointer expressions under
+`decltype`/`noexcept`; type identity alone does not admit these separate paths.
+
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
 signature has admitted scalar, object-pointer or fixed-arity ordinary

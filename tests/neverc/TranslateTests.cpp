@@ -65924,6 +65924,236 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMetadataRunAtBothOptimizations) {
+  const auto Source = tmpFile("reference-wrapper-metadata.cpp");
+  const auto Output = tmpFile("reference-wrapper-metadata.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+struct Forward;
+struct Box { int values[2]; };
+int effects, constructed, destroyed;
+struct Owner {
+  int value;
+  Owner() noexcept : value(++effects) { ++constructed; }
+  ~Owner() noexcept { ++destroyed; }
+};
+enum class Small : unsigned short { one = 1 };
+using Function = int(int);
+using SafeFunction = int &(int &) noexcept;
+using Callback = int (*)(int);
+using Array = int[3];
+using UnknownArray = const int[];
+using W = std::reference_wrapper<int>;
+using CW = std::reference_wrapper<const int>;
+using NeverUsed = std::reference_wrapper<unsigned long>;
+typedef std::reference_wrapper<const double> UnusedTypedef;
+using ForwardView = std::reference_wrapper<Forward>;
+using OwnerView = std::reference_wrapper<Owner>;
+using ArrayView = std::reference_wrapper<Array>;
+using UnknownView = std::reference_wrapper<UnknownArray>;
+using FunctionView = std::reference_wrapper<Function>;
+using SafeView = std::reference_wrapper<SafeFunction>;
+using Nested = std::reference_wrapper<const std::reference_wrapper<long>>;
+namespace Types { using View = std::reference_wrapper<Box>; }
+using Types::View;
+namespace Alias = Types;
+template<class T> using Borrowed = std::reference_wrapper<T>;
+template<class T, class U = std::reference_wrapper<T>> bool identity() {
+  using R = Borrowed<T>;
+  static_assert(__is_class(R) && __is_object(R));
+  static_assert(__is_same(R, U));
+  static_assert(!__is_same(R, const R));
+  static_assert(__is_pointer(R *) && __is_reference(R &));
+  static_assert(__is_lvalue_reference(const R &) && __is_rvalue_reference(R &&));
+  static_assert(__is_same(typename std::remove_reference<R &>::type, R));
+  static_assert(__is_same(typename std::add_pointer<R>::type, R *));
+  static_assert(__array_rank(R[][2]) == 2);
+  static_assert(__array_extent(R[][2], 0) == 0);
+  static_assert(__array_extent(R[][2], 1) == 2);
+  return true;
+}
+static_assert(__is_class(W) && __is_class(CW));
+static_assert(!__is_same(W, CW));
+static_assert(__is_same(View, Alias::View));
+static_assert(__is_same(ForwardView, Borrowed<Forward>));
+static_assert(__is_class(Nested) && __is_class(UnknownView));
+static_assert(__is_same(FunctionView, Borrowed<Function>));
+static_assert(__is_same(SafeView, Borrowed<SafeFunction>));
+static_assert(__is_base_of(W, const W));
+using BoundedView = std::reference_wrapper<int[(sizeof(++effects), 3)]>;
+using ExpressionView = std::reference_wrapper<decltype((++effects, 0))>;
+using ExceptionView = std::reference_wrapper<int() noexcept(sizeof(++effects) > 0)>;
+static_assert(__is_same(BoundedView, ArrayView));
+static_assert(__is_same(ExpressionView, W));
+static_assert(__is_same(ExceptionView, std::reference_wrapper<int() noexcept>));
+int main() {
+  return identity<int>() && identity<const int>() && identity<double>() &&
+         identity<Small>() && identity<int *>() && identity<void *>() &&
+         identity<decltype(nullptr)>() && identity<Callback>() &&
+         identity<Function>() && identity<SafeFunction>() && identity<Array>() &&
+         identity<UnknownArray>() && identity<Forward>() && identity<Box>() &&
+         identity<Owner>() && identity<std::array<int, 2>>() &&
+         identity<std::pair<int, double>>() &&
+         identity<std::tuple<int, double>>() &&
+         identity<const std::reference_wrapper<long>>() &&
+         !effects && !constructed && !destroyed ? 0 : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("nct_reference_wrapper_pointer"), std::string::npos);
+  EXPECT_EQ(Generated.find("nct_reference_wrapper_base_storage"),
+            std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-metadata" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMetadataRetainsSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"long-double", R"cpp(
+using W=std::reference_wrapper<long double>;
+)cpp",
+       "TR0201"},
+      {"volatile-referent", R"cpp(
+using W=std::reference_wrapper<volatile int>;
+)cpp",
+       "TR0201"},
+      {"void-referent", R"cpp(
+using W=std::reference_wrapper<void>;
+)cpp",
+       "TR0201"},
+      {"reference-referent", R"cpp(
+using W=std::reference_wrapper<int&>;
+)cpp",
+       "TR0201"},
+      {"variadic-function", R"cpp(
+using W=std::reference_wrapper<int(int,...)>;
+)cpp",
+       "TR0201"},
+      {"qualified-function", R"cpp(
+using W=std::reference_wrapper<int()const>;
+)cpp",
+       "TR0201"},
+      {"callback-parameter", R"cpp(
+using W=std::reference_wrapper<int(long double)>;
+)cpp",
+       "TR0201"},
+      {"callback-result", R"cpp(
+using W=std::reference_wrapper<long double()>;
+)cpp",
+       "TR0201"},
+      {"pointer-pointee", R"cpp(
+using W=std::reference_wrapper<long double*>;
+)cpp",
+       "TR0201"},
+      {"original-array-bound", R"cpp(
+using Original=int[(sizeof(long double),2)];using W=std::reference_wrapper<Original>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"nested-wrapper", R"cpp(
+using W=std::reference_wrapper<std::reference_wrapper<long double>>;
+)cpp",
+       "TR0201"},
+      {"erased-type-argument", R"cpp(
+template<class T>using Erased=int;using W=std::reference_wrapper<Erased<long double>>;
+)cpp",
+       "TR0201"},
+      {"erased-value-argument", R"cpp(
+int object;template<auto P>using Erased=int;using W=std::reference_wrapper<Erased<&object>>;
+)cpp",
+       "TR0201"},
+      {"original-decltype-expression", R"cpp(
+using W=std::reference_wrapper<decltype((sizeof(long double),0))>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"original-exception-specification", R"cpp(
+using W=std::reference_wrapper<int()noexcept(sizeof(long double)>0)>;
+)cpp",
+       "TR0201"},
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}using W=std::reference_wrapper<int>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"explicit-specialization-forward", R"cpp(
+namespace std{inline namespace __1{template<>class reference_wrapper<int>;}}using W=std::reference_wrapper<int>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"explicit-specialization-definition", R"cpp(
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*__f_;};}}using W=std::reference_wrapper<int>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"partial-specialization-forward", R"cpp(
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>;}}using W=std::reference_wrapper<int*>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"partial-specialization-definition", R"cpp(
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**__f_;};}}using W=std::reference_wrapper<int*>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+      {"runtime-incomplete-wrapper", R"cpp(
+using W=std::reference_wrapper<int>;bool f(W*p){return p==nullptr;}
+)cpp",
+       "TR0201"},
+      {"pointer-size-query", R"cpp(
+using W=std::reference_wrapper<int>;static_assert(sizeof(W*)==sizeof(void*));
+)cpp",
+       "TR0201"},
+      {"pointer-alignment-query", R"cpp(
+using W=std::reference_wrapper<int>;static_assert(alignof(W*)==alignof(void*));
+)cpp",
+       "TR0201"},
+      {"pointer-expression-query", R"cpp(
+using W=std::reference_wrapper<int>;static_assert(noexcept(static_cast<W*>(nullptr)));
+)cpp",
+       "TR0201"},
+      {"layout-incomplete-referent", R"cpp(
+struct Forward;using W=std::reference_wrapper<Forward>;static_assert(sizeof(W)>0);
+)cpp",
+       "TR0201"},
+      {"volatile-wrapper", R"cpp(
+using W=volatile std::reference_wrapper<int>;
+)cpp",
+       "TR0201"},
+      {"address-space-referent", R"cpp(
+using Value=int __attribute__((address_space(1)));using W=std::reference_wrapper<Value>;
+)cpp",
+       "TR0201"},
+      {"owned-record-source", R"cpp(
+struct Box{long double value;};using W=std::reference_wrapper<Box>;static_assert(__is_class(W));
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("reference-wrapper-metadata-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("reference-wrapper-metadata-reject-") + Case.Name + ".nc");
+    writeFile(Source, "#include <functional>\n" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2SDKReferenceFactoryNameImportsRunAtBothOptimizations) {
   const auto Source = tmpFile("sdk-reference-factory-imports.cpp");

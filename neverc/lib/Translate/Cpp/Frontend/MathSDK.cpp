@@ -861,6 +861,67 @@ static bool supportedFunctionalResult(const State &S, const SourceManager &SM,
          S.owns(SM, Definition->getLocation());
 }
 
+bool approvedFunctionalReferenceMetadata(const State &S,
+                                         const SourceManager &SM,
+                                         const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *Pattern =
+      Template ? Template->getTemplatedDecl()->getDefinition() : nullptr;
+  if (!Specialization || !Template || !Pattern || Record->getDefinition() ||
+      Record->isInvalidDecl() || Record->isUnion() ||
+      Record->isDependentContext() || !Record->getIdentifier() ||
+      Record->getName() != "reference_wrapper" ||
+      (Specialization->getSpecializationKind() != TSK_Undeclared &&
+       Specialization->getSpecializationKind() != TSK_ImplicitInstantiation) ||
+      Specialization->getSpecializedTemplateOrPartial()
+          .is<ClassTemplatePartialSpecializationDecl *>())
+    return false;
+  // A lazy specialization has not selected a partial's body yet. The pinned
+  // reference_wrapper primary has no partials; do not authenticate replacements
+  // by instantiating them or by borrowing the primary's identity.
+  llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 1> Partials;
+  Template->getPartialSpecializations(Partials);
+  if (!Partials.empty())
+    return false;
+  unsigned Declarations = 0;
+  auto Pinned = [&](const Decl *Declaration, bool AllowForward) {
+    return Declaration && ++Declarations <= 64 &&
+           !Declaration->isInvalidDecl() &&
+           approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           (cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                          "__functional/reference_wrapper.h") ||
+            (AllowForward && cstddefOrigin(S, SM, Declaration->getLocation(),
+                                           "libcxx", "__fwd/functional.h")));
+  };
+  if (!Pinned(Pattern, false) ||
+      !cstddefOrigin(S, SM, Template->getCanonicalDecl()->getLocation(),
+                     "libcxx", "__fwd/functional.h"))
+    return false;
+  for (const auto *Declaration : Specialization->redecls())
+    if (!Pinned(Declaration, false))
+      return false;
+  for (const auto *Declaration : Template->redecls()) {
+    if (!Pinned(Declaration, true))
+      return false;
+    for (const auto *Redeclaration : Declaration->getTemplatedDecl()->redecls())
+      if (!Pinned(Redeclaration, true))
+        return false;
+  }
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return false;
+  const auto Referent = Arguments.get(0).getAsType();
+  return !Referent.isNull() && !Referent->isDependentType() &&
+         !Referent->isInstantiationDependentType() &&
+         (Referent->isObjectType() || Referent->isFunctionProtoType()) &&
+         !Referent.isVolatileQualified() && !Referent.isRestrictQualified() &&
+         Referent.getAddressSpace() == LangAS::Default;
+}
+
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {

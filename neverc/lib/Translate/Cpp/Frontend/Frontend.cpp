@@ -2300,6 +2300,15 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(T->getPointeeType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedFunctionalReferenceMetadata(S, Sources,
+                                                   T->getAsCXXRecordDecl())) {
+      const auto *Wrapper =
+          cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      // Type identity neither completes the SDK record nor creates storage.
+      // The original referent retains its independent type/source boundary.
+      checkQueryType(Wrapper->getTemplateArgs().get(0).getAsType(), L,
+                     AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
                approvedUtilityPairMetadata(S, Sources,
                                            T->getAsCXXRecordDecl())) {
       const auto *Pair = dyn_cast<ClassTemplateSpecializationDecl>(

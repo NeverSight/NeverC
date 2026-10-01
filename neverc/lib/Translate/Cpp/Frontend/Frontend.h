@@ -343,6 +343,9 @@ struct FunctionalReferenceRecord {
   const clang::FieldDecl *Pointer;
   bool PaddedBase;
 };
+bool approvedFunctionalReferenceMetadata(const State &S,
+                                         const clang::SourceManager &SM,
+                                         const clang::CXXRecordDecl *Record);
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
