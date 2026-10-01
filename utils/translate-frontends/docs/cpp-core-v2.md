@@ -2204,7 +2204,26 @@ arguments, array bounds, signatures, selected defaults and temporary cleanup
 remain independently checked and execute no effects in unevaluated queries.
 Source member specializations, independent member addresses, indirect member
 calls, erased exception specifications and unsupported referents remain
-rejected. Wrapper invocation queries retain their separate requirements.
+rejected. Wrapper invocation queries retain the requirements below.
+
+Direct `reference_wrapper` calls around admitted fixed-arity functions and
+stored function pointers support result-source queries when the exact selected
+wrapper and internal dispatch bodies are already materialized by evaluated
+uses. `decltype`, result traits and nested type-layout queries preserve scalar,
+void and admitted reference results, including array, record and callback
+references. The concrete invocation descriptor authenticates dispatch and
+forwarding; the selected SDK declaration chains and conditional
+`is_nothrow_invocable_v` specialization retain their pinned sources, exact
+referent and argument pack. Its resolved exception specification must agree
+with the admitted target prototype. Const wrappers, parenthesized and
+dereferenced receivers and admitted temporary wrappers use the same proof.
+The proof belongs to that call alone. Original receiver and argument
+expressions, initializers, aliases, function signatures, selected defaults and
+temporary destruction remain independently checked. Queries execute none of
+their effects. Query-only lazy invocation bodies, other argument
+specializations without bodies, `std::invoke` adapters, callable-object
+invocation queries and independent member addresses retain their separate
+requirements; this does not instantiate an SDK body for a query.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent

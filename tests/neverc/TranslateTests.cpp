@@ -67611,6 +67611,228 @@ using W=std::reference_wrapper<int>;
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceInvokeQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("reference-invoke-queries.cpp");
+  const auto Output = tmpFile("reference-invoke-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <type_traits>
+#include <utility>
+int calls, defaults, live, destroyed;
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+struct Box { int value; };
+int increment(int n) noexcept { ++calls; return n + 1; }
+int potentially_throwing(int n) { ++calls; return n + 2; }
+int mark(int n = (++defaults, 3)) noexcept { ++calls; return n; }
+int &argument(int &n, Ticket ticket = Ticket()) noexcept { ++calls; return n; }
+int &same(int &n) noexcept { ++calls; return n; }
+const int &view(const int &n) noexcept { return n; }
+int &&move_ref(int &&n) noexcept { return static_cast<int &&>(n); }
+void reset(int &n) noexcept { n = 0; }
+int answer() noexcept { return 42; }
+int *&pointer_ref(int *&n) noexcept { return n; }
+using Function = int(int) noexcept;
+using Pointer = Function *;
+Pointer &callback(Pointer &fn) noexcept { return fn; }
+using Array = int[2];
+Array &array_ref(Array &a) noexcept { return a; }
+Box &box_ref(Box &b) noexcept { return b; }
+std::array<int, 2> &row_ref(std::array<int, 2> &r) noexcept { return r; }
+using Wrapper = std::reference_wrapper<Function>;
+Wrapper &receiver(Wrapper &w, int n = (++defaults, 1)) noexcept { ++calls; return w; }
+Wrapper temporary_receiver(Ticket ticket = Ticket()) noexcept {
+  ++calls; return std::ref(increment);
+}
+int main() {
+  int value = 7;
+  const int fixed = 8;
+  int *address = &value;
+  Pointer target = increment;
+  const Pointer fixed_target = increment;
+  Array array{9, 10};
+  Box box{11};
+  std::array<int, 2> row{{12, 13}};
+  auto wrapper = std::ref(increment);
+  const auto constant = wrapper;
+  auto *wrapper_pointer = &wrapper;
+  auto stored = std::ref(target);
+  auto stored_const = std::cref(fixed_target);
+  auto throwing = std::ref(potentially_throwing);
+  auto reference = std::ref(same);
+  auto read_only = std::ref(view);
+  auto moved = std::ref(move_ref);
+  auto void_result = std::ref(reset);
+  auto nullary = std::ref(answer);
+  auto pointer_result = std::ref(pointer_ref);
+  auto function_result = std::ref(callback);
+  auto array_result = std::ref(array_ref);
+  auto record_result = std::ref(box_ref);
+  auto row_result = std::ref(row_ref);
+  // These evaluated calls materialize precisely the selected wrapper and
+  // __invoke specializations. The later queries must consume that evidence.
+  if (wrapper(1) != 2 || stored(2) != 3 || stored_const(3) != 4 ||
+      throwing(4) != 6 || &reference(value) != &value ||
+      &read_only(fixed) != &fixed || &pointer_result(address) != &address ||
+      &function_result(target) != &target || &array_result(array) != &array ||
+      &record_result(box) != &box || &row_result(row) != &row ||
+      moved(static_cast<int &&>(value)) != 7 || nullary() != 42) return 1;
+  int cleared = 1;
+  void_result(cleared);
+  if (cleared) return 2;
+  calls = defaults = live = destroyed = 0;
+  static_assert(__is_same(decltype(wrapper(mark())), int));
+  static_assert(__is_same(decltype((constant)(mark())), int));
+  static_assert(__is_same(decltype((*wrapper_pointer)(mark())), int));
+  static_assert(__is_same(decltype(std::cref(increment)(mark())), int));
+  static_assert(__is_same(decltype(std::ref(target)(mark())), int));
+  static_assert(__is_same(decltype(stored_const(mark())), int));
+  static_assert(__is_same(decltype(throwing(mark())), int));
+  static_assert(__is_same(decltype(reference(argument(value))), int &));
+  static_assert(__is_same(decltype(read_only(fixed)), const int &));
+  static_assert(__is_same(decltype(moved(static_cast<int &&>(value))), int &&));
+  static_assert(__is_same(decltype(void_result(value)), void));
+  static_assert(__is_same(decltype(nullary()), int));
+  static_assert(__is_same(decltype(pointer_result(address)), int *&));
+  static_assert(__is_same(decltype(function_result(target)), Pointer &));
+  static_assert(__is_same(decltype(array_result(array)), Array &));
+  static_assert(__is_same(decltype(record_result(box)), Box &));
+  static_assert(__is_same(decltype(row_result(row)), std::array<int, 2> &));
+  static_assert(__is_lvalue_reference(decltype(reference(value))));
+  static_assert(__is_rvalue_reference(decltype(moved(static_cast<int &&>(value)))));
+  static_assert(__is_same(typename std::remove_reference<decltype(record_result(box))>::type, Box));
+  static_assert(__array_extent(typename std::remove_reference<decltype(array_result(array))>::type, 0) == 2);
+  static_assert(sizeof(decltype(receiver(wrapper)(mark()))) == sizeof(int));
+  static_assert(alignof(decltype(record_result(box))) == alignof(Box));
+  static_assert(noexcept(wrapper(mark())) && !noexcept(throwing(mark())));
+  static_assert(noexcept(reference(argument(value))) && noexcept(void_result(value)));
+  static_assert(sizeof(decltype(temporary_receiver()(mark()))) == sizeof(int));
+  static_assert(sizeof(decltype((++calls, wrapper)((++calls, 1)))) == sizeof(int));
+  using Result = decltype(reference(argument(value, Ticket())));
+  static_assert(__is_same(Result, int &));
+  int extent[sizeof(decltype(wrapper(mark()))) == sizeof(int) ? 2 : 1]{};
+  if (sizeof(extent) != 2 * sizeof(int) || calls || defaults || live || destroyed) return 3;
+  int observed = receiver(wrapper)(mark());
+  int &selected = reference(argument(value));
+  int temporary = temporary_receiver()(mark());
+  return observed == 4 && temporary == 4 && &selected == &value && value == 7 &&
+         calls == 8 && defaults == 3 && live == 0 && destroyed == 2 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("reference-invoke-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceInvokeQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"lazy-wrapper-body", R"cpp(
+int f(W&w){static_assert(__is_same(decltype(w(1)),int));return 0;}
+)cpp", "TR0203"},
+      {"different-argument-specialization", R"cpp(
+int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(short(1))),int));return n;}
+)cpp", "TR0203"},
+      {"invoke-adapter-source", R"cpp(
+int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),int));return n;}
+)cpp", "TR0201"},
+      {"owned-callable-source", R"cpp(
+struct C{int operator()(int n)noexcept{return n;}};int f(){C c;auto w=std::ref(c);int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0201"},
+      {"sdk-callable-source", R"cpp(
+int f(){std::plus<int> p;auto w=std::ref(p);int n=w(1,2);static_assert(__is_same(decltype(w(1,2)),int));return n;}
+)cpp", "TR0201"},
+      {"independent-member-address", R"cpp(
+int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));static_assert(sizeof(&W::operator()<int>)>0);return n;}
+)cpp", "TR0201"},
+      {"indirect-member-call", R"cpp(
+int f(W&w){int n=w(1);auto member=&W::operator()<int>;static_assert(__is_same(decltype((w.*member)(1)),int));return n;}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(
+int f(W&w){int n=w(1);static_assert(__is_same(decltype((sizeof(long double),w)(1)),int));return n;}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(
+int f(W&w){int n=w(1);static_assert(__is_same(decltype(w((sizeof(long double),1))),int));return n;}
+)cpp", "TR0201"},
+      {"receiver-initializer", R"cpp(
+int f(){auto w=std::ref((sizeof(long double),target));int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0201"},
+      {"argument-initializer", R"cpp(
+int f(W&w){int v=(sizeof(long double),1);int n=w(v);static_assert(__is_same(decltype(w(v)),int));return n;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+int arg(int n=sizeof(long double))noexcept{return n;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(arg())),int));return n;}
+)cpp", "TR0201"},
+      {"receiver-original-exception", R"cpp(
+W&source(W&w)noexcept(sizeof(long double)>0);W&source(W&w)noexcept{return w;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(source(w)(1)),int));return n;}
+)cpp", "TR0201"},
+      {"target-original-exception", R"cpp(
+int other(int n)noexcept(sizeof(long double)>0);int other(int n)noexcept{return n;}int f(){auto w=std::ref(other);int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0201"},
+      {"adjusted-target-array-bound", R"cpp(
+int other(int a[(sizeof(long double),2)])noexcept{return a[0];}int f(int*p){auto w=std::ref(other);int n=w(p);static_assert(__is_same(decltype(w(p)),int));return n;}
+)cpp", "TR0201"},
+      {"argument-written-alias", R"cpp(
+using T=decltype((sizeof(long double),int{}));int f(W&w,T&v){int n=w(v);static_assert(__is_same(decltype(w(v)),int));return n;}
+)cpp", "TR0201"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(arg())),int));return n;}
+)cpp", "TR0201"},
+      {"temporary-destructor-exception", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(arg())),int));return n;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(arg())),int));return n;}
+)cpp", "TR0203"},
+      {"missing-receiver-definition", R"cpp(
+W&source(W&w)noexcept;int f(W&w){int n=w(1);static_assert(__is_same(decltype(source(w)(1)),int));return n;}
+)cpp", "TR0203"},
+      {"operator-specialization", R"cpp(
+namespace std{inline namespace __1{template<>template<>int reference_wrapper<F>::operator()<int>(int&&n)const noexcept{return n;}}}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0201"},
+      {"get-specialization", R"cpp(
+namespace std{inline namespace __1{template<>F&reference_wrapper<F>::get()const noexcept{return target;}}}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0201"},
+      {"exception-variable-specialization", R"cpp(
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<F&,int> = true;}}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0202"},
+      {"exception-trait-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct is_nothrow_invocable<F&,int>:true_type{};}}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("reference-invoke-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("reference-invoke-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;
+using W=std::reference_wrapper<F>;
+int target(int n)noexcept{return n;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceFactoryQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("reference-factory-queries.cpp");
   const auto Output = tmpFile("reference-factory-queries.nc");
