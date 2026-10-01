@@ -2207,7 +2207,8 @@ calls, erased exception specifications and unsupported referents remain
 rejected. Wrapper invocation queries retain the requirements below.
 
 Direct `reference_wrapper` calls around admitted fixed-arity functions and
-stored function pointers support result-source queries when the exact selected
+stored function pointers, and `std::invoke` calls around those wrappers,
+support result-source queries when the exact selected public adapter,
 wrapper and internal dispatch bodies are already materialized by evaluated
 uses. `decltype`, result traits and nested type-layout queries preserve scalar,
 void and admitted reference results, including array, record and callback
@@ -2217,12 +2218,18 @@ forwarding; the selected SDK declaration chains and conditional
 referent and argument pack. Its resolved exception specification must agree
 with the admitted target prototype. Const wrappers, parenthesized and
 dereferenced receivers and admitted temporary wrappers use the same proof.
+For `std::invoke`, the outer callable type and argument pack authenticate its
+own exception variable separately from the wrapper referent and inner pack.
+Every declaration family in the public `invoke` to internal `__invoke` to
+wrapper call chain keeps its pinned source. Each concrete callable category
+and argument pack needs its own materialized adapter; a direct wrapper call
+alone does not supply that adapter body.
 The proof belongs to that call alone. Original receiver and argument
 expressions, initializers, aliases, function signatures, selected defaults and
 temporary destruction remain independently checked. Queries execute none of
 their effects. Query-only lazy invocation bodies, other argument
-specializations without bodies, `std::invoke` adapters, callable-object
-invocation queries and independent member addresses retain their separate
+specializations without bodies, `std::invoke` queries on plain functions or
+callable objects, and independent function or member addresses retain their separate
 requirements; this does not instantiate an SDK body for a query.
 
 Wrappers around an admitted typed or transparent standard function

@@ -3036,40 +3036,30 @@ static bool functionalReferenceAccessSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
-static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
-  // Consume the existing concrete dispatch proof. Query-only operator bodies,
-  // std::invoke adapters and overloaded callable objects need separate proofs.
-  if (!isa_and_nonnull<CXXOperatorCallExpr>(Call))
-    return false;
-  const auto Invoke =
-      approvedFunctionalReferenceInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || (Invoke->Kind != FunctionalReferenceInvokeKind::Function &&
-                  Invoke->Kind != FunctionalReferenceInvokeKind::FunctionPointer))
-    return false;
-  const auto *Method = Call->getDirectCallee();
-  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
-  const auto *Target = Invoke->FunctionPointerType->getPointeeType()
-                           ->getAs<FunctionProtoType>();
+static const CallExpr *functionalReturnedCall(const FunctionDecl *Function) {
+  const auto *Body = Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody())
+                              : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+  return Return && Return->getRetValue()
+             ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+             : nullptr;
+}
+
+static bool functionalInvocabilitySource(
+    Adapter &A, const CallExpr *Call, QualType Callable,
+    const TemplateArgument &Arguments, const FunctionProtoType *Target) {
+  const auto *Function = Call->getDirectCallee();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   if (!Prototype || !Target || operationCalleePrototype(Call) != Prototype ||
       (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
        Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
       Prototype->isNothrow() != Target->isNothrow() ||
-      !utilitySDKFunctionSource(A, Method, "__functional/reference_wrapper.h"))
-    return false;
-
-  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
-  const auto *Return = Body && Body->size() == 1
-                           ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
-  const auto *Dispatch =
-      Return && Return->getRetValue()
-          ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
-          : nullptr;
-  if (!Dispatch || !utilitySDKFunctionSource(
-                       A, Dispatch->getDirectCallee(), "__type_traits/invoke.h"))
+      Arguments.getKind() != TemplateArgument::Pack)
     return false;
 
   // The SDK's conditional exception specification must refer to its exact
-  // invocability variable, with the same referent and deduced argument pack.
+  // invocability variable, with the same callable and deduced argument pack.
   // Its resolved value also agrees with the admitted fixed-arity target above;
   // caller-side conversions, defaults and cleanup still retain their sources.
   const auto *Noexcept = Prototype->getNoexceptExpr();
@@ -3077,26 +3067,21 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
       Noexcept ? dyn_cast<DeclRefExpr>(Noexcept->IgnoreParenImpCasts()) : nullptr;
   const auto *Variable = Reference
       ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
-  const auto *Arguments = Method->getTemplateSpecializationArgs();
   if (!Variable || !Variable->getIdentifier() ||
       Variable->getName() != "is_nothrow_invocable_v" ||
       Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
       Variable->getSpecializedTemplateOrPartial()
-          .is<VarTemplatePartialSpecializationDecl *>() ||
-      !Arguments || Arguments->size() != 1 ||
-      Arguments->get(0).getKind() != TemplateArgument::Pack)
+          .is<VarTemplatePartialSpecializationDecl *>())
     return false;
   const auto &Traits = Variable->getTemplateArgs();
   if (Traits.size() != 2 || Traits.get(0).getKind() != TemplateArgument::Type ||
-      !A.Context.hasSameType(Traits.get(0).getAsType(),
-                             A.Context.getLValueReferenceType(
-                                 Invoke->Wrapper.ReferentType)) ||
+      !A.Context.hasSameType(Traits.get(0).getAsType(), Callable) ||
       Traits.get(1).getKind() != TemplateArgument::Pack ||
-      Traits.get(1).pack_size() != Arguments->get(0).pack_size())
+      Traits.get(1).pack_size() != Arguments.pack_size())
     return false;
   for (unsigned I = 0; I < Traits.get(1).pack_size(); ++I) {
     const auto &Trait = Traits.get(1).pack_elements()[I];
-    const auto &Argument = Arguments->get(0).pack_elements()[I];
+    const auto &Argument = Arguments.pack_elements()[I];
     if (Trait.getKind() != TemplateArgument::Type ||
         Argument.getKind() != TemplateArgument::Type ||
         !A.Context.hasSameType(Trait.getAsType(), Argument.getAsType()))
@@ -3116,6 +3101,58 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
     if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
       return false;
   return true;
+}
+
+static bool functionalReferenceDirectInvokeSource(
+    Adapter &A, const CallExpr *Call, const FunctionalReferenceInvokeCall &Invoke) {
+  // The caller has already authenticated this concrete operator body, directly
+  // or through std::invoke's exact dispatch. Do not complete a lazy body here.
+  if (!isa_and_nonnull<CXXOperatorCallExpr>(Call))
+    return false;
+  const auto *Method = Call->getDirectCallee();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  const auto *Dispatch = functionalReturnedCall(Method);
+  const auto *Target = Invoke.FunctionPointerType->getPointeeType()
+                           ->getAs<FunctionProtoType>();
+  return Arguments && Arguments->size() == 1 && Dispatch &&
+         utilitySDKFunctionSource(A, Method, "__functional/reference_wrapper.h") &&
+         utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                                  "__type_traits/invoke.h") &&
+         functionalInvocabilitySource(
+             A, Call, A.Context.getLValueReferenceType(Invoke.Wrapper.ReferentType),
+             Arguments->get(0), Target);
+}
+
+static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || (!isa<CXXOperatorCallExpr>(Call) &&
+                    (!Function->getIdentifier() || Function->getName() != "invoke")))
+    return false;
+  const auto Invoke =
+      approvedFunctionalReferenceInvokeCall(A.S, A.Sources, Call, A.Context);
+  if (!Invoke || (Invoke->Kind != FunctionalReferenceInvokeKind::Function &&
+                  Invoke->Kind != FunctionalReferenceInvokeKind::FunctionPointer))
+    return false;
+  if (isa<CXXOperatorCallExpr>(Call))
+    return functionalReferenceDirectInvokeSource(A, Call, *Invoke);
+
+  // The invocation descriptor proves the outer invoke -> __invoke -> wrapper
+  // call chain. Pin each declaration family before consuming its SDK source;
+  // the actual callable and arguments remain independent caller-side roots.
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Dispatch = functionalReturnedCall(Function);
+  const auto *Inner =
+      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
+  const auto *Target = Invoke->FunctionPointerType->getPointeeType()
+                           ->getAs<FunctionProtoType>();
+  return Arguments && Arguments->size() == 2 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type && Dispatch &&
+         utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
+         utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                                  "__type_traits/invoke.h") &&
+         functionalReferenceDirectInvokeSource(A, Inner, *Invoke) &&
+         functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                       Arguments->get(1), Target);
 }
 
 static bool utilityUniquePtrElementConstructionSource(
@@ -10504,7 +10541,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         if (functionalReferenceAccessSource(A, Call) ||
             functionalReferenceInvokeSource(A, Call))
-          if (const auto *Reference = directMethodReference(Call)) {
+          if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
             if (Inserted)
