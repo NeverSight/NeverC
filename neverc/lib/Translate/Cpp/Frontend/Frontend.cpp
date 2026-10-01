@@ -2768,29 +2768,29 @@ static bool utilityUniquePtrFunctionSource(Adapter &A,
   return utilitySDKFunctionSource(A, Function, "__memory/unique_ptr.h");
 }
 
-static bool utilityUniquePtrValueAdapterSource(Adapter &A,
-                                               const CallExpr *Call) {
-  const auto Operation =
-      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
-  if (!Operation || (*Operation != UtilityOperation::Move &&
-                     *Operation != UtilityOperation::Forward))
+static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
+                                         UtilityOperation Operation) {
+  if (!Call || (Operation != UtilityOperation::Move &&
+                Operation != UtilityOperation::Forward))
     return false;
   const auto *Function = Call->getDirectCallee();
   const auto *Reference =
       dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
   const auto *Prototype =
       Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
-  const auto Path = *Operation == UtilityOperation::Move
-                        ? "__utility/move.h"
-                        : "__utility/forward.h";
-  const auto BuiltinID = *Operation == UtilityOperation::Move
+  const auto Path = Operation == UtilityOperation::Move ? "__utility/move.h"
+                                                        : "__utility/forward.h";
+  const auto BuiltinID = Operation == UtilityOperation::Move
                              ? Builtin::BImove
                              : Builtin::BIforward;
   const auto *Builtin = Function ? Function->getAttr<BuiltinAttr>() : nullptr;
   const bool BuiltinCast = Builtin && Builtin->isImplicit() &&
                            Builtin->getID() == BuiltinID &&
                            Function->getBuiltinID() == BuiltinID;
-  if (!Function || isa<CXXMethodDecl>(Function) || !Reference ||
+  if (!Function || !Function->getIdentifier() ||
+      Function->getName() !=
+          (Operation == UtilityOperation::Move ? "move" : "forward") ||
+      isa<CXXMethodDecl>(Function) || !Reference ||
       Reference->getDecl() != Function || !Function->getPrimaryTemplate() ||
       Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       Function->getParamDecl(0)->hasDefaultArg() || !Call->isXValue() ||
@@ -2800,7 +2800,6 @@ static bool utilityUniquePtrValueAdapterSource(Adapter &A,
       Prototype->getNoexceptExpr() ||
       operationCalleePrototype(Call) != Prototype ||
       !A.Context.hasSameType(Call->getArg(0)->getType(), Call->getType()) ||
-      !utilityUniquePtrSource(A, Call->getType()->getAsCXXRecordDecl()) ||
       !utilitySDKFunctionSource(A, Function, Path, !BuiltinCast))
     return false;
   // Clang can execute these exact library reference casts as implicit
@@ -2831,7 +2830,7 @@ static bool utilityUniquePtrValueAdapterSource(Adapter &A,
     const auto *Declaration = dyn_cast<DeclStmt>(*Body->body_begin());
     if (!Declaration || !Declaration->isSingleDecl())
       return false;
-    if (*Operation == UtilityOperation::Move) {
+    if (Operation == UtilityOperation::Move) {
       const auto *Alias = dyn_cast<TypeAliasDecl>(Declaration->getSingleDecl());
       if (!Alias ||
           !A.Context.hasSameType(Alias->getUnderlyingType(), Call->getType()))
@@ -2841,6 +2840,17 @@ static bool utilityUniquePtrValueAdapterSource(Adapter &A,
     }
   }
   return true;
+}
+
+static bool utilityUniquePtrValueAdapterSource(Adapter &A,
+                                               const CallExpr *Call) {
+  const auto Operation =
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+  return Operation &&
+         (*Operation == UtilityOperation::Move ||
+          *Operation == UtilityOperation::Forward) &&
+         utilityUniquePtrSource(A, Call->getType()->getAsCXXRecordDecl()) &&
+         utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
 static bool utilityUniquePtrElementConstructionSource(
@@ -2931,6 +2941,187 @@ utilityUniquePtrNullAssignmentSource(Adapter &A, const CXXMethodDecl *Method,
            isa<CXXScalarValueInitExpr>(Initializer->IgnoreParenImpCasts())));
 }
 
+// Inspect only the concrete pinned wrapper. Its private reference casts and
+// empty stores are not project expressions and must not cause new bodies to be
+// instantiated or acquire an independent source-reference permission.
+static bool
+utilityUniquePtrMoveAssignmentSource(Adapter &A, const CXXMethodDecl *Method,
+                                     const UtilityUniquePtrRecord &Owner,
+                                     const UtilityUniquePtrRecord &Source) {
+  const auto *Body =
+      dyn_cast_or_null<CompoundStmt>(Method ? Method->getBody() : nullptr);
+  if (!Body || Body->size() != (Owner.Deleter.Array ? 4u : 3u) ||
+      !utilityUniquePtrSource(A, Source.Record))
+    return false;
+  const auto OwnerType = A.Context.getRecordType(Owner.Record);
+  const auto SourceType = A.Context.getRecordType(Source.Record);
+  const auto *Parameter = Method->getParamDecl(0);
+  auto ThisObject = [&](const Expr *Object) {
+    const auto *This =
+        Object ? dyn_cast<CXXThisExpr>(Object->IgnoreParenImpCasts()) : nullptr;
+    return This && A.Context.hasSameType(This->getType(),
+                                         A.Context.getPointerType(OwnerType));
+  };
+  auto SourceObject = [&](const Expr *Object) {
+    const auto *Reference =
+        Object ? dyn_cast<DeclRefExpr>(Object->IgnoreParenImpCasts()) : nullptr;
+    return Reference && Reference->getDecl() == Parameter &&
+           Reference->isLValue() &&
+           A.Context.hasSameType(Reference->getType(), SourceType);
+  };
+  auto Member = [&](const CXXMemberCallExpr *Call,
+                    const UtilityUniquePtrRecord &Record, llvm::StringRef Name,
+                    unsigned Arguments) {
+    const auto *Delegate = Call ? Call->getMethodDecl() : nullptr;
+    const auto *Prototype =
+        Delegate ? Delegate->getType()->getAs<FunctionProtoType>() : nullptr;
+    return Delegate && Delegate->getIdentifier() &&
+           Delegate->getName() == Name && !Delegate->isStatic() &&
+           !Delegate->isConst() && Call->getNumArgs() == Arguments &&
+           Delegate->getNumParams() == Arguments && Prototype &&
+           Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+           !Prototype->getNoexceptExpr() &&
+           Delegate->getParent()->getCanonicalDecl() ==
+               Record.Record->getCanonicalDecl() &&
+           utilityUniquePtrFunctionSource(A, Delegate);
+  };
+  const auto *Reset = dyn_cast<CXXMemberCallExpr>(*Body->body_begin());
+  const auto *Release =
+      Reset && Reset->getNumArgs() == 1
+          ? dyn_cast<CXXMemberCallExpr>(Reset->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Member(Reset, Owner, "reset", 1) ||
+      !ThisObject(Reset->getImplicitObjectArgument()) ||
+      !Reset->getType()->isVoidType() ||
+      !A.Context.hasSameType(Reset->getMethodDecl()->getParamDecl(0)->getType(),
+                             Reset->getArg(0)->getType()) ||
+      !Member(Release, Source, "release", 0) ||
+      !SourceObject(Release->getImplicitObjectArgument()) ||
+      !A.Context.hasSameType(Release->getType(), Source.PointerType) ||
+      !Release->isPRValue())
+    return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Result = Return && Return->getRetValue()
+                           ? dyn_cast<UnaryOperator>(
+                                 Return->getRetValue()->IgnoreParenImpCasts())
+                           : nullptr;
+  if (!Result || Result->getOpcode() != UO_Deref || !Result->isLValue() ||
+      !A.Context.hasSameType(Result->getType(), OwnerType) ||
+      !ThisObject(Result->getSubExpr()))
+    return false;
+  auto Field = [&](const Expr *Expression, const UtilityUniquePtrRecord &Record,
+                   llvm::StringRef Name,
+                   bool Destination) -> const FieldDecl * {
+    const auto *Access =
+        Expression ? dyn_cast<MemberExpr>(Expression->IgnoreParenImpCasts())
+                   : nullptr;
+    const auto *Declaration =
+        Access ? dyn_cast<FieldDecl>(Access->getMemberDecl()) : nullptr;
+    return Declaration && Declaration->getName() == Name &&
+                   Declaration->getParent()->getCanonicalDecl() ==
+                       Record.Record->getCanonicalDecl() &&
+                   Access->isLValue() &&
+                   (Destination ? ThisObject(Access->getBase())
+                                : SourceObject(Access->getBase())) &&
+                   approvedStandardSDKDeclaration(A.S, A.Sources, Declaration)
+               ? Declaration
+               : nullptr;
+  };
+  auto EmptyStore = [&](const Stmt *Statement, llvm::StringRef Name,
+                        UtilityOperation Operation) -> const CallExpr * {
+    const auto *Expression = dyn_cast<Expr>(Statement);
+    if (const auto *Cleanups = dyn_cast_or_null<ExprWithCleanups>(Expression)) {
+      if (Cleanups->getNumObjects())
+        return nullptr;
+      Expression = Cleanups->getSubExpr();
+    }
+    const auto *Assignment = dyn_cast_or_null<CXXOperatorCallExpr>(Expression);
+    const auto *Store = dyn_cast_or_null<CXXMethodDecl>(
+        Assignment ? Assignment->getDirectCallee() : nullptr);
+    const auto *Destination =
+        Assignment && Assignment->getNumArgs() == 2
+            ? Field(Assignment->getArg(0), Owner, Name, true)
+            : nullptr;
+    const auto *Prototype =
+        Store ? Store->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!Assignment || Assignment->getOperator() != OO_Equal || !Store ||
+        !Destination || !Store->isImplicit() || !Store->isDefaulted() ||
+        !Store->isTrivial() || !Store->isMoveAssignmentOperator() ||
+        Store->isDeleted() || Store->isInvalidDecl() ||
+        Store->getNumParams() != 1 || !Prototype || !Prototype->isNothrow() ||
+        Store->getAccess() != AS_public ||
+        !A.Context.hasSameType(A.Context.getRecordType(Store->getParent()),
+                               Destination->getType()) ||
+        !A.Context.hasSameType(
+            Store->getReturnType(),
+            A.Context.getLValueReferenceType(Destination->getType())) ||
+        !A.Context.hasSameType(
+            Store->getParamDecl(0)->getType(),
+            A.Context.getRValueReferenceType(Destination->getType())))
+      return nullptr;
+    for (const auto *Declaration : Store->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (Owner.CustomDeleter && Name == "__deleter_"
+              ? !A.S.owns(A.Sources, Declaration->getLocation())
+              : !approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return nullptr;
+    }
+    const Expr *Value = Assignment->getArg(1)->IgnoreParenImpCasts();
+    // IgnoreParenImpCasts also removes materialization. Inspect the selected
+    // conversion itself, rather than looking for the already stripped wrapper.
+    if (const auto *Conversion = dyn_cast<CXXConstructExpr>(Value)) {
+      if (Name != "__deleter_" || Owner.CustomDeleter ||
+          !A.Context.hasSameType(Conversion->getType(),
+                                 Destination->getType()) ||
+          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, Conversion,
+                                                   A.Context) !=
+              UtilityDefaultDeleteConstruction::Converting ||
+          !utilityUniquePtrFunctionSource(A, Conversion->getConstructor()))
+        return nullptr;
+      if (Owner.Deleter.Array) {
+        const auto *Default =
+            dyn_cast<CXXDefaultArgExpr>(Conversion->getArg(1));
+        const auto *Parameter = Default ? Default->getParam() : nullptr;
+        const auto *Initializer = selectedDefaultArgument(Default, A.Context);
+        const auto Origin =
+            Initializer ? A.S.sdkFile(A.Sources, Initializer->getExprLoc())
+                        : std::nullopt;
+        if (!Default || Default->hasRewrittenInit() || !Parameter ||
+            Parameter != Conversion->getConstructor()->getParamDecl(1) ||
+            !Initializer || Initializer != Parameter->getDefaultArg() ||
+            !Origin || Origin->Root != "libcxx" ||
+            Origin->Path != "__memory/unique_ptr.h" ||
+            !approvedStandardSDKDeclaration(A.S, A.Sources, Parameter))
+          return nullptr;
+      }
+      Value = Conversion->getArg(0)->IgnoreParenImpCasts();
+    }
+    const auto *Cast = dyn_cast<CallExpr>(Value);
+    return Cast && utilitySDKValueAdapterSource(A, Cast, Operation) ? Cast
+                                                                    : nullptr;
+  };
+  const auto *Forward = EmptyStore(*std::next(Body->body_begin()), "__deleter_",
+                                   UtilityOperation::Forward);
+  const auto *Getter = Forward && Forward->getNumArgs() == 1
+                           ? dyn_cast<CXXMemberCallExpr>(
+                                 Forward->getArg(0)->IgnoreParenImpCasts())
+                           : nullptr;
+  if (!Member(Getter, Source, "get_deleter", 0) ||
+      !SourceObject(Getter->getImplicitObjectArgument()) ||
+      !Getter->isLValue() ||
+      !A.Context.hasSameType(Getter->getType(),
+                             A.Context.getRecordType(Source.Deleter.Record)))
+    return false;
+  if (Owner.Deleter.Array) {
+    const auto *Move = EmptyStore(*std::next(Body->body_begin(), 2),
+                                  "__checker_", UtilityOperation::Move);
+    if (!Move || Move->getNumArgs() != 1 ||
+        !Field(Move->getArg(0), Source, "__checker_", false))
+      return false;
+  }
+  return true;
+}
+
 static std::optional<UtilityUniquePtrCall>
 utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
   const auto Info =
@@ -2944,6 +3135,14 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
       !utilityUniquePtrFunctionSource(A, Method))
     return std::nullopt;
   switch (Info->Operation) {
+  case UtilityUniquePtrOperation::MoveAssign:
+  case UtilityUniquePtrOperation::ConvertingMoveAssign:
+    if (!utilityUniquePtrMoveAssignmentSource(
+            A, Method, Info->Owner, Info->SourceOwner.value_or(Info->Owner)) ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr())
+      return std::nullopt;
+    return Info;
   case UtilityUniquePtrOperation::NullAssign:
     if (!utilityUniquePtrNullAssignmentSource(A, Method, Info->Owner))
       return std::nullopt;
@@ -4035,7 +4234,10 @@ public:
     const auto Info = utilityUniquePtrMemberSource(A, Call);
     return Info &&
            (Info->Operation == UtilityUniquePtrOperation::Reset ||
-            Info->Operation == UtilityUniquePtrOperation::NullAssign) &&
+            Info->Operation == UtilityUniquePtrOperation::NullAssign ||
+            Info->Operation == UtilityUniquePtrOperation::MoveAssign ||
+            Info->Operation ==
+                UtilityUniquePtrOperation::ConvertingMoveAssign) &&
            uniquePtrDeletion(Info->Owner, 0);
   }
   bool finish(SourceLocation L) {
@@ -9575,7 +9777,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             if (Entry->second == Call) {
               AuthenticatedUniquePtrCall = Call;
               if (Info->Operation == UtilityUniquePtrOperation::Reset ||
-                  Info->Operation == UtilityUniquePtrOperation::NullAssign)
+                  Info->Operation == UtilityUniquePtrOperation::NullAssign ||
+                  Info->Operation == UtilityUniquePtrOperation::MoveAssign ||
+                  Info->Operation ==
+                      UtilityUniquePtrOperation::ConvertingMoveAssign)
                 for (auto *Dependencies : ActiveOperationSources)
                   if (Dependencies->UniquePtrDeletions.insert(Call).second)
                     A.chargeExpansion(1, Call->getExprLoc());

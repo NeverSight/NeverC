@@ -1392,8 +1392,34 @@ Its ordinary evaluated form retains C++17 right-before-left ordering for
 operator syntax and receiver-before-argument ordering for explicit member calls.
 Query-only bodies, different unmaterialized specializations, source assignment
 or delegated-reset replacements and independent member addresses remain
-rejected. Same-type and converting move assignment keep their existing runtime
-boundary and receive no new result-source authentication here.
+rejected.
+
+Result-source queries additionally admit already materialized pinned same-type
+and const-adding converting move assignment. Scalar and unbounded-array owners
+retain the exact destination `Owner&` result, including bounded inner arrays,
+qualified pointees and same-type stateless custom deleters. Both source and
+destination original types, written designators, casts, source defaults and
+exception specifications keep their ordinary dependencies. The concrete SDK
+wrapper must release that exact source parameter into the destination's pinned
+`reset`, forward its mutable `get_deleter` into an implicit trivial assignment,
+then return `*this`. Array wrappers additionally move the same source's pinned
+stateless bounds checker into an implicit trivial assignment. Private reference
+casts authenticate the exact SDK declaration chain and implicit Clang builtin,
+or its already materialized cast body. Const-adding default-deleter conversion
+must select its pinned empty SDK constructor and exact array enable default.
+These inspections neither instantiate private bodies nor give their references
+permission as independent project expressions.
+The query closes only the selected destination deletion, pointee destruction or
+source-defined deleter callback; a borrowed source or receiver needs no unused
+owner or pointee construction. Local initializers, owning temporaries and factory
+operands retain their independent allocation and lifetime proof. Unevaluated
+assignment transfers no pointer, calls no deleter and evaluates no designator,
+default or factory. Ordinary evaluated forms keep right-before-left operator
+ordering, receiver-before-argument explicit member ordering, self-move ownership
+and returned receiver identity. Query-only wrapper bodies, unmaterialized
+converting specializations, source replacements of the assignment or its
+selected delegates and independent member addresses remain rejected. Other
+conversions and custom deleter assignment forms keep their existing boundary.
 
 Result-source queries also admit the four already materialized pinned C++17
 `owner == nullptr`, `nullptr == owner`, `owner != nullptr` and `nullptr != owner`
