@@ -43578,12 +43578,308 @@ namespace Reexport{using Imported::swap,Imported::exchange;}
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2SDKMakePairAndGetNameImportsRunAtBothOptimizations) {
+  const auto Source = tmpFile("sdk-make-pair-get-imports.cpp");
+  const auto Output = tmpFile("sdk-make-pair-get-imports.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace Imported {
+using std::get, std::make_pair;
+// Repeated imports retain the same overload sets.
+using std::get;
+using std::make_pair;
+}
+namespace Reexport {
+using Imported::get, Imported::make_pair;
+}
+namespace Alias = Reexport;
+namespace Directed {
+using namespace Alias;
+}
+using std::make_pair;
+int alive, copies, moves, deaths, order;
+bool recording;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item &other) noexcept : value(other.value) { ++copies; ++alive; }
+  Item(Item &&other) noexcept : value(other.value) {
+    other.value = -1; ++moves; ++alive;
+  }
+  ~Item() noexcept {
+    if (recording && value > 0) order = order * 10 + value;
+    ++deaths; --alive;
+  }
+};
+namespace User {
+struct Box { int n; };
+int getters, factories;
+template <int I> int &get(Box &box) { ++getters; return box.n; }
+int make_pair(Box &left, Box &right) { ++factories; return left.n + right.n; }
+using Imported::get, Imported::make_pair;
+}
+template <class T> int &block_get(T &value) {
+  using Alias::get;
+  return get<0>(value);
+}
+int scalar_pairs_and_lookup() {
+  int left = 1, right = 2, left_reads = 0, right_reads = 0;
+  auto pair = make_pair((++left_reads, left), (++right_reads, right));
+  int &first = (Alias::get<0>)(pair);
+  first = 3;
+  if (left != 1 || right != 2 || left_reads != 1 || right_reads != 1 ||
+      pair.first != 3 || pair.second != 2 || &first != &pair.first)
+    return 1;
+  auto distinct = (Reexport::make_pair)(4, 5.5);
+  const auto &constant = distinct;
+  int &lvalue = Directed::get<int>(distinct);
+  const int &const_lvalue = Alias::get<int>(constant);
+  int &&rvalue = Alias::get<int>(std::move(distinct));
+  const int &&const_rvalue = Alias::get<int>(std::move(constant));
+  double &second = Alias::get<1>(distinct);
+  int reads = 0;
+  Alias::get<1>((++reads, distinct)) = 6.5;
+  if (&lvalue != &distinct.first || &const_lvalue != &distinct.first ||
+      &rvalue != &distinct.first || &const_rvalue != &distinct.first ||
+      second != 6.5 || reads != 1)
+    return 2;
+  auto pointer = Alias::make_pair(&left, nullptr);
+  auto nested = Alias::make_pair(Alias::make_pair(8, 9),
+                                std::array<int, 2>{{10, 11}});
+  if (*Alias::get<0>(pointer) != 1 || Alias::get<1>(pointer) != nullptr ||
+      Alias::get<1>(Alias::get<0>(nested)) != 9 ||
+      Alias::get<0>(Alias::get<1>(nested)) != 10)
+    return 3;
+  {
+    using Alias::get, Alias::make_pair;
+    using Alias::get;
+    auto local = make_pair(12, 13);
+    get<1>(local) = 14;
+    if (get<0>(local) != 12 || local.second != 14 || block_get(local) != 12)
+      return 4;
+    User::Box a{15}, b{16};
+    int &selected = get<0>(a);
+    selected = 17;
+    if (make_pair(a, b) != 33 || User::getters != 1 || User::factories != 1 ||
+        &selected != &a.n || User::get<0>(a) != 17)
+      return 5;
+  }
+  return User::getters == 2 && User::factories == 1 ? 0 : 6;
+}
+int tuples_and_arrays() {
+  std::tuple<int, double> tuple(18, 19.5);
+  const auto &constant_tuple = tuple;
+  int &lvalue = Alias::get<int>(tuple);
+  const int &const_lvalue = Alias::get<int>(constant_tuple);
+  int &&rvalue = Alias::get<int>(std::move(tuple));
+  const int &&const_rvalue = Alias::get<int>(std::move(constant_tuple));
+  int tuple_reads = 0;
+  Alias::get<0>((++tuple_reads, tuple)) = 20;
+  if (&lvalue != &const_lvalue || &lvalue != &rvalue ||
+      &lvalue != &const_rvalue || lvalue != 20 || tuple_reads != 1 ||
+      Alias::get<1>(tuple) != 19.5)
+    return 7;
+  std::array<int, 2> array{{21, 22}};
+  const auto &constant_array = array;
+  int &element = Alias::get<0>(array);
+  const int &const_element = Alias::get<0>(constant_array);
+  int &&moved_element = Alias::get<0>(std::move(array));
+  const int &&const_moved_element = Alias::get<0>(std::move(constant_array));
+  int array_reads = 0;
+  Alias::get<1>((++array_reads, array)) = 23;
+  block_get(array) = 24;
+  return &element == &array[0] && &const_element == &element &&
+                 &moved_element == &element && &const_moved_element == &element &&
+                 array[0] == 24 && array[1] == 23 && array_reads == 1 ? 0 : 8;
+}
+int owned_construction_and_references() {
+  Item input(2);
+  const Item fixed_input(3);
+  int target = 7;
+  {
+    auto copied = Alias::make_pair(input, 10);
+    auto fixed = Directed::make_pair(11, fixed_input);
+    auto moved = (Alias::make_pair)(std::move(input), Item(4));
+    auto mixed_first = Alias::make_pair(std::ref(target), fixed_input);
+    auto mixed_second = Alias::make_pair(std::cref(target),
+                                        std::move(moved.second));
+    const auto &constant = copied;
+    Item &lvalue = Alias::get<0>(copied);
+    const Item &const_lvalue = Alias::get<Item>(constant);
+    Item &&rvalue = Alias::get<0>(std::move(copied));
+    const Item &&const_rvalue = Alias::get<Item>(std::move(constant));
+    Alias::get<0>(mixed_first) = 11;
+    const auto &constant_mixed = mixed_first;
+    int &reference_field = Alias::get<0>(constant_mixed);
+    const int &const_reference_field = Alias::get<0>(mixed_second);
+    if (copies != 3 || moves != 3 || deaths != 1 || alive != 8 ||
+        input.value != -1 || moved.second.value != -1 ||
+        lvalue.value != 2 || fixed.second.value != 3 ||
+        moved.first.value != 2 || mixed_first.second.value != 3 ||
+        mixed_second.second.value != 4 || &lvalue != &copied.first ||
+        &const_lvalue != &lvalue || &rvalue != &lvalue ||
+        &const_rvalue != &lvalue || &reference_field != &target ||
+        &const_reference_field != &target || target != 11)
+      return 9;
+    {
+      auto ordered = Alias::make_pair(Item(8), Item(9));
+      if (ordered.first.value != 8 || ordered.second.value != 9 ||
+          copies != 3 || moves != 5 || deaths != 3 || alive != 10)
+        return 10;
+      recording = true;
+    }
+    recording = false;
+    if (order != 98 || deaths != 5 || alive != 8)
+      return 11;
+  }
+  return copies == 3 && moves == 5 && deaths == 11 && alive == 2 && target == 11
+             ? 0 : 12;
+}
+int main() {
+  int result = scalar_pairs_and_lookup();
+  if (!result) result = tuples_and_arrays();
+  if (!result) result = owned_construction_and_references();
+  if (result) return result;
+  return !alive && copies == 3 && moves == 5 && deaths == 13 ? 0 : 13;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-make-pair-get-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2SDKMakePairAndGetNameImportsRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"factory-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,class U>constexpr pair<__unwrap_ref_decay_t<T>,__unwrap_ref_decay_t<U>>make_pair(T&&,U&&);}}
+)cpp",
+       "TR0201"},
+      {"pair-index-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class T,class U>constexpr typename tuple_element<I,pair<T,U>>::type&get(pair<T,U>&)noexcept;}}
+)cpp",
+       "TR0201"},
+      {"const-pair-index-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class T,class U>constexpr const typename tuple_element<I,pair<T,U>>::type&get(const pair<T,U>&)noexcept;}}
+)cpp",
+       "TR0201"},
+      {"tuple-index-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class...Ts>constexpr typename tuple_element<I,tuple<Ts...>>::type&get(tuple<Ts...>&)noexcept;}}
+)cpp",
+       "TR0201"},
+      {"tuple-type-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T,class...Ts>constexpr T&get(tuple<Ts...>&)noexcept;}}
+)cpp",
+       "TR0201"},
+      {"array-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class T,size_t N>constexpr T&get(array<T,N>&)noexcept;}}
+)cpp",
+       "TR0201"},
+      {"pair-get-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr int&get<0,int,int>(pair<int,int>&p)noexcept{return p.second;}}}int f(){std::pair<int,int>p(1,2);return Reexport::get<0>(p);}
+)cpp",
+       "TR0201"},
+      {"factory-specialization", R"cpp(
+namespace std{inline namespace __1{template<>constexpr pair<int,int>make_pair<int,int>(int&&a,int&&b){return pair<int,int>(b,a);}}}int f(){return Reexport::make_pair(1,2).first;}
+)cpp",
+       "TR0201"},
+      {"get-independent-address", R"cpp(
+using Pair=std::pair<int,int>;using F=int&(*)(Pair&)noexcept;int f(Pair&p){Reexport::get<0>(p);static_assert(sizeof(static_cast<F>(&Reexport::get<0,int,int>))>0);return p.first;}
+)cpp",
+       "TR0201"},
+      {"factory-cast-callee", R"cpp(
+using F=std::pair<int,int>(*)(int&&,int&&);int f(){return static_cast<F>(&Reexport::make_pair<int,int>)(1,2).first;}
+)cpp",
+       "TR0201"},
+      {"unsupported-owned-overload", R"cpp(
+namespace User{int&get(int&p){long double v=1;return p;}using Reexport::get;}
+)cpp",
+       "TR0201"},
+      {"missing-owned-definition", R"cpp(
+namespace User{int make_pair(int,int);using Reexport::make_pair;}
+)cpp",
+       "TR0203"},
+      {"factory-original-operand", R"cpp(
+int f(){return Reexport::make_pair((sizeof(long double),1),2).first;}
+)cpp",
+       "TR0201"},
+      {"get-written-index", R"cpp(
+int f(){std::pair<int,int>p(1,2);return Reexport::get<(sizeof(long double),0)>(p);}
+)cpp",
+       "TR0201"},
+      {"get-written-type", R"cpp(
+int f(){std::pair<int,double>p(1,2);return Reexport::get<decltype(static_cast<int>(sizeof(long double)))>(p);}
+)cpp",
+       "TR0201"},
+      {"factory-selected-default", R"cpp(
+int input(int n=sizeof(long double)){return n;}int f(){return Reexport::make_pair(input(),2).first;}
+)cpp",
+       "TR0201"},
+      {"factory-original-array-bound", R"cpp(
+using Row=int[sizeof(long double)];int f(Row*p){return Reexport::make_pair(p,1).second;}
+)cpp",
+       "TR0201"},
+      {"pair-invalid-index", R"cpp(
+int f(){std::pair<int,int>p(1,2);return Reexport::get<2>(p);}
+)cpp",
+       "TR0202"},
+      {"array-invalid-index", R"cpp(
+int f(){std::array<int,2>p{{1,2}};return Reexport::get<2>(p);}
+)cpp",
+       "TR0202"},
+      {"tuple-invalid-index", R"cpp(
+int f(){std::tuple<int,int>p(1,2);return Reexport::get<2>(p);}
+)cpp",
+       "TR0202"},
+      {"pair-ambiguous-type", R"cpp(
+int f(){std::pair<int,int>p(1,2);return Reexport::get<int>(p);}
+)cpp",
+       "TR0202"},
+      {"tuple-ambiguous-type", R"cpp(
+int f(){std::tuple<int,int>p(1,2);return Reexport::get<int>(p);}
+)cpp",
+       "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("sdk-make-pair-get-import-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("sdk-make-pair-get-import-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported{using std::get,std::make_pair;}
+namespace Reexport{using Imported::get,Imported::make_pair;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2SDKValueAdapterNameImportsRetainSourceBoundaries) {
   const struct {
     const char *Name, *Source, *Code;
   } Cases[] = {
       {"other-sdk-function", R"cpp(
-using std::make_pair;
+using std::declval;
 )cpp",
        "TR0201"},
       {"sdk-class-template", R"cpp(
@@ -43903,7 +44199,7 @@ void materialize_default_deleters() {
     const char *Name, *Source, *Code;
   } Cases[] = {
       {"other-sdk-function", R"cpp(
-using std::make_pair;
+using std::declval;
 )cpp",
        "TR0201"},
       {"sdk-class-template", R"cpp(

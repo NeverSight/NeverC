@@ -199,8 +199,8 @@ lvalues and unqualified rvalues use a checked pointer read and the same pointer
 conversion. Source specializations remain rejected.
 Resolved namespace and nondependent block using-declarations may import the
 pinned `std::move`, `std::forward`, `std::as_const`, `std::move_if_noexcept`,
-`std::swap` and `std::exchange` names, including repeated/comma imports and
-source-owned namespace reexports.
+`std::swap`, `std::exchange`, `std::make_pair` and `std::get` names, including
+repeated/comma imports and source-owned namespace reexports.
 These names retain Clang's selected overload, reference category and cv
 qualification; they create no wrapper or extra move. Each actual call still
 requires its existing operation descriptor and source proof. When `<algorithm>`
@@ -221,6 +221,15 @@ overload, while unqualified calls retain ordinary ADL and source-owned
 overloads. Imports introduce no extra operand evaluations, moves, assignments,
 allocations or cleanup. Independent function addresses and indirect/cast
 callees retain their existing rejection.
+`make_pair` imports pin every primary/redeclaration to `__utility/pair.h`.
+`get` imports retain the pinned free overloads for admitted pair, tuple and
+array operations. Selected index-based or unique-type calls keep their checked
+element projections, cv qualification, reference categories and source proofs.
+Factory calls keep their checked field constructors and `ref`/`cref` unwrapping,
+with each argument evaluated once and no added copy, move or cleanup.
+Source-owned ADL overloads remain available through ordinary lookup. Unused
+overload signatures and bodies remain metadata; imports do not broaden element,
+container, index, original-source or indirect-callee boundaries.
 
 Result-source queries on exact pinned `std::move` and `std::forward` calls also
 accept admitted scalar objects: integral and enum types through 64 bits,

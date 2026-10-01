@@ -9389,8 +9389,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__utility/move.h";
       else if (Name->getName() == "exchange")
         ExpectedPath = "__utility/exchange.h";
+      else if (Name->getName() == "make_pair")
+        ExpectedPath = "__utility/pair.h";
       else if (Name->getName() != "move" && Name->getName() != "forward" &&
-               Name->getName() != "swap")
+               Name->getName() != "swap" && Name->getName() != "get")
         return false;
     }
     const DeclContext *Context = Function->getDeclContext();
