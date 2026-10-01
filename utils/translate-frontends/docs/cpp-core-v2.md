@@ -1444,10 +1444,9 @@ defaults, allocate no storage and invoke no construction, deletion or cleanup.
 Ordinary comparisons evaluate each operand once in an unspecified C++17 order.
 Missing result-query bodies, different overloads/specializations, source wrapper
 or selected Boolean-member replacements and independent function addresses
-remain rejected. Owner/null ordering comparisons and explicit calls to the
-operator function receive no new result-source authentication. Pure free
-comparison `noexcept` queries keep their existing signature-source boundary and
-need no unused wrapper body.
+remain rejected. Explicit calls to the operator function receive no new
+result-source authentication. Pure free comparison `noexcept` queries keep their
+existing signature-source boundary and need no unused wrapper body.
 
 The same result-source boundary also admits already materialized pinned C++17
 owner-to-owner `==` and `!=`. Both preserve a `bool` prvalue result and their
@@ -1504,9 +1503,36 @@ invokes no operand, default, allocation, ownership transfer or cleanup. Ordinary
 ordering keeps the existing flat-address total order and evaluates each operand
 once in an unspecified C++17 order. Missing result-query bodies or pairs, source
 wrapper/delegate/getter/comparator/common-type replacements, independent
-function addresses, explicit operator-function calls and owner/null ordering
-result queries remain rejected. Pure comparison `noexcept` queries retain their
-existing signature-source boundary without selecting unused wrapper bodies.
+function addresses and explicit operator-function calls remain rejected. Pure
+comparison `noexcept` queries retain their existing signature-source boundary
+without selecting unused wrapper bodies.
+
+The same ordering source boundary also admits already materialized pinned
+C++17 owner/null `<`, `>`, `<=` and `>=`, in both operand orders. Scalar and
+array owners retain the exact `bool` prvalue and potentially throwing signature,
+including qualified pointees, bounded inner arrays, admitted custom deleters,
+borrowed const owners and mutable/const xvalues. The original null operand may
+be any admitted `nullptr_t` expression or reference. Its aliases, signature,
+exception specification, written expression and selected defaults remain
+checked alongside the original owner source.
+Each `<` wrapper must retain its pinned owner pointer alias, materialized getter
+on its exact owner parameter, SDK null literal and empty trivial
+`std::less<Pointer>` construction. The selected comparator must keep its actual
+SDK pointer comparison body and declaration chain. Derived wrappers must pass
+the same exact owner parameter and pinned null literal to the matching `<`
+specialization: `>` reverses operands, `<=` negates reversed `<`, and `>=`
+negates original-order `<`. These proofs reuse the private pointer comparator
+boundary without instantiating bodies or authenticating independent references.
+Borrowing requires no unused constructor, deleter callback or destruction;
+local initializers and owning temporary/factory operands keep their original
+allocation and lifetime source. Unevaluated ordering evaluates neither owner
+nor null operand or default, and invokes no allocation, move, deletion or cleanup.
+Ordinary ordering retains the existing flat-address total order and evaluates
+each operand once in an unspecified C++17 order. Missing result-query bodies,
+other unmaterialized specializations, source wrapper/delegate/getter/comparator
+replacements, independent function addresses and explicit operator-function
+calls remain rejected. Pure `noexcept` queries keep the existing signature-source
+boundary and need no unused wrapper body.
 
 For these owner xvalue queries, exact pinned `std::move` and `std::forward`
 specializations supply their reference-cast source. Any
