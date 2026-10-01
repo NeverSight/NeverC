@@ -2228,9 +2228,26 @@ The proof belongs to that call alone. Original receiver and argument
 expressions, initializers, aliases, function signatures, selected defaults and
 temporary destruction remain independently checked. Queries execute none of
 their effects. Query-only lazy invocation bodies, other argument
-specializations without bodies, `std::invoke` queries on plain functions or
-callable objects, and independent function or member addresses retain their separate
+specializations without bodies, `std::invoke` queries on callable objects,
+and independent function or member addresses retain their separate
 requirements; this does not instantiate an SDK body for a query.
+
+`std::invoke` also supports result-source queries around admitted fixed-arity
+functions and function pointers after evaluated calls materialize the exact
+public adapter and internal dispatch. Named and dereferenced functions, stored
+or const pointers, pointer prvalues and xvalues retain their own deduced
+callable category and argument pack. Scalar conversions, scalar and void
+results, and admitted lvalue/rvalue reference results use the existing runtime
+operation's type rules. The source proof checks the internal call's target
+prototype and result category, pins both SDK declaration families and the
+exact conditional invocability variable, and requires its exception value to
+agree with the target prototype. `decltype`, result traits, array extent,
+`sizeof`, `alignof` and `noexcept` queries execute no callable, argument,
+default-argument or temporary-lifetime effects. Original function signatures,
+pointer initializers and written types remain independent source roots.
+A direct target call or a different `invoke` specialization does not supply
+a missing adapter body. Cast or indirect adapter callees, source replacements
+and unsupported callable/result types retain their separate requirements.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent

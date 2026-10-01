@@ -3155,6 +3155,44 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
                                        Arguments->get(1), Target);
 }
 
+static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "invoke")
+    return false;
+  const auto Operation =
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+  if (!Operation || *Operation != UtilityOperation::FunctionalInvoke)
+    return false;
+
+  // The runtime operation proves the fixed-arity callable, admitted argument
+  // conversions and result, and the materialized public dispatch. Authenticate
+  // its exact internal call and declaration families for this query as well.
+  // The original function/pointer operand keeps its own independent source.
+  const auto Callable = Call->getArg(0)->getType();
+  const auto *Target = Callable->isFunctionType()
+                           ? Callable->getAs<FunctionProtoType>()
+                           : Callable->getPointeeType()->getAs<FunctionProtoType>();
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Dispatch = functionalReturnedCall(Function);
+  const auto *Inner =
+      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
+  const auto *InnerPrototype = Inner ? operationCalleePrototype(Inner) : nullptr;
+  // Template deduction can desugar the original callable's typedefs and
+  // trailing return spelling. Compare types, not their AST node identities.
+  return Target && Arguments && Arguments->size() == 2 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type && InnerPrototype &&
+         !Inner->getDirectCallee() &&
+         A.Context.hasSameType(InnerPrototype, Target) &&
+         Inner->getNumArgs() == Target->getNumParams() &&
+         Inner->getValueKind() == Call->getValueKind() &&
+         A.Context.hasSameType(Inner->getType(), Call->getType()) &&
+         utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
+         utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                                  "__type_traits/invoke.h") &&
+         functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                       Arguments->get(1), Target);
+}
+
 static bool utilityUniquePtrElementConstructionSource(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   const auto *Prototype =
@@ -10540,7 +10578,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             }
           }
         if (functionalReferenceAccessSource(A, Call) ||
-            functionalReferenceInvokeSource(A, Call))
+            functionalReferenceInvokeSource(A, Call) ||
+            functionalFunctionInvokeSource(A, Call))
           if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
