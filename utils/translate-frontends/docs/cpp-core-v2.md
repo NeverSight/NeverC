@@ -232,6 +232,25 @@ outside this scalar query boundary. Rvalue arguments forwarded as lvalue
 results, source replacements, independent function addresses, casts or
 compound postfix callees and erased nonthrowing signatures remain rejected.
 
+Exact pinned `std::as_const` calls support the same admitted scalar and pointer
+result-source queries. An lvalue argument selects the nondeleted
+`const T& (T&) noexcept` overload and retains const already present on the
+object; pointer const qualification applies to the pointer itself, while
+pointee and callback types remain unchanged. Direct and parenthesized names,
+query-only specializations, and nesting with admitted `move`, `forward` or
+`as_const` calls retain this lvalue result. The exact implicit Clang library
+builtin can supply its unchanged-parameter source; otherwise, the already
+materialized SDK body must return that parameter with only the selected no-op
+const reference conversion. The primary, pattern, specialization and all
+redeclarations stay pinned to `__utility/as_const.h`. Original argument effects,
+written template arguments, aliases, selected defaults, exception specifications
+and temporary lifetimes retain the same independent checks and remain unevaluated
+in queries. Function addresses or indirect/cast callees, source replacements,
+unsupported scalar/pointee types, direct array/record/function or owner references,
+and name imports remain outside this boundary. Deleted rvalue overloads and
+ambiguous explicit reference template arguments still produce native C++
+diagnostics.
+
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested

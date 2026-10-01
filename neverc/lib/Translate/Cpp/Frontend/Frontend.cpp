@@ -2771,42 +2771,56 @@ static bool utilityUniquePtrFunctionSource(Adapter &A,
 static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
                                          UtilityOperation Operation) {
   if (!Call || (Operation != UtilityOperation::Move &&
-                Operation != UtilityOperation::Forward))
+                Operation != UtilityOperation::Forward &&
+                Operation != UtilityOperation::AsConst))
     return false;
+  const bool AsConst = Operation == UtilityOperation::AsConst;
   const auto *Function = Call->getDirectCallee();
   const auto *Reference =
       dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
   const auto *Prototype =
       Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
-  const auto Path = Operation == UtilityOperation::Move ? "__utility/move.h"
-                                                        : "__utility/forward.h";
-  const auto BuiltinID = Operation == UtilityOperation::Move
+  const auto Path = AsConst ? "__utility/as_const.h"
+                    : Operation == UtilityOperation::Move
+                        ? "__utility/move.h"
+                        : "__utility/forward.h";
+  const auto Name = AsConst                               ? "as_const"
+                    : Operation == UtilityOperation::Move ? "move"
+                                                          : "forward";
+  const auto BuiltinID = AsConst ? Builtin::BIas_const
+                         : Operation == UtilityOperation::Move
                              ? Builtin::BImove
                              : Builtin::BIforward;
   const auto *Builtin = Function ? Function->getAttr<BuiltinAttr>() : nullptr;
   const bool BuiltinCast = Builtin && Builtin->isImplicit() &&
                            Builtin->getID() == BuiltinID &&
                            Function->getBuiltinID() == BuiltinID;
-  const bool RValueResult = Function && Call->isXValue() &&
+  const bool RValueResult = !AsConst && Function && Call->isXValue() &&
                             Function->getReturnType()->isRValueReferenceType();
-  const bool LValueForward =
-      Function && Operation == UtilityOperation::Forward && Call->isLValue() &&
-      Function->getReturnType()->isLValueReferenceType();
-  if (!Function || !Function->getIdentifier() ||
-      Function->getName() !=
-          (Operation == UtilityOperation::Move ? "move" : "forward") ||
+  const bool LValueResult =
+      Function && (Operation == UtilityOperation::Forward || AsConst) &&
+      Call->isLValue() && Function->getReturnType()->isLValueReferenceType();
+  if (!Function || !Function->getIdentifier() || Function->getName() != Name ||
       isa<CXXMethodDecl>(Function) || !Reference ||
       Reference->getDecl() != Function || !Function->getPrimaryTemplate() ||
       Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       Function->getParamDecl(0)->hasDefaultArg() ||
-      (!RValueResult && !LValueForward) || !Call->getArg(0)->isGLValue() ||
-      (LValueForward &&
+      (!RValueResult && !LValueResult) || !Call->getArg(0)->isGLValue() ||
+      (LValueResult &&
        (!Call->getArg(0)->isLValue() ||
         !Function->getParamDecl(0)->getType()->isLValueReferenceType())) ||
       !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
       Prototype->getNoexceptExpr() ||
       operationCalleePrototype(Call) != Prototype ||
-      !A.Context.hasSameType(Call->getArg(0)->getType(), Call->getType()) ||
+      !A.Context.hasSameType(AsConst ? Call->getArg(0)->getType().withConst()
+                                     : Call->getArg(0)->getType(),
+                             Call->getType()) ||
+      (AsConst &&
+       (!A.Context.hasSameType(
+            Function->getParamDecl(0)->getType()->getPointeeType(),
+            Call->getArg(0)->getType()) ||
+        !A.Context.hasSameType(Function->getReturnType()->getPointeeType(),
+                               Call->getType()))) ||
       !utilitySDKFunctionSource(A, Function, Path, !BuiltinCast))
     return false;
   // Clang can execute these exact library reference casts as implicit
@@ -2818,6 +2832,19 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   if (!Body || Body->body_empty() || Body->size() > 2)
     return false;
   const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  if (AsConst) {
+    const auto *Value = Return ? Return->getRetValue() : nullptr;
+    const auto *Parameter =
+        Value ? dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+    if (!Value || Body->size() != 1 || !Value->isLValue() ||
+        !A.Context.hasSameType(Value->getType(), Call->getType()) ||
+        !Parameter || Parameter->getDecl() != Function->getParamDecl(0))
+      return false;
+    // Mutable parameters gain const through only the selected no-op reference
+    // conversion; already const parameters require no conversion.
+    const auto *Conversion = dyn_cast<ImplicitCastExpr>(Value->IgnoreParens());
+    return !Conversion || Conversion->getCastKind() == CK_NoOp;
+  }
   const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(
       Return && Return->getRetValue()
           ? Return->getRetValue()->IgnoreParenImpCasts()
@@ -2854,7 +2881,8 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
   const auto Operation =
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
   if (!Operation || (*Operation != UtilityOperation::Move &&
-                     *Operation != UtilityOperation::Forward))
+                     *Operation != UtilityOperation::Forward &&
+                     *Operation != UtilityOperation::AsConst))
     return false;
   const auto Type = Call->getType();
   const bool Scalar = !Type.isVolatileQualified() &&
@@ -2867,7 +2895,8 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
                        Type->isPointerType() || Type->isNullPtrType());
   // This authenticates only the reference cast. Pointer pointees, callback
   // signatures and every written operand/type source still close separately.
-  return (Scalar || utilityUniquePtrSource(A, Type->getAsCXXRecordDecl())) &&
+  return (Scalar || (*Operation != UtilityOperation::AsConst &&
+                     utilityUniquePtrSource(A, Type->getAsCXXRecordDecl()))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 

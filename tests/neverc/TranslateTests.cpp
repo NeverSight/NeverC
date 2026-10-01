@@ -41684,6 +41684,297 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarAsConstQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("scalar-as-const-queries.cpp");
+  const auto Output = tmpFile("scalar-as-const-queries.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int calls, defaults, effects, live, destroyed;
+int mark(int n = (++defaults, 7)) noexcept { ++calls; return n; }
+int &select(int &n, int effect = (++defaults, 8)) noexcept {
+  ++calls;
+  effects = effects * 10 + effect;
+  return n;
+}
+const int &constant(const int &n, int effect = (++defaults, 9)) noexcept {
+  ++calls;
+  effects = effects * 10 + effect;
+  return n;
+}
+int &throwing(int &n) { ++calls; return n; }
+struct Ticket {
+  int n;
+  explicit Ticket(int v) noexcept : n(v) { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+int &with_temporary(int &n, Ticket ticket = Ticket(mark())) noexcept {
+  ++calls;
+  return n;
+}
+int callback(int n) { return n + 1; }
+int other(int n) { return n + 2; }
+int nonthrowing(int n) noexcept { return n + 3; }
+enum class Wide : unsigned long long { Value = 4 };
+enum Small : unsigned char { First = 5 };
+struct Box { int n; };
+template <class T> bool queries(T &value, const T &cv) {
+  const T &same = (std::as_const)(value);
+  const T &view = std::as_const(cv);
+  if (&same != &value || &view != &cv)
+    return false;
+  static_assert(__is_same(decltype(std::as_const(value)), const T &));
+  static_assert(__is_same(decltype((std::as_const)(cv)), const T &));
+  static_assert(__is_same(decltype(std::as_const<T>(value)), const T &));
+  static_assert(__is_same(decltype(std::as_const<const T>(cv)), const T &));
+  static_assert(__is_lvalue_reference(decltype(std::as_const(value))));
+  static_assert(!__is_rvalue_reference(decltype(std::as_const(value))));
+  static_assert(sizeof(std::as_const(value)) == sizeof(T));
+  static_assert(alignof(decltype(std::as_const(cv))) == alignof(T));
+  static_assert(noexcept(std::as_const(value)) && noexcept((std::as_const)(cv)));
+  static_assert(__is_same(decltype(std::as_const(std::as_const(value))), const T &));
+  static_assert(__is_same(decltype(std::move(std::as_const(value))), const T &&));
+  static_assert(__is_same(decltype(std::forward<const T &>(std::as_const(value))), const T &));
+  static_assert(__is_same(decltype(std::as_const(std::forward<T &>(value))), const T &));
+  using Written = decltype((sizeof(T), static_cast<T>(value)));
+  static_assert(__is_same(decltype(std::as_const<Written>(value)), const T &));
+  return true;
+}
+// The implicit pinned library builtin also proves query-only specializations.
+unsigned long query_only(unsigned long &value) {
+  static_assert(__is_same(decltype(std::as_const(value)), const unsigned long &));
+  static_assert(sizeof(std::as_const(value)) == sizeof(unsigned long));
+  static_assert(noexcept(std::as_const(value)));
+  return value;
+}
+int main() {
+  bool boolean = true;
+  signed char byte = -1;
+  unsigned char unsigned_byte = 2;
+  short small = -3;
+  unsigned short unsigned_small = 4;
+  int value = 5;
+  unsigned int unsigned_value = 6;
+  long native_word = -7;
+  long long wide = -8;
+  unsigned long long unsigned_wide = 9;
+  float single = 1.5f;
+  double real = 2.5;
+  Wide enumeration = Wide::Value;
+  Small small_enumeration = First;
+  using Null = decltype(nullptr);
+  Null null = nullptr;
+  const int cv = 10;
+  int *pointer = &value;
+  const int *qualified_pointer = &cv;
+  int **nested_pointer = &pointer;
+  void *opaque = &value;
+  int array[2] = {11, 12};
+  int (*array_pointer)[2] = &array;
+  Box box{13};
+  Box *record_pointer = &box;
+  using Callback = int (*)(int);
+  Callback fn = callback;
+  using NoexceptCallback = int (*)(int) noexcept;
+  NoexceptCallback nf = nonthrowing;
+  if (!queries(boolean, boolean) || !queries(byte, byte) ||
+      !queries(unsigned_byte, unsigned_byte) || !queries(small, small) ||
+      !queries(unsigned_small, unsigned_small) || !queries(value, cv) ||
+      !queries(unsigned_value, unsigned_value) || !queries(native_word, native_word) ||
+      !queries(wide, wide) || !queries(unsigned_wide, unsigned_wide) ||
+      !queries(single, single) || !queries(real, real) ||
+      !queries(enumeration, enumeration) || !queries(small_enumeration, small_enumeration) ||
+      !queries(null, null) || !queries(pointer, pointer) ||
+      !queries(qualified_pointer, qualified_pointer) || !queries(nested_pointer, nested_pointer) ||
+      !queries(opaque, opaque) || !queries(array_pointer, array_pointer) ||
+      !queries(record_pointer, record_pointer) || !queries(fn, fn) || !queries(nf, nf))
+    return 1;
+  const Callback &fn_view = std::as_const(fn);
+  int *const &pointer_view = std::as_const(pointer);
+  static_assert(__is_same(decltype(std::as_const(fn)(1)), int));
+  static_assert(__is_same(decltype(std::as_const(nf)(1)), int));
+  static_assert(!noexcept(std::as_const(fn)(1)) && noexcept(std::as_const(nf)(1)));
+  fn = other;
+  pointer = &array[0];
+  const int &same = std::as_const(select(value, 2));
+  value = 14;
+  unsigned long query_value = 14;
+  if (same != 14 || &same != &value || pointer_view != &array[0] ||
+      fn_view(1) != 3 || std::as_const(nf)(1) != 4 || query_only(query_value) != 14 ||
+      calls != 1 || effects != 2 || defaults || live || destroyed)
+    return 2;
+  const int &from_temporary = std::as_const(with_temporary(value, Ticket(mark(3))));
+  if (&from_temporary != &value || calls != 3 || defaults || live || destroyed != 1)
+    return 3;
+  int before_calls = calls, before_destroyed = destroyed;
+  static_assert(__is_same(decltype(std::as_const(select(value))), const int &));
+  static_assert(__is_same(decltype(std::as_const(constant(cv))), const int &));
+  static_assert(__is_same(decltype(std::as_const(throwing(value))), const int &));
+  static_assert(noexcept(std::as_const(select(value))) && !noexcept(std::as_const(throwing(value))));
+  static_assert(sizeof(std::as_const(select(value))) == sizeof(int));
+  static_assert(alignof(decltype(std::as_const(select(value)))) == alignof(int));
+  static_assert(__is_same(decltype(std::as_const((mark(), value))), const int &));
+  static_assert(__is_same(decltype(std::as_const(true ? value : cv)), const int &));
+  static_assert(__is_same(decltype(std::as_const<decltype((sizeof(int),static_cast<int>(value)))>(value)), const int &));
+  static_assert(__is_same(decltype(std::as_const(with_temporary(value))), const int &));
+  static_assert(__is_same(decltype(std::as_const(with_temporary(value, Ticket(mark())))), const int &));
+  static_assert(sizeof(std::as_const(with_temporary(value))) == sizeof(int));
+  static_assert(noexcept(std::as_const(with_temporary(value))));
+  return calls == before_calls && destroyed == before_destroyed && !live && !defaults &&
+                 effects == 2 && value == 14 && cv == 10 && array[0] == 11 &&
+                 record_pointer->n == 13 && fn_view(1) == 3 && std::as_const(nf)(1) == 4
+             ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("scalar-as-const-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarAsConstQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"operand-expression", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(std::as_const((sizeof(long double),p))),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+int&source(int&p,int n=sizeof(long double))noexcept{return p;}int f(int&p){static_assert(__is_same(decltype(std::as_const(source(p))),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"original-exception", R"cpp(
+int&source(int&p)noexcept(sizeof(long double)>0);int&source(int&p)noexcept{return p;}int f(int&p){static_assert(__is_same(decltype(std::as_const(source(p))),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"original-signature", R"cpp(
+int&source(int&p,long double n=0)noexcept{return p;}int f(int&p){static_assert(sizeof(std::as_const(source(p)))==sizeof(int));return p;}
+)cpp",
+       "TR0201"},
+      {"written-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(std::as_const<decltype(static_cast<int>(sizeof(long double)))>(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"original-alias", R"cpp(
+using Erased=decltype(static_cast<int>(sizeof(long double)));int f(int&p){static_assert(__is_same(decltype(std::as_const<Erased>(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"pointer-original-bound", R"cpp(
+using Array=int[sizeof(long double)];int f(Array*&p){static_assert(__is_same(decltype(std::as_const(p)),Array*const&));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-original-signature", R"cpp(
+using Callback=int(*)(long double);int f(Callback&p){static_assert(__is_same(decltype(std::as_const(p)),const Callback&));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-original-exception", R"cpp(
+using Callback=int(*)(int)noexcept(sizeof(long double)>0);int f(Callback&p){static_assert(__is_same(decltype(std::as_const(p)),const Callback&));return 0;}
+)cpp",
+       "TR0201"},
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}int f(int&p){static_assert(__is_same(decltype(std::as_const(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const int&as_const<int>(int&p)noexcept{return p;}}}int f(int&p){static_assert(__is_same(decltype(std::as_const(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"callback-specialization", R"cpp(
+using Callback=int(*)(int);namespace std{inline namespace __1{template<>const Callback&as_const<Callback>(Callback&p)noexcept{return p;}}}int f(Callback&p){static_assert(__is_same(decltype(std::as_const(p)),const Callback&));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-function-address", R"cpp(
+using F=const int&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(std::as_const(p)),const int&));static_assert(sizeof(static_cast<F>(&std::as_const<int>))>0);return p;}
+)cpp",
+       "TR0201"},
+      {"function-reference-call", R"cpp(
+const int&(&target)(int&)noexcept=std::as_const<int>;int f(int&p){static_assert(__is_same(decltype(target(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=const int&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(static_cast<F>(&std::as_const<int>)(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=const int&(*)(int&);int f(int&p){static_assert(__is_same(decltype(std::as_const(p)),const int&));static_assert(!noexcept(static_cast<F>(&std::as_const<int>)(p)));return p;}
+)cpp",
+       "TR0201"},
+      {"compound-postfix", R"cpp(
+using F=const int&(*)(int&)noexcept;int mark(){return 1;}int f(int&p){static_assert(__is_same(decltype((mark(),static_cast<F>(&std::as_const<int>))(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"long-double", R"cpp(
+int f(long double&p){static_assert(__is_same(decltype(std::as_const(p)),const long double&));return 0;}
+)cpp",
+       "TR0201"},
+      {"extended-integer", R"cpp(
+int f(__int128&p){static_assert(__is_same(decltype(std::as_const(p)),const __int128&));return 0;}
+)cpp",
+       "TR0201"},
+      {"volatile-scalar", R"cpp(
+int f(volatile int&p){static_assert(__is_same(decltype(std::as_const(p)),const volatile int&));return 0;}
+)cpp",
+       "TR0201"},
+      {"unadmitted-pointer-pointee", R"cpp(
+int f(long double*&p){static_assert(__is_same(decltype(std::as_const(p)),long double*const&));return 0;}
+)cpp",
+       "TR0201"},
+      {"array-reference", R"cpp(
+int f(int(&p)[2]){static_assert(__is_same(decltype(std::as_const(p)),const int(&)[2]));return 0;}
+)cpp",
+       "TR0201"},
+      {"record-reference", R"cpp(
+struct Box{int n;};int f(Box&p){static_assert(__is_same(decltype(std::as_const(p)),const Box&));return 0;}
+)cpp",
+       "TR0201"},
+      {"function-reference", R"cpp(
+using Function=int(int);int f(Function&p){static_assert(__is_same(decltype(std::as_const(p)),Function&));return 0;}
+)cpp",
+       "TR0201"},
+      {"member-pointer", R"cpp(
+struct Box{int n;};using Member=int Box::*;int f(Member&p){static_assert(__is_same(decltype(std::as_const(p)),const Member&));return 0;}
+)cpp",
+       "TR0201"},
+      {"owner-reference", R"cpp(
+#include <memory>
+int f(std::unique_ptr<int>&p){static_assert(__is_same(decltype(std::as_const(p)),const std::unique_ptr<int>&));return 0;}
+)cpp",
+       "TR0201"},
+      {"name-import", R"cpp(
+using std::as_const;int f(int&p){static_assert(__is_same(decltype(as_const(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"reference-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(std::as_const<int&>(p)),int&));return p;}
+)cpp",
+       "TR0202"},
+      {"deleted-rvalue", R"cpp(
+int f(int&p){static_assert(noexcept(std::as_const(std::move(p))));return p;}
+)cpp",
+       "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("scalar-as-const-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("scalar-as-const-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, "#include <utility>\n" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ScalarValueAdapterQueriesRetainSourceBoundaries) {
   const struct {
     const char *Name, *Source, *Code;
