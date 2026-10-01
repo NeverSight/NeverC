@@ -2301,9 +2301,9 @@ The empty carrier, unary typedef base and hash primary/forward declaration
 families are pinned separately. Stored, const, copied, dereferenced and temporary
 hash objects and wrappers use that same proof. Original expressions, written
 types, initializers, selected defaults and temporary cleanup remain independent
-source roots and execute no query effects. Floating and enum hashes retain
-their separate query-source requirements;
-their existing evaluated calls continue to use the runtime hash contract above.
+source roots and execute no query effects. Enum hashes retain their separate
+query-source requirements; their evaluated calls continue to use the runtime
+hash contract above.
 The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
 its native C++ unavailability diagnostic.
 
@@ -2323,6 +2323,23 @@ public hash call; private-base layout expressions used inside a call query remai
 independent source dependencies.
 Original written types, expressions, initializers, selected defaults and temporary
 cleanup remain separate source roots and execute no query-time effects.
+
+The `float` and `double` hash specializations support the same direct,
+`std::invoke` and wrapped result-source queries. Their explicit public operators
+already have SDK definitions, so a direct query does not require an evaluated
+call first. Each wrapper or `invoke` specialization still requires its exact
+materialized adapter and exception-source proof. The authenticated floating hash
+operation supplies the zero-normalization branch and scalar hashing delegate;
+both signs of zero hash to zero, and nonzero values retain the runtime bit-hash
+contract above. Floating and integral argument conversions happen before that
+operation. The public object, scalar primary/partial specialization and empty
+unary base keep their separate pinned declaration families, including both
+nested empty base initializers for temporary objects. Query results remain
+`size_t`; original receiver/argument expressions, written types, initializers,
+selected defaults and temporary cleanup keep independent source requirements
+and execute no query effects. Independent method/adapter addresses and private
+base sources consumed by a call query gain no authorization from another hash
+call. `long double` hashes remain outside the admitted floating type boundary.
 
 Admitted object-pointer, `void`-pointer and fixed-arity function-pointer hashes
 also support direct, `std::invoke` and wrapped result-source queries. Their

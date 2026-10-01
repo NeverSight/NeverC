@@ -2713,24 +2713,26 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
   if (!Object)
     return std::nullopt;
   const bool Hash = Object->Record->getName() == "hash";
-  bool WideHash = false;
+  bool ScalarHash = false;
   if (Hash) {
     const auto *Specialization =
         cast<ClassTemplateSpecializationDecl>(Object->Record);
     const auto Value = Specialization->getTemplateArgs().get(0).getAsType();
+    const bool Floating = Value->isSpecificBuiltinType(BuiltinType::Float) ||
+                          Value->isSpecificBuiltinType(BuiltinType::Double);
     if (!Value->isIntegralType(A.Context) && !Value->isNullPtrType() &&
-        !Value->isPointerType())
+        !Value->isPointerType() && !Floating)
       return std::nullopt;
-    WideHash = Value->isSpecificBuiltinType(BuiltinType::LongLong) ||
-               Value->isSpecificBuiltinType(BuiltinType::ULongLong);
+    ScalarHash = Floating || Value->isSpecificBuiltinType(BuiltinType::LongLong) ||
+                 Value->isSpecificBuiltinType(BuiltinType::ULongLong);
   }
   // Pin every declaration family in the empty carrier's SDK base chain.
-  // Wide integer hashes add __scalar_hash between the public hash and its
-  // unary typedef base; no source replacement may supply lifecycle metadata.
+  // Wide integer and floating hashes add __scalar_hash between the public hash
+  // and its unary typedef base; replacements cannot supply lifecycle metadata.
   const CXXRecordDecl *Records[] = {Object->Record, nullptr, nullptr};
-  for (unsigned I = 0; I != (WideHash ? 2u : 1u); ++I) {
+  for (unsigned I = 0; I != (ScalarHash ? 2u : 1u); ++I) {
     if (!Records[I]->getNumBases()) {
-      if (WideHash)
+      if (ScalarHash)
         return std::nullopt;
       break;
     }
@@ -2754,11 +2756,11 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
         Current->hasUserDeclaredDestructor() || !Current->hasTrivialDestructor() ||
         !Current->isEmpty() || !Current->isTriviallyCopyable() ||
         !Current->field_empty() ||
-        (I && !(WideHash && I == 1) && Current->getNumBases()))
+        (I && !(ScalarHash && I == 1) && Current->getNumBases()))
       return std::nullopt;
     llvm::StringRef Path = Hash ? "__functional/hash.h"
                                 : "__functional/operations.h";
-    if (WideHash && I == 1) {
+    if (ScalarHash && I == 1) {
       if (Current->getName() != "__scalar_hash")
         return std::nullopt;
     } else if (I) {
@@ -3224,8 +3226,8 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
     return nullptr;
   const auto *Target = Method->getType()->getAs<FunctionProtoType>();
   if (Object->Record->getName() == "hash") {
-    // The exact operation descriptor proves the integral/null, wide integer
-    // or pointer hashing contract, including any SDK implementation delegate.
+    // The exact operation descriptor proves the integral/null, wide integer,
+    // floating or pointer hashing contract, including any SDK delegate.
     if (!Target || !Method->getDefinition() ||
         Target->getExceptionSpecType() != EST_BasicNoexcept ||
         Target->getNoexceptExpr())
@@ -3235,8 +3237,8 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
     if (Inherited || Record->getTemplateArgs().get(0).getAsType()->isPointerType())
       return utilitySDKFunctionSource(A, Method, "__functional/hash.h")
                  ? Target : nullptr;
-    // Members of the explicit integral/null specializations have no function
-    // template pattern; authenticate their concrete declaration family.
+    // Members of the explicit integral/null/floating specializations have no
+    // function template pattern; authenticate their concrete declaration family.
     if (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
       return nullptr;
     for (const auto *Declaration : Method->redecls()) {
@@ -11369,7 +11371,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     llvm::SmallVector<const InitListExpr *, 4> Nodes;
     const auto *Record = Object->Record;
     const auto *Parent = List;
-    // Wide integer hashes have two nested empty base initializers. Map both
+    // Scalar-based hashes have two nested empty base initializers. Map both
     // only after the entire authenticated chain has matched the public owner.
     for (unsigned Depth = 0; Record->getNumBases(); ++Depth) {
       if (Depth == 2 || Record->getNumBases() != 1 ||
