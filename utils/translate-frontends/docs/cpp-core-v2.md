@@ -251,6 +251,27 @@ and name imports remain outside this boundary. Deleted rvalue overloads and
 ambiguous explicit reference template arguments still produce native C++
 diagnostics.
 
+Exact pinned `std::move_if_noexcept` calls also support result-source queries
+on the same admitted scalar and pointer objects. The selected nonthrowing
+`T&` parameter binds the same cv-qualified object type as the `T&&` result;
+const objects retain `const T&&`. Explicit const object parameters can also
+bind admitted rvalues or materialized scalar/pointer temporaries. Their original
+conversions, materialization and lifetime sources retain the ordinary checks.
+Direct or parenthesized names, explicit object template arguments, query-only
+specializations and nesting with admitted utility reference casts use the same
+query checks. The exact implicit Clang library builtin supplies its source
+without manufacturing a body. Otherwise, the already materialized SDK body
+must return only the exact pinned `std::move` of its unchanged parameter.
+The primary, pattern, specialization and every redeclaration remain in
+`__utility/move.h`, and original operand, type, alias, callback, exception,
+selected-default and temporary-lifetime sources still complete independently.
+Queries perform no argument effects or moves. Source function or trait
+replacements, independent addresses or indirect/cast callees, name imports,
+unsupported types/pointees, direct array/record/function/owner references,
+and reference template arguments yielding lvalues remain outside this scalar
+query boundary. The record copy-fallback branch needs its own source proof and
+is not admitted by this scalar extension.
+
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested
