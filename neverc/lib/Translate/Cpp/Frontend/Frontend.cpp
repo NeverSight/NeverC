@@ -9366,6 +9366,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                     : dyn_cast_or_null<FunctionDecl>(Target);
     if (!Function || isa<CXXMethodDecl>(Function) || Function->isInvalidDecl())
       return false;
+    llvm::StringRef ExpectedPath;
     if (Function->isOverloadedOperator()) {
       switch (Function->getOverloadedOperator()) {
       case OO_EqualEqual:
@@ -9380,7 +9381,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
     } else {
       const auto *Name = Function->getIdentifier();
-      if (!Name || (Name->getName() != "move" && Name->getName() != "forward"))
+      if (!Name)
+        return false;
+      if (Name->getName() == "as_const")
+        ExpectedPath = "__utility/as_const.h";
+      else if (Name->getName() == "move_if_noexcept")
+        ExpectedPath = "__utility/move.h";
+      else if (Name->getName() != "move" && Name->getName() != "forward")
         return false;
     }
     const DeclContext *Context = Function->getDeclContext();
@@ -9405,6 +9412,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
       return !Declaration->isInvalidDecl() && Origin &&
              Origin->Root == "libcxx" &&
+             (ExpectedPath.empty() || Origin->Path == ExpectedPath) &&
              approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
     };
     auto PinnedFunction = [&](const FunctionDecl *Declaration) {
@@ -9424,7 +9432,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     }
     // Import the pinned overload set for lookup only. Unused dependent SDK
-    // signatures and bodies are not instantiated or admitted by this proof;
+    // signatures and bodies are not instantiated or admitted by this proof.
+    // Deleted as_const overloads remain lookup metadata, not callable sources;
     // every actual reference still needs its operation's source descriptor.
     return true;
   }

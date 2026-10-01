@@ -198,13 +198,18 @@ throwing callback pointer. Matching mutable or const `noexcept` callback-pointer
 lvalues and unqualified rvalues use a checked pointer read and the same pointer
 conversion. Source specializations remain rejected.
 Resolved namespace and nondependent block using-declarations may import the
-pinned `std::move` and `std::forward` names, including repeated/comma imports
-and source-owned namespace reexports. These names retain Clang's selected
-overload, reference category and cv qualification; they create no wrapper or
-extra move. Each actual call still requires its existing operation descriptor
-and source proof. When `<algorithm>` is also admitted, importing `move` can
+pinned `std::move`, `std::forward`, `std::as_const` and `std::move_if_noexcept`
+names, including repeated/comma imports and source-owned namespace reexports.
+These names retain Clang's selected overload, reference category and cv
+qualification; they create no wrapper or extra move. Each actual call still
+requires its existing operation descriptor and source proof. When `<algorithm>`
+is also admitted, importing `move` can
 expose its supported pointer-range overload under that descriptor. Other
-library function names are not admitted by this lookup exception.
+library function names are not admitted by this lookup exception. The
+`as_const` and `move_if_noexcept` imports pin every primary/redeclaration to
+`__utility/as_const.h` and `__utility/move.h`, respectively. Importing the
+deleted `as_const` rvalue overload retains its lookup metadata; unused overload
+signatures and bodies are not instantiated or emitted by the import proof.
 
 Result-source queries on exact pinned `std::move` and `std::forward` calls also
 accept admitted scalar objects: integral and enum types through 64 bits,
@@ -237,17 +242,18 @@ result-source queries. An lvalue argument selects the nondeleted
 `const T& (T&) noexcept` overload and retains const already present on the
 object; pointer const qualification applies to the pointer itself, while
 pointee and callback types remain unchanged. Direct and parenthesized names,
-query-only specializations, and nesting with admitted `move`, `forward` or
-`as_const` calls retain this lvalue result. The exact implicit Clang library
-builtin can supply its unchanged-parameter source; otherwise, the already
-materialized SDK body must return that parameter with only the selected no-op
+namespace/block imports and reexports, query-only specializations, and nesting
+with admitted `move`, `forward` or `as_const` calls retain this lvalue result.
+The exact implicit Clang library builtin can supply its unchanged-parameter
+source; otherwise, the already materialized SDK body must return that parameter
+with only the selected no-op
 const reference conversion. The primary, pattern, specialization and all
 redeclarations stay pinned to `__utility/as_const.h`. Original argument effects,
 written template arguments, aliases, selected defaults, exception specifications
 and temporary lifetimes retain the same independent checks and remain unevaluated
 in queries. Function addresses or indirect/cast callees, source replacements,
-unsupported scalar/pointee types, direct array/record/function or owner references,
-and name imports remain outside this boundary. Deleted rvalue overloads and
+unsupported scalar/pointee types and direct array/record/function or owner
+references remain outside this boundary. Deleted rvalue overloads and
 ambiguous explicit reference template arguments still produce native C++
 diagnostics.
 
@@ -257,16 +263,17 @@ on the same admitted scalar and pointer objects. The selected nonthrowing
 const objects retain `const T&&`. Explicit const object parameters can also
 bind admitted rvalues or materialized scalar/pointer temporaries. Their original
 conversions, materialization and lifetime sources retain the ordinary checks.
-Direct or parenthesized names, explicit object template arguments, query-only
-specializations and nesting with admitted utility reference casts use the same
-query checks. The exact implicit Clang library builtin supplies its source
-without manufacturing a body. Otherwise, the already materialized SDK body
-must return only the exact pinned `std::move` of its unchanged parameter.
+Direct or parenthesized names, namespace/block imports and reexports, explicit
+object template arguments, query-only specializations and nesting with admitted
+utility reference casts use the same query checks. The exact implicit Clang
+library builtin supplies its source without manufacturing a body. Otherwise,
+the already materialized SDK body must return only the exact pinned `std::move`
+of its unchanged parameter.
 The primary, pattern, specialization and every redeclaration remain in
 `__utility/move.h`, and original operand, type, alias, callback, exception,
 selected-default and temporary-lifetime sources still complete independently.
 Queries perform no argument effects or moves. Source function or trait
-replacements, independent addresses or indirect/cast callees, name imports,
+replacements, independent addresses or indirect/cast callees,
 unsupported types/pointees, direct array/record/function/owner references,
 and reference template arguments yielding lvalues remain outside this scalar
 query boundary. The record copy-fallback branch needs its own source proof and

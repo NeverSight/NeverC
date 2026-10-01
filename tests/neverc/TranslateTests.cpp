@@ -41948,10 +41948,6 @@ struct Box{int n;};using Member=int Box::*;int f(Member&p){static_assert(__is_sa
 int f(std::unique_ptr<int>&p){static_assert(__is_same(decltype(std::as_const(p)),const std::unique_ptr<int>&));return 0;}
 )cpp",
        "TR0201"},
-      {"name-import", R"cpp(
-using std::as_const;int f(int&p){static_assert(__is_same(decltype(as_const(p)),const int&));return p;}
-)cpp",
-       "TR0201"},
       {"reference-template-argument", R"cpp(
 int f(int&p){static_assert(__is_same(decltype(std::as_const<int&>(p)),int&));return p;}
 )cpp",
@@ -42282,10 +42278,6 @@ struct Box{int n;};using Member=int Box::*;int f(Member&p){static_assert(__is_sa
 int f(std::unique_ptr<int>&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),std::unique_ptr<int>&&));return 0;}
 )cpp",
        "TR0203"},
-      {"name-import", R"cpp(
-using std::move_if_noexcept;int f(int&p){static_assert(__is_same(decltype(move_if_noexcept(p)),int&&));return p;}
-)cpp",
-       "TR0201"},
       {"reference-template-argument", R"cpp(
 int f(int&p){static_assert(__is_same(decltype(std::move_if_noexcept<int&>(p)),int&));return p;}
 )cpp",
@@ -43050,6 +43042,258 @@ int main() {
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2SDKAsConstAndMoveIfNoexceptNameImportsRunAtBothOptimizations) {
+  const auto Source = tmpFile("sdk-as-const-move-if-noexcept-imports.cpp");
+  const auto Output = tmpFile("sdk-as-const-move-if-noexcept-imports.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace Imported {
+using std::as_const, std::move_if_noexcept;
+// Repeated imports still refer to the same pinned overload sets.
+using std::as_const;
+using std::move_if_noexcept;
+}
+namespace Reexport {
+using Imported::as_const, Imported::move_if_noexcept;
+}
+namespace Alias = Reexport;
+namespace Directed {
+using namespace Alias;
+}
+// Importing unused templates, including deleted overloads, creates no body.
+namespace Unused {
+using std::as_const, std::move_if_noexcept;
+}
+using std::as_const, std::move_if_noexcept;
+namespace User {
+struct Box { int n; };
+int as_const(Box &p) noexcept { return p.n + 10; }
+int move_if_noexcept(Box &p) noexcept { return p.n + 20; }
+using Imported::as_const, Imported::move_if_noexcept;
+}
+int calls, defaults, effects, live, destroyed;
+int mark(int n = (++defaults, 7)) noexcept { ++calls; return n; }
+int &select(int &n, int effect = (++defaults, 8)) noexcept {
+  ++calls;
+  effects = effects * 10 + effect;
+  return n;
+}
+int &throwing(int &n) { ++calls; return n; }
+struct Ticket {
+  int n;
+  explicit Ticket(int v) noexcept : n(v) { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+int &with_temporary(int &n, Ticket ticket = Ticket(mark())) noexcept {
+  ++calls;
+  return n;
+}
+int callback(int n) { return n + 1; }
+int nonthrowing(int n) noexcept { return n + 2; }
+enum class Wide : unsigned long long { Value = 4 };
+template <class T> bool imports(T &value) {
+  using Alias::as_const, Alias::move_if_noexcept;
+  const T &view = as_const(value);
+  T &&same = move_if_noexcept(value);
+  const T &cv = value;
+  const T &&const_move = (Alias::move_if_noexcept)(cv);
+  const T &&nested = Directed::move_if_noexcept(Directed::as_const(value));
+  if (&view != &value || &same != &value || &const_move != &value ||
+      &nested != &value)
+    return false;
+  static_assert(__is_same(decltype(as_const(value)), const T &));
+  static_assert(__is_same(decltype((Alias::as_const)(cv)), const T &));
+  static_assert(__is_same(decltype(Alias::as_const<T>(value)), const T &));
+  static_assert(__is_same(decltype(move_if_noexcept(value)), T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const T>(value)), const T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(as_const(value))), const T &&));
+  static_assert(__is_same(decltype(std::move(as_const(value))), const T &&));
+  static_assert(__is_same(decltype(as_const(std::forward<T &>(value))), const T &));
+  static_assert(__is_same(decltype(move_if_noexcept(std::forward<T &>(value))), T &&));
+  static_assert(sizeof(as_const(value)) == sizeof(T));
+  static_assert(sizeof(move_if_noexcept(value)) == sizeof(T));
+  static_assert(alignof(decltype(as_const(value))) == alignof(T));
+  static_assert(alignof(decltype(move_if_noexcept(value))) == alignof(T));
+  static_assert(noexcept(as_const(value)) && noexcept(move_if_noexcept(value)));
+  return true;
+}
+// These imported specializations have no evaluated calls to supply a body.
+unsigned long query_only(unsigned long &value) {
+  static_assert(__is_same(decltype(as_const(value)), const unsigned long &));
+  static_assert(__is_same(decltype(move_if_noexcept(value)), unsigned long &&));
+  static_assert(noexcept(as_const(value)) && noexcept(move_if_noexcept(value)));
+  return value;
+}
+int main() {
+  bool boolean = true;
+  int value = 5;
+  const int cv = 6;
+  double real = 1.5;
+  Wide enumeration = Wide::Value;
+  int *pointer = &value;
+  const int *qualified_pointer = &cv;
+  int array[2] = {7, 8};
+  int (*array_pointer)[2] = &array;
+  User::Box record{9};
+  User::Box *record_pointer = &record;
+  using Callback = int (*)(int);
+  Callback fn = callback;
+  using NoexceptCallback = int (*)(int) noexcept;
+  NoexceptCallback nf = nonthrowing;
+  using Null = decltype(nullptr);
+  Null null = nullptr;
+  if (!imports(boolean) || !imports(value) || !imports(cv) || !imports(real) ||
+      !imports(enumeration) || !imports(pointer) || !imports(qualified_pointer) ||
+      !imports(array_pointer) || !imports(record_pointer) || !imports(fn) ||
+      !imports(nf) || !imports(null))
+    return 1;
+  {
+    using Alias::as_const, Alias::move_if_noexcept;
+    // ADL keeps the source-owned overloads selected by Clang.
+    if (as_const(record) != 19 || move_if_noexcept(record) != 29 ||
+        User::as_const(record) != 19 || User::move_if_noexcept(record) != 29)
+      return 2;
+  }
+  const int &view = Alias::as_const(select(value, 2));
+  int &&same = (Reexport::move_if_noexcept)(value);
+  same = 10;
+  int *const &pointer_view = (Imported::as_const)(pointer);
+  int *&&pointer_move = Alias::move_if_noexcept(pointer);
+  pointer_move = &array[0];
+  unsigned long query_value = 11;
+  if (&view != &value || view != 10 || pointer_view != &array[0] ||
+      (Alias::as_const)(fn)(1) != 2 || Alias::move_if_noexcept(nf)(1) != 3 ||
+      query_only(query_value) != 11 || calls != 1 || effects != 2 || defaults)
+    return 3;
+  int &&from_temporary = Alias::move_if_noexcept(with_temporary(value, Ticket(mark(3))));
+  if (&from_temporary != &value || calls != 3 || live || destroyed != 1)
+    return 4;
+  int before_calls = calls, before_destroyed = destroyed;
+  static_assert(__is_same(decltype(Alias::as_const(select(value))), const int &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(select(value))), int &&));
+  static_assert(noexcept(Alias::as_const(select(value))) && !noexcept(Alias::as_const(throwing(value))));
+  static_assert(noexcept(Alias::move_if_noexcept(select(value))) && !noexcept(Alias::move_if_noexcept(throwing(value))));
+  static_assert(sizeof(Alias::as_const(with_temporary(value))) == sizeof(int));
+  static_assert(sizeof(Alias::move_if_noexcept(with_temporary(value))) == sizeof(int));
+  static_assert(noexcept(Alias::as_const(with_temporary(value, Ticket(mark())))));
+  static_assert(noexcept(Alias::move_if_noexcept(with_temporary(value, Ticket(mark())))));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const int>(mark())), const int &&));
+  static_assert(sizeof(Alias::move_if_noexcept<const int>(mark())) == sizeof(int));
+  static_assert(noexcept(Alias::move_if_noexcept<const int>(mark())));
+  return calls == before_calls && destroyed == before_destroyed && !live &&
+                 !defaults && effects == 2 && value == 10 && cv == 6
+             ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("sdk-as-const-move-if-noexcept-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2SDKAsConstAndMoveIfNoexceptNameImportsRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"as-const-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}using std::as_const;
+)cpp",
+       "TR0201"},
+      {"as-const-deleted-overload-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>void as_const(const T&&);}}using std::as_const;
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __move_if_noexcept_result_t<T>move_if_noexcept(T&)noexcept;}}using std::move_if_noexcept;
+)cpp",
+       "TR0201"},
+      {"as-const-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const int&as_const<int>(int&p)noexcept{return p;}}}int f(int&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int&&move_if_noexcept<int>(int&p)noexcept{return static_cast<int&&>(p);}}}int f(int&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"as-const-independent-address", R"cpp(
+using F=const int&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const int&));static_assert(sizeof(static_cast<F>(&Reexport::as_const<int>))>0);return p;}
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-cast-callee", R"cpp(
+using F=int&&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(static_cast<F>(&Reexport::move_if_noexcept<int>)(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"as-const-original-operand", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::as_const((sizeof(long double),p))),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-selected-default", R"cpp(
+int&source(int&p,int n=sizeof(long double))noexcept{return p;}int f(int&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(p))),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"as-const-original-exception", R"cpp(
+int&source(int&p)noexcept(sizeof(long double)>0);int&source(int&p)noexcept{return p;}int f(int&p){static_assert(__is_same(decltype(Reexport::as_const(source(p))),const int&));return p;}
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-written-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept<decltype(static_cast<int>(sizeof(long double)))>(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"as-const-array-query", R"cpp(
+int f(int(&p)[2]){static_assert(__is_same(decltype(Reexport::as_const(p)),const int(&)[2]));return 0;}
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-copy-fallback-query", R"cpp(
+struct Box{int n;Box(const Box&r)noexcept:n(r.n){}Box(Box&&r):n(r.n){}};int f(Box&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),const Box&));return 0;}
+)cpp",
+       "TR0201"},
+      {"move-if-noexcept-reference-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept<int&>(p)),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"as-const-deleted-rvalue", R"cpp(
+int f(int&p){static_assert(noexcept(Reexport::as_const(std::move(p))));return p;}
+)cpp",
+       "TR0202"},
+      {"as-const-ambiguous-reference-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::as_const<int&>(p)),int&));return p;}
+)cpp",
+       "TR0202"},
+      {"move-if-noexcept-invalid-rvalue", R"cpp(
+int f(int&p){static_assert(noexcept(Reexport::move_if_noexcept(std::move(p))));return p;}
+)cpp",
+       "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("sdk-as-const-move-if-noexcept-import-reject-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("sdk-as-const-move-if-noexcept-import-reject-") +
+                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <utility>
+namespace Imported{using std::as_const,std::move_if_noexcept;}
+namespace Reexport{using Imported::as_const,Imported::move_if_noexcept;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
   }
 }
 
