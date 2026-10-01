@@ -36002,6 +36002,242 @@ int probe(std::array<int,2>& row) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PairMemberQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-member-queries.cpp");
+  const auto Output = tmpFile("pair-member-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Element { int value; int extent[2]; };
+using Pair = std::pair<Element, int>;
+using Wrapper = std::reference_wrapper<Element>;
+using IntWrapper = std::reference_wrapper<int>;
+using Wrapped = std::tuple<Wrapper, IntWrapper>;
+using References = std::pair<Element &, int &>;
+using RvalueReferences = std::pair<Element &&, int &>;
+using Mixed = std::pair<Element &, int>;
+using ReverseMixed = std::pair<int, Element &>;
+int calls, defaults, live, destroyed;
+int mark(int value = (++defaults, 1)) noexcept { ++calls; return value; }
+Pair &source(Pair &pair, int value = (++defaults, 1)) noexcept {
+  ++calls; return pair;
+}
+Pair *pointer(Pair &pair, int value = (++defaults, 1)) noexcept {
+  ++calls; return &pair;
+}
+struct Ticket {
+  int value;
+  explicit Ticket(int n) noexcept : value(n) { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+Pair &with_temporary(Pair &pair, Ticket ticket = Ticket(mark())) noexcept {
+  ++calls; return pair;
+}
+int query_only(std::pair<unsigned, short> &pair) {
+  static_assert(__is_same(decltype(pair.first), unsigned));
+  static_assert(__is_same(decltype((pair.second)), short &));
+  static_assert(sizeof(pair.first) == sizeof(unsigned));
+  static_assert(noexcept(pair.second));
+  return 0;
+}
+int main() {
+  Pair pair(Element{1, {2, 3}}, 4);
+  const Pair &constant = pair;
+  Pair *ptr = &pair;
+  const Pair *cptr = &pair;
+  static_assert(__is_same(decltype(pair.first), Element));
+  static_assert(__is_same(decltype(constant.first), Element));
+  static_assert(__is_same(decltype((pair.first)), Element &));
+  static_assert(__is_same(decltype((constant.first)), const Element &));
+  static_assert(__is_same(decltype((ptr->second)), int &));
+  static_assert(__is_same(decltype((cptr->second)), const int &));
+  static_assert(__is_same(decltype(std::move(pair).first), Element));
+  static_assert(__is_same(decltype((std::move(pair).first)), Element &&));
+  static_assert(__is_same(decltype((std::move(constant).second)), const int &&));
+  static_assert(__is_same(decltype((std::forward<Pair>(pair).first)), Element &&));
+  static_assert(__is_same(decltype((std::as_const(pair).first)), const Element &));
+  static_assert(__is_same(decltype((std::move_if_noexcept(pair).second)), int &&));
+  static_assert(__is_lvalue_reference(decltype((pair.first))));
+  static_assert(__is_rvalue_reference(decltype((std::move(pair).second))));
+  static_assert(sizeof((++calls, pair).first) == sizeof(Element));
+  static_assert(alignof(decltype(pair.second)) == alignof(int));
+  static_assert(noexcept(source(pair).first) && noexcept(pointer(pair)->second));
+  static_assert(__is_same(decltype((source(pair).first.extent)), int (&)[2]));
+  static_assert(__is_same(decltype((pointer(pair)->second)), int &));
+  static_assert(sizeof(with_temporary(pair).first) == sizeof(Element));
+  static_assert(__is_same(decltype((with_temporary(pair).second)), int &));
+  static_assert(noexcept(with_temporary(pair, Ticket(mark())).first));
+  Wrapper stored(pair.first);
+  Wrapped wrapped(std::ref(pair.first), std::ref(pair.second));
+  Wrapped copied(stored, std::ref(pair.second));
+  std::pair<Wrapper, IntWrapper> pair_wrappers(stored, std::ref(pair.second));
+  static_assert(__is_same(decltype(std::ref(pair.first).get()), Element &));
+  static_assert(__is_same(decltype(std::cref(pair.first).get()), const Element &));
+  static_assert(__is_same(decltype(std::ref(ptr->second).get()), int &));
+  static_assert(__is_same(decltype(pair_wrappers.first.get()), Element &));
+  static_assert(__is_same(decltype(std::get<Wrapper>(std::move(wrapped))), Wrapper &&));
+  static_assert(__is_same(decltype(std::get<Wrapper>(std::move_if_noexcept(wrapped))), Wrapper &&));
+  static_assert(__is_same(decltype(std::get<0>(std::move_if_noexcept(copied)).get()), Element &));
+  static_assert(__is_same(decltype(std::get<IntWrapper>(std::as_const(wrapped)).get()), int &));
+  static_assert(noexcept(std::get<Wrapper>(std::move_if_noexcept(wrapped)).get()));
+  References references(pair.first, pair.second);
+  const References &const_refs = references;
+  RvalueReferences rvalue_refs(static_cast<Element &&>(pair.first), pair.second);
+  Mixed mixed(pair.first, 5);
+  ReverseMixed reverse_mixed(6, pair.first);
+  static_assert(__is_same(decltype(const_refs.first), Element &));
+  static_assert(__is_same(decltype((const_refs.first)), Element &));
+  static_assert(__is_same(decltype((std::move(const_refs).second)), int &));
+  static_assert(__is_same(decltype(rvalue_refs.first), Element &&));
+  static_assert(__is_same(decltype((std::move(rvalue_refs).first)), Element &));
+  static_assert(__is_same(decltype((std::as_const(mixed).first)), Element &));
+  static_assert(__is_same(decltype((std::as_const(mixed).second)), const int &));
+  static_assert(__is_same(decltype((std::as_const(reverse_mixed).second)), Element &));
+  std::pair<const int, const long> const_fields(7, 8);
+  static_assert(__is_same(decltype(const_fields.first), const int));
+  static_assert(__is_same(decltype((std::move(const_fields).second)), const long &&));
+  using Row = std::array<int, 2>;
+  using Nested = std::pair<Pair, Row>;
+  Nested nested(pair, Row{{9, 10}});
+  static_assert(__is_same(decltype((std::move(nested).first.second)), int &&));
+  static_assert(__is_same(decltype(std::get<1>(nested.second)), int &));
+  using NativeRow = int[2];
+  NativeRow native{11, 12};
+  std::pair<NativeRow *, Element *> pointers(&native, &pair.first);
+  static_assert(__is_same(decltype(pointers.first), NativeRow *));
+  static_assert(__is_same(decltype((pointers.second)), Element *&));
+  struct Owned { Element first; int second; };
+  Owned owned{Element{13, {14, 15}}, 16};
+  static_assert(__is_same(decltype((owned.first)), Element &));
+  std::pair<unsigned, short> only(17u, static_cast<short>(18));
+  if (query_only(only) || calls || defaults || live || destroyed) return 1;
+  Element &borrowed = std::get<0>(std::move_if_noexcept(wrapped)).get();
+  if (&borrowed != &pair.first || &pair_wrappers.first.get() != &pair.first ||
+      &std::get<1>(wrapped).get() != &pair.second) return 2;
+  source(pair).first.value = 19;
+  pointer(pair)->second = 20;
+  with_temporary(pair).first.extent[1] = 21;
+  std::move(references).second = 22;
+  std::get<0>(std::move_if_noexcept(copied)).get().value = 23;
+  return borrowed.value == 23 && pair.second == 22 && pair.first.extent[1] == 21 &&
+                 &const_refs.first == &pair.first && &rvalue_refs.first == &pair.first &&
+                 &mixed.first == &pair.first && &reverse_mixed.second == &pair.first &&
+                 calls == 4 && defaults == 3 && !live && destroyed == 1 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-member-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairMemberQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"receiver-expression", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype(((sizeof(long double),p).first)),Element&));return 0;}
+)cpp", "TR0201"},
+      {"pointer-receiver-expression", R"cpp(
+int f(Pair*p){static_assert(__is_same(decltype(((sizeof(long double),p)->second)),int&));return 0;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+Pair&source(Pair&p,int n=sizeof(long double))noexcept{return p;}int f(Pair&p){static_assert(__is_same(decltype((source(p).first)),Element&));return 0;}
+)cpp", "TR0201"},
+      {"original-exception", R"cpp(
+Pair&source(Pair&p)noexcept(sizeof(long double)>0);Pair&source(Pair&p)noexcept{return p;}int f(Pair&p){static_assert(noexcept(source(p).first));return 0;}
+)cpp", "TR0201"},
+      {"adjusted-signature-bound", R"cpp(
+Pair&source(Pair&p,int values[(sizeof(long double),2)]=nullptr)noexcept{return p;}int f(Pair&p){static_assert(__is_same(decltype((source(p).first)),Element&));return 0;}
+)cpp", "TR0201"},
+      {"receiver-initializer", R"cpp(
+int f(){Pair p(Element{static_cast<int>(sizeof(long double)),{2,3}},4);static_assert(__is_same(decltype((p.second)),int&));return 0;}
+)cpp", "TR0201"},
+      {"stored-wrapper-initializer", R"cpp(
+int f(Pair&p){W wrapper((sizeof(long double),p.first));std::tuple<W,int>tuple(wrapper,1);static_assert(__is_same(decltype(std::get<W>(std::move_if_noexcept(tuple)).get()),Element&));return 0;}
+)cpp", "TR0201"},
+      {"selected-element-extent", R"cpp(
+struct Bad{int values[(sizeof(long double),2)];};int f(std::pair<Bad,int>&p){static_assert(__is_same(decltype((p.first)),Bad&));return 0;}
+)cpp", "TR0201"},
+      {"unselected-element-extent", R"cpp(
+struct Bad{int values[(sizeof(long double),2)];};int f(std::pair<int,Bad>&p){static_assert(__is_same(decltype((p.first)),int&));return 0;}
+)cpp", "TR0201"},
+      {"reference-element-extent", R"cpp(
+using Row=int[(sizeof(long double),2)];int f(std::pair<Row&,int&>&p){static_assert(__is_same(decltype((p.first)),Row&));return 0;}
+)cpp", "TR0201"},
+      {"pointer-element-extent", R"cpp(
+using Row=int[(sizeof(long double),2)];int f(std::pair<Row*,int>&p){static_assert(__is_same(decltype(p.first),Row*));return 0;}
+)cpp", "TR0201"},
+      {"erased-receiver-template-argument", R"cpp(
+int object;template<auto V>using Erased=Pair;int f(Pair&p){static_assert(__is_same(decltype((static_cast<Erased<&object>&>(p).first)),Element&));return 0;}
+)cpp", "TR0201"},
+      {"pair-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct pair<Element,int>{Element first;int second;};}}int f(Pair&p){static_assert(__is_same(decltype((p.first)),Element&));return 0;}
+)cpp", "TR0203"},
+      {"pair-partial-specialization", R"cpp(
+namespace std{inline namespace __1{template<class T>struct pair<Element,T>{Element first;T second;};}}int f(Pair&p){static_assert(__is_same(decltype((p.second)),int&));return 0;}
+)cpp", "TR0203"},
+      {"independent-member-address", R"cpp(
+int f(Pair&p){static_assert(__is_same(decltype((p.first)),Element&));static_assert(sizeof(&Pair::first)>0);return 0;}
+)cpp", "TR0201"},
+      {"volatile-receiver", R"cpp(
+int f(volatile Pair&p){static_assert(__is_same(decltype((p.first)),volatile Element&));return 0;}
+)cpp", "TR0201"},
+      {"unsupported-element", R"cpp(
+int f(std::pair<long double,int>&p){static_assert(__is_same(decltype((p.first)),long double&));return 0;}
+)cpp", "TR0201"},
+      {"nontrivial-owned-element", R"cpp(
+struct Owned{int value;~Owned(){}};int f(std::pair<Owned,int>&p){static_assert(__is_same(decltype((p.first)),Owned&));return 0;}
+)cpp", "TR0201"},
+      {"factory-source-stays-independent", R"cpp(
+int f(){static_assert(__is_same(decltype((std::make_pair(1,2).first)),int&&));return 0;}
+)cpp", "TR0201"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};Pair&source(Pair&p,Ticket t=Ticket())noexcept{return p;}int f(Pair&p){static_assert(__is_same(decltype((source(p).first)),Element&));return 0;}
+)cpp", "TR0201"},
+      {"temporary-destructor-exception", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};Pair&source(Pair&p,Ticket t=Ticket())noexcept{return p;}int f(Pair&p){static_assert(noexcept(source(p).second));return 0;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept;};Pair&source(Pair&p,Ticket t=Ticket())noexcept{return p;}int f(Pair&p){static_assert(noexcept(source(p).first));return 0;}
+)cpp", "TR0203"},
+      {"source-owned-field-source", R"cpp(
+struct Owned{int first[(sizeof(long double),2)];int second;};int f(Owned&p){static_assert(__is_same(decltype((p.second)),int&));return 0;}
+)cpp", "TR0201"},
+      {"invalid-member", R"cpp(
+int f(Pair&p){static_assert(sizeof(p.third)>0);return 0;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("pair-member-query-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pair-member-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+struct Element{int value;int extent[2];};using Pair=std::pair<Element,int>;
+using W=std::reference_wrapper<Element>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairGetQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("pair-get-queries.cpp");
   const auto Output = tmpFile("pair-get-queries.nc");
@@ -42987,9 +43223,6 @@ struct Element{int value[(sizeof(long double),2)];};using T=std::tuple<Element,i
 )cpp", "TR0201"},
       {"wrapper-original-initializer", R"cpp(
 struct Element{int value;};using W=std::reference_wrapper<Element>;using T=std::tuple<W,int>;int f(Element&e){W wrapper((sizeof(long double),e));T tuple(wrapper,1);static_assert(sizeof(Alias::move_if_noexcept(tuple))==sizeof(T));return 0;}
-)cpp", "TR0201"},
-      {"wrapper-sdk-subobject-source", R"cpp(
-struct Element{int value;int extent[2];};using P=std::pair<Element,int>;using W=std::reference_wrapper<Element>;using T=std::tuple<W,int>;int f(){P p(Element{1,{2,3}},4);T t(std::ref(p.first),5);static_assert(__is_same(decltype(std::get<W>(Alias::move_if_noexcept(t))),W&&));return 0;}
 )cpp", "TR0201"},
       {"long-double-element", R"cpp(
 using P=std::pair<long double,int>;int f(P&p){static_assert(__is_same(decltype(Alias::move_if_noexcept(p)),P&&));return 0;}

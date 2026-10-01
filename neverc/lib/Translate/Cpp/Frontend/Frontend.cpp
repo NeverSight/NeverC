@@ -2972,6 +2972,20 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
+static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
+  const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl());
+  const auto *Record = Field ? dyn_cast<CXXRecordDecl>(Field->getParent())
+                             : nullptr;
+  if (!approvedUtilityPairMetadata(A.S, A.Sources, Record))
+    return false;
+  const auto Pair = approvedUtilityTupleLikeSource(
+      A.S, A.Sources, A.Context.getRecordType(Record), A.Context);
+  // Authenticate the exact public SDK field and admitted element storage.
+  // Its original element types and receiver still need independent sources.
+  return Pair && Pair->Elements.size() == 2 &&
+         (Pair->Elements[0] == Field || Pair->Elements[1] == Field);
+}
+
 static bool functionalReferenceFactorySource(Adapter &A, const CallExpr *Call) {
   const auto Factory =
       approvedFunctionalReferenceFactoryCall(A.S, A.Sources, Call, A.Context);
@@ -10657,7 +10671,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
       if (const auto *Reference = dyn_cast<MemberExpr>(S)) {
         FunctionSource(dyn_cast<FunctionDecl>(Reference->getMemberDecl()));
-        ValueSource(Reference->getMemberDecl());
+        // The pinned pair layout supplies this field's SDK TypeLoc. Keep
+        // collecting the expression, parent elements and receiver source;
+        // other members and independent field references get no exemption.
+        if (!utilityPairMemberSource(A, Reference))
+          ValueSource(Reference->getMemberDecl());
         Exception(Reference->getType()->getAs<FunctionProtoType>(),
                   dyn_cast<FunctionDecl>(Reference->getMemberDecl()));
         if (const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl()))

@@ -370,8 +370,7 @@ replacements, indirect callees, volatile containers, unsupported or nontrivial
 owned elements, and reference arguments yielding lvalues remain rejected.
 The `const T&` copy-fallback branch retains its separate source requirements,
 including for otherwise admitted trivially copyable elements with potentially
-throwing moves. A wrapper borrowing a `std::pair` member also retains its
-separate initializer-source requirement when projected from a queried tuple.
+throwing moves.
 
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
@@ -403,6 +402,19 @@ admitted `std::pair` values. Mutation
 requires every recursive leaf to be assignable. Pair objects retain their two
 fields and ordinary value behavior. Type-based `get` is accepted only when
 libc++ resolves it unambiguously.
+
+Direct `first` and `second` member expressions on admitted trivial-value,
+reference and mixed pairs supply the exact pinned field type source for
+result-type queries. Both `.` and `->`, const receivers and utility-cast
+xvalues preserve the member's declared type and expression category; a
+reference member remains an lvalue when selected through an xvalue pair.
+This also permits `ref`/`cref` borrowing of pair members and later queries on
+wrappers projected from tuples. The authenticated pair storage supplies only
+the library field declaration: original element types and bounds, receiver
+initializers, signatures, defaults, expressions and temporary lifetimes still
+complete independently. Queries execute no receiver effects. Independent
+member pointers, source replacements and nontrivial owned pair elements
+retain their separate source requirements.
 
 Exact admitted index- and unique-type pair `get` calls also supply their pinned
 SDK signature and body source for result-type queries without instantiating an
