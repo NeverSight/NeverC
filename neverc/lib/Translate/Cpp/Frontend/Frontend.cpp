@@ -2671,6 +2671,32 @@ utilityWrapIteratorDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   return Iterator;
 }
 
+static std::optional<FunctionalReferenceRecord>
+functionalReferenceDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Wrapper =
+      approvedFunctionalReferenceRecord(A.S, A.Sources, Record, A.Context);
+  if (!Wrapper || Wrapper->Record->hasUserDeclaredDestructor())
+    return std::nullopt;
+  const auto *Destructor = Wrapper->Record->getDestructor();
+  if (!Destructor)
+    return Wrapper; // Preserve Sema's lazy trivial declaration.
+  for (const auto *Declaration : Destructor->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto *Method = cast<CXXDestructorDecl>(Declaration);
+    if (!Method->isImplicit() || !Method->isDefaulted() ||
+        !Method->isTrivial() || Method->isInvalidDecl() ||
+        Method->isDeleted() || Method->isVirtual() || Method->isVariadic() ||
+        Method->getNumParams() || Method->getAccess() != AS_public ||
+        Method->getTypeSourceInfo() ||
+        Method->getLexicalDeclContext() != Method->getParent() ||
+        Method->getParent()->getCanonicalDecl() !=
+            Wrapper->Record->getCanonicalDecl() ||
+        !approvedStandardSDKDeclaration(A.S, A.Sources, Method))
+      return std::nullopt;
+  }
+  return Wrapper;
+}
+
 static std::optional<UtilityInitializerListRecord>
 utilityInitializerListDestructionSource(Adapter &A,
                                         const CXXRecordDecl *Record) {
@@ -2926,11 +2952,15 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
   // The tuple-like descriptor supplies only authenticated storage. The exact
   // reference cast, element layouts and every original operand/type source
   // still close separately; this proof does not perform container lifecycle.
-  return (Scalar || ((*Operation == UtilityOperation::Move ||
-                      *Operation == UtilityOperation::Forward) &&
-                     (utilityUniquePtrSource(A, Type->getAsCXXRecordDecl()) ||
-                      approvedUtilityTupleLikeSource(A.S, A.Sources, Type,
-                                                     A.Context)))) &&
+  const bool MoveOrForward = *Operation == UtilityOperation::Move ||
+                             *Operation == UtilityOperation::Forward;
+  const bool TupleLike =
+      (MoveOrForward || *Operation == UtilityOperation::AsConst) &&
+      Type->isRecordType() &&
+      approvedUtilityTupleLikeSource(A.S, A.Sources, Type, A.Context);
+  return (Scalar || TupleLike ||
+          (MoveOrForward &&
+           utilityUniquePtrSource(A, Type->getAsCXXRecordDecl()))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
@@ -4534,7 +4564,11 @@ public:
       }
       return true;
     }
-    // The authenticated wrapper owns only a pointer, never its referent.
+    // The authenticated reference wrapper owns only pointer storage. Its
+    // referent's lifetime belongs to the caller and is not consumed here.
+    if (functionalReferenceDestructionSource(A, Record))
+      return true;
+    // The authenticated iterator wrapper likewise owns only a pointer.
     if (utilityWrapIteratorDestructionSource(A, Record))
       return true;
     // The initializer-list view likewise borrows its backing array. That
@@ -10459,7 +10493,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           return;
         if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Function);
             Destructor &&
-            (utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
+            (functionalReferenceDestructionSource(A, Destructor->getParent()) ||
+             utilityWrapIteratorDestructionSource(A, Destructor->getParent()) ||
              utilityInitializerListDestructionSource(A,
                                                      Destructor->getParent()) ||
              utilityStringDestructionSource(A, Destructor->getParent()) ||
@@ -10613,6 +10648,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 .has_value() ||
             approvedUtilityArrayConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
+            approvedFunctionalReferenceConstruction(A.S, A.Sources,
+                                                    Construction, A.Context)
+                .has_value() ||
             approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
                                                     Construction, A.Context)
                 .has_value() ||

@@ -270,7 +270,7 @@ casts and subsequent checked `get` projections use the same proof. Queries
 perform no moves, copies, assignments or cleanup; evaluated casts retain the
 same object and reference-field bindings. Volatile containers, unsupported
 elements, source substitutions, indirect callees and rvalues forwarded as
-lvalues retain rejection. `as_const`/`move_if_noexcept` container queries,
+lvalues retain rejection. `move_if_noexcept` container queries,
 nontrivial owned value elements and query-only factories retain separate source
 requirements.
 
@@ -290,9 +290,30 @@ written template arguments, aliases, selected defaults, exception specifications
 and temporary lifetimes retain the same independent checks and remain unevaluated
 in queries. Function addresses or indirect/cast callees, source replacements,
 unsupported scalar/pointee types and direct array/record/function or owner
-references remain outside this boundary. Deleted rvalue overloads and
-ambiguous explicit reference template arguments still produce native C++
+references remain outside this scalar query boundary. Deleted rvalue overloads
+and ambiguous explicit reference template arguments still produce native C++
 diagnostics.
+
+The exact `as_const` const-reference proof also supports result-source queries
+on admitted `std::array`, `std::pair` and `std::tuple` objects, including empty,
+reference, mixed reference/value, trivial record, wrapper and nested storage.
+The nondeleted `const T& (T&) noexcept` overload adds const to the whole object;
+reference fields and wrapper referents keep their original bindings and
+qualification. The tuple-like descriptor authenticates storage, while original
+element types, bounds, layouts, operands, template arguments, defaults, exception
+specifications and temporary lifetimes retain independent source checks. Direct
+and parenthesized names, imports and reexports, query-only specializations,
+nested `as_const`/`move`/`forward` calls and checked `get` projections use the
+same proof. Queries perform no argument effects or object lifecycle actions;
+evaluated calls alias the original object. Volatile containers, unsupported
+elements, nontrivial owned values, owner references, source replacements,
+independent addresses and indirect/cast callees retain rejection.
+
+When a queried receiver is initialized with a directly constructed or trivially
+copied `reference_wrapper`, its pinned constructor and pointer-only implicit
+destructor supply the storage operation source. The constructor's original
+argument still completes independently; wrapper cleanup consumes no referent
+destructor or lifetime. Source factory calls keep their separate requirements.
 
 Exact pinned `std::move_if_noexcept` calls also support result-source queries
 on the same admitted scalar and pointer objects. The selected nonthrowing
