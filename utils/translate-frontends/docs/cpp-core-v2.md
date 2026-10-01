@@ -2266,7 +2266,25 @@ initializer nodes use only the proof for their exact owning object. Original
 callable and argument expressions, written template arguments, initializers, defaults
 and source-owned temporary cleanup remain independently checked and execute no
 query effects. Each callable category and argument pack still needs its own
-materialized adapter. Hash objects, wrappers around function objects and
+materialized adapter.
+
+Direct `reference_wrapper` calls and `std::invoke` calls around wrappers of
+those same arithmetic, bitwise, comparison and logical objects also support
+result-source queries. The exact materialized wrapper and internal dispatch
+prove the selected built-in operation; the referent's authenticated operator
+and empty storage supply the same result and exception source as an unwrapped
+object. Typed narrowing, transparent promotions and admitted pointer comparisons
+retain their results. Const wrappers, const referents, dereferenced receivers,
+wrapper copies and temporary `ref`/`cref` results keep their selected argument
+pack. Outer `invoke` queries additionally require that precise callable category's
+public adapter and dispatch bodies. The inner invocability variable checks the
+referent reference and argument pack; the outer variable independently checks
+the wrapper category and its pack. Each value must agree with the authenticated
+operator prototype. Original wrapper and referent initializers, expressions,
+written types, selected defaults and temporary lifetimes remain independent
+source roots and have no query-time effects. Lazy bodies, replaced SDK
+operators or adapters, source substitutions of either invocability variable,
+and independent adapter addresses remain rejected. Hash objects and
 source-owned callable objects retain their separate query-source requirements.
 
 Wrappers around an admitted typed or transparent standard function

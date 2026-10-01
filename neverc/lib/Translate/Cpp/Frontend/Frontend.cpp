@@ -3171,8 +3171,31 @@ static bool functionalInvocabilitySource(
   return true;
 }
 
+static const FunctionProtoType *functionalObjectInvokeTargetSource(
+    Adapter &A, const CXXMethodDecl *Method) {
+  if (!Method || !functionalObjectStorageSource(A, Method->getParent()))
+    return nullptr;
+  const auto *Target = Method->getType()->getAs<FunctionProtoType>();
+  const auto *Noexcept = Target && Target->getNoexceptExpr()
+      ? dyn_cast<CXXNoexceptExpr>(Target->getNoexceptExpr()->IgnoreParenImpCasts())
+      : nullptr;
+  // The caller's exact scalar-operation descriptor authenticates the selected
+  // method body and forwarding. Typed objects have no exception specification;
+  // transparent objects query their admitted nonthrowing built-in operator.
+  // Original argument evaluation retains its independent exception source.
+  if (!Target || (Method->getPrimaryTemplate()
+          ? (Target->getExceptionSpecType() != EST_NoexceptTrue ||
+             !Noexcept || !Noexcept->getValue())
+          : (Target->getExceptionSpecType() != EST_None ||
+             Target->getNoexceptExpr())) ||
+      !utilitySDKFunctionSource(A, Method, "__functional/operations.h"))
+    return nullptr;
+  return Target;
+}
+
 static bool functionalReferenceDirectInvokeSource(
-    Adapter &A, const CallExpr *Call, const FunctionalReferenceInvokeCall &Invoke) {
+    Adapter &A, const CallExpr *Call, const FunctionalReferenceInvokeCall &Invoke,
+    const FunctionProtoType *Target) {
   // The caller has already authenticated this concrete operator body, directly
   // or through std::invoke's exact dispatch. Do not complete a lazy body here.
   if (!isa_and_nonnull<CXXOperatorCallExpr>(Call))
@@ -3180,8 +3203,6 @@ static bool functionalReferenceDirectInvokeSource(
   const auto *Method = Call->getDirectCallee();
   const auto *Arguments = Method->getTemplateSpecializationArgs();
   const auto *Dispatch = functionalReturnedCall(Method);
-  const auto *Target = Invoke.FunctionPointerType->getPointeeType()
-                           ->getAs<FunctionProtoType>();
   return Arguments && Arguments->size() == 1 && Dispatch &&
          utilitySDKFunctionSource(A, Method, "__functional/reference_wrapper.h") &&
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
@@ -3198,11 +3219,22 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
     return false;
   const auto Invoke =
       approvedFunctionalReferenceInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || (Invoke->Kind != FunctionalReferenceInvokeKind::Function &&
-                  Invoke->Kind != FunctionalReferenceInvokeKind::FunctionPointer))
+  if (!Invoke)
+    return false;
+  const FunctionProtoType *Target = nullptr;
+  if (Invoke->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
+    if (Invoke->Operation &&
+        Invoke->Operation->Operation != FunctionalOperation::Hash)
+      Target = functionalObjectInvokeTargetSource(A, Invoke->Method);
+  } else if (Invoke->Kind == FunctionalReferenceInvokeKind::Function ||
+             Invoke->Kind == FunctionalReferenceInvokeKind::FunctionPointer) {
+    Target = Invoke->FunctionPointerType->getPointeeType()
+                 ->getAs<FunctionProtoType>();
+  }
+  if (!Target)
     return false;
   if (isa<CXXOperatorCallExpr>(Call))
-    return functionalReferenceDirectInvokeSource(A, Call, *Invoke);
+    return functionalReferenceDirectInvokeSource(A, Call, *Invoke, Target);
 
   // The invocation descriptor proves the outer invoke -> __invoke -> wrapper
   // call chain. Pin each declaration family before consuming its SDK source;
@@ -3211,14 +3243,12 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
   const auto *Dispatch = functionalReturnedCall(Function);
   const auto *Inner =
       Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
-  const auto *Target = Invoke->FunctionPointerType->getPointeeType()
-                           ->getAs<FunctionProtoType>();
   return Arguments && Arguments->size() == 2 &&
          Arguments->get(0).getKind() == TemplateArgument::Type && Dispatch &&
          utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                   "__type_traits/invoke.h") &&
-         functionalReferenceDirectInvokeSource(A, Inner, *Invoke) &&
+         functionalReferenceDirectInvokeSource(A, Inner, *Invoke, Target) &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
                                        Arguments->get(1), Target);
 }
@@ -3267,23 +3297,10 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
     return false;
   const auto Invoke =
       approvedFunctionalInvokeObjectOperation(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || Invoke->Operation.Operation == FunctionalOperation::Hash ||
-      !functionalObjectStorageSource(A, Invoke->Method->getParent()))
+  if (!Invoke || Invoke->Operation.Operation == FunctionalOperation::Hash)
     return false;
-  const auto *Method = Invoke->Method;
-  const auto *Target = Method->getType()->getAs<FunctionProtoType>();
-  const auto *Noexcept = Target && Target->getNoexceptExpr()
-      ? dyn_cast<CXXNoexceptExpr>(Target->getNoexceptExpr()->IgnoreParenImpCasts())
-      : nullptr;
-  // The exact scalar-operation descriptor authenticates the selected method
-  // body and forwarding. Typed objects have no exception specification;
-  // transparent objects query their admitted built-in operator, which cannot
-  // throw. Caller-side argument evaluation still keeps its own exception source.
-  if (!Target || (Method->getPrimaryTemplate()
-          ? (Target->getExceptionSpecType() != EST_NoexceptTrue ||
-             !Noexcept || !Noexcept->getValue())
-          : (Target->getExceptionSpecType() != EST_None ||
-             Target->getNoexceptExpr())))
+  const auto *Target = functionalObjectInvokeTargetSource(A, Invoke->Method);
+  if (!Target)
     return false;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
   const auto *Dispatch = functionalReturnedCall(Function);
@@ -3292,7 +3309,6 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
          utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
          utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                   "__type_traits/invoke.h") &&
-         utilitySDKFunctionSource(A, Method, "__functional/operations.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
                                        Arguments->get(1), Target);
 }
