@@ -2710,11 +2710,21 @@ static std::optional<FunctionalObjectRecord>
 functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Object =
       approvedFunctionalObjectRecord(A.S, A.Sources, Record, A.Context);
-  if (!Object || Object->Record->getName() == "hash")
+  if (!Object)
     return std::nullopt;
-  // Arithmetic/comparison objects own only their one-byte carrier and at
-  // most one empty SDK typedef base. Pin that base's declaration family too;
-  // a source replacement must not supply hidden special-member declarations.
+  const bool Hash = Object->Record->getName() == "hash";
+  if (Hash) {
+    const auto *Specialization =
+        cast<ClassTemplateSpecializationDecl>(Object->Record);
+    const auto Value = Specialization->getTemplateArgs().get(0).getAsType();
+    if (!Value->isIntegralType(A.Context) && !Value->isNullPtrType())
+      return std::nullopt;
+  }
+  // Arithmetic/comparison objects and direct integral/null hashes own only
+  // their one-byte carrier and at most one empty SDK typedef base. Wide hashes
+  // with scalar-hash bases retain their separate source requirements.
+  // Pin the typedef base's declaration family too; source replacements must
+  // not supply hidden special-member declarations.
   const CXXRecordDecl *Records[] = {Object->Record, nullptr};
   if (Object->Record->getNumBases() > 1)
     return std::nullopt;
@@ -2738,7 +2748,8 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
         !Current->isEmpty() || !Current->isTriviallyCopyable() ||
         !Current->field_empty() || (I && Current->getNumBases()))
       return std::nullopt;
-    llvm::StringRef Path = "__functional/operations.h";
+    llvm::StringRef Path = Hash ? "__functional/hash.h"
+                                : "__functional/operations.h";
     if (I) {
       if (Current->getName() == "__binary_function_keep_layout_base")
         Path = "__functional/binary_function.h";
@@ -2747,18 +2758,23 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
       else
         return std::nullopt;
     }
-    auto Pinned = [&](const Decl *Declaration) {
+    auto Pinned = [&](const Decl *Declaration, bool TemplateSource = false) {
       A.chargeExpansion(1, Declaration->getLocation());
       const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
       return Origin && Origin->Root == "libcxx" &&
-             Origin->Path == Path &&
+             (Origin->Path == Path ||
+              (Hash && !I && TemplateSource &&
+               (Origin->Path == "__fwd/functional.h" ||
+                Origin->Path == "__memory/shared_ptr.h" ||
+                Origin->Path == "__memory/unique_ptr.h"))) &&
              approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
     };
     for (const auto *Declaration : Current->redecls())
       if (!Pinned(Declaration))
         return std::nullopt;
     for (const auto *Declaration : Template->redecls())
-      if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
+      if (!Pinned(Declaration, true) ||
+          !Pinned(Declaration->getTemplatedDecl(), true))
         return std::nullopt;
     if (const auto *Destructor = Current->getDestructor())
       for (const auto *Declaration : Destructor->redecls()) {
@@ -3176,6 +3192,26 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
   if (!Method || !functionalObjectStorageSource(A, Method->getParent()))
     return nullptr;
   const auto *Target = Method->getType()->getAs<FunctionProtoType>();
+  if (Method->getParent()->getName() == "hash") {
+    // The exact operation descriptor proves the direct size_t conversion or
+    // nullptr constant. Neither path calls another SDK hashing implementation.
+    // These members of explicit class specializations are not function-template
+    // instantiations, so they have no template pattern to authenticate.
+    if (!Target || Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        !Method->getDefinition() ||
+        Target->getExceptionSpecType() != EST_BasicNoexcept ||
+        Target->getNoexceptExpr())
+      return nullptr;
+    for (const auto *Declaration : Method->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+      if (!Origin || Origin->Root != "libcxx" ||
+          Origin->Path != "__functional/hash.h" ||
+          !approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+        return nullptr;
+    }
+    return Target;
+  }
   const auto *Noexcept = Target && Target->getNoexceptExpr()
       ? dyn_cast<CXXNoexceptExpr>(Target->getNoexceptExpr()->IgnoreParenImpCasts())
       : nullptr;
@@ -3191,6 +3227,18 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
       !utilitySDKFunctionSource(A, Method, "__functional/operations.h"))
     return nullptr;
   return Target;
+}
+
+static bool functionalHashCallSource(Adapter &A, const CallExpr *Call) {
+  if (!isa_and_nonnull<CXXOperatorCallExpr>(Call))
+    return false;
+  const auto Operation =
+      approvedFunctionalOperation(A.S, A.Sources, Call, A.Context);
+  if (!Operation || Operation->Operation != FunctionalOperation::Hash)
+    return false;
+  const auto *Target = functionalObjectInvokeTargetSource(
+      A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()));
+  return Target && operationCalleePrototype(Call) == Target;
 }
 
 static bool functionalReferenceDirectInvokeSource(
@@ -3223,8 +3271,7 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
     return false;
   const FunctionProtoType *Target = nullptr;
   if (Invoke->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
-    if (Invoke->Operation &&
-        Invoke->Operation->Operation != FunctionalOperation::Hash)
+    if (Invoke->Operation)
       Target = functionalObjectInvokeTargetSource(A, Invoke->Method);
   } else if (Invoke->Kind == FunctionalReferenceInvokeKind::Function ||
              Invoke->Kind == FunctionalReferenceInvokeKind::FunctionPointer) {
@@ -3297,7 +3344,7 @@ static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
     return false;
   const auto Invoke =
       approvedFunctionalInvokeObjectOperation(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || Invoke->Operation.Operation == FunctionalOperation::Hash)
+  if (!Invoke)
     return false;
   const auto *Target = functionalObjectInvokeTargetSource(A, Invoke->Method);
   if (!Target)
@@ -10719,7 +10766,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (functionalReferenceAccessSource(A, Call) ||
             functionalReferenceInvokeSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
-            functionalObjectInvokeSource(A, Call))
+            functionalObjectInvokeSource(A, Call) ||
+            functionalHashCallSource(A, Call))
           if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);

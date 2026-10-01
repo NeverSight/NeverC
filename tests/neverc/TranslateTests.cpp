@@ -67827,6 +67827,275 @@ int target(int n)noexcept{return n;}
   }
 }
 
+TEST_F(TranslateTest, CoreV2DirectHashQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("direct-hash-queries.cpp");
+  const auto Output = tmpFile("direct-hash-queries.nc");
+  writeFile(Source, R"cpp(
+#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+int calls, defaults, live, destroyed;
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+using Hash = std::hash<int>;
+using Wrapper = std::reference_wrapper<Hash>;
+int mark(int n = (++defaults, 3)) noexcept { ++calls; return n; }
+int argument(Ticket ticket = Ticket()) noexcept { ++calls; return 5; }
+int potentially_throwing() { ++calls; return 6; }
+Hash &receiver(Hash &h, int n = (++defaults, 1)) noexcept { ++calls; return h; }
+Hash temporary_receiver(Ticket ticket = Ticket()) noexcept { ++calls; return Hash{}; }
+Wrapper &wrapper_receiver(Wrapper &w, int n = (++defaults, 1)) noexcept { ++calls; return w; }
+Wrapper temporary_wrapper(Hash &h, Ticket ticket = Ticket()) noexcept {
+  ++calls; return std::ref(h);
+}
+template<class T> bool family(T value, std::size_t expected) {
+  std::hash<T> hash;
+  auto wrapper = std::ref(hash);
+  const auto constant = std::cref(hash);
+  // Hash operators are defined in their explicit SDK class specializations.
+  // Materialize every wrapper/public adapter selected by the later queries.
+  if (hash(value) != expected || std::invoke(hash, value) != expected ||
+      wrapper(value) != expected || constant(value) != expected ||
+      std::invoke(wrapper, value) != expected ||
+      std::invoke(constant, value) != expected) return false;
+  static_assert(__is_same(decltype(hash(value)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, value)), std::size_t));
+  static_assert(__is_same(decltype(wrapper(value)), std::size_t));
+  static_assert(__is_same(decltype(constant(value)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, value)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant, value)), std::size_t));
+  static_assert(noexcept(hash(value)) && noexcept(std::invoke(hash, value)));
+  static_assert(noexcept(wrapper(value)) && noexcept(std::invoke(wrapper, value)));
+  static_assert(sizeof(hash(value)) == sizeof(std::size_t));
+  static_assert(alignof(decltype(std::invoke(wrapper, value))) == alignof(std::size_t));
+  return true;
+}
+int main() {
+  // Query-only direct calls consume an already defined SDK operator body.
+  static_assert(__is_same(decltype(Hash{}(mark())), std::size_t));
+  static_assert(noexcept(std::hash<std::nullptr_t>{}(nullptr)));
+  if (!family(true, 1) || !family(char(2), 2) ||
+      !family(static_cast<signed char>(-3), static_cast<std::size_t>(-3)) ||
+      !family(static_cast<unsigned char>(4), 4) || !family(char16_t(5), 5) ||
+      !family(char32_t(6), 6) ||
+      !family(short(-8), static_cast<std::size_t>(-8)) ||
+      !family(static_cast<unsigned short>(9), 9) ||
+      !family(-10, static_cast<std::size_t>(-10)) || !family(11u, 11) ||
+      !family(-12l, static_cast<std::size_t>(-12l)) || !family(13ul, 13) ||
+      !family(nullptr, 662607004)) return 1;
+  Hash hash;
+  const Hash constant = hash;
+  auto *pointer = &hash;
+  auto wrapper = std::ref(hash);
+  const auto constant_wrapper = wrapper;
+  auto *wrapper_pointer = &wrapper;
+  std::hash<unsigned char> narrow;
+  auto narrowed = std::ref(narrow);
+  if (std::invoke(hash, 1) != 1 || std::invoke(constant, 2) != 2 ||
+      std::invoke(Hash{}, 3) != 3 ||
+      std::invoke(static_cast<Hash &&>(hash), 4) != 4 ||
+      wrapper(1) != 1 || std::invoke(wrapper, 2) != 2 ||
+      std::invoke(constant_wrapper, 3) != 3 ||
+      std::invoke(std::ref(hash), 4) != 4 || std::invoke(std::cref(hash), 5) != 5 ||
+      std::invoke(narrow, 257) != 1 || narrowed(258) != 2 ||
+      std::invoke(narrowed, 259) != 3) return 2;
+  calls = defaults = live = destroyed = 0;
+  static_assert(__is_same(decltype(constant(mark())), std::size_t));
+  static_assert(__is_same(decltype((*pointer)(mark())), std::size_t));
+  static_assert(__is_same(decltype(Hash(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant, mark())), std::size_t));
+  static_assert(__is_same(decltype((std::invoke)(*pointer, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Hash{}, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Hash(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(static_cast<Hash &&>(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype((constant_wrapper)(mark())), std::size_t));
+  static_assert(__is_same(decltype((*wrapper_pointer)(mark())), std::size_t));
+  static_assert(__is_same(decltype(Wrapper(wrapper)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::ref(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::cref(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant_wrapper, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Wrapper(wrapper), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(std::ref(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(std::cref(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(narrow, 257)), std::size_t));
+  static_assert(__is_same(decltype(narrowed(258)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(narrowed, 259)), std::size_t));
+  static_assert(std::is_unsigned<decltype(hash(mark()))>::value);
+  static_assert(__is_integral(decltype(std::invoke(wrapper, mark()))));
+  static_assert(noexcept(hash(argument())) && noexcept(std::invoke(hash, argument())));
+  static_assert(noexcept(wrapper(argument())) && noexcept(std::invoke(wrapper, argument())));
+  static_assert(!noexcept(hash(potentially_throwing())));
+  static_assert(!noexcept(std::invoke(wrapper, potentially_throwing())));
+  static_assert(sizeof(receiver(hash)(mark())) == sizeof(std::size_t));
+  static_assert(sizeof(std::invoke(temporary_receiver(), mark())) == sizeof(std::size_t));
+  static_assert(sizeof(wrapper_receiver(wrapper)(argument())) == sizeof(std::size_t));
+  static_assert(sizeof(std::invoke(temporary_wrapper(hash), mark())) == sizeof(std::size_t));
+  static_assert(sizeof((++calls, hash)((++calls, mark()))) == sizeof(std::size_t));
+  using Result = decltype(std::invoke(hash, argument(Ticket())));
+  static_assert(__is_same(Result, std::size_t));
+  int extent[sizeof(std::invoke(wrapper, mark())) == sizeof(std::size_t) ? 2 : 1]{};
+  if (sizeof(extent) != 2 * sizeof(int) || calls || defaults || live || destroyed) return 3;
+  auto observed = std::invoke(receiver(hash), mark());
+  auto temporary = std::invoke(temporary_receiver(), mark());
+  auto wrapped = wrapper_receiver(wrapper)(argument());
+  auto outer = std::invoke(temporary_wrapper(hash), mark());
+  return observed == 3 && temporary == 3 && wrapped == 5 && outer == 3 &&
+         calls == 8 && defaults == 5 && live == 0 && destroyed == 3 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("direct-hash-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DirectHashQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"lazy-invoke", R"cpp(
+int f(H&h){static_assert(__is_same(decltype(std::invoke(h,1)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-wrapper", R"cpp(
+int f(W&w){static_assert(__is_same(decltype(w(1)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-outer-wrapper", R"cpp(
+int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1)),S));return 0;}
+)cpp", "TR0203"},
+      {"direct-call-does-not-supply-adapter", R"cpp(
+int f(H&h){auto n=h(1);static_assert(__is_same(decltype(std::invoke(h,1)),S));return n;}
+)cpp", "TR0203"},
+      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
+int f(W&w){auto n=w(1);static_assert(__is_same(decltype(std::invoke(w,1)),S));return n;}
+)cpp", "TR0203"},
+      {"different-argument-pack", R"cpp(
+int f(W&w){auto n=w(1);static_assert(__is_same(decltype(w(short(1))),S));return n;}
+)cpp", "TR0203"},
+      {"different-callable-category", R"cpp(
+int f(H&h,const H&c){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(c,1)),S));return n;}
+)cpp", "TR0203"},
+      {"unavailable-wide-character-hash", R"cpp(
+int f(){std::hash<wchar_t> h;auto n=h(wchar_t(1));static_assert(__is_same(decltype(h(wchar_t(1))),S));return n;}
+)cpp", "TR0202"},
+      {"wide-integer-hash", R"cpp(
+int f(){std::hash<long long> h;auto n=std::invoke(h,1ll);static_assert(__is_same(decltype(std::invoke(h,1ll)),S));return n;}
+)cpp", "TR0201"},
+      {"floating-hash", R"cpp(
+int f(){std::hash<double> h;auto w=std::ref(h);auto n=w(1.0);static_assert(__is_same(decltype(w(1.0)),S));return n;}
+)cpp", "TR0201"},
+      {"enum-hash", R"cpp(
+enum E{value=1};int f(){std::hash<E> h;auto n=std::invoke(h,value);static_assert(__is_same(decltype(std::invoke(h,value)),S));return n;}
+)cpp", "TR0201"},
+      {"pointer-hash", R"cpp(
+int f(int*p){std::hash<int*> h;auto w=std::ref(h);auto n=std::invoke(w,p);static_assert(__is_same(decltype(std::invoke(w,p)),S));return n;}
+)cpp", "TR0201"},
+      {"user-hash-specialization", R"cpp(
+struct A{int n;};namespace std{inline namespace __1{template<>struct hash<A>{S operator()(A a)const noexcept{return a.n;}};}}int f(){std::hash<A> h;auto n=h(A{1});static_assert(__is_same(decltype(h(A{1})),S));return n;}
+)cpp", "TR0201"},
+      {"hash-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(h,1)),S));return n;}
+)cpp", "TR0201"},
+      {"private-base-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class A,class R>struct __unary_function_keep_layout_base;}}int f(H&h){auto n=h(1);static_assert(__is_same(decltype(h(1)),S));return n;}
+)cpp", "TR0201"},
+      {"invoke-specialization", R"cpp(
+namespace std{inline namespace __1{template<>S invoke<H&,int>(H&h,int&&n)noexcept{return h(n);}}}int f(H&h){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(h,1)),S));return n;}
+)cpp", "TR0201"},
+      {"wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>template<>S reference_wrapper<H>::operator()<int>(int&&n)const noexcept{return static_cast<S>(n);}}}int f(W&w){auto n=w(1);static_assert(__is_same(decltype(w(1)),S));return n;}
+)cpp", "TR0201"},
+      {"inner-exception-variable-specialization", R"cpp(
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<H&,int> = true;}}int f(W&w){auto n=w(1);static_assert(__is_same(decltype(w(1)),S));return n;}
+)cpp", "TR0202"},
+      {"outer-exception-variable-specialization", R"cpp(
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<W&,int> = true;}}int f(W&w){auto n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),S));return n;}
+)cpp", "TR0202"},
+      {"independent-member-address", R"cpp(
+int f(H&h){static_assert(__is_same(decltype(h(1)),S));static_assert(sizeof(&H::operator())>0);return 0;}
+)cpp", "TR0201"},
+      {"independent-invoke-address", R"cpp(
+int f(H&h){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(h,1)),S));static_assert(sizeof(&std::invoke<H&,int>)>0);return n;}
+)cpp", "TR0201"},
+      {"indirect-member-call", R"cpp(
+int f(H&h){auto member=&H::operator();static_assert(__is_same(decltype((h.*member)(1)),S));return 0;}
+)cpp", "TR0201"},
+      {"erased-invoke-noexcept", R"cpp(
+using I=S(*)(H&,int&&);int f(H&h){auto n=std::invoke(h,1);static_assert(!noexcept(static_cast<I>(&std::invoke<H&,int>)(h,1)));return n;}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(
+int f(H&h){static_assert(__is_same(decltype((sizeof(long double),h)(1)),S));return 0;}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(
+int f(H&h){static_assert(__is_same(decltype(h((sizeof(long double),1))),S));return 0;}
+)cpp", "TR0201"},
+      {"receiver-initializer", R"cpp(
+int f(){H h=(sizeof(long double),H{});auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(h,1)),S));return n;}
+)cpp", "TR0201"},
+      {"wrapper-initializer", R"cpp(
+int f(H&h){auto w=std::ref((sizeof(long double),h));auto n=w(1);static_assert(__is_same(decltype(w(1)),S));return n;}
+)cpp", "TR0201"},
+      {"argument-initializer", R"cpp(
+int f(H&h){int n=(sizeof(long double),1);static_assert(__is_same(decltype(h(n)),S));return n;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+int arg(int n=sizeof(long double))noexcept{return n;}int f(H&h){static_assert(__is_same(decltype(h(arg())),S));return 0;}
+)cpp", "TR0201"},
+      {"receiver-original-exception", R"cpp(
+H&source(H&h)noexcept(sizeof(long double)>0);H&source(H&h)noexcept{return h;}int f(H&h){static_assert(__is_same(decltype(source(h)(1)),S));return 0;}
+)cpp", "TR0201"},
+      {"hash-written-template-argument", R"cpp(
+using T=std::hash<decltype((sizeof(long double),int{}))>;int f(T&h){static_assert(__is_same(decltype(h(1)),S));return 0;}
+)cpp", "TR0201"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(H&h){static_assert(__is_same(decltype(h(arg())),S));return 0;}
+)cpp", "TR0201"},
+      {"temporary-destructor-exception", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){auto n=w(1);static_assert(__is_same(decltype(w(arg())),S));return n;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(H&h){static_assert(__is_same(decltype(h(arg())),S));return 0;}
+)cpp", "TR0203"},
+      {"missing-receiver-definition", R"cpp(
+H&source(H&h)noexcept;int f(H&h){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(source(h),1)),S));return n;}
+)cpp", "TR0203"},
+      {"user-argument-conversion", R"cpp(
+struct A{operator int()const noexcept{return 1;}};int f(H&h){auto n=std::invoke(h,A{});static_assert(__is_same(decltype(std::invoke(h,A{})),S));return n;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("direct-hash-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("direct-hash-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using H=std::hash<int>;
+using W=std::reference_wrapper<H>;
+using S=std::size_t;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedObjectInvokeQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("wrapped-object-invoke-queries.cpp");
   const auto Output = tmpFile("wrapped-object-invoke-queries.nc");
@@ -68024,9 +68293,6 @@ namespace std{inline namespace __1{template<>struct is_nothrow_invocable<V&,int,
 )cpp", "TR0202"},
       {"private-empty-base-source", R"cpp(
 namespace std{inline namespace __1{template<>struct __binary_function_keep_layout_base<int,int,int>{~__binary_function_keep_layout_base()noexcept(sizeof(long double)>0)=default;};}}int f(W&w){int n=w(1,2);static_assert(__is_same(decltype(w(1,2)),int));return n;}
-)cpp", "TR0201"},
-      {"hash-source", R"cpp(
-int f(){std::hash<int> h;auto w=std::ref(h);auto n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),decltype(n)));return n;}
 )cpp", "TR0201"},
       {"owned-callable-source", R"cpp(
 struct C{int operator()(int n)noexcept{return n;}};int f(){C c;auto w=std::ref(c);int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
@@ -68257,9 +68523,6 @@ namespace std{inline namespace __1{template<>struct is_nothrow_invocable<G&,int,
 )cpp", "TR0202"},
       {"private-empty-base-source", R"cpp(
 namespace std{inline namespace __1{template<>struct __binary_function_keep_layout_base<int,int,int>{~__binary_function_keep_layout_base()noexcept(sizeof(long double)>0)=default;};}}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
-)cpp", "TR0201"},
-      {"hash-source", R"cpp(
-int f(){std::hash<int> h;auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(h,1)),decltype(n)));return n;}
 )cpp", "TR0201"},
       {"owned-callable-source", R"cpp(
 struct C{int operator()(int n)noexcept{return n;}};int f(){C c;int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(c,1)),int));return n;}

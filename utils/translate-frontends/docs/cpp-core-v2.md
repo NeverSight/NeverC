@@ -2284,8 +2284,28 @@ operator prototype. Original wrapper and referent initializers, expressions,
 written types, selected defaults and temporary lifetimes remain independent
 source roots and have no query-time effects. Lazy bodies, replaced SDK
 operators or adapters, source substitutions of either invocability variable,
-and independent adapter addresses remain rejected. Hash objects and
-source-owned callable objects retain their separate query-source requirements.
+and independent adapter addresses remain rejected. Source-owned callable
+objects retain their separate query-source requirements.
+
+Direct integral hashes from `bool` through `unsigned long`, plus the
+`nullptr_t` specialization, support result-source queries for direct calls,
+`std::invoke`, and direct or outer `invoke` calls through `reference_wrapper`.
+Their pinned operators return `size_t` using the authenticated integral
+conversion or fixed null hash constant. Original scalar argument conversions
+remain checked, including narrowing before the size conversion. Direct queries
+may consume an already defined explicit SDK operator; wrapper and public
+`invoke` adapters still require their exact materialized bodies, callable
+categories and argument packs. Each layer retains its own exception source,
+so the nonthrowing hash operation does not hide throwing argument evaluation.
+The empty carrier, unary typedef base and hash primary/forward declaration
+families are pinned separately. Stored, const, copied, dereferenced and temporary
+hash objects and wrappers use that same proof. Original expressions, written
+types, initializers, selected defaults and temporary cleanup remain independent
+source roots and execute no query effects. `long long`, `unsigned long long`,
+floating, enum and pointer hashes retain their separate query-source requirements;
+their existing evaluated calls continue to use the runtime hash contract above.
+The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
+its native C++ unavailability diagnostic.
 
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
