@@ -3143,31 +3143,35 @@ static bool functionalReferenceAccessSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
-static const CallExpr *functionalReturnedCall(const FunctionDecl *Function) {
+static const Expr *functionalReturnedExpression(const FunctionDecl *Function) {
   const auto *Body = Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody())
                               : nullptr;
   const auto *Return = Body && Body->size() == 1
                            ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
   return Return && Return->getRetValue()
-             ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+             ? Return->getRetValue()->IgnoreParenImpCasts()
              : nullptr;
+}
+
+static const CallExpr *functionalReturnedCall(const FunctionDecl *Function) {
+  return dyn_cast_or_null<CallExpr>(functionalReturnedExpression(Function));
 }
 
 static bool functionalInvocabilitySource(
     Adapter &A, const CallExpr *Call, QualType Callable,
-    const TemplateArgument &Arguments, const FunctionProtoType *Target) {
+    const TemplateArgument &Arguments, bool TargetIsNothrow) {
   const auto *Function = Call->getDirectCallee();
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
-  if (!Prototype || !Target || operationCalleePrototype(Call) != Prototype ||
+  if (!Prototype || operationCalleePrototype(Call) != Prototype ||
       (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
        Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
-      Prototype->isNothrow() != Target->isNothrow() ||
+      Prototype->isNothrow() != TargetIsNothrow ||
       Arguments.getKind() != TemplateArgument::Pack)
     return false;
 
   // The SDK's conditional exception specification must refer to its exact
   // invocability variable, with the same callable and deduced argument pack.
-  // Its resolved value also agrees with the admitted fixed-arity target above;
+  // Its resolved value also agrees with the admitted call or field projection;
   // caller-side conversions, defaults and cleanup still retain their sources.
   const auto *Noexcept = Prototype->getNoexceptExpr();
   const auto *Reference =
@@ -3208,6 +3212,13 @@ static bool functionalInvocabilitySource(
     if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
       return false;
   return true;
+}
+
+static bool functionalInvocabilitySource(
+    Adapter &A, const CallExpr *Call, QualType Callable,
+    const TemplateArgument &Arguments, const FunctionProtoType *Target) {
+  return Target && functionalInvocabilitySource(
+                       A, Call, Callable, Arguments, Target->isNothrow());
 }
 
 static const FunctionProtoType *functionalObjectInvokeTargetSource(
@@ -3484,7 +3495,7 @@ static const CXXMethodDecl *functionalUserInvokeSource(Adapter &A,
   return Invoke->Method;
 }
 
-static const CXXMethodDecl *functionalMemberFunctionInvokeSource(
+static const ValueDecl *functionalMemberInvokeSource(
     Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke" ||
@@ -3492,31 +3503,39 @@ static const CXXMethodDecl *functionalMemberFunctionInvokeSource(
     return nullptr;
   const auto Invoke =
       approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || !Invoke->Method || Invoke->ErasedFactory || Invoke->ErasedAdapter)
+  if (!Invoke || (!Invoke->Method && !Invoke->Field) || Invoke->ErasedFactory ||
+      Invoke->ErasedAdapter)
     return nullptr;
-  const auto *Target = Invoke->Method->getType()->getAs<FunctionProtoType>();
+  const ValueDecl *Source = Invoke->Method
+      ? static_cast<const ValueDecl *>(Invoke->Method) : Invoke->Field;
+  const auto *Target = Invoke->Method
+      ? Invoke->Method->getType()->getAs<FunctionProtoType>() : nullptr;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
   const auto *Dispatch = functionalReturnedCall(Function);
-  const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(
-      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr);
-  const auto *Member =
-      Inner ? dyn_cast<BinaryOperator>(Inner->getCallee()->IgnoreParens()) : nullptr;
+  const auto *Returned = Dispatch
+      ? functionalReturnedExpression(Dispatch->getDirectCallee()) : nullptr;
+  const auto *Inner = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
+  const auto *Member = dyn_cast_or_null<BinaryOperator>(
+      Invoke->Method ? (Inner ? Inner->getCallee()->IgnoreParens() : nullptr)
+                     : Returned);
+  const Expr *Result = Invoke->Method ? static_cast<const Expr *>(Inner) : Member;
   const auto *Pointer =
       Member ? Member->getRHS()->getType()->getAs<MemberPointerType>() : nullptr;
   // The runtime descriptor resolves the exact original member address/carrier
   // and proves the receiver and argument flow. Authenticate the materialized
   // public/internal adapters, including their actual member-pointer signature.
-  if (!Target || !Arguments || Arguments->size() != 2 ||
+  if ((Invoke->Method && !Target) || !Arguments || Arguments->size() != 2 ||
       Arguments->get(0).getKind() != TemplateArgument::Type || !Member ||
       Member->getOpcode() != BO_PtrMemD || !Pointer ||
-      !A.Context.hasSameType(Pointer->getPointeeType(), Invoke->Method->getType()) ||
-      Inner->getValueKind() != Call->getValueKind() ||
-      !A.Context.hasSameType(Inner->getType(), Call->getType()) ||
+      !A.Context.hasSameType(Pointer->getPointeeType(), Source->getType()) ||
+      Result->getValueKind() != Call->getValueKind() ||
+      !A.Context.hasSameType(Result->getType(), Call->getType()) ||
       !utilitySDKFunctionSource(A, Function, "__functional/invoke.h") ||
       !utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
                                "__type_traits/invoke.h") ||
       !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                     Arguments->get(1), Target))
+                                     Arguments->get(1),
+                                     Target ? Target->isNothrow() : true))
     return nullptr;
   if (Invoke->ObjectWrapper) {
     // Wrapped receivers use the descriptor's exact get() edge. Pin its source
@@ -3533,9 +3552,10 @@ static const CXXMethodDecl *functionalMemberFunctionInvokeSource(
         !utilitySDKFunctionSource(A, Get, "__functional/reference_wrapper.h"))
       return nullptr;
   }
-  // A pinned SDK dispatch is not the selected source method's definition.
-  // Retain that original signature, exception expression and completed body.
-  return Invoke->Method;
+  // A pinned SDK dispatch does not supply the selected member's source.
+  // Methods retain their original signature, exception expression and body;
+  // fields retain their written type and owning record layout.
+  return Source;
 }
 
 static bool utilityUniquePtrElementConstructionSource(
@@ -8045,7 +8065,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
   std::map<const Expr *, const CallExpr *> AuthenticatedUtilityReferences;
-  std::map<const CallExpr *, const CXXMethodDecl *> AuthenticatedUserInvokeSources;
+  std::map<const CallExpr *, const ValueDecl *> AuthenticatedUserInvokeSources;
   std::map<const DeclRefExpr *, const CallExpr *>
       AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
@@ -10949,13 +10969,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                     A.chargeExpansion(1, Call->getExprLoc());
             }
           }
-        const CXXMethodDecl *UserInvoke = nullptr;
+        const CXXMethodDecl *UserMethod = nullptr;
         const bool ReferenceInvoke =
-            functionalReferenceInvokeSource(A, Call, UserInvoke);
+            functionalReferenceInvokeSource(A, Call, UserMethod);
+        const ValueDecl *UserInvoke = UserMethod;
         if (!ReferenceInvoke) {
           UserInvoke = functionalUserInvokeSource(A, Call);
           if (!UserInvoke)
-            UserInvoke = functionalMemberFunctionInvokeSource(A, Call);
+            UserInvoke = functionalMemberInvokeSource(A, Call);
         }
         if (ReferenceInvoke || UserInvoke ||
             functionalReferenceAccessSource(A, Call) ||
@@ -10976,7 +10997,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   A.chargeExpansion(1, Call->getExprLoc());
                 else if (Source->second != UserInvoke)
                   A.reject(Call->getExprLoc(), "invoke target source",
-                           "An exact invocation requires one selected source method.");
+                           "An exact invocation requires one selected source declaration.");
               }
               if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
                 if (const auto *Cast = dyn_cast<ImplicitCastExpr>(
@@ -11129,14 +11150,22 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           return;
         // Only this exact SDK utility call supplies its signature and resolved
         // exception metadata. A user invocation retains its selected source
-        // method's signature, exception source and completed definition.
+        // member's original type and required layout or completed definition.
         if (AuthenticatedUtilityCall &&
             Function == AuthenticatedUtilityCall->getDirectCallee()) {
           const auto Source =
               AuthenticatedUserInvokeSources.find(AuthenticatedUtilityCall);
           if (Source == AuthenticatedUserInvokeSources.end())
             return;
-          Function = Source->second;
+          if (const auto *Field = dyn_cast<FieldDecl>(Source->second)) {
+            operationTypeDependency(Field->getTypeSourceInfo());
+            // Pointer and reference_wrapper receivers do not themselves
+            // consume the referent layout. The field projection does.
+            collectOperationTypeSource(A.Context.getRecordType(Field->getParent()),
+                                       Field->getLocation(), true);
+            return;
+          }
+          Function = cast<CXXMethodDecl>(Source->second);
           for (auto *Dependencies : ActiveOperationSources)
             if (Dependencies->Definitions.insert(Function).second)
               A.chargeExpansion(1, Function->getLocation());

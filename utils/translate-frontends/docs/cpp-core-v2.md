@@ -2541,7 +2541,23 @@ and receiver category and argument pack needs its own materialized adapter;
 a native member call does not supply a missing `std::invoke` body. Caller
 expressions, written types and carrier initializers remain independently checked.
 Lazy adapters, indirect public adapter calls, source SDK replacements and
-unresolved or reassigned member pointers remain rejected. Data-member and
+unresolved or reassigned member pointers remain rejected.
+
+Materialized `std::invoke` adapters for admitted source-owned data fields also
+support these result queries, including direct named addresses and exact local
+member-pointer copy chains. Scalar, object-pointer and function-pointer fields
+retain lvalue/rvalue reference results and the const qualification contributed
+by the field and receiver. Object, pointer and `reference_wrapper` receivers
+use their exact runtime forwarding rules. The public adapter, internal field
+projection, invocability variable and any wrapper `get()` require pinned SDK
+sources; their member-pointer type and projected result must agree with the
+selected original field. The field's written type and owning record layout
+remain independent dependencies, including through pointer or wrapped
+receivers. Field projection itself is nonthrowing; receiver expressions,
+selected defaults and temporary cleanup retain their own exception sources
+and remain unevaluated in queries. Each callable/receiver category still needs
+its own materialized adapter. Volatile and mutable fields, unresolved member
+pointers, SDK replacements and independent adapter addresses remain rejected.
 `mem_fn` result queries retain their separate source requirements.
 
 An exact `std::mem_fn` wrapper built from either admitted direct named address
