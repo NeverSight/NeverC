@@ -3595,8 +3595,14 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
     return std::nullopt;
   const auto Invoke =
       approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || !Invoke->ErasedFactory || Invoke->ErasedAdapter)
+  if (!Invoke || !Invoke->ErasedFactory)
     return std::nullopt;
+  if (const auto *Adapter = Invoke->ErasedAdapter) {
+    const auto Operation =
+        approvedUtilityOperation(A.S, A.Sources, Adapter, A.Context);
+    if (!Operation || !utilitySDKValueAdapterSource(A, Adapter, *Operation))
+      return std::nullopt;
+  }
   const auto *Factory = Invoke->ErasedFactory;
   const auto *Function = Factory->getDirectCallee();
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
@@ -3666,20 +3672,22 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
     return std::nullopt;
   FunctionalMemFnSource Result{Member, CallableSource, {}};
   // Retain only the exact side-effect-free carrier chain. Each local has a
-  // deduced auto type; written wrapper types and call-site adapters keep their
-  // separate query boundary. The original member expression remains a source.
+  // deduced auto type; written wrapper types and adapted initializers keep their
+  // separate query boundary. Only the descriptor's exact call-site adapter may
+  // be erased after its SDK source check. Retain the original member expression.
   auto Retain = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
     if (!E || Depth >= 64)
       return false;
     A.chargeExpansion(1, E->getExprLoc());
     Result.Carriers.push_back(E);
-    if (E == Factory) {
-      const auto *Leaf = directFunctionReference(Factory);
-      const Expr *Callee = Factory->getCallee();
+    if (E == Factory || E == Invoke->ErasedAdapter) {
+      const auto *Carrier = cast<CallExpr>(E);
+      const auto *Leaf = directFunctionReference(Carrier);
+      const Expr *Callee = Carrier->getCallee();
       while (Callee) {
         Result.Carriers.push_back(Callee);
         if (Callee == Leaf)
-          return true;
+          return E == Factory || Self(Self, Carrier->getArg(0), Depth + 1);
         if (const auto *P = dyn_cast<ParenExpr>(Callee))
           Callee = P->getSubExpr();
         else if (const auto *C = dyn_cast<ImplicitCastExpr>(Callee))
@@ -3715,8 +3723,39 @@ functionalMemFnSource(Adapter &A, const CallExpr *Call) {
            Stored && Stored->Factory == Factory &&
            Self(Self, Stored->Initializer, Depth + 1);
   };
-  return Retain(Retain, Call->getArg(0), 0)
-      ? std::optional<FunctionalMemFnSource>(std::move(Result)) : std::nullopt;
+  if (!Retain(Retain, Call->getArg(0), 0))
+    return std::nullopt;
+  if (const auto *Adapter = Invoke->ErasedAdapter) {
+    const auto *Reference =
+        cast<DeclRefExpr>(directFunctionReference(Adapter));
+    for (const auto &Argument : Reference->template_arguments()) {
+      const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
+          ? Argument.getTypeSourceInfo() : nullptr;
+      TypeLoc Location = Info ? Info->getTypeLoc() : TypeLoc();
+      const Expr *Source = nullptr;
+      for (unsigned Depth = 0; Location && Depth < 64; ++Depth) {
+        Location = Location.getUnqualifiedLoc();
+        A.chargeExpansion(1, Location.getBeginLoc());
+        if (const auto Ref = Location.getAs<ReferenceTypeLoc>())
+          Location = Ref.getPointeeLoc();
+        else if (const auto Paren = Location.getAs<ParenTypeLoc>())
+          Location = Paren.getInnerLoc();
+        else {
+          if (const auto Deduced = Location.getAs<DecltypeTypeLoc>())
+            Source = Deduced.getUnderlyingExpr();
+          break;
+        }
+      }
+      // An explicit decltype(wrapper) has its own reference expression. Keep
+      // its normal TypeLoc/expression traversal, but retain the same proven
+      // auto carrier instead of its deliberately untraversed auto TypeLoc.
+      // Aliases, compound expressions and other factories gain no such proof.
+      if (!Source || !isa<DeclRefExpr>(Source->IgnoreParens()) ||
+          !Retain(Retain, Source, 0))
+        return std::nullopt;
+    }
+  }
+  return Result;
 }
 
 static bool utilityUniquePtrElementConstructionSource(

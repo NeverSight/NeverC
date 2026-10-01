@@ -2593,9 +2593,26 @@ signatures, field types and owner layouts still close independently. Queries pre
 and reference categories, scalar conversions, record values and `void`, without
 executing receiver, argument, selected-default or temporary-lifetime effects.
 Missing operator bodies, replacement SDK declarations and unresolved member
-sources remain rejected. Result queries through call-site value adapters,
-adapter-based copy/move chains or explicitly written
-wrapper types retain separate source requirements.
+sources remain rejected.
+
+A single `std::move`, `std::forward`, `std::move_if_noexcept` or `std::as_const`
+adapter at the final direct call or outer `std::invoke` use also supplies these
+result queries. It requires the exact runtime-proven wrapper chain and pinned
+adapter declaration family, reference category, unchanged underlying object type and
+nonthrowing signature. An authenticated compiler reference-cast builtin may
+supply this proof without a concrete SDK body; other adapters require their
+completed, exact return flow. The proof belongs to that invocation's adapter
+and callee expressions; independent adapter addresses or result-type queries
+gain no admission. An explicit adapter type argument may spell `decltype` of a
+wrapper in the same authenticated `auto` initializer chain, with optional
+cv/reference qualification and parentheses. Its own TypeLoc and expression
+still complete through normal traversal while retaining the original member
+source. Other aliases, compound expressions and independently initialized
+wrappers gain no type-source exemption. Written template arguments, the
+original selected member and receiver/argument/default/temporary sources
+remain independently checked.
+Nested call-site adapters, adapter-based copy/move initializer chains and
+explicitly written wrapper types retain separate source requirements.
 
 Other cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
