@@ -42603,10 +42603,6 @@ struct Element{int value;};using W=std::reference_wrapper<Element>;using T=std::
 struct Element{int value;};namespace std{inline namespace __1{template<>class reference_wrapper<Element>{public:Element*__f_;explicit reference_wrapper(Element&e)noexcept:__f_(&e){}Element&get()const noexcept{return *__f_;}};}}using T=std::tuple<std::reference_wrapper<Element>,int>;int f(T&t){static_assert(__is_same(decltype(Reexport::as_const(t)),const T&));return 0;}
 )cpp",
        "TR0201"},
-      {"reference-factory-source-stays-independent", R"cpp(
-struct Element{int value;};using W=std::reference_wrapper<Element>;using T=std::tuple<W,int>;int f(Element&e){T tuple(std::ref(e),1);static_assert(__is_same(decltype(Reexport::as_const(tuple)),const T&));return 0;}
-)cpp",
-       "TR0201"},
       {"long-double-element", R"cpp(
 using P=std::pair<long double,int>;int f(P&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const P&));return 0;}
 )cpp",
@@ -65925,6 +65921,311 @@ int main() {
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceFactoryQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("reference-factory-queries.cpp");
+  const auto Output = tmpFile("reference-factory-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Box { int value; int extent[2]; };
+int calls, defaults, live, destroyed;
+struct Owner {
+  int value;
+  explicit Owner(int n) noexcept : value(n) { ++live; }
+  ~Owner() noexcept { --live; ++destroyed; }
+};
+int &source(int &value, int n = (++defaults, 1)) noexcept { ++calls; return value; }
+int mark(int n = (++defaults, 2)) noexcept { ++calls; return n; }
+int &with_temporary(int &value, Owner ticket = Owner(mark())) noexcept {
+  ++calls; return value;
+}
+int function(int n) { return n + 1; }
+int nonthrowing(int n) noexcept { return n + 2; }
+template <class T> bool queries(T &value, const T &constant) {
+  using W = std::reference_wrapper<T>;
+  using CW = std::reference_wrapper<const T>;
+  static_assert(__is_same(decltype(std::ref(value)), W));
+  static_assert(__is_same(decltype((std::cref)(value)), CW));
+  static_assert(__is_same(decltype(std::ref(constant)), CW));
+  static_assert(__is_same(decltype(std::cref(constant)), CW));
+  static_assert(__is_same(decltype(std::ref<T>(value)), W));
+  static_assert(__is_same(decltype(std::cref<T>(value)), CW));
+  static_assert(__is_same(decltype(std::ref<const T>(value)), CW));
+  static_assert(__is_class(decltype(std::ref(value))));
+  static_assert(__is_trivially_copyable(decltype(std::cref(value))));
+  static_assert(sizeof(std::ref((++calls, value))) == sizeof(W));
+  static_assert(alignof(decltype(std::cref(value))) == alignof(CW));
+  static_assert(noexcept(std::ref(value)) && noexcept(std::cref(value)));
+  W wrapper(value);
+  CW constant_wrapper(constant);
+  const W stored_const(value);
+  static_assert(__is_same(decltype(std::ref(wrapper)), W));
+  static_assert(__is_same(decltype(std::cref(wrapper)), CW));
+  static_assert(__is_same(decltype(std::ref(stored_const)), W));
+  static_assert(__is_same(decltype(std::cref(constant_wrapper)), CW));
+  static_assert(__is_same(decltype(std::ref<T>(wrapper)), W));
+  static_assert(__is_same(decltype(std::cref<T>(wrapper)), CW));
+  static_assert(__is_same(decltype(std::ref(std::ref(value))), W));
+  static_assert(__is_same(decltype(std::cref(std::ref(value))), CW));
+  static_assert(__is_same(decltype(std::ref(std::cref(value))), CW));
+  static_assert(__is_same(decltype(std::cref(std::cref(value))), CW));
+  static_assert(sizeof(std::ref(wrapper)) == sizeof(W));
+  static_assert(noexcept(std::cref(std::ref(value))));
+  auto result = std::ref(wrapper);
+  auto view = std::cref(wrapper);
+  return &result.get() == &value && &view.get() == &value &&
+         &std::ref(constant_wrapper).get() == &constant;
+}
+int query_only(unsigned short &value, std::reference_wrapper<unsigned short> &wrapper) {
+  using W = std::reference_wrapper<unsigned short>;
+  using CW = std::reference_wrapper<const unsigned short>;
+  static_assert(__is_same(decltype(std::ref(value)), W));
+  static_assert(__is_same(decltype(std::cref(value)), CW));
+  static_assert(__is_same(decltype(std::ref(wrapper)), W));
+  static_assert(__is_same(decltype(std::cref(wrapper)), CW));
+  static_assert(noexcept(std::ref(wrapper)) && noexcept(std::cref(value)));
+  return 0;
+}
+bool function_queries() {
+  using F = int(int);
+  using NF = int(int) noexcept;
+  using W = std::reference_wrapper<F>;
+  using NW = std::reference_wrapper<NF>;
+  static_assert(__is_same(decltype(std::ref(function)), W));
+  static_assert(__is_same(decltype(std::cref(function)), W));
+  static_assert(__is_same(decltype(std::ref(nonthrowing)), NW));
+  static_assert(__is_same(decltype(std::cref(nonthrowing)), NW));
+  static_assert(__is_same(decltype(std::cref(std::ref(function))), W));
+  static_assert(__is_same(decltype(std::ref(std::cref(nonthrowing))), NW));
+  static_assert(noexcept(std::ref(function)) && noexcept(std::cref(nonthrowing)));
+  static_assert(sizeof(std::ref(function)) == sizeof(W));
+  return std::ref(function).get()(1) == 2 &&
+         std::cref(nonthrowing).get()(1) == 3;
+}
+int main() {
+  int value = 3, other = 4;
+  const int constant = 5;
+  double real = 6.5;
+  int *pointer = &value;
+  using Fn = int (*)(int);
+  using NF = int (*)(int) noexcept;
+  Fn fn = function;
+  NF nf = nonthrowing;
+  int array[2] = {7, 8};
+  Box box{9, {10, 11}};
+  Owner owner(12);
+  std::array<int, 2> row{{13, 14}};
+  std::pair<int, double> pair(15, 16.5);
+  std::tuple<int, double> tuple(17, 18.5);
+  unsigned short only = 19;
+  std::reference_wrapper<unsigned short> only_wrapper(only);
+  if (!queries(value, constant) || !queries(real, real) || !queries(pointer, pointer) ||
+      !queries(fn, fn) || !queries(nf, nf) || !function_queries() ||
+      !queries(array, array) ||
+      !queries(box, box) || !queries(owner, owner) || !queries(row, row) ||
+      !queries(pair, pair) || !queries(tuple, tuple) || query_only(only, only_wrapper) ||
+      calls || defaults || live != 1 || destroyed)
+    return 1;
+  using W = std::reference_wrapper<int>;
+  using CW = std::reference_wrapper<const int>;
+  using Pair = std::pair<W, CW>;
+  using Tuple = std::tuple<W, CW>;
+  Pair refs(std::ref(value), std::cref(constant));
+  Tuple views(std::ref(value), std::cref(constant));
+  static_assert(__is_same(decltype(std::as_const(refs)), const Pair &));
+  static_assert(__is_same(decltype(std::as_const(views)), const Tuple &));
+  static_assert(__is_same(decltype(std::get<0>(std::as_const(views))), const W &));
+  static_assert(__is_same(decltype(std::ref(source(value))), W));
+  static_assert(sizeof(std::cref(with_temporary(value))) == sizeof(CW));
+  static_assert(noexcept(std::ref(with_temporary(value, Owner(mark())))));
+  if (calls || defaults || live != 1 || destroyed) return 2;
+  auto selected = std::ref(source(value));
+  auto temporary_view = std::cref(with_temporary(value));
+  selected.get() = 20;
+  std::get<0>(views).get() = 21;
+  auto copied = std::ref(selected);
+  auto constant_copy = std::cref(selected);
+  selected = W(other);
+  auto temporary_copy = std::ref(std::ref(value));
+  auto temporary_constant_copy = std::cref(std::ref(value));
+  auto owner_view = std::cref(std::ref(owner));
+  return &copied.get() == &value && &constant_copy.get() == &value &&
+                 &temporary_view.get() == &value && temporary_view.get() == 21 &&
+                 &temporary_copy.get() == &value && &temporary_constant_copy.get() == &value &&
+                 &owner_view.get() == &owner && owner_view.get().value == 12 &&
+                 &selected.get() == &other && value == 21 &&
+                 refs.first.get() == 21 && refs.second.get() == 5 &&
+                 calls == 3 && defaults == 2 && live == 1 && destroyed == 1 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("reference-factory-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceFactoryQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"ref-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<T>ref(T&)noexcept;}}int f(int&v){static_assert(__is_same(decltype(std::ref(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<const T>cref(const T&)noexcept;}}int f(int&v){static_assert(__is_same(decltype(std::cref(v)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"ref-wrapper-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<T>ref(reference_wrapper<T>)noexcept;}}int f(W&w){static_assert(__is_same(decltype(std::ref(w)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-wrapper-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>reference_wrapper<const T>cref(reference_wrapper<T>)noexcept;}}int f(W&w){static_assert(__is_same(decltype(std::cref(w)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"ref-source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<int>ref<int>(int&v)noexcept{return reference_wrapper<int>(v);}}}int f(int&v){static_assert(__is_same(decltype(std::ref(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<const int>cref<int>(const int&v)noexcept{return reference_wrapper<const int>(v);}}}int f(int&v){static_assert(__is_same(decltype(std::cref(v)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"ref-wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<int>ref<int>(reference_wrapper<int>w)noexcept{return w;}}}int f(W&w){static_assert(__is_same(decltype(std::ref(w)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"cref-wrapper-specialization", R"cpp(
+namespace std{inline namespace __1{template<>reference_wrapper<const int>cref<int>(reference_wrapper<int>w)noexcept{return w;}}}int f(W&w){static_assert(__is_same(decltype(std::cref(w)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-ref-address", R"cpp(
+using F=W(*)(int&)noexcept;int f(int&v){static_assert(__is_same(decltype(std::ref(v)),W));static_assert(sizeof(static_cast<F>(&std::ref<int>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-cref-address", R"cpp(
+using F=CW(*)(const int&)noexcept;int f(int&v){static_assert(__is_same(decltype(std::cref(v)),CW));static_assert(sizeof(static_cast<F>(&std::cref<int>))>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=W(*)(int&)noexcept;int f(int&v){static_assert(__is_same(decltype(static_cast<F>(&std::ref<int>)(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=CW(*)(const int&);int f(int&v){static_assert(__is_same(decltype(std::cref(v)),CW));static_assert(!noexcept(static_cast<F>(&std::cref<int>)(v)));return 0;}
+)cpp",
+       "TR0201"},
+      {"operand-expression", R"cpp(
+int f(int&v){static_assert(__is_same(decltype(std::ref((sizeof(long double),v))),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+int&source(int&v,int n=sizeof(long double))noexcept{return v;}int f(int&v){static_assert(sizeof(std::cref(source(v)))==sizeof(CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-exception", R"cpp(
+int&source(int&v)noexcept(sizeof(long double)>0);int&source(int&v)noexcept{return v;}int f(int&v){static_assert(noexcept(std::ref(source(v))));return 0;}
+)cpp",
+       "TR0201"},
+      {"original-signature", R"cpp(
+int&source(int&v,long double n=0)noexcept{return v;}int f(int&v){static_assert(__is_same(decltype(std::cref(source(v))),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-template-argument", R"cpp(
+int f(int&v){static_assert(__is_same(decltype(std::ref<decltype(static_cast<int>(sizeof(long double)))>(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"written-const-template-argument", R"cpp(
+using Written=decltype((sizeof(long double),*static_cast<const int*>(nullptr)));using Value=typename std::remove_reference<Written>::type;int f(int&v){static_assert(__is_same(decltype(std::cref<Value>(v)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"erased-template-argument", R"cpp(
+int object;template<auto V>using Erased=int;int f(int&v){static_assert(__is_same(decltype(std::ref<Erased<&object>>(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"array-original-bound", R"cpp(
+using Original=int[(sizeof(long double),2)];int f(Original&v){static_assert(__is_same(decltype(std::ref(v)),std::reference_wrapper<Original>));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointer-original-array-bound", R"cpp(
+using Original=int[(sizeof(long double),2)];int f(Original*&v){static_assert(__is_same(decltype(std::cref(v)),std::reference_wrapper<Original*const>));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-original-referent-extent", R"cpp(
+struct Element{int value[(sizeof(long double),2)];};int f(std::reference_wrapper<Element>&w){static_assert(__is_same(decltype(std::ref(w)),std::reference_wrapper<Element>));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-operand-expression", R"cpp(
+int f(W&w){static_assert(__is_same(decltype(std::cref((sizeof(long double),w))),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-selected-default", R"cpp(
+W source(int&v,int n=sizeof(long double))noexcept{return W(v);}int f(int&v){static_assert(__is_same(decltype(std::ref(source(v))),W));return 0;}
+)cpp",
+       "TR0201"},
+      {"wrapper-original-initializer", R"cpp(
+int&source(int&v,int n=sizeof(long double))noexcept{return v;}int f(int&v){W wrapper(source(v));static_assert(__is_same(decltype(std::cref(wrapper)),CW));return 0;}
+)cpp",
+       "TR0201"},
+      {"long-double-referent", R"cpp(
+int f(long double&v){static_assert(__is_same(decltype(std::ref(v)),std::reference_wrapper<long double>));return 0;}
+)cpp",
+       "TR0201"},
+      {"variadic-function", R"cpp(
+int fn(int,...);int f(){static_assert(__is_same(decltype(std::ref(fn)),std::reference_wrapper<int(int,...)>));return 0;}
+)cpp",
+       "TR0201"},
+      {"source-wrapper-specialization", R"cpp(
+struct Element{int value;};namespace std{inline namespace __1{template<>class reference_wrapper<Element>{public:Element*__f_;explicit reference_wrapper(Element&e)noexcept:__f_(&e){}Element&get()const noexcept{return *__f_;}};}}int f(Element&e){static_assert(__is_same(decltype(std::ref(e)),std::reference_wrapper<Element>));return 0;}
+)cpp",
+       "TR0201"},
+      {"volatile-referent", R"cpp(
+int f(volatile int&v){static_assert(__is_same(decltype(std::ref(v)),std::reference_wrapper<volatile int>));return 0;}
+)cpp",
+       "TR0201"},
+      {"deleted-ref-rvalue", R"cpp(
+int f(){static_assert(noexcept(std::ref(1)));return 0;}
+)cpp",
+       "TR0202"},
+      {"deleted-cref-rvalue", R"cpp(
+int f(){static_assert(noexcept(std::cref(1)));return 0;}
+)cpp",
+       "TR0202"},
+      {"ref-name-import-stays-independent", R"cpp(
+using std::ref;int f(int&v){static_assert(__is_same(decltype(ref(v)),W));return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("reference-factory-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("reference-factory-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using W=std::reference_wrapper<int>;using CW=std::reference_wrapper<const int>;
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
   }
 }
 

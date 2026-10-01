@@ -8721,14 +8721,13 @@ approvedFunctionalReferenceFactoryCall(
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent() || !Call->isPRValue() || !Function ||
       !Primary || !Pattern || !Reference || !Result || (!Ref && !Cref) ||
-      Function->isVariadic() || !Function->isInlined() ||
-      !Function->hasBody() || !Pattern->hasBody() ||
+      Function->isVariadic() || !Function->isInlined() || !Pattern->hasBody() ||
       Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       !Function->getType()->getAs<FunctionProtoType>() ||
       !Function->getType()->getAs<FunctionProtoType>()->isNothrow() ||
       !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
-      !Context.hasSameUnqualifiedType(
-          Call->getType(), Context.getRecordType(Result->Record)) ||
+      !Context.hasSameUnqualifiedType(Call->getType(),
+                                      Context.getRecordType(Result->Record)) ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !approvedStandardSDKDeclaration(S, SM, Pattern) ||
@@ -8741,6 +8740,25 @@ approvedFunctionalReferenceFactoryCall(
     return std::nullopt;
   const auto Parameter = Function->getParamDecl(0)->getType();
   const auto Argument = Call->getArg(0)->getType();
+  // Pure result queries can select a specialization without instantiating its
+  // body. The pinned pattern constructs the exact wrapper from its unchanged
+  // parameter, or returns that parameter for the wrapper-taking overloads.
+  // Keep selected argument/result types separate from this lazy body proof.
+  const auto *PatternBody = dyn_cast<CompoundStmt>(Pattern->getBody());
+  const auto *PatternReturn =
+      PatternBody && PatternBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*PatternBody->body_begin())
+          : nullptr;
+  const auto *PatternValue =
+      PatternReturn && PatternReturn->getRetValue()
+          ? PatternReturn->getRetValue()->IgnoreParenImpCasts()
+          : nullptr;
+  auto UnchangedPatternParameter = [&](const Expr *Value) {
+    const auto *Reference =
+        Value ? dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+    return Pattern->getNumParams() == 1 && Reference &&
+           Reference->getDecl() == Pattern->getParamDecl(0);
+  };
   if (Parameter->isLValueReferenceType()) {
     const auto Pointee = Parameter->getPointeeType();
     const auto Expected = Cref && Pointee->isObjectType()
@@ -8750,6 +8768,15 @@ approvedFunctionalReferenceFactoryCall(
         !Context.hasSameUnqualifiedType(Argument, Pointee) ||
         !Context.hasSameType(Result->ReferentType, Expected))
       return std::nullopt;
+    if (!Function->hasBody()) {
+      const auto *Construction =
+          dyn_cast_or_null<CXXUnresolvedConstructExpr>(PatternValue);
+      if (!Construction || Construction->getNumArgs() != 1 ||
+          !Context.hasSameType(Construction->getTypeAsWritten(),
+                               Pattern->getReturnType()) ||
+          !UnchangedPatternParameter(Construction->getArg(0)))
+        return std::nullopt;
+    }
     return FunctionalReferenceFactoryCall{*Result, std::nullopt, Cref};
   }
 
@@ -8758,6 +8785,16 @@ approvedFunctionalReferenceFactoryCall(
   auto Expected = Source ? Source->ReferentType : QualType();
   if (!Expected.isNull() && Cref && Expected->isObjectType())
     Expected = Expected.withConst();
+  if (!Function->hasBody()) {
+    if (!Source || Expected.isNull() ||
+        !Context.hasSameType(Parameter,
+                             Context.getRecordType(Source->Record)) ||
+        !Context.hasSameType(Argument, Parameter) ||
+        !Context.hasSameType(Result->ReferentType, Expected) ||
+        !UnchangedPatternParameter(PatternValue))
+      return std::nullopt;
+    return FunctionalReferenceFactoryCall{*Result, *Source, Cref};
+  }
   const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
   const auto *Return = Body && Body->size() == 1
                            ? dyn_cast<ReturnStmt>(*Body->body_begin())

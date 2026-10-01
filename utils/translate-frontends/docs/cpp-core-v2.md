@@ -313,7 +313,8 @@ When a queried receiver is initialized with a directly constructed or trivially
 copied `reference_wrapper`, its pinned constructor and pointer-only implicit
 destructor supply the storage operation source. The constructor's original
 argument still completes independently; wrapper cleanup consumes no referent
-destructor or lifetime. Source factory calls keep their separate requirements.
+destructor or lifetime. Exact `ref`/`cref` initializer calls can use the checked
+factory source described below; other factories keep separate requirements.
 
 Exact pinned `std::move_if_noexcept` calls also support result-source queries
 on the same admitted scalar and pointer objects. The selected nonthrowing
@@ -2092,6 +2093,26 @@ temporary admitted wrappers and evaluate the argument once. `get()` returns the
 referenced object or function; object forms also lower the implicit `T&`
 conversion. These operations preserve object qualification and accept object
 or raw-pointer receivers. Volatile referents remain outside this boundary.
+
+Exact direct and parenthesized `std::ref`/`std::cref` calls also support
+result-source queries for these admitted referents. Both lvalue-taking and
+wrapper-taking overloads retain the exact wrapper type and referent
+qualification, including stored and temporary wrappers and nested factory
+calls. A specialization with no materialized body uses only the pinned SDK
+pattern's unchanged-parameter wrapper construction or return; querying it does
+not instantiate a body. The selected signature, specialization, pattern,
+primary and all redeclarations retain the exact
+`__functional/reference_wrapper.h` source and nonthrowing callee prototype.
+Original operands, written template arguments, aliases, function signatures,
+array bounds, selected defaults and temporary lifetimes complete independently,
+including factories in queried receiver initializers. Queries execute none of
+those effects, constructors or cleanup. Evaluated factories preserve the
+referent address and copy only wrapper pointer storage; cleanup never owns the
+referent. Source substitutions, independent function addresses, cast/indirect
+callees, erased exception specifications and unsupported referents remain
+rejected. Deleted rvalue overloads retain native C++ diagnostics. `ref`/`cref`
+name imports and access/invocation query sources retain separate requirements.
+
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
 are callable directly and through `std::invoke`. Fixed-arity function wrappers

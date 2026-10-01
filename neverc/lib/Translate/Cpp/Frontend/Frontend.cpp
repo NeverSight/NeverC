@@ -2964,6 +2964,25 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
+static bool functionalReferenceFactorySource(Adapter &A, const CallExpr *Call) {
+  const auto Factory =
+      approvedFunctionalReferenceFactoryCall(A.S, A.Sources, Call, A.Context);
+  if (!Factory)
+    return false;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  // This exact call supplies only pointer-view construction/copy. The caller's
+  // operands, written types, defaults and temporary cleanup remain independent
+  // source roots; other references to the function receive no exemption.
+  return Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !Prototype->getNoexceptExpr() &&
+         operationCalleePrototype(Call) == Prototype &&
+         !Function->getParamDecl(0)->hasDefaultArg() &&
+         utilitySDKFunctionSource(A, Function,
+                                  "__functional/reference_wrapper.h",
+                                  /*RequireDefinition=*/false);
+}
+
 static bool utilityUniquePtrElementConstructionSource(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   const auto *Prototype =
@@ -10350,7 +10369,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             utilityUniquePtrNullComparisonSource(A, Call) ||
             utilityUniquePtrNullOrderingSource(A, Call) ||
             utilityUniquePtrOwnerComparisonSource(A, Call) ||
-            utilityValueAdapterSource(A, Call))
+            utilityValueAdapterSource(A, Call) ||
+            functionalReferenceFactorySource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
                   directFunctionReference(Call))) {
             auto [Entry, Inserted] =
