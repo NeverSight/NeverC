@@ -3336,7 +3336,9 @@ static bool functionalReferenceDirectInvokeSource(
              Arguments->get(0), Target);
 }
 
-static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
+static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call,
+                                           const CXXMethodDecl *&UserMethod) {
+  UserMethod = nullptr;
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || (!isa<CXXOperatorCallExpr>(Call) &&
                     (!Function->getIdentifier() || Function->getName() != "invoke")))
@@ -3350,6 +3352,8 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
     if (Invoke->Operation)
       Target = functionalObjectInvokeTargetSource(
           A, Invoke->Method, Invoke->Wrapper.ReferentType->getAsCXXRecordDecl());
+  } else if (Invoke->Kind == FunctionalReferenceInvokeKind::UserFunctionObject) {
+    Target = Invoke->Method->getType()->getAs<FunctionProtoType>();
   } else if (Invoke->Kind == FunctionalReferenceInvokeKind::Function ||
              Invoke->Kind == FunctionalReferenceInvokeKind::FunctionPointer) {
     Target = Invoke->FunctionPointerType->getPointeeType()
@@ -3357,24 +3361,33 @@ static bool functionalReferenceInvokeSource(Adapter &A, const CallExpr *Call) {
   }
   if (!Target)
     return false;
-  if (isa<CXXOperatorCallExpr>(Call))
-    return functionalReferenceDirectInvokeSource(A, Call, *Invoke, Target);
-
-  // The invocation descriptor proves the outer invoke -> __invoke -> wrapper
-  // call chain. Pin each declaration family before consuming its SDK source;
-  // the actual callable and arguments remain independent caller-side roots.
-  const auto *Arguments = Function->getTemplateSpecializationArgs();
-  const auto *Dispatch = functionalReturnedCall(Function);
-  const auto *Inner =
-      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
-  return Arguments && Arguments->size() == 2 &&
-         Arguments->get(0).getKind() == TemplateArgument::Type && Dispatch &&
-         utilitySDKFunctionSource(A, Function, "__functional/invoke.h") &&
-         utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
-                                  "__type_traits/invoke.h") &&
-         functionalReferenceDirectInvokeSource(A, Inner, *Invoke, Target) &&
-         functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
-                                       Arguments->get(1), Target);
+  if (isa<CXXOperatorCallExpr>(Call)) {
+    if (!functionalReferenceDirectInvokeSource(A, Call, *Invoke, Target))
+      return false;
+  } else {
+    // The invocation descriptor proves the outer invoke -> __invoke -> wrapper
+    // call chain. Pin each declaration family before consuming its SDK source;
+    // the actual callable and arguments remain independent caller-side roots.
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    const auto *Dispatch = functionalReturnedCall(Function);
+    const auto *Inner =
+        Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
+    if (!Arguments || Arguments->size() != 2 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type || !Dispatch ||
+        !utilitySDKFunctionSource(A, Function, "__functional/invoke.h") ||
+        !utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                                 "__type_traits/invoke.h") ||
+        !functionalReferenceDirectInvokeSource(A, Inner, *Invoke, Target) ||
+        !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
+                                      Arguments->get(1), Target))
+      return false;
+  }
+  // Adapter authentication supplies only the SDK sources. Keep the selected
+  // user operator's original signature, exception and completed definition as
+  // independent dependencies of this exact direct or outer wrapper call.
+  if (Invoke->Kind == FunctionalReferenceInvokeKind::UserFunctionObject)
+    UserMethod = Invoke->Method;
+  return true;
 }
 
 static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
@@ -10882,9 +10895,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                     A.chargeExpansion(1, Call->getExprLoc());
             }
           }
-        const auto *UserInvoke = functionalUserInvokeSource(A, Call);
-        if (UserInvoke || functionalReferenceAccessSource(A, Call) ||
-            functionalReferenceInvokeSource(A, Call) ||
+        const CXXMethodDecl *UserInvoke = nullptr;
+        const bool ReferenceInvoke =
+            functionalReferenceInvokeSource(A, Call, UserInvoke);
+        if (!ReferenceInvoke)
+          UserInvoke = functionalUserInvokeSource(A, Call);
+        if (ReferenceInvoke || UserInvoke ||
+            functionalReferenceAccessSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
             functionalObjectInvokeSource(A, Call) ||
             functionalHashCallSource(A, Call))
@@ -10902,7 +10919,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   A.chargeExpansion(1, Call->getExprLoc());
                 else if (Source->second != UserInvoke)
                   A.reject(Call->getExprLoc(), "invoke target source",
-                           "An exact invoke call requires one selected source operator.");
+                           "An exact invocation requires one selected source operator.");
               }
               if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
                 if (const auto *Cast = dyn_cast<ImplicitCastExpr>(

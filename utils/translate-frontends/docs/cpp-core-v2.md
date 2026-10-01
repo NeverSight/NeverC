@@ -2266,7 +2266,7 @@ result traits, `sizeof`, `alignof`, array extents and `noexcept` execute none of
 their effects. Each callable category and argument pack still needs its own
 materialized adapter. Lazy adapters, replaced SDK declarations, independent
 adapter addresses and source methods without a completed definition remain
-rejected. Wrapped source-owned callables retain their separate query requirements.
+rejected.
 
 Materialized `std::invoke` adapters around the admitted typed and transparent
 arithmetic, bitwise, comparison and logical function objects also support
@@ -2303,8 +2303,29 @@ operator prototype. Original wrapper and referent initializers, expressions,
 written types, selected defaults and temporary lifetimes remain independent
 source roots and have no query-time effects. Lazy bodies, replaced SDK
 operators or adapters, source substitutions of either invocability variable,
-and independent adapter addresses remain rejected. Wrappers around source-owned
-callable objects retain their separate query-source requirements.
+and independent adapter addresses remain rejected.
+
+Materialized direct wrapper calls and outer `std::invoke` calls around admitted
+source-owned record callables also support result-source queries. The wrapper
+always invokes its referent as an lvalue: a const or rvalue wrapper can still
+select a mutable lvalue-qualified operator, while `cref` retains the const
+referent's overload. Scalar conversions, exact reference parameters/results
+(including arrays, records and function pointers), admitted record values and
+`void` results retain their runtime rules. The wrapper member, internal dispatch
+and any outer public adapter require pinned SDK declaration families and their
+exact materialized bodies. Inner invocability checks use the referent reference
+and argument pack; outer checks independently use the wrapper category and pack.
+Both must agree with the selected operator's exception prototype. Each exact
+query retains that source operator's completed definition, original signature
+and exception expression as independent dependencies. Out-of-line ordinary
+operators and in-class operators of admitted concrete class templates keep their
+normal source checks. `decltype`, result traits, `sizeof`, `alignof`, array
+extents and `noexcept` execute no callable, argument, default or temporary-lifetime
+effects. Original wrapper/referent initializers, expressions and written types
+remain checked. A direct referent call does not supply a lazy wrapper body, and
+a wrapper call does not supply a lazy outer adapter. Replaced SDK declarations,
+independent member or adapter addresses, and incomplete source definitions remain
+rejected.
 
 Direct integral hashes from `bool` through `unsigned long`, plus the
 `nullptr_t` specialization, support result-source queries for direct calls,
