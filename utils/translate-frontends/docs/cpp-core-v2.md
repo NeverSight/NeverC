@@ -205,6 +205,33 @@ extra move. Each actual call still requires its existing operation descriptor
 and source proof. When `<algorithm>` is also admitted, importing `move` can
 expose its supported pointer-range overload under that descriptor. Other
 library function names are not admitted by this lookup exception.
+
+Result-source queries on exact pinned `std::move` and `std::forward` calls also
+accept admitted scalar objects: integral and enum types through 64 bits,
+`float`, `double`, `nullptr_t`, and object or function pointers. Pointer
+pointees, nested pointer/array bounds and callback signatures retain their
+ordinary type and original-source checks. These queries support mutable and
+const objects, direct or parenthesized names, namespace/block imports and
+reexports, and nested reference casts. `decltype` retains the selected
+cv-qualified `T&&` result, or the collapsed `T&` result of `forward<T&>` when
+its actual argument and selected parameter are lvalue references. Classification,
+`sizeof`, `alignof` and `noexcept` queries use the same source proof without
+reading or modifying the object. Clang's exact implicit library builtin may
+supply the reference-cast source without instantiating a body. Otherwise, the
+already materialized SDK body must cast the unchanged parameter to the exact
+selected reference type and value category. The specialization, instantiation
+pattern, primary and every redeclaration must remain in `__utility/move.h` or
+`__utility/forward.h`, with the exact nonthrowing callee signature.
+Written operands/template arguments, original aliases/signatures/exception
+specifications, selected defaults and temporary lifetimes still complete
+through their original source dependencies, even when a query folds to a
+constant. Queries execute none of their argument effects, defaults,
+constructors or destructors. Unsupported scalar types or pointees, volatile
+objects, direct array/record/function references and member pointers remain
+outside this scalar query boundary. Rvalue arguments forwarded as lvalue
+results, source replacements, independent function addresses, casts or
+compound postfix callees and erased nonthrowing signatures remain rejected.
+
 The pinned fixed-size C array overload of `std::swap` supports mutable
 fixed arrays up to eight dimensions and 65,536 total elements when each leaf is
 a built-in scalar or a pointer that reaches a built-in type through nested
@@ -1593,8 +1620,9 @@ Member/getter queries and all six comparison queries keep their independently
 selected SDK bodies and source proofs. Written operand effects, selected
 defaults and owning temporary/factory arguments are checked without executing
 them, allocating, moving ownership, invoking deleters or changing the borrowed
-owner. Scalar result queries, volatile owners, rvalue arguments forwarded as
-lvalue results and unadmitted owner families remain outside this boundary.
+owner. Volatile owners, rvalue arguments forwarded as lvalue results and
+unadmitted owner families remain outside this boundary. Scalar reference-cast
+queries use the separate bounded utility source proof described above.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
@@ -8932,6 +8960,10 @@ The current single-unit definition restriction remains: selected calls need a
 body, explicit declarations need an in-unit definition, and a signature-only
 call still fails under `sizeof` or `noexcept`. Generic uninstantiated declarations
 and unselected implicit overload candidates alone do not require a body.
+Function-template instances whose callback-pointer template arguments differ
+only by `noexcept` can still share a Clang specialization USR and fail IR
+validation when both are emitted. The scalar reference-cast query source above
+does not change that remaining function-identity gap.
 These remaining closure limits mean full C++ template support is unfinished.
 Core v2 enables the pinned post-C++17 extension diagnostic groups and rejects
 those warnings as TR0201 even in uninstantiated patterns or discarded branches.

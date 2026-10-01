@@ -41385,6 +41385,338 @@ void materialize_default_deleters() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarValueAdapterQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("scalar-value-adapter-queries.cpp");
+  const auto Output = tmpFile("scalar-value-adapter-queries.nc");
+  // Distinct callback instances keep this fixture focused on cast/query source.
+  // Function-template identities differing only by noexcept remain a separate
+  // gap.
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace Imported {
+using std::move, std::forward;
+}
+namespace Reexport {
+using Imported::move, Imported::forward;
+}
+namespace Alias = Reexport;
+namespace Directed {
+using namespace Alias;
+}
+int calls, defaults, effects, live, destroyed;
+int mark(int n = (++defaults, 7)) noexcept {
+  ++calls;
+  return n;
+}
+int &select(int &n, int effect = (++defaults, 8)) noexcept {
+  ++calls;
+  effects = effects * 10 + effect;
+  return n;
+}
+const int &constant(const int &n, int effect = (++defaults, 9)) noexcept {
+  ++calls;
+  effects = effects * 10 + effect;
+  return n;
+}
+int &throwing(int &n) {
+  ++calls;
+  return n;
+}
+struct Ticket {
+  int n;
+  explicit Ticket(int v) noexcept : n(v) { ++live; }
+  ~Ticket() noexcept {
+    --live;
+    ++destroyed;
+  }
+};
+int &with_temporary(int &n, Ticket ticket = Ticket(mark())) noexcept {
+  ++calls;
+  return n;
+}
+int callback(int n) { return n + 1; }
+int other(int n) { return n + 2; }
+int nonthrowing(int n) noexcept { return n + 3; }
+enum class Wide : unsigned long long { Value = 4 };
+enum Small : unsigned char { First = 5 };
+struct Box { int n; };
+template <int Category = 0, class T> bool queries(T &value, const T &cv) {
+  T &&moved = (Imported::move)(value);
+  T &same = Alias::forward<T &>(value);
+  const T &&view = Directed::forward<const T>(cv);
+  const T &qualified = std::forward<const T &>(value);
+  if (&moved != &value || &same != &value || &view != &cv ||
+      &qualified != &value)
+    return false;
+  static_assert(__is_same(decltype(std::move(value)), T &&));
+  static_assert(__is_same(decltype(Alias::move(cv)), const T &&));
+  static_assert(__is_same(decltype(Directed::forward<T>(value)), T &&));
+  static_assert(__is_same(decltype(std::forward<T &&>(value)), T &&));
+  static_assert(__is_same(decltype((Imported::forward<T &>)(value)), T &));
+  static_assert(__is_same(decltype(Alias::forward<const T &>(cv)), const T &));
+  static_assert(__is_same(decltype(std::forward<const T &>(value)), const T &));
+  static_assert(__is_same(decltype(Alias::move(Alias::forward<T &>(value))), T &&));
+  static_assert(__is_same(decltype(std::forward<T>(Alias::move(value))), T &&));
+  static_assert(__is_same(decltype(Alias::forward<T &>(std::forward<T &>(value))), T &));
+  static_assert(__is_rvalue_reference(decltype(Alias::move(value))));
+  static_assert(__is_lvalue_reference(decltype(Directed::forward<T &>(value))));
+  static_assert(sizeof(Alias::move(value)) == sizeof(T));
+  static_assert(alignof(decltype(std::forward<const T &>(cv))) == alignof(T));
+  static_assert(noexcept(Alias::move(value)) && noexcept(Alias::forward<T &>(value)));
+  using Written = decltype((sizeof(T), value));
+  static_assert(__is_same(decltype(Alias::forward<Written>(value)), T &));
+  return true;
+}
+int main() {
+  bool boolean = true;
+  signed char byte = -1;
+  unsigned char unsigned_byte = 2;
+  short small = -3;
+  unsigned short unsigned_small = 4;
+  int value = 5;
+  unsigned int unsigned_value = 6;
+  long native_word = -7;
+  long long wide = -8;
+  unsigned long long unsigned_wide = 9;
+  float single = 1.5f;
+  double real = 2.5;
+  Wide enumeration = Wide::Value;
+  Small small_enumeration = First;
+  using Null = decltype(nullptr);
+  Null null = nullptr;
+  const int cv = 10;
+  int *pointer = &value;
+  const int *qualified_pointer = &cv;
+  int **nested_pointer = &pointer;
+  void *opaque = &value;
+  int array[2] = {11, 12};
+  int (*array_pointer)[2] = &array;
+  Box box{13};
+  Box *record_pointer = &box;
+  using Callback = int (*)(int);
+  Callback fn = callback;
+  using NoexceptCallback = int (*)(int) noexcept;
+  NoexceptCallback nf = nonthrowing;
+  if (!queries(boolean, boolean) || !queries(byte, byte) ||
+      !queries(unsigned_byte, unsigned_byte) || !queries(small, small) ||
+      !queries(unsigned_small, unsigned_small) || !queries(value, cv) ||
+      !queries(unsigned_value, unsigned_value) || !queries(native_word, native_word) ||
+      !queries(wide, wide) || !queries(unsigned_wide, unsigned_wide) ||
+      !queries(single, single) || !queries(real, real) ||
+      !queries(enumeration, enumeration) || !queries(small_enumeration, small_enumeration) ||
+      !queries(null, null) || !queries(pointer, pointer) ||
+      !queries(qualified_pointer, qualified_pointer) || !queries(nested_pointer, nested_pointer) ||
+      !queries(opaque, opaque) || !queries(array_pointer, array_pointer) ||
+      !queries(record_pointer, record_pointer) || !queries(fn, fn) || !queries<1>(nf, nf))
+    return 1;
+  const Callback cfn = fn;
+  static_assert(__is_same(decltype(Alias::move(cfn)), const Callback &&));
+  static_assert(__is_same(decltype(Alias::forward<const Callback &>(cfn)), const Callback &));
+  static_assert(__is_same(decltype(Alias::move(fn)(1)), int));
+  static_assert(__is_same(decltype(Alias::forward<NoexceptCallback &>(nf)(1)), int));
+  static_assert(!noexcept(Alias::move(fn)(1)) && noexcept(Alias::forward<NoexceptCallback &>(nf)(1)));
+  Callback &fn_alias = Alias::forward<Callback &>(fn);
+  fn_alias = other;
+  int *&&pointer_alias = Alias::move(pointer);
+  pointer_alias = &array[0];
+  int &same = Alias::forward<int &>(select(value, 2));
+  same = 14;
+  if (value != 14 || &same != &value || pointer != &array[0] || fn(1) != 3 ||
+      nf(1) != 4 || calls != 1 || effects != 2 || defaults || live || destroyed)
+    return 2;
+  {
+    using Alias::move, Alias::forward;
+    static_assert(__is_same(decltype(move(select(value))), int &&));
+    static_assert(__is_same(decltype(forward<int &>(select(value))), int &));
+    static_assert(__is_same(decltype(forward<const int &>(constant(cv))), const int &));
+    static_assert(__is_same(decltype(forward<int>(throwing(value))), int &&));
+    static_assert(noexcept(move(select(value))) && !noexcept(move(throwing(value))));
+    static_assert(sizeof(forward<int &>(select(value))) == sizeof(int));
+    static_assert(alignof(decltype(move(select(value)))) == alignof(int));
+  }
+  int &from_temporary = Alias::forward<int &>(with_temporary(value, Ticket(mark(3))));
+  if (&from_temporary != &value || calls != 3 || defaults || live || destroyed != 1)
+    return 3;
+  int before_calls = calls, before_destroyed = destroyed;
+  static_assert(__is_same(decltype(std::move(1)), int &&));
+  static_assert(__is_same(decltype(Alias::forward<int>(2)), int &&));
+  static_assert(__is_same(decltype(std::move(static_cast<int *>(nullptr))), int *&&));
+  static_assert(__is_same(decltype(Alias::move(nullptr)), Null &&));
+  static_assert(__is_same(decltype(Alias::move((mark(), value))), int &&));
+  static_assert(__is_same(decltype(std::forward<const int &>(true ? value : cv)), const int &));
+  static_assert(__is_same(decltype(Alias::move<decltype((sizeof(int), value))>(value)), int &&));
+  static_assert(__is_same(decltype(Alias::forward<int &>(with_temporary(value))), int &));
+  static_assert(__is_same(decltype(std::move(with_temporary(value, Ticket(mark())))), int &&));
+  static_assert(sizeof(std::move(with_temporary(value))) == sizeof(int));
+  static_assert(alignof(decltype(Alias::forward<int &>(with_temporary(value)))) == alignof(int));
+  static_assert(noexcept(Alias::forward<int &>(with_temporary(value))));
+  return calls == before_calls && destroyed == before_destroyed && !live && !defaults &&
+                 effects == 2 && value == 14 && cv == 10 && array[0] == 11 &&
+                 record_pointer->n == 13 && fn(1) == 3 && nf(1) == 4
+             ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("scalar-value-adapter-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarValueAdapterQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"operand-expression", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::move((sizeof(long double),p))),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"selected-default", R"cpp(
+int&source(int&p,int n=sizeof(long double))noexcept{return p;}int f(int&p){static_assert(__is_same(decltype(Reexport::forward<int&>(source(p))),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"original-exception", R"cpp(
+int&source(int&p)noexcept(sizeof(long double)>0);int&source(int&p)noexcept{return p;}int f(int&p){static_assert(__is_same(decltype(Reexport::move(source(p))),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"original-signature", R"cpp(
+int&source(int&p,long double n=0)noexcept{return p;}int f(int&p){static_assert(sizeof(Reexport::forward<int>(source(p)))==sizeof(int));return p;}
+)cpp",
+       "TR0201"},
+      {"written-move-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::move<decltype((sizeof(long double),p))>(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"written-forward-template-argument", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::forward<decltype((sizeof(long double),p))>(p)),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"original-alias", R"cpp(
+using Erased=decltype((sizeof(long double),*static_cast<int*>(nullptr)));int f(int&p){static_assert(__is_same(decltype(Reexport::forward<Erased>(p)),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"pointer-original-bound", R"cpp(
+using Array=int[sizeof(long double)];int f(Array*&p){static_assert(__is_same(decltype(Reexport::move(p)),Array*&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-original-signature", R"cpp(
+using Callback=int(*)(long double);int f(Callback&p){static_assert(__is_same(decltype(Reexport::forward<Callback&>(p)),Callback&));return 0;}
+)cpp",
+       "TR0201"},
+      {"callback-original-exception", R"cpp(
+using Callback=int(*)(int)noexcept(sizeof(long double)>0);int f(Callback&p){static_assert(__is_same(decltype(Reexport::move(p)),Callback&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"move-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}int f(int&p){static_assert(__is_same(decltype(std::move(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"forward-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>T&&forward(typename remove_reference<T>::type&)noexcept;}}int f(int&p){static_assert(__is_same(decltype(std::forward<int&>(p)),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"move-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int&&move<int&>(int&p)noexcept{return static_cast<int&&>(p);}}}int f(int&p){static_assert(__is_same(decltype(std::move(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"forward-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int&forward<int&>(int&p)noexcept{return p;}}}int f(int&p){static_assert(__is_same(decltype(std::forward<int&>(p)),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"callback-specialization", R"cpp(
+using Callback=int(*)(int);namespace std{inline namespace __1{template<>Callback&&move<Callback&>(Callback&p)noexcept{return static_cast<Callback&&>(p);}}}int f(Callback&p){static_assert(__is_same(decltype(std::move(p)),Callback&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-move-address", R"cpp(
+using F=int&&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(Reexport::move(p)),int&&));static_assert(sizeof(static_cast<F>(&Reexport::move<int&>))>0);return p;}
+)cpp",
+       "TR0201"},
+      {"independent-forward-address", R"cpp(
+using F=int&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(Reexport::forward<int&>(p)),int&));static_assert(noexcept(static_cast<F>(&Reexport::forward<int&>)));return p;}
+)cpp",
+       "TR0201"},
+      {"function-reference-call", R"cpp(
+int&&(&target)(int&)noexcept=Reexport::move<int&>;int f(int&p){static_assert(__is_same(decltype(target(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=int&(*)(int&)noexcept;int f(int&p){static_assert(__is_same(decltype(static_cast<F>(&Reexport::forward<int&>)(p)),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=int&&(*)(int&);int f(int&p){static_assert(__is_same(decltype(Reexport::move(p)),int&&));static_assert(!noexcept(static_cast<F>(&Reexport::move<int&>)(p)));return p;}
+)cpp",
+       "TR0201"},
+      {"compound-postfix", R"cpp(
+using F=int&&(*)(int&)noexcept;int mark(){return 1;}int f(int&p){static_assert(__is_same(decltype((mark(),static_cast<F>(&Reexport::move<int&>))(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+      {"long-double", R"cpp(
+int f(long double&p){static_assert(__is_same(decltype(Reexport::move(p)),long double&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"extended-integer", R"cpp(
+int f(__int128&p){static_assert(__is_same(decltype(Reexport::forward<__int128&>(p)),__int128&));return 0;}
+)cpp",
+       "TR0201"},
+      {"volatile-scalar", R"cpp(
+int f(volatile int&p){static_assert(__is_same(decltype(Reexport::move(p)),volatile int&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"unadmitted-pointer-pointee", R"cpp(
+int f(long double*&p){static_assert(__is_same(decltype(Reexport::forward<long double*&>(p)),long double*&));return 0;}
+)cpp",
+       "TR0201"},
+      {"array-reference", R"cpp(
+int f(int(&p)[2]){static_assert(__is_same(decltype(Reexport::move(p)),int(&&)[2]));return 0;}
+)cpp",
+       "TR0201"},
+      {"record-reference", R"cpp(
+struct Box{int n;};int f(Box&p){static_assert(__is_same(decltype(Reexport::forward<Box&>(p)),Box&));return 0;}
+)cpp",
+       "TR0201"},
+      {"function-reference", R"cpp(
+using Function=int(int);int f(Function&p){static_assert(__is_same(decltype(Reexport::move(p)),Function&));return 0;}
+)cpp",
+       "TR0201"},
+      {"member-pointer", R"cpp(
+struct Box{int n;};using Member=int Box::*;int f(Member&p){static_assert(__is_same(decltype(Reexport::move(p)),Member&&));return 0;}
+)cpp",
+       "TR0201"},
+      {"rvalue-forwarded-as-lvalue", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(Reexport::forward<int&>(std::move(p))),int&));return p;}
+)cpp",
+       "TR0201"},
+      {"other-value-adapter", R"cpp(
+int f(int&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),int&&));return p;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("scalar-value-adapter-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("scalar-value-adapter-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <utility>
+namespace Imported{using std::move,std::forward;}
+namespace Reexport{using Imported::move,Imported::forward;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2MemoryUniquePtrLValueForwardQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("memory-unique-ptr-lvalue-forward-queries.cpp");
@@ -41704,10 +42036,6 @@ using P=std::shared_ptr<int>;int f(P&p){static_assert(__is_same(decltype(Reexpor
 using P=std::unique_ptr<int>;int f(volatile P&p){static_assert(__is_same(decltype(Reexport::forward<volatile P&>(p)),volatile P&));return 0;}
 )cpp",
        "TR0201"},
-      {"scalar-result-query", R"cpp(
-int f(int&p){static_assert(__is_same(decltype(Reexport::forward<int&>(p)),int&));return p;}
-)cpp",
-       "TR0201"},
       {"rvalue-to-lvalue-query", R"cpp(
 using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::forward<P&>(std::move(p))),P&));return 0;}
 )cpp",
@@ -41829,6 +42157,9 @@ int mark(int n = (++defaults, 8)) noexcept {
 }
 int callback(int n) { return n + 1; }
 void signatures(P &p) {
+  int scalar = 0;
+  static_assert(__is_same(decltype(Alias::move(scalar)), int &&));
+  static_assert(__is_same(decltype(Alias::forward<int &>(scalar)), int &));
   using Owner = P;
   static_assert(noexcept(Alias::move(p)) && noexcept(Alias::forward<Owner>(p)));
   static_assert(noexcept(Alias::forward<Owner &>(p)));
@@ -42092,10 +42423,6 @@ using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decl
        "TR0201"},
       {"missing-null-comparison-body", R"cpp(
 using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(std::operator!=(Reexport::forward<P>(p),nullptr)),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"scalar-move-result-query", R"cpp(
-int f(int&p){int&&r=Reexport::move(p);static_assert(__is_same(decltype(Reexport::move(p)),int&&));return r;}
 )cpp",
        "TR0201"},
   };
