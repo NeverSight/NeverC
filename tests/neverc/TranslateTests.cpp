@@ -68423,6 +68423,311 @@ using S=std::size_t;
   }
 }
 
+TEST_F(TranslateTest, CoreV2EnumHashQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("enum-hash-queries.cpp");
+  const auto Output = tmpFile("enum-hash-queries.nc");
+  writeFile(Source, R"cpp(
+#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+int calls, defaults, live, destroyed;
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+using EnumInteger = short;
+enum class Value : EnumInteger { one=1, two=2, three=3, four=4, five=5, six=6 };
+enum Plain { negative=-7, positive=5 };
+enum class SignedNarrow : signed char { negative=-7 };
+enum class UnsignedNarrow : unsigned char { high=255 };
+enum class SignedWide : long long { minimum=-9223372036854775807ll-1ll };
+enum class UnsignedWide : unsigned long long {
+  high=0x8000000000000000ull, maximum=0xffffffffffffffffull
+};
+using Hash = std::hash<Value>;
+using Wrapper = std::reference_wrapper<Hash>;
+Value mark(int n = (++defaults, 3)) noexcept { ++calls; return static_cast<Value>(n); }
+Value argument(Ticket ticket = Ticket()) noexcept { ++calls; return Value::five; }
+Value potentially_throwing() { ++calls; return Value::six; }
+Hash &receiver(Hash &h, int n = (++defaults, 1)) noexcept { ++calls; return h; }
+Hash temporary_receiver(Ticket ticket = Ticket()) noexcept { ++calls; return Hash{}; }
+Wrapper &wrapper_receiver(Wrapper &w, int n = (++defaults, 1)) noexcept { ++calls; return w; }
+Wrapper temporary_wrapper(Hash &h, Ticket ticket = Ticket()) noexcept {
+  ++calls; return std::ref(h);
+}
+template<class T> bool family(T value, std::size_t expected) {
+  std::hash<T> hash;
+  auto wrapper = std::ref(hash);
+  const auto constant = std::cref(hash);
+  // Materialize the enum operator, its underlying integer hash and adapters.
+  // The public hash owns both empty SDK base levels.
+  if (hash(value) != expected || std::invoke(hash, value) != expected ||
+      wrapper(value) != expected || constant(value) != expected ||
+      std::invoke(wrapper, value) != expected ||
+      std::invoke(constant, value) != expected) return false;
+  static_assert(__is_same(decltype(hash(value)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, value)), std::size_t));
+  static_assert(__is_same(decltype(wrapper(value)), std::size_t));
+  static_assert(__is_same(decltype(constant(value)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, value)), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant, value)), std::size_t));
+  static_assert(noexcept(hash(value)) && noexcept(std::invoke(hash, value)));
+  static_assert(noexcept(wrapper(value)) && noexcept(std::invoke(wrapper, value)));
+  static_assert(sizeof(hash(value)) == sizeof(std::size_t));
+  static_assert(alignof(decltype(std::invoke(wrapper, value))) == alignof(std::size_t));
+  return true;
+}
+int main() {
+  if (!family(Plain::negative, static_cast<std::size_t>(-7)) ||
+      !family(Plain::positive, std::size_t(5)) ||
+      !family(SignedNarrow::negative, static_cast<std::size_t>(-7)) ||
+      !family(UnsignedNarrow::high, std::size_t(255)) ||
+      !family(SignedWide::minimum,
+              static_cast<std::size_t>(-9223372036854775807ll-1ll)) ||
+      !family(UnsignedWide::high, std::size_t(0x8000000000000000ull)) ||
+      !family(UnsignedWide::maximum, std::size_t(0xffffffffffffffffull))) return 1;
+  Hash hash;
+  const Hash constant = hash;
+  auto *pointer = &hash;
+  auto wrapper = std::ref(hash);
+  const auto constant_wrapper = wrapper;
+  auto *wrapper_pointer = &wrapper;
+  if (std::invoke(hash, Value::one) != 1 || std::invoke(constant, Value::two) != 2 ||
+      std::invoke(Hash{}, Value::three) != 3 ||
+      std::invoke(static_cast<Hash &&>(hash), Value::four) != 4 ||
+      wrapper(Value::one) != 1 || std::invoke(wrapper, Value::two) != 2 ||
+      std::invoke(constant_wrapper, Value::three) != 3 ||
+      std::invoke(std::ref(hash), Value::four) != 4 || std::invoke(std::cref(hash), Value::five) != 5 ||
+      std::invoke(hash, static_cast<Value>(short(-2))) != static_cast<std::size_t>(-2ll) ||
+      wrapper(static_cast<Value>(short(-3))) != static_cast<std::size_t>(-3ll)) return 2;
+  calls = defaults = live = destroyed = 0;
+  static_assert(__is_same(decltype(constant(mark())), std::size_t));
+  static_assert(__is_same(decltype((*pointer)(mark())), std::size_t));
+  static_assert(__is_same(decltype(Hash(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant, mark())), std::size_t));
+  static_assert(__is_same(decltype((std::invoke)(*pointer, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Hash{}, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Hash(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(static_cast<Hash &&>(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype((constant_wrapper)(mark())), std::size_t));
+  static_assert(__is_same(decltype((*wrapper_pointer)(mark())), std::size_t));
+  static_assert(__is_same(decltype(Wrapper(wrapper)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::ref(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::cref(hash)(mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(wrapper, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(constant_wrapper, mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(Wrapper(wrapper), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(std::ref(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(std::cref(hash), mark())), std::size_t));
+  static_assert(__is_same(decltype(std::invoke(hash, static_cast<Value>(short(-2)))), std::size_t));
+  static_assert(__is_same(decltype(wrapper(static_cast<Value>(short(-3)))), std::size_t));
+  static_assert(std::is_unsigned<decltype(hash(mark()))>::value);
+  static_assert(__is_integral(decltype(std::invoke(wrapper, mark()))));
+  static_assert(noexcept(hash(argument())) && noexcept(std::invoke(hash, argument())));
+  static_assert(noexcept(wrapper(argument())) && noexcept(std::invoke(wrapper, argument())));
+  static_assert(!noexcept(hash(potentially_throwing())));
+  static_assert(!noexcept(std::invoke(wrapper, potentially_throwing())));
+  static_assert(sizeof(receiver(hash)(mark())) == sizeof(std::size_t));
+  static_assert(sizeof(std::invoke(temporary_receiver(), mark())) == sizeof(std::size_t));
+  static_assert(sizeof(wrapper_receiver(wrapper)(argument())) == sizeof(std::size_t));
+  static_assert(sizeof(std::invoke(temporary_wrapper(hash), mark())) == sizeof(std::size_t));
+  static_assert(sizeof((++calls, hash)((++calls, mark()))) == sizeof(std::size_t));
+  using Result = decltype(std::invoke(hash, argument(Ticket())));
+  static_assert(__is_same(Result, std::size_t));
+  int extent[sizeof(std::invoke(wrapper, mark())) == sizeof(std::size_t) ? 2 : 1]{};
+  if (sizeof(extent) != 2 * sizeof(int) || calls || defaults || live || destroyed) return 3;
+  auto observed = std::invoke(receiver(hash), mark());
+  auto temporary = std::invoke(temporary_receiver(), mark());
+  auto wrapped = wrapper_receiver(wrapper)(argument());
+  auto outer = std::invoke(temporary_wrapper(hash), mark());
+  return observed == 3 && temporary == 3 && wrapped == 5 && outer == 3 &&
+         calls == 8 && defaults == 5 && live == 0 && destroyed == 3 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("enum-hash-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EnumHashQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"lazy-direct", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){static_assert(__is_same(decltype(h(Value::one)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-invoke", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){static_assert(__is_same(decltype(std::invoke(h,Value::one)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-wrapper", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(W&w){static_assert(__is_same(decltype(w(Value::one)),S));return 0;}
+)cpp", "TR0203"},
+      {"lazy-outer-wrapper", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(W&w){static_assert(__is_same(decltype(std::invoke(w,Value::one)),S));return 0;}
+)cpp", "TR0203"},
+      {"direct-call-does-not-supply-adapter", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(std::invoke(h,Value::one)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(W&w){auto n=w(Value::one);static_assert(__is_same(decltype(std::invoke(w,Value::one)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"different-argument-pack", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(W&w){auto n=w(Value::one);Value value=Value::one;static_assert(__is_same(decltype(w(value)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"different-callable-category", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h,const H&c){auto n=std::invoke(h,Value::one);static_assert(__is_same(decltype(std::invoke(c,Value::one)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"hash-primary-redeclaration", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"enum-primary-redeclaration", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<class T,bool N>struct __enum_hash;}}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"underlying-scalar-partial-redeclaration", R"cpp(
+enum class Wide:long long{one=1};using H=std::hash<Wide>;
+namespace std{inline namespace __1{template<class T>struct __scalar_hash<T,1>;}}int f(H&h){auto n=h(Wide::one);static_assert(__is_same(decltype(h(Wide::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"enum-operator-specialization", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>S __enum_hash<Value,true>::operator()(Value)const noexcept{return 0;}}}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"unary-base-redeclaration", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<class A,class R>struct __unary_function_keep_layout_base;}}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"independent-private-base", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);std::__enum_hash<Value> b;static_assert(__is_same(decltype(b(Value::one)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"independent-private-base-layout", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype((sizeof(std::__enum_hash<Value>),h)(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"independent-private-base-cast", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(static_cast<const std::__enum_hash<Value>&>(h)(Value::one)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"independent-member-address", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));static_assert(sizeof(&H::operator())>0);return n!=1;}
+)cpp", "TR0201"},
+      {"independent-invoke-address", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=std::invoke(h,Value::one);static_assert(__is_same(decltype(std::invoke(h,Value::one)),S));static_assert(sizeof(&std::invoke<H&,Value>)>0);return n!=1;}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype((sizeof(long double),h)(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h((sizeof(long double),Value::one))),S));return n!=1;}
+)cpp", "TR0201"},
+      {"copy-initializer", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+int f(H&h){H copy=(sizeof(long double),h);auto n=copy(Value::one);static_assert(__is_same(decltype(copy(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+Value arg(int n=sizeof(long double))noexcept{return static_cast<Value>(n);}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(arg())),S));return n!=1;}
+)cpp", "TR0201"},
+      {"missing-receiver-definition", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+H&source(H&h)noexcept;int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(source(h)(Value::one)),S));return n!=1;}
+)cpp", "TR0203"},
+      {"temporary-destructor-body", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};Value arg(Ticket t=Ticket())noexcept{return Value::one;}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(arg())),S));return n!=1;}
+)cpp", "TR0201"},
+      {"temporary-destructor-exception", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};Value arg(Ticket t=Ticket())noexcept{return Value::one;}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(arg())),S));return n!=1;}
+)cpp", "TR0201"},
+      {"missing-temporary-destructor", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+struct Ticket{~Ticket()noexcept;};Value arg(Ticket t=Ticket())noexcept{return Value::one;}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(arg())),S));return n!=1;}
+)cpp", "TR0203"},
+      {"invoke-specialization", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>S invoke<H&,Value>(H&h,Value&&n)noexcept{return h(n);}}}int f(H&h){auto n=std::invoke(h,Value::one);static_assert(__is_same(decltype(std::invoke(h,Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"wrapper-specialization", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>template<>S reference_wrapper<H>::operator()<Value>(Value&&n)const noexcept{return static_cast<S>(n);}}}int f(W&w){auto n=w(Value::one);static_assert(__is_same(decltype(w(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"inner-exception-variable-specialization", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<H&,Value> = true;}}int f(W&w){auto n=w(Value::one);static_assert(__is_same(decltype(w(Value::one)),S));return n!=1;}
+)cpp", "TR0202"},
+      {"outer-exception-variable-specialization", R"cpp(
+using H=std::hash<Value>;using W=std::reference_wrapper<H>;
+namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<W&,Value> = true;}}int f(W&w){auto n=std::invoke(w,Value::one);static_assert(__is_same(decltype(std::invoke(w,Value::one)),S));return n!=1;}
+)cpp", "TR0202"},
+      {"hash-written-template-argument", R"cpp(
+using T=std::hash<decltype((sizeof(long double),Value::one))>;int f(T&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"underlying-scalar-primary-redeclaration", R"cpp(
+enum class Wide:long long{one=1};using H=std::hash<Wide>;
+namespace std{inline namespace __1{template<class T,size_t N>struct __scalar_hash;}}int f(H&h){auto n=h(Wide::one);static_assert(__is_same(decltype(h(Wide::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"underlying-scalar-operator-specialization", R"cpp(
+enum class Wide:long long{one=1};using H=std::hash<Wide>;
+namespace std{inline namespace __1{template<>S __scalar_hash<long long,1>::operator()(long long)const noexcept{return 0;}}}int f(H&h){auto n=h(Wide::one);static_assert(__is_same(decltype(h(Wide::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"underlying-type-alias", R"cpp(
+using U=decltype((sizeof(long double),short{}));enum class Poison:U{one=1};using H=std::hash<Poison>;
+int f(H&h){auto n=h(Poison::one);static_assert(__is_same(decltype(h(Poison::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"enumerator-initializer", R"cpp(
+enum Poison{one=(sizeof(long double),1)};using H=std::hash<Poison>;
+int f(H&h){auto n=h(Poison::one);static_assert(__is_same(decltype(h(Poison::one)),S));return n!=1;}
+)cpp", "TR0201"},
+      {"underlying-trait-specialization", R"cpp(
+namespace std{inline namespace __1{template<>struct underlying_type<Value>{using type=short;};}}using H=std::hash<Value>;
+int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("enum-hash-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("enum-hash-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using S=std::size_t;
+enum class Value:short{one=1};
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WideHashQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("wide-hash-queries.cpp");
   const auto Output = tmpFile("wide-hash-queries.nc");
@@ -68858,9 +69163,6 @@ int f(H&h,const H&c){auto n=std::invoke(h,1);static_assert(__is_same(decltype(st
       {"unavailable-wide-character-hash", R"cpp(
 int f(){std::hash<wchar_t> h;auto n=h(wchar_t(1));static_assert(__is_same(decltype(h(wchar_t(1))),S));return n;}
 )cpp", "TR0202"},
-      {"enum-hash", R"cpp(
-enum E{value=1};int f(){std::hash<E> h;auto n=std::invoke(h,value);static_assert(__is_same(decltype(std::invoke(h,value)),S));return n;}
-)cpp", "TR0201"},
       {"user-hash-specialization", R"cpp(
 struct A{int n;};namespace std{inline namespace __1{template<>struct hash<A>{S operator()(A a)const noexcept{return a.n;}};}}int f(){std::hash<A> h;auto n=h(A{1});static_assert(__is_same(decltype(h(A{1})),S));return n;}
 )cpp", "TR0201"},

@@ -2713,7 +2713,7 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
   if (!Object)
     return std::nullopt;
   const bool Hash = Object->Record->getName() == "hash";
-  bool ScalarHash = false;
+  llvm::StringRef HashBase;
   if (Hash) {
     const auto *Specialization =
         cast<ClassTemplateSpecializationDecl>(Object->Record);
@@ -2721,18 +2721,21 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
     const bool Floating = Value->isSpecificBuiltinType(BuiltinType::Float) ||
                           Value->isSpecificBuiltinType(BuiltinType::Double);
     if (!Value->isIntegralType(A.Context) && !Value->isNullPtrType() &&
-        !Value->isPointerType() && !Floating)
+        !Value->isPointerType() && !Floating && !Value->isEnumeralType())
       return std::nullopt;
-    ScalarHash = Floating || Value->isSpecificBuiltinType(BuiltinType::LongLong) ||
-                 Value->isSpecificBuiltinType(BuiltinType::ULongLong);
+    if (Value->isEnumeralType())
+      HashBase = "__enum_hash";
+    else if (Floating || Value->isSpecificBuiltinType(BuiltinType::LongLong) ||
+             Value->isSpecificBuiltinType(BuiltinType::ULongLong))
+      HashBase = "__scalar_hash";
   }
   // Pin every declaration family in the empty carrier's SDK base chain.
-  // Wide integer and floating hashes add __scalar_hash between the public hash
-  // and its unary typedef base; replacements cannot supply lifecycle metadata.
+  // Wide integer, floating and enum hashes add an implementation base before
+  // the unary typedef base; replacements cannot supply lifecycle metadata.
   const CXXRecordDecl *Records[] = {Object->Record, nullptr, nullptr};
-  for (unsigned I = 0; I != (ScalarHash ? 2u : 1u); ++I) {
+  for (unsigned I = 0; I != (HashBase.empty() ? 1u : 2u); ++I) {
     if (!Records[I]->getNumBases()) {
-      if (ScalarHash)
+      if (!HashBase.empty())
         return std::nullopt;
       break;
     }
@@ -2756,12 +2759,12 @@ functionalObjectStorageSource(Adapter &A, const CXXRecordDecl *Record) {
         Current->hasUserDeclaredDestructor() || !Current->hasTrivialDestructor() ||
         !Current->isEmpty() || !Current->isTriviallyCopyable() ||
         !Current->field_empty() ||
-        (I && !(ScalarHash && I == 1) && Current->getNumBases()))
+        (I && (HashBase.empty() || I != 1) && Current->getNumBases()))
       return std::nullopt;
     llvm::StringRef Path = Hash ? "__functional/hash.h"
                                 : "__functional/operations.h";
-    if (ScalarHash && I == 1) {
-      if (Current->getName() != "__scalar_hash")
+    if (!HashBase.empty() && I == 1) {
+      if (Current->getName() != HashBase)
         return std::nullopt;
     } else if (I) {
       if (Current->getName() == "__binary_function_keep_layout_base")
@@ -3214,27 +3217,60 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
     return nullptr;
   const bool Inherited = Method->getParent()->getCanonicalDecl() !=
                          Object->Record->getCanonicalDecl();
-  // The call descriptor proves a wide hash's exact public-to-scalar base cast.
+  // The descriptor proves a wide/enum hash's exact public-to-base cast.
   // Retain its public owner here; the private base is not itself an admitted
   // function object and must not acquire an independent query source.
   if (Inherited &&
       (Object->Record->getName() != "hash" ||
        Object->Record->getNumBases() != 1 ||
-       Method->getParent()->getName() != "__scalar_hash" ||
+       (Method->getParent()->getName() != "__scalar_hash" &&
+        Method->getParent()->getName() != "__enum_hash") ||
        Object->Record->bases_begin()->getType()->getAsCXXRecordDecl()
                ->getCanonicalDecl() != Method->getParent()->getCanonicalDecl()))
     return nullptr;
   const auto *Target = Method->getType()->getAs<FunctionProtoType>();
   if (Object->Record->getName() == "hash") {
     // The exact operation descriptor proves the integral/null, wide integer,
-    // floating or pointer hashing contract, including any SDK delegate.
+    // floating, enum or pointer hashing contract, including any SDK delegate.
     if (!Target || !Method->getDefinition() ||
         Target->getExceptionSpecType() != EST_BasicNoexcept ||
         Target->getNoexceptExpr())
       return nullptr;
     const auto *Record =
         cast<ClassTemplateSpecializationDecl>(Object->Record);
-    if (Inherited || Record->getTemplateArgs().get(0).getAsType()->isPointerType())
+    const auto Value = Record->getTemplateArgs().get(0).getAsType();
+    if (const auto *Enum = Value->getAs<EnumType>()) {
+      // The enum operation descriptor already proves this return's cast and
+      // nested hash call. Close the selected integer hash's source as well;
+      // an enum must not hide a replacement of its underlying SDK delegate.
+      const auto Underlying = Enum->getDecl()->getIntegerType();
+      const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+      const auto *Return = Body && Body->size() == 2
+          ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+      const Expr *Returned = Return ? Return->getRetValue() : nullptr;
+      if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Returned))
+        Returned = Cleanup->getSubExpr();
+      const auto *Nested = Returned
+          ? dyn_cast<CXXOperatorCallExpr>(Returned->IgnoreParenImpCasts()) : nullptr;
+      const auto *NestedReceiver = Nested && Nested->getNumArgs() == 2
+          ? Nested->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl()
+          : nullptr;
+      const auto NestedObject = functionalObjectStorageSource(A, NestedReceiver);
+      const auto *NestedRecord = NestedObject
+          ? cast<ClassTemplateSpecializationDecl>(NestedObject->Record) : nullptr;
+      if (!Inherited || Underlying.isNull() ||
+          !Underlying->isIntegralType(A.Context) || !NestedRecord ||
+          NestedRecord->getName() != "hash" ||
+          !A.Context.hasSameType(
+              NestedRecord->getTemplateArgs().get(0).getAsType(), Underlying))
+        return nullptr;
+      // Recurse only into a builtin integer specialization, never another enum.
+      const auto *NestedTarget = functionalObjectInvokeTargetSource(
+          A, dyn_cast<CXXMethodDecl>(Nested->getDirectCallee()), NestedReceiver);
+      if (!NestedTarget || operationCalleePrototype(Nested) != NestedTarget)
+        return nullptr;
+    }
+    if (Inherited || Value->isPointerType())
       return utilitySDKFunctionSource(A, Method, "__functional/hash.h")
                  ? Target : nullptr;
     // Members of the explicit integral/null/floating specializations have no
@@ -10764,9 +10800,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         S = Found->second;
     if (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(S);
         Cast && FunctionalHashBaseCastSources.count(Cast))
-      // Only this checked hash call owns the implicit public-to-scalar view.
+      // Only this checked hash call owns the implicit public-to-base view.
       // Retain the original receiver's type and initializer source instead of
-      // demanding a project traversal of the private scalar base's TypeLocs.
+      // demanding a project traversal of the private hash base's TypeLocs.
       S = Cast->getSubExpr();
     // Collect from the actual source traversal, including unevaluated operands
     // and expressions reached through TypeLoc or retained template source edges.
@@ -10835,7 +10871,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                     A.chargeExpansion(1, Call->getExprLoc());
                   else if (Owner->second != Call)
                     A.reject(Call->getExprLoc(), "hash base cast source",
-                             "An implicit scalar base view requires one exact hash call.");
+                             "An implicit hash base view requires one exact hash call.");
                 }
             }
           }
@@ -11371,7 +11407,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     llvm::SmallVector<const InitListExpr *, 4> Nodes;
     const auto *Record = Object->Record;
     const auto *Parent = List;
-    // Scalar-based hashes have two nested empty base initializers. Map both
+    // Scalar/enum hashes have two nested empty base initializers. Map both
     // only after the entire authenticated chain has matched the public owner.
     for (unsigned Depth = 0; Record->getNumBases(); ++Depth) {
       if (Depth == 2 || Record->getNumBases() != 1 ||

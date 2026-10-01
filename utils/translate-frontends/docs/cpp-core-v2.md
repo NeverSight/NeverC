@@ -2301,9 +2301,7 @@ The empty carrier, unary typedef base and hash primary/forward declaration
 families are pinned separately. Stored, const, copied, dereferenced and temporary
 hash objects and wrappers use that same proof. Original expressions, written
 types, initializers, selected defaults and temporary cleanup remain independent
-source roots and execute no query effects. Enum hashes retain their separate
-query-source requirements; their evaluated calls continue to use the runtime
-hash contract above.
+source roots and execute no query effects.
 The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
 its native C++ unavailability diagnostic.
 
@@ -2340,6 +2338,25 @@ selected defaults and temporary cleanup keep independent source requirements
 and execute no query effects. Independent method/adapter addresses and private
 base sources consumed by a call query gain no authorization from another hash
 call. `long double` hashes remain outside the admitted floating type boundary.
+
+Admitted scoped and unscoped enum hashes support direct, `std::invoke` and
+wrapped result-source queries after evaluated calls materialize the inherited
+enum operator, its underlying integer hash and each selected adapter. Results
+remain `size_t`, preserving the runtime conversion through the enum's signed
+or unsigned underlying integer type. The public hash, exact `__enum_hash` base,
+empty unary typedef base and selected operator retain pinned declaration
+families. The delegated integer hash has its own source proof, including the
+scalar primary/partial specialization and operator for wide underlying types.
+An enum hash cannot hide a replacement of that integer delegate.
+The implicit public-to-enum-base view and nested empty base initializers retain
+only their exact public owner. Const, copied, dereferenced and temporary objects
+and wrappers use the same proof. Original enum declarations, underlying aliases,
+enumerator initializers, caller expressions, written types, selected defaults
+and temporary cleanup remain independent source roots and execute no query
+effects. Each callable category and argument pack requires its own materialized
+adapter and exception-source proof; queries do not instantiate missing bodies.
+Independent private-base objects, private-base sources consumed by a call query,
+and method/adapter addresses gain no authorization from a public enum hash call.
 
 Admitted object-pointer, `void`-pointer and fixed-arity function-pointer hashes
 also support direct, `std::invoke` and wrapped result-source queries. Their
