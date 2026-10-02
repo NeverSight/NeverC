@@ -1366,6 +1366,31 @@ static void test_pipe(void) {
     neverc_os_close(writer);
 
 #if !defined(_WIN32)
+    /* Go os.File.Read returns what a pipe already holds instead of waiting
+     * to fill the whole buffer while the writer is still open. The read runs
+     * in a child so a blocking read ends with SIGALRM instead of a hang. */
+    {
+        pid_t child = fork();
+        ASSERT_TRUE(child >= 0);
+        if (child == 0) {
+            neverc_os_file_t *pr = NULL, *pw = NULL;
+            char big[64];
+            alarm(5);
+            if (neverc_os_pipe(&pr, &pw) != 0)
+                _exit(2);
+            if (neverc_os_write(pw, "ping", 4) != 4)
+                _exit(3);
+            _exit(neverc_os_read(pr, big, sizeof(big)) == 4 ? 0 : 1);
+        }
+        if (child > 0) {
+            int status = 0;
+            ASSERT_EQ(waitpid(child, &status, 0), child);
+            ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        }
+    }
+#endif
+
+#if !defined(_WIN32)
     printf("[pipe_cloexec]\n");
     int before[256];
     for (int fd = 0; fd < 256; fd++)
