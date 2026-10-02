@@ -729,6 +729,19 @@ static void test_strict_rfc3339(void) {
         check_bool("rfc3339/layout +23:59 same instant",
                    out.sec == layout_out.sec && out.nsec == layout_out.nsec, 1);
     }
+    /* Go Parse(RFC3339) falls back to the layout parser, whose 15 field
+     * takes one or two digits; keep parity with the layout path. */
+    check_int("accept one-digit rfc3339 hour",
+              neverc_time_parse_rfc3339("2024-01-15T1:30:45Z", &out), 0);
+    check_int64("one-digit rfc3339 hour value", out.sec, 1705282245LL);
+    check_int("accept one-digit rfc3339 hour with offset",
+              neverc_time_parse_rfc3339("2024-01-15T1:30:45.5+08:00", &out), 0);
+    check_int64("one-digit rfc3339 hour offset value", out.sec, 1705253445LL);
+    check_int("one-digit rfc3339 hour offset nsec", out.nsec, 500000000);
+    check_int("reject three-digit rfc3339 hour",
+              neverc_time_parse_rfc3339("2024-01-15T123:30:45Z", &out), -1);
+    check_int("reject missing rfc3339 hour",
+              neverc_time_parse_rfc3339("2024-01-15T:30:45Z", &out), -1);
     check_int("reject leap second 60",
               neverc_time_parse_rfc3339("2024-01-15T12:30:60Z", &out), -1);
     check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
