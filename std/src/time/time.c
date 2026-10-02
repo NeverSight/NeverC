@@ -1442,8 +1442,9 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             li += 1;
         } else if (layout[li] == ' ') {
             /* Go skip/cutspace: a layout space is one or more spaces on both
-             * sides, so "2006-01-02 15:04:05" accepts extra spaces. */
-            if (vi >= vlen || value[vi] != ' ') return -1;
+             * sides, so "2006-01-02 15:04:05" accepts extra spaces. A value
+             * that is already exhausted also matches. */
+            if (vi < vlen && value[vi] != ' ') return -1;
             while (li < llen && layout[li] == ' ') li++;
             while (vi < vlen && value[vi] == ' ') vi++;
         } else {
