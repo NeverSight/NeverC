@@ -428,10 +428,16 @@ int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_
         while (pos < len) {
             size_t line_end = pos + scan_first2(data + pos, len - pos, '\r', '\n');
 
+            /* Like Go's ReadMessage, drop trailing SP/HTAB from every
+             * physical line and join non-empty folded lines with one SP. */
             size_t line_len = line_end - pos;
-            size_t need = line_len + ((vpos > 0 && pos != vstart) ? 1U : 0U);
+            while (line_len > 0 && (data[pos + line_len - 1] == ' ' ||
+                                    data[pos + line_len - 1] == '\t'))
+                line_len--;
+            int join = vpos > 0 && line_len > 0;
+            size_t need = line_len + (join ? 1U : 0U);
             if (need >= sizeof(h->value) - vpos) return -1;
-            if (vpos > 0 && pos != vstart) h->value[vpos++] = ' ';
+            if (join) h->value[vpos++] = ' ';
             memcpy(h->value + vpos, data + pos, line_len);
             vpos += line_len;
 
