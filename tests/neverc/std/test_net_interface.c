@@ -54,6 +54,15 @@ static void test_interfaces(void) {
     check_true("naddrs within cap", naddrs_ok);
     check_true("prefix_len in range for family", prefix_ok);
 
+    /* Go net.Interfaces leaves HardwareAddr empty for an all-zero link
+     * address such as the Linux loopback device's. */
+    int zero_hw = 0;
+    for (int i = 0; i < list.count; i++) {
+        if (strcmp(list.ifaces[i].hw_addr, "00:00:00:00:00:00") == 0)
+            zero_hw = 1;
+    }
+    check_true("no all-zero hardware address", !zero_hw);
+
     /* Should have at least loopback */
     int has_lo = 0;
     for (int i = 0; i < list.count; i++) {
@@ -135,6 +144,8 @@ static void test_interface_by_name(void) {
                          NEVERC_NET_FLAG_MULTICAST | NEVERC_NET_FLAG_RUNNING;
         check_true("loopback flags are known bits",
                    (iface.flags & ~known) == 0);
+        check_true("loopback has no hardware address",
+                   iface.hw_addr[0] == '\0');
     }
 
     /* Non-existent */
