@@ -3155,30 +3155,80 @@ static bool utilityUniquePtrConditionalMoveSource(
   return FoundCopy;
 }
 
+static bool utilityConditionalMoveSignatureSource(
+    Adapter &A, const CXXMethodDecl *Function,
+    std::vector<const CXXMethodDecl *> *Signatures) {
+  for (const auto *Declaration : Function->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    if (!A.S.owns(A.Sources, Declaration->getLocation()))
+      return false;
+    if (Declaration->isImplicit())
+      continue;
+    const auto *Info = Declaration->getTypeSourceInfo();
+    if (!Info)
+      return false;
+    if (Signatures)
+      Signatures->push_back(cast<CXXMethodDecl>(Declaration));
+  }
+  return true;
+}
+
+static bool utilityDeletedCopyConditionalMoveSource(
+    Adapter &A, const CallExpr *Call, const CXXRecordDecl *Record,
+    std::vector<const CXXMethodDecl *> *Signatures) {
+  const auto *Function = Call->getDirectCallee();
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!Call->isXValue() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Arguments->get(0).getAsType()->isObjectType() ||
+      !A.Context.hasSameType(Arguments->get(0).getAsType(), Call->getType()))
+    return false;
+  for (const auto *Declaration : Record->decls())
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+        Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+      return false; // Constructor-template selection keeps its own sources.
+  const auto CopyParameter = A.Context.getLValueReferenceType(
+      A.Context.getRecordType(Record).withConst());
+  bool FoundCopy = false;
+  for (const auto *Constructor : Record->ctors()) {
+    A.chargeExpansion(1, Constructor->getLocation());
+    if (Constructor->isInheritingConstructor())
+      return false;
+    if (!Constructor->isCopyOrMoveConstructor())
+      continue;
+    if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+        Constructor->getNumParams() != 1 ||
+        !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
+      return false;
+    if (Constructor->isCopyConstructor() && !Constructor->isImplicit() &&
+        Constructor->isDeleted() &&
+        Constructor->getCanonicalDecl()->isDeletedAsWritten() &&
+        Constructor->getAccess() == AS_public &&
+        A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                               CopyParameter))
+      FoundCopy = true;
+  }
+  if (const auto *Destructor = Record->getDestructor();
+      Destructor &&
+      !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
+    return false;
+  // An explicitly deleted exact const-copy makes the copy trait false for
+  // both T and const T. This proves the pinned T&& branch independently of
+  // move bodies or the owning graph. Retain written special-member sources,
+  // but never declare, instantiate or execute a hypothetical operation.
+  return FoundCopy;
+}
+
 static bool utilityTrivialConditionalMoveSource(
     Adapter &A, const CXXRecordDecl *Root,
-    std::vector<const TypeSourceInfo *> *Signatures) {
+    std::vector<const CXXMethodDecl *> *Signatures) {
   // The pinned builtin supplies the trait decision. Limit its owning graph to
   // trivial special members, and retain their written signatures separately.
   // Normal record admission proves storage, including non-standard-layout
   // reference carriers. Reference fields do not own a constructor graph.
   // No constructor body or hypothetical operation is instantiated here.
   std::set<const CXXRecordDecl *> Seen;
-  auto Signature = [&](const FunctionDecl *Function) {
-    for (const auto *Declaration : Function->redecls()) {
-      A.chargeExpansion(1, Declaration->getLocation());
-      if (!A.S.owns(A.Sources, Declaration->getLocation()))
-        return false;
-      if (Declaration->isImplicit())
-        continue;
-      const auto *Info = Declaration->getTypeSourceInfo();
-      if (!Info)
-        return false;
-      if (Signatures)
-        Signatures->push_back(Info);
-    }
-    return true;
-  };
   auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
                    unsigned Depth) -> bool {
     Record = Record ? Record->getDefinition() : nullptr;
@@ -3203,11 +3253,13 @@ static bool utilityTrivialConditionalMoveSource(
           (!Constructor->isDefaulted() && !Constructor->isDeleted()) ||
           (!Constructor->isTrivial() && !Constructor->isDeleted()))
         return false;
-      if (Constructor->isCopyOrMoveConstructor() && !Signature(Constructor))
+      if (Constructor->isCopyOrMoveConstructor() &&
+          !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
     }
     if (const auto *Destructor = Record->getDestructor();
-        Destructor && !Signature(Destructor))
+        Destructor &&
+        !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
       return false;
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
@@ -3224,7 +3276,7 @@ static bool utilityTrivialConditionalMoveSource(
 
 static bool utilityValueAdapterSource(
     Adapter &A, const CallExpr *Call,
-    std::vector<const TypeSourceInfo *> *ConditionalSignatures = nullptr) {
+    std::vector<const CXXMethodDecl *> *ConditionalSignatures = nullptr) {
   const auto Operation =
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
   if (!Operation || (*Operation != UtilityOperation::Move &&
@@ -3273,7 +3325,8 @@ static bool utilityValueAdapterSource(
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
   // on their ordinary checks. Conditional move with an object template
-  // argument additionally retains its trivial owning constructor graph.
+  // argument additionally proves a trivial owning graph or an explicit
+  // deleted const-copy, retaining the original special-member signatures.
   const bool OwnedRecord =
       Definition &&
       !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
@@ -3281,6 +3334,8 @@ static bool utilityValueAdapterSource(
       !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
       Type.getAddressSpace() == LangAS::Default &&
       (ReferenceCast ||
+       utilityDeletedCopyConditionalMoveSource(A, Call, Definition,
+                                              ConditionalSignatures) ||
        utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures));
   const bool ConditionalOwner =
       Record && *Operation == UtilityOperation::MoveIfNoexcept && !ReferenceCast &&
@@ -8700,6 +8755,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const CallExpr *> ConsumedCallSignatures;
   std::set<const CallExpr *> QueuedCallSignatures;
   std::set<const CallExpr *> CompletedQueryCalls;
+  std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
+  std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   QueryTemplateSelectionSources CompletedQueryTemplateSelections;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
@@ -11895,7 +11952,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 }
             }
           }
-        std::vector<const TypeSourceInfo *> ConditionalMoveSignatures;
+        std::vector<const CXXMethodDecl *> ConditionalMoveSignatures;
         const bool ValueAdapter =
             utilityValueAdapterSource(A, Call, &ConditionalMoveSignatures);
         if (utilityUniquePtrSwapSource(A, Call) ||
@@ -11913,8 +11970,21 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             if (Entry->second == Call) {
               AuthenticatedUtilityCall = Call;
               if (ValueAdapter)
-                for (const auto *Signature : ConditionalMoveSignatures)
-                  operationTypeDependency(Signature);
+                for (const auto *Signature : ConditionalMoveSignatures) {
+                  operationTypeDependency(Signature->getTypeSourceInfo());
+                  // A class instance may still have lazy copy/move bodies.
+                  // The exact adapter proof consumes its written signature,
+                  // so queue only an already resolved signature for checking.
+                  // Defaulted members retain their existing generated proof.
+                  if (concreteClassFunction(Signature) &&
+                      !Signature->isDefaulted() &&
+                      standardExceptionSpecification(
+                          Signature->getType()->getAs<FunctionProtoType>()) &&
+                      QueuedConditionalMoveSignatures.insert(Signature).second) {
+                    A.chargeExpansion(1, Call->getExprLoc());
+                    ConsumedConditionalMoveSignatures.push_back(Signature);
+                  }
+                }
             }
           }
         // The public algorithm has no written exception specification. Its
@@ -16774,14 +16844,20 @@ public:
     // visiting all implicit declarations would broaden source admission. Each
     // signature queue can discover more work for another; process every new item
     // once and leave each method's scopes before starting another signature.
-    for (std::size_t Index = 0, DestructorIndex = 0, ConstructorIndex = 0, CallIndex = 0;;) {
+    for (std::size_t Index = 0, DestructorIndex = 0, ConstructorIndex = 0,
+                     CallIndex = 0, ConditionalMoveIndex = 0;;) {
+      while (ConditionalMoveIndex < ConsumedConditionalMoveSignatures.size())
+        if (!checkConsumedOperationSignature(
+                ConsumedConditionalMoveSignatures[ConditionalMoveIndex++]))
+          return false;
       if (!finishConsumedDestructorSignatures(DestructorIndex) ||
           !finishConsumedConstructorSignatures(ConstructorIndex) ||
           !finishConsumedCallSignatures(CallIndex))
         return false;
       if (DestructorIndex != ConsumedDestructorSignatures.size() ||
           ConstructorIndex != ConsumedConstructorSignatures.size() ||
-          CallIndex != ConsumedCallSignatures.size())
+          CallIndex != ConsumedCallSignatures.size() ||
+          ConditionalMoveIndex != ConsumedConditionalMoveSignatures.size())
         continue;
       if (Index == GeneratedMethods.size())
         break;
