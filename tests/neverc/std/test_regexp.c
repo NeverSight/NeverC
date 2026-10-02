@@ -908,6 +908,20 @@ static void test_named_groups_and_replace_expand(void) {
     free(r);
     neverc_regexp_free(re);
 
+    /* Go Expand: a repeated name stands for the first group of that name
+     * that took part in the match, so each alternative's group expands;
+     * SubexpIndex still reports the first group by position. */
+    re = neverc_regexp_compile("(?P<x>a)|(?P<x>b)", NULL);
+    r = neverc_regexp_replace_all(re, "ab", "[${x}]", &outlen);
+    check_str("replace duplicate ${x}", r, "[a][b]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "ba", "[$x]", &outlen);
+    check_str("replace duplicate $x", r, "[b][a]");
+    free(r);
+    check_int("duplicate name index stays first",
+              neverc_regexp_subexp_index(re, "x"), 1);
+    neverc_regexp_free(re);
+
     /* Go extract() walks unicode.IsLetter/IsDigit. Unknown names vanish. */
     re = neverc_regexp_compile("a", NULL);
     r = neverc_regexp_replace_all(re, "a", "$\xc3\xa9", &outlen);
