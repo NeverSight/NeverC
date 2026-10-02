@@ -720,6 +720,29 @@ static void test_token_overflow(void) {
     ASSERT_INT_EQ(text[0] == '"', 1);
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
     ASSERT_INT_EQ(neverc_scanner_error_count(NULL), 0);
+
+    /* Skipped comments are never returned, so their length is not an
+     * error (Go reports none). */
+    enum { COMMENT_LEN = 5000 };
+    char *cmt = (char *)malloc(COMMENT_LEN + 4);
+    ASSERT_INT_EQ(cmt != NULL, 1);
+    if (!cmt) return;
+    memcpy(cmt, "/*", 2);
+    memset(cmt + 2, 'x', COMMENT_LEN - 4);
+    memcpy(cmt + COMMENT_LEN - 2, "*/ a", 4);
+    neverc_scanner_init(&s, cmt, COMMENT_LEN + 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "a");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+
+    memcpy(cmt, "//", 2);
+    memset(cmt + 2, 'y', COMMENT_LEN - 2);
+    memcpy(cmt + COMMENT_LEN, "\nb", 2);
+    neverc_scanner_init(&s, cmt, COMMENT_LEN + 2);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "b");
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+    free(cmt);
 }
 
 static void test_mixed(void) {
