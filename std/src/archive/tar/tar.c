@@ -253,6 +253,15 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
     size_t name_length = tar_field_length(block, 100);
     size_t prefix_length = 0;
     int format = tar_header_format(block);
+    uint64_t ignored = 0;
+    if (format != TAR_FORMAT_V7 &&
+        (parse_octal(block + 329, 8, &ignored) != 0 ||
+         parse_octal(block + 337, 8, &ignored) != 0))
+        return -1;
+    if (format == TAR_FORMAT_STAR &&
+        (parse_octal(block + 476, 12, &ignored) != 0 ||
+         parse_octal(block + 488, 12, &ignored) != 0))
+        return -1;
     if (format == TAR_FORMAT_USTAR || format == TAR_FORMAT_STAR)
         prefix_length = tar_field_length(
             block + 345, format == TAR_FORMAT_STAR ? 131 : 155);
