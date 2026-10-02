@@ -554,8 +554,12 @@ int neverc_asn1_decode_printable_string(const neverc_asn1_element_t *elem,
     if (asn1_decode_primitive_string(elem, NEVERC_ASN1_PRINTABLE_STR,
                                      text, len) != 0)
         return -1;
-    for (size_t i = 0; i < *len; i++)
-        if (!asn1_printable_char((*text)[i])) return -1;
+    /* Like Go's parser, tolerate '*' (wildcard names) and '&' on input:
+     * deployed certificates carry both in PrintableString fields. */
+    for (size_t i = 0; i < *len; i++) {
+        unsigned char c = (*text)[i];
+        if (!asn1_printable_char(c) && c != '*' && c != '&') return -1;
+    }
     return 0;
 }
 
