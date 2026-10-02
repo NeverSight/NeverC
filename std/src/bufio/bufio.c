@@ -153,7 +153,9 @@ static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
         meta.failed = 1;
         (void)bufio_scanner_meta_store(s, &meta);
     }
-    s->err = err;
+    /* Go Scanner.setErr: the first non-EOF error wins (EOF is err == 0). */
+    if (s->err == 0)
+        s->err = err;
     s->done = 1;
     s->start = s->buf_len;
     s->token = NULL;
