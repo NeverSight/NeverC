@@ -635,6 +635,130 @@ static void quic_test_roundtrip(void) {
     neverc_network_test_remove_certs(&files);
 }
 
+typedef struct {
+    neverc_quic_stream_t *stream;
+    neverc_thread_channel_t *done;
+    int result;
+} quic_close_reader_t;
+
+static void quic_close_reader_task(void *context) {
+    quic_close_reader_t *reader = (quic_close_reader_t *)context;
+    char buffer[8];
+    reader->result = neverc_quic_stream_read(reader->stream, buffer,
+                                             sizeof(buffer));
+    (void)neverc_thread_channel_send(reader->done, reader);
+}
+
+/* Closing an endpoint stops the loop that would have finished draining its
+ * accepted connections. Unless the close finishes them itself, a connection
+ * stays draining forever and a reader blocked on one of its streams never
+ * wakes up. Covers both the endpoint starting the close and a peer that
+ * closed first. */
+static void quic_test_endpoint_close_finishes_accepted(int peer_closed) {
+    neverc_network_test_files_t files;
+    CHECK(neverc_network_test_write_certs("quic-endpoint-close", &files) ==
+          0);
+    int port = quic_test_free_udp_port();
+    CHECK(port > 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *alpn[] = {"neverc-quic-close/1", NULL};
+    neverc_quic_config_t server_config = neverc_quic_config_default();
+    server_config.cert_file = files.server_cert;
+    server_config.key_file = files.server_key;
+    server_config.alpn = alpn;
+    const char *error = NULL;
+    neverc_quic_endpoint_t *endpoint = neverc_quic_listen(
+        address, &server_config, &error);
+    CHECK(endpoint != NULL);
+    if (!endpoint) {
+        neverc_network_test_remove_certs(&files);
+        return;
+    }
+
+    neverc_quic_config_t client_config = neverc_quic_config_default();
+    client_config.alpn = alpn;
+    client_config.server_name = "localhost";
+    client_config.root_cert_file = files.ca;
+    neverc_quic_conn_t *client = neverc_quic_dial(address, &client_config,
+                                                    &error);
+    CHECK(client != NULL);
+    struct neverc_quic_conn *server =
+        client ? neverc_quic_accept(endpoint, &error) : NULL;
+    CHECK(server != NULL);
+    neverc_quic_stream_t *stream =
+        server ? neverc_quic_open_stream(client, &error) : NULL;
+    CHECK(stream != NULL);
+    neverc_quic_stream_t *accepted = NULL;
+    char buffer[8];
+    if (stream) {
+        CHECK(neverc_quic_stream_write(stream, "ping", 4U) == 4);
+        accepted = neverc_quic_accept_stream(server, &error);
+        CHECK(accepted != NULL);
+        if (accepted)
+            CHECK(quic_test_stream_read_exact(accepted, buffer, 4U) == 0);
+    }
+
+    quic_close_reader_t reader = {accepted, neverc_thread_channel_create(1),
+                                  -100};
+    neverc_thread_executor_t *executor =
+        accepted ? neverc_thread_executor_create(1U, 1U) : NULL;
+    int reading = reader.done && executor &&
+        neverc_thread_executor_submit(executor, quic_close_reader_task,
+                                      &reader) == NEVERC_THREAD_OK;
+    CHECK(!accepted || reading);
+    if (reading)
+        neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
+
+    if (server && peer_closed) {
+        neverc_quic_conn_close(client, 0U, "client done");
+        for (int attempt = 0;
+             attempt < 2000 && server->state < QUIC_CONN_DRAINING; attempt++)
+            neverc_time_sleep(1 * NEVERC_TIME_MILLISECOND);
+        CHECK(server->state >= QUIC_CONN_DRAINING);
+    }
+    neverc_quic_endpoint_close(endpoint);
+    if (server)
+        CHECK(server->state == QUIC_CONN_CLOSED);
+    if (accepted)
+        CHECK(neverc_quic_stream_try_read(accepted, buffer,
+                                          sizeof(buffer)) == -1);
+    if (reading) {
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_t *deadline = background
+            ? neverc_context_with_timeout(background, 5000, NULL) : NULL;
+        void *finished = NULL;
+        int woke = deadline &&
+            neverc_thread_channel_receive_context(
+                reader.done, deadline, &finished) == NEVERC_THREAD_OK;
+        CHECK(woke);
+        if (!woke) {
+            /* The reader is stuck on the connection, so nothing can be
+             * released safely. */
+            printf("quic-e2e: stream reader still blocked after endpoint "
+                   "close\n");
+            fflush(stdout);
+            _Exit(1);
+        }
+        CHECK(reader.result == -1);
+        neverc_context_free(deadline);
+        neverc_context_free(background);
+    }
+    if (executor) {
+        CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+        neverc_thread_executor_free(executor);
+    }
+    neverc_thread_channel_free(reader.done);
+    neverc_quic_stream_free(accepted);
+    neverc_quic_conn_free(server);
+    neverc_quic_stream_free(stream);
+    if (client) {
+        neverc_quic_conn_close(client, 0U, "endpoint close test done");
+        neverc_quic_conn_free(client);
+    }
+    neverc_network_test_remove_certs(&files);
+}
+
 static void quic_test_clienthello_legacy_session_id_empty(void) {
     neverc_quic_config_t config = neverc_quic_config_default();
     config.insecure_skip_verify = 1;
@@ -693,6 +817,8 @@ int main(void) {
     quic_test_preserves_clienthello_parser_error();
     quic_test_server_flight_preserves_certificate_chain();
     quic_test_roundtrip();
+    quic_test_endpoint_close_finishes_accepted(0);
+    quic_test_endpoint_close_finishes_accepted(1);
     quic_test_migration_respects_anti_amplification();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");
