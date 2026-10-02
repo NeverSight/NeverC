@@ -2420,7 +2420,9 @@ static int parse_request_mode(const char *raw, size_t raw_length,
             if (value_length != 12 ||
                 strcasecmp_n(value, "100-continue", 12) != 0)
                 goto invalid;
-            request->expect_continue = 1;
+            /* RFC 9110 §10.1.1: ignore 100-continue in an HTTP/1.0
+             * request; such a client must never receive a 1xx. */
+            request->expect_continue = is_http_11;
         }
 
         if (parsed_request_add_header(request, cursor, name_length,
