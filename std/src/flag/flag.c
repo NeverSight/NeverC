@@ -290,9 +290,16 @@ const char *neverc_flag_arg(int i) {
     return remaining_args[i];
 }
 
+static int flag_name_cmp(const void *a, const void *b);
+
 void neverc_flag_print_defaults(void) {
-    for (int i = 0; i < flag_count; i++) {
-        flag_entry_t *f = &flags[i];
+    /* Go flag.PrintDefaults walks VisitAll: lexicographical order. */
+    flag_entry_t snapshot[NEVERC_FLAG_MAX];
+    int count = flag_count;
+    memcpy(snapshot, flags, (size_t)count * sizeof(snapshot[0]));
+    qsort(snapshot, (size_t)count, sizeof(snapshot[0]), flag_name_cmp);
+    for (int i = 0; i < count; i++) {
+        const flag_entry_t *f = &snapshot[i];
         fprintf(stderr, "  -%s", f->name);
         if (f->usage) {
             /* Names already reject CR/LF; usage is still programmer text
