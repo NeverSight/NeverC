@@ -23,6 +23,7 @@
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
@@ -3438,6 +3439,126 @@ static bool functionalFunctionInvokeSource(Adapter &A, const CallExpr *Call) {
                                   "__type_traits/invoke.h") &&
          functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
                                        Arguments->get(1), Target);
+}
+
+static bool utilityFunctionApplySource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "apply" ||
+      Call->getNumArgs() != 2)
+    return false;
+  const auto Callable = Call->getArg(0)->getType();
+  const auto *Target = Callable->isFunctionType()
+                           ? Callable->getAs<FunctionProtoType>()
+                       : Callable->isFunctionPointerType()
+                           ? Callable->getPointeeType()->getAs<FunctionProtoType>()
+                           : nullptr;
+  // Hidden by-value record construction/destruction needs its own selected
+  // source proof. This boundary forwards scalars or references and returns
+  // scalars, references or void; referent layouts still close independently.
+  if (!Target || Target->getReturnType()->isRecordType())
+    return false;
+  for (const auto Parameter : Target->param_types())
+    if (Parameter->isRecordType())
+      return false;
+  const auto Operation =
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+  if (!Operation || *Operation != UtilityOperation::TupleApply)
+    return false;
+  const auto *Helper = functionalReturnedCall(Function);
+  const auto *Dispatch =
+      Helper ? functionalReturnedCall(Helper->getDirectCallee()) : nullptr;
+  const auto *Inner =
+      Dispatch ? functionalReturnedCall(Dispatch->getDirectCallee()) : nullptr;
+  const auto *InnerPrototype = Inner ? operationCalleePrototype(Inner) : nullptr;
+  if (!InnerPrototype || Inner->getDirectCallee() ||
+      !A.Context.hasSameType(InnerPrototype, Target) ||
+      Inner->getNumArgs() != Target->getNumParams() ||
+      Inner->getValueKind() != Call->getValueKind() ||
+      !A.Context.hasSameType(Inner->getType(), Call->getType()) ||
+      !utilitySDKFunctionSource(A, Function, "tuple") ||
+      !utilitySDKFunctionSource(A, Helper->getDirectCallee(), "tuple") ||
+      !utilitySDKFunctionSource(A, Dispatch->getDirectCallee(),
+                               "__type_traits/invoke.h"))
+    return false;
+
+  // The runtime descriptor pins the index pack, selected getters and their
+  // forwarding order. Pin every forwarding declaration family and getter's
+  // nonthrowing prototype as well before consuming the SDK's exception source.
+  auto Forward = [&](const Expr *E) {
+    const auto *ForwardCall =
+        E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+    return ForwardCall &&
+           utilitySDKValueAdapterSource(A, ForwardCall, UtilityOperation::Forward);
+  };
+  if (!Forward(Helper->getArg(0)) || !Forward(Helper->getArg(1)) ||
+      !Forward(Dispatch->getArg(0)))
+    return false;
+  for (unsigned I = 1; I < Dispatch->getNumArgs(); ++I) {
+    const auto *Get =
+        dyn_cast<CallExpr>(Dispatch->getArg(I)->IgnoreParenImpCasts());
+    const auto *Getter = Get ? Get->getDirectCallee() : nullptr;
+    const auto *Prototype =
+        Getter ? Getter->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!Get || !Prototype || Get->getNumArgs() != 1 ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        Prototype->getNoexceptExpr() || operationCalleePrototype(Get) != Prototype ||
+        !Forward(Get->getArg(0)))
+      return false;
+  }
+  const auto *Dispatcher = Dispatch->getDirectCallee();
+  auto ParameterCast = [&](const Expr *E, unsigned Index) {
+    const auto *Cast = dyn_cast<CXXStaticCastExpr>(E->IgnoreParenImpCasts());
+    const auto *Reference = Cast
+        ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+    return Cast && Cast->getCastKind() == CK_NoOp && Reference &&
+           Reference->getDecl() == Dispatcher->getParamDecl(Index) &&
+           A.Context.hasSameType(Cast->getTypeAsWritten(),
+                                Dispatcher->getParamDecl(Index)->getType());
+  };
+  if (!ParameterCast(Inner->getCallee(), 0))
+    return false;
+  for (unsigned I = 0; I < Inner->getNumArgs(); ++I)
+    if (!ParameterCast(Inner->getArg(I), I + 1))
+      return false;
+
+  // Each pinned wrapper spells noexcept(the same call that it returns).
+  // Compare completed ASTs, including selected declarations and parameters;
+  // never instantiate a missing body or evaluate a caller expression here.
+  auto Exception = [&](const CallExpr *Wrapper, const CallExpr *Returned) {
+    const auto *Declaration = Wrapper->getDirectCallee();
+    const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+    const auto *Query = Prototype && Prototype->getNoexceptExpr()
+        ? dyn_cast<CXXNoexceptExpr>(Prototype->getNoexceptExpr()->IgnoreParenImpCasts())
+        : nullptr;
+    if (!Prototype || operationCalleePrototype(Wrapper) != Prototype || !Query ||
+        (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
+         Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
+        Query->getValue() != Target->isNothrow() ||
+        Prototype->isNothrow() != Query->getValue() ||
+        Returned->getValueKind() != Wrapper->getValueKind() ||
+        !A.Context.hasSameType(Returned->getType(), Wrapper->getType()))
+      return false;
+    const auto *Operand = Query->getOperand()->IgnoreParenImpCasts();
+    auto Charge = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> bool {
+      if (!Node)
+        return true;
+      A.chargeExpansion(1, Node->getBeginLoc());
+      if (Depth == 64)
+        return false;
+      for (const auto *Child : Node->children())
+        if (!Self(Self, Child, Depth + 1))
+          return false;
+      return true;
+    };
+    if (!Charge(Charge, Operand, 0) || !Charge(Charge, Returned, 0))
+      return false;
+    llvm::FoldingSetNodeID Written, Executed;
+    Operand->Profile(Written, A.Context, /*Canonical=*/true);
+    Returned->Profile(Executed, A.Context, /*Canonical=*/true);
+    return Written == Executed;
+  };
+  return Exception(Call, Helper) && Exception(Helper, Dispatch) &&
+         Exception(Dispatch, Inner);
 }
 
 static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
@@ -8433,6 +8554,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
   std::map<const Expr *, const CallExpr *> AuthenticatedUtilityReferences;
+  std::map<const CallExpr *, QualType> FunctionApplyResultSources;
   std::map<const CallExpr *, const ValueDecl *> AuthenticatedUserInvokeSources;
   std::map<const Stmt *, const Expr *> MemFnCarrierSources;
   std::map<const Stmt *, const DeclRefExpr *> MemberPointerCarrierSources;
@@ -11007,6 +11129,42 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       A.chargeExpansion(1, Location.getBeginLoc());
     return true;
   }
+  QualType functionApplyResultSource(const CallExpr *Call) {
+    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    if (!Function || !Function->getIdentifier() || Function->getName() != "apply")
+      return {};
+    auto [Source, New] = FunctionApplyResultSources.try_emplace(Call);
+    if (New) {
+      A.chargeExpansion(1, Call->getExprLoc());
+      if (utilityFunctionApplySource(A, Call)) {
+        auto Callable = Call->getArg(0)->getType();
+        if (Callable->isPointerType())
+          Callable = Callable->getPointeeType();
+        Source->second = Callable->getAs<FunctionProtoType>()->getReturnType();
+      }
+    }
+    return Source->second;
+  }
+  QualType functionApplyExpressionSource(const Expr *Expression) {
+    const auto Original = Expression->getType();
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+        Expression = Parentheses->getSubExpr();
+      else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression))
+        Expression = Cleanup->getSubExpr();
+      else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+        Expression = Cast->getSubExpr();
+      else {
+        const auto Result =
+            functionApplyResultSource(dyn_cast<CallExpr>(Expression));
+        return !Result.isNull() &&
+                       A.Context.hasSameType(Original, Result.getNonReferenceType())
+                   ? Result : QualType();
+      }
+      A.chargeExpansion(1, Expression->getExprLoc());
+    }
+    return {};
+  }
   void collectOperationTypeSource(QualType InputType, SourceLocation L, bool Layout) {
     if (ActiveOperationSources.empty() || InputType.isNull())
       return;
@@ -11054,6 +11212,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Deduced = dyn_cast<DecltypeType>(Raw)) {
         registerDecltypeCallResult(Deduced->getUnderlyingExpr());
         operationExpressionDependency(Deduced->getUnderlyingExpr());
+        // apply's deduced scalar result retains a private SDK decltype/declval
+        // spelling. Only this checked call supplies that sugar's source; keep
+        // the actual query expression and original callback result instead.
+        const auto Result = functionApplyExpressionSource(Deduced->getUnderlyingExpr());
+        if (!Result.isNull() &&
+            A.Context.hasSameType(Result, Deduced->getUnderlyingType())) {
+          Self(Self, Result, NeedLayout, Depth + 1);
+          return;
+        }
       }
       if (const auto *Adjusted = dyn_cast<AdjustedType>(Raw))
         Self(Self, Adjusted->getOriginalType(), false, Depth + 1);
@@ -11433,6 +11600,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (ReferenceInvoke || UserInvoke ||
             functionalReferenceAccessSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
+            !functionApplyResultSource(Call).isNull() ||
             functionalObjectInvokeSource(A, Call) ||
             functionalHashCallSource(A, Call))
           if (const auto *Reference = directFunctionReference(Call)) {
@@ -11699,8 +11867,23 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Dependency(Initializer);
         }
       };
-      if (const auto *E = dyn_cast<Expr>(S))
-        collectOperationTypeSource(E->getType(), E->getExprLoc(), true);
+      if (const auto *E = dyn_cast<Expr>(S)) {
+        const auto Result = functionApplyExpressionSource(E);
+        const auto *Reference = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts());
+        const auto Callee = AuthenticatedUtilityReferences.find(Reference);
+        if (!Result.isNull()) {
+          collectOperationTypeSource(Result.getNonReferenceType(), E->getExprLoc(), true);
+        } else if (Callee != AuthenticatedUtilityReferences.end() &&
+                   !functionApplyResultSource(Callee->second).isNull()) {
+          // This exact callee reference/decay owns a pinned SDK signature.
+          // Retain its caller's types, not the private result's declval calls.
+          // Written template arguments and actual operands are still visited.
+          for (const auto *Argument : Callee->second->arguments())
+            collectOperationTypeSource(Argument->getType(), E->getExprLoc(), true);
+        } else {
+          collectOperationTypeSource(E->getType(), E->getExprLoc(), true);
+        }
+      }
       if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S)) {
         if (Query->isArgumentType())
           operationTypeDependency(Query->getArgumentTypeInfo());

@@ -74132,6 +74132,263 @@ using G=std::plus<>;
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionApplyQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("function-apply-queries.cpp");
+  const auto Output = tmpFile("function-apply-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+int calls, defaults, live, destroyed;
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+struct Box { int value; };
+using Tuple = std::tuple<int>;
+using Pair = std::pair<int, int>;
+using Row = std::array<int, 2>;
+using Array = int[2];
+using Function = int(int) noexcept;
+using Pointer = Function *;
+int increment(int n) noexcept { ++calls; return n + 1; }
+int potentially_throwing(int n) { ++calls; return n + 2; }
+int sum(int a, int b) noexcept { return a + b; }
+int converted(long a, double b) noexcept { return int(a + long(b)); }
+int &same(int &n) noexcept { return n; }
+const int &view(const int &n) noexcept { return n; }
+int &&take(int &&n) noexcept { return static_cast<int &&>(n); }
+void reset(int &n) noexcept { n = 0; }
+int answer() noexcept { return 42; }
+int *&pointer_ref(int *&p) noexcept { return p; }
+Pointer &callback(Pointer &p) noexcept { return p; }
+Array &array_ref(Array &a) noexcept { return a; }
+Box &box_ref(Box &b) noexcept { return b; }
+const Row &row_ref(const Row &r) noexcept { return r; }
+Tuple &arguments(Tuple &t, int n = (++defaults, 1), Ticket ticket = Ticket()) noexcept {
+  ++calls; return t;
+}
+Pointer receiver(int n = (++defaults, 1), Ticket ticket = Ticket()) noexcept {
+  ++calls; return increment;
+}
+int query_target(short n) noexcept { ++calls; return n; }
+int query_only(Tuple &t, const Tuple &c) {
+  // Return-type deduction itself can complete the SDK bodies. The translator
+  // consumes those existing bodies without inventing a runtime call.
+  static_assert(__is_same(decltype(std::apply(query_target, t)), int));
+  static_assert(__is_same(decltype(std::apply(query_target, c)), int));
+  static_assert(noexcept(std::apply(query_target, t)));
+  return 0;
+}
+int main() {
+  Tuple tuple(3);
+  const Tuple fixed(4);
+  Pair pair(5, 6);
+  const Pair fixed_pair(7, 8);
+  Row row{{9, 10}};
+  const Row fixed_row{{11, 12}};
+  std::array<int, 1> single{{13}};
+  std::tuple<> empty;
+  std::array<int, 0> zero{};
+  Pointer target = increment;
+  const Pointer fixed_target = increment;
+  int value = 14;
+  int *pointer = &value;
+  Array array{15, 16};
+  Box box{17};
+  std::tuple<int *&> pointers(pointer);
+  std::tuple<Pointer &> callbacks(target);
+  std::tuple<Array &> arrays(array);
+  std::tuple<Box &> boxes(box);
+  std::array<Row, 1> rows{{Row{{18, 19}}}};
+  std::pair<int &, const int &> references(value, value);
+  // Materialize the exact public/helper/dispatch bodies for every category.
+  if (std::apply(increment, tuple) != 4 || std::apply(target, tuple) != 4 ||
+      std::apply(fixed_target, tuple) != 4 || std::apply(&increment, tuple) != 4 ||
+      std::apply(std::move(target), tuple) != 4 || std::apply(*target, tuple) != 4 ||
+      std::apply(potentially_throwing, tuple) != 5 ||
+      std::apply(increment, fixed) != 5 || std::apply(increment, Tuple(20)) != 21 ||
+      std::apply(sum, pair) != 11 || std::apply(sum, fixed_pair) != 15 ||
+      std::apply(sum, row) != 19 || std::apply(sum, fixed_row) != 23 ||
+      std::apply(converted, pair) != 11 || std::apply(converted, row) != 19 ||
+      std::apply(sum, references) != 28 ||
+      &std::apply(same, tuple) != &std::get<0>(tuple) ||
+      &std::apply(view, fixed) != &std::get<0>(fixed) ||
+      std::apply(take, std::move(single)) != 13 ||
+      &std::apply(pointer_ref, pointers) != &pointer ||
+      &std::apply(callback, callbacks) != &target ||
+      &std::apply(array_ref, arrays) != &array ||
+      &std::apply(box_ref, boxes) != &box ||
+      &std::apply(row_ref, rows) != &rows[0] ||
+      std::apply(answer, empty) != 42 || std::apply(answer, zero) != 42) return 1;
+  Tuple cleared(1);
+  std::apply(reset, cleared);
+  if (std::get<0>(cleared)) return 2;
+  calls = defaults = live = destroyed = 0;
+  static_assert(__is_same(decltype(std::apply(increment, tuple)), int));
+  static_assert(__is_same(decltype(std::apply(target, tuple)), int));
+  static_assert(__is_same(decltype(std::apply(fixed_target, tuple)), int));
+  static_assert(__is_same(decltype(std::apply(&increment, tuple)), int));
+  static_assert(__is_same(decltype((std::apply)(*target, tuple)), int));
+  static_assert(__is_same(decltype(std::apply(std::move(target), tuple)), int));
+  static_assert(__is_same(decltype(std::apply(increment, fixed)), int));
+  static_assert(__is_same(decltype(std::apply(increment, Tuple(20))), int));
+  static_assert(__is_same(decltype(std::apply(sum, pair)), int));
+  static_assert(__is_same(decltype(std::apply(sum, fixed_pair)), int));
+  static_assert(__is_same(decltype(std::apply(sum, row)), int));
+  static_assert(__is_same(decltype(std::apply(sum, fixed_row)), int));
+  static_assert(__is_same(decltype(std::apply(converted, pair)), int));
+  static_assert(__is_same(decltype(std::apply(converted, row)), int));
+  static_assert(__is_same(decltype(std::apply(sum, references)), int));
+  static_assert(__is_same(decltype(std::apply(same, tuple)), int &));
+  static_assert(__is_same(decltype(std::apply(view, fixed)), const int &));
+  static_assert(__is_same(decltype(std::apply(take, std::move(single))), int &&));
+  static_assert(__is_same(decltype(std::apply(reset, tuple)), void));
+  static_assert(__is_same(decltype(std::apply(answer, empty)), int));
+  static_assert(__is_same(decltype(std::apply(answer, zero)), int));
+  static_assert(__is_same(decltype(std::apply(pointer_ref, pointers)), int *&));
+  static_assert(__is_same(decltype(std::apply(callback, callbacks)), Pointer &));
+  static_assert(__is_same(decltype(std::apply(array_ref, arrays)), Array &));
+  static_assert(__is_same(decltype(std::apply(box_ref, boxes)), Box &));
+  static_assert(__is_same(decltype(std::apply(row_ref, rows)), const Row &));
+  static_assert(__is_lvalue_reference(decltype(std::apply(same, tuple))));
+  static_assert(__is_rvalue_reference(decltype(std::apply(take, std::move(single)))));
+  static_assert(__array_extent(typename std::remove_reference<decltype(std::apply(array_ref, arrays))>::type, 0) == 2);
+  static_assert(alignof(decltype(std::apply(box_ref, boxes))) == alignof(Box));
+  static_assert(noexcept(std::apply(target, tuple)) && !noexcept(std::apply(potentially_throwing, tuple)));
+  static_assert(noexcept(std::apply(converted, row)) && noexcept(std::apply(reset, tuple)));
+  static_assert(sizeof(std::apply(receiver(), arguments(tuple))) == sizeof(int));
+  static_assert(sizeof(decltype(std::apply(receiver(), arguments(tuple)))) == sizeof(int));
+  static_assert(noexcept(std::apply(receiver(), arguments(tuple))));
+  static_assert(__is_same(decltype(std::apply((++calls, target), (++calls, tuple))), int));
+  using Result = decltype(std::apply(same, arguments(tuple, 1, Ticket())));
+  static_assert(__is_same(Result, int &));
+  int extent[sizeof(decltype(std::apply(target, tuple))) == sizeof(int) ? 2 : 1]{};
+  if (query_only(tuple, fixed) || sizeof(extent) != 2 * sizeof(int) || calls || defaults || live || destroyed) return 3;
+  int observed = std::apply(receiver(), arguments(tuple));
+  return observed == 4 && calls == 3 && defaults == 2 && live == 0 && destroyed == 2 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-apply-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionApplyQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"target-written-result", R"cpp(
+auto other(int n)noexcept->decltype((sizeof(long double),int{})){return n;}int f(T&t){int n=std::apply(other,t);static_assert(__is_same(decltype(std::apply(other,t)),int));return n;}
+)cpp"},
+      {"pointer-written-signature", R"cpp(
+int f(T&t){int(*p)(int)noexcept(sizeof(long double)>0)=target;int n=std::apply(p,t);static_assert(__is_same(decltype(std::apply(p,t)),int));return n;}
+)cpp"},
+      {"independent-helper-address", R"cpp(
+int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));static_assert(sizeof(&std::__apply_tuple_impl<F&,T&,0>)>0);return n;}
+)cpp"},
+      {"independent-apply-address", R"cpp(
+int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));static_assert(sizeof(&std::apply<F&,T&>)>0);return n;}
+)cpp"},
+      {"cast-apply-callee", R"cpp(
+using I=int(*)(F&,T&)noexcept;int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(static_cast<I>(&std::apply<F&,T&>)(target,t)),int));return n;}
+)cpp"},
+      {"apply-redeclaration", R"cpp(
+namespace std{inline namespace __1{
+template<class Fn,class Tuple>constexpr decltype(auto) apply(Fn&&fn,Tuple&&t)noexcept(noexcept(std::__apply_tuple_impl(std::forward<Fn>(fn),std::forward<Tuple>(t),typename __make_tuple_indices<tuple_size_v<remove_reference_t<Tuple>>>::type{})));
+}}int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"helper-redeclaration", R"cpp(
+namespace std{inline namespace __1{
+template<class Fn,class Tuple,size_t...I>constexpr decltype(auto) __apply_tuple_impl(Fn&&fn,Tuple&&t,__tuple_indices<I...>)noexcept(noexcept(std::__invoke(std::forward<Fn>(fn),std::get<I>(std::forward<Tuple>(t))...)));
+}}int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"dispatch-redeclaration", R"cpp(
+namespace std{inline namespace __1{
+template<class Fn,class...A>constexpr decltype(std::declval<Fn>()(std::declval<A>()...)) __invoke(Fn&&fn,A&&...a)noexcept(noexcept(static_cast<Fn&&>(fn)(static_cast<A&&>(a)...)));
+}}int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"forward-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class U>constexpr U&&forward(__libcpp_remove_reference_t<U>&)noexcept;}}
+int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"tuple-get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class...U>constexpr typename tuple_element<I,tuple<U...>>::type&get(tuple<U...>&)noexcept;}}
+int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"callable-expression", R"cpp(
+int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply((sizeof(long double),target),t)),int));return n;}
+)cpp"},
+      {"tuple-expression", R"cpp(
+int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,(sizeof(long double),t))),int));return n;}
+)cpp"},
+      {"pointer-initializer", R"cpp(
+int f(T&t){P p=(sizeof(long double),target);int n=std::apply(p,t);static_assert(__is_same(decltype(std::apply(p,t)),int));return n;}
+)cpp"},
+      {"element-initializer", R"cpp(
+int f(){T t((sizeof(long double),1));int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"selected-tuple-default", R"cpp(
+T&source(T&t,int n=sizeof(long double))noexcept{return t;}int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,source(t))),int));return n;}
+)cpp"},
+      {"selected-callable-default", R"cpp(
+P source(int n=sizeof(long double))noexcept{return target;}int f(T&t){int n=std::apply(&target,t);static_assert(__is_same(decltype(std::apply(source(),t)),int));return n;}
+)cpp"},
+      {"target-original-exception", R"cpp(
+int other(int n)noexcept(sizeof(long double)>0);int other(int n)noexcept{return n;}int f(T&t){int n=std::apply(other,t);static_assert(__is_same(decltype(std::apply(other,t)),int));return n;}
+)cpp"},
+      {"target-adjusted-array-bound", R"cpp(
+int other(int a[(sizeof(long double),2)])noexcept{return a[0];}int f(std::tuple<int*>&t){int n=std::apply(other,t);static_assert(__is_same(decltype(std::apply(other,t)),int));return n;}
+)cpp"},
+      {"tuple-written-element", R"cpp(
+using E=decltype((sizeof(long double),int{}));int f(std::tuple<E>&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,t)),int));return n;}
+)cpp"},
+      {"explicit-template-argument", R"cpp(
+int f(T&t){int n=std::apply(&target,t);static_assert(__is_same(decltype(std::apply<decltype((sizeof(long double),&target)),T&>(&target,t)),int));return n;}
+)cpp"},
+      {"temporary-destructor", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};T&source(T&t,Ticket=Ticket())noexcept{return t;}int f(T&t){int n=std::apply(target,t);static_assert(__is_same(decltype(std::apply(target,source(t))),int));return n;}
+)cpp"},
+      {"record-value-parameter-remains-separate", R"cpp(
+struct Box{int value;};int other(Box b)noexcept{return b.value;}int f(std::tuple<Box>&t){int n=std::apply(other,t);static_assert(__is_same(decltype(std::apply(other,t)),int));return n;}
+)cpp"},
+      {"record-value-result-remains-separate", R"cpp(
+struct Box{int value;};Box other(int n)noexcept{return Box{n};}int f(T&t){Box n=std::apply(other,t);static_assert(__is_same(decltype(std::apply(other,t)),Box));return n.value;}
+)cpp"},
+      {"object-callable-remains-separate", R"cpp(
+struct Call{int operator()(int n)const noexcept{return n;}};int f(T&t){Call c;int n=std::apply(c,t);static_assert(__is_same(decltype(std::apply(c,t)),int));return n;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-apply-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-apply-query-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+int target(int n) noexcept { return n; }
+using F = int(int) noexcept;
+using P = F *;
+using T = std::tuple<int>;
+)cpp") + Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionInvokeQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("function-invoke-queries.cpp");
   const auto Output = tmpFile("function-invoke-queries.nc");

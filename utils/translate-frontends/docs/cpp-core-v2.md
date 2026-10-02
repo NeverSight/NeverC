@@ -758,6 +758,34 @@ User-defined tuple-like protocols, user SDK specializations and substituted
 `get` implementations do not qualify. Existing callable arity, source traversal
 and lowering expansion limits still apply.
 
+Materialized `std::apply` calls to named functions or ordinary function pointers
+also supply result sources for `decltype`, result traits, `sizeof`, `alignof`,
+array extents and `noexcept`. This query boundary accepts scalar or reference
+parameters and scalar, reference or `void` results over the admitted tuple,
+pair and array carriers, including empty carriers, const values, stored
+references and exact lvalue/rvalue forwarding. Record, fixed-array and admitted
+SDK array referents retain their independent layout sources. By-value record
+parameters/results and other callable families retain separate query-source
+requirements.
+
+The exact public `apply`, index helper and internal invocation must have
+completed pinned SDK bodies. Each forwarding declaration family and selected
+getter remains authenticated. Their resolved exception specifications must
+query the same completed calls returned by those bodies, and agree with the
+selected function prototype; this proof does not instantiate missing bodies.
+Only the checked call and its callee expressions replace the SDK's private
+deduced result spelling with the original callback's return-type source.
+Each callable and element category needs its own completed dispatch. Clang may
+complete this chain while deducing `apply`'s `decltype(auto)` return type, so a
+pure query can qualify without a preceding runtime call when those bodies
+already exist.
+The original function or pointer signature, callable and carrier expressions,
+element types and initializers, written template arguments, selected defaults
+and temporary lifetimes still close through normal source traversal. Result
+queries do not execute those expressions or their cleanup. Independent
+adapter addresses, cast callees, replaced SDK declarations and uncompleted
+dispatches gain no source exemption.
+
 Exact `std::tuple_cat` calls lower directly when every source is an
 authenticated `std::tuple`, `std::pair` or `std::array` containing admitted
 scalar or recursively composite elements and the selected result is the exact
