@@ -236,6 +236,17 @@ static void test_symbols(void) {
     CHECK("symbol failure clears outputs", symbols == NULL && count == 0);
     data[617] = 0;
 
+    /* Eight zero bytes are an empty short name, not a string table offset
+     * (Go debug/pe: "symbol has no name"). */
+    memset(data + 600, 0, 8);
+    symbols = (neverc_pe_symbol_t *)1;
+    count = 99;
+    CHECK("all-zero symbol name reads as empty",
+          neverc_pe_symbols(&f, &symbols, &count) == 0 && count == 1 &&
+              symbols != NULL && symbols[0].name[0] == '\0' &&
+              symbols[0].value == 0x1234);
+    free(symbols);
+
     memset(data + 600, 0, 4);
     put32(data + 604, 4);
     CHECK("reject string offset at table end",
