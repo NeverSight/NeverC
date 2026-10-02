@@ -383,17 +383,17 @@ The primary, pattern, specialization and every redeclaration remain in
 selected-default and temporary-lifetime sources still complete independently.
 Queries perform no argument effects or moves. Source function or trait
 replacements, independent addresses or indirect/cast callees,
-unsupported types/pointees, direct array/record/function/owner references,
-and reference template arguments yielding lvalues remain outside this scalar
-query boundary. The record copy-fallback branch needs its own source proof and
+unsupported types/pointees and direct array/record/function/owner references
+remain outside this scalar query boundary. The record copy-fallback branch
+needs its own source proof and
 is not admitted by this scalar extension.
 
 The exact `move_if_noexcept` proof also supports admitted fixed arrays in
 C++17. An array cannot be copy-constructed from a const array reference, so
 the pinned copy trait rules out the copy-fallback branch independently of the
-element constructors. The selected template argument must be the exact
+element constructors. An object template argument must be the exact
 cv-qualified array object type, with an unchanged `T&` parameter and `T&&`
-result; explicit reference template arguments remain rejected. Const arrays
+result; reference template arguments use the separate proof below. Const arrays
 retain const elements, and every dimension is preserved without decay. Scalar,
 pointer, callback-pointer, source-owned record, reference-member record and
 multidimensional elements keep their ordinary type and layout checks. Admitted
@@ -408,6 +408,27 @@ Queries perform no effects or lifecycle operations; evaluated casts preserve
 the original array storage without element copies or moves. Unknown-bound or
 volatile arrays, unsupported elements, source function/trait replacements,
 independent function addresses and indirect/cast callees retain rejection.
+
+Explicit object-reference template arguments to `move_if_noexcept` have a
+separate source proof from the object copy/move decision. The exact pinned
+Clang builtin binds `T&` to the unchanged object and returns the same reference
+type as the template argument: an lvalue reference stays an lvalue, while an
+rvalue reference produces an xvalue. The referent's copy/move constructors do
+not participate in this nothrow reference-binding decision. Supported storage
+includes the admitted scalar/pointer, fixed-array, tuple-like, standard function
+object, source-owned record and `unique_ptr` families. Source-owned records
+may have nontrivial, throwing or deleted copy/move constructors or unused
+constructor templates; ordinary layout and actual lifetime checks still apply.
+Const object references preserve const, including references bound to admitted
+existing xvalues. Direct/parenthesized names, imports, reexports, query-only
+specializations and nested utility casts use the same proof. Written reference
+arguments, aliases, bounds, signatures, original operands, selected defaults
+and temporary cleanup remain independent dependencies. Queries execute no
+effects or referent lifecycle operations; evaluated reference casts alias the
+original storage and transfer no ownership. Function referents, member pointers,
+unknown-bound or volatile objects, unsupported storage, source/trait
+replacements, independent addresses and indirect/cast callees retain rejection.
+An unrecognized builtin or independent SDK body needs its own source proof.
 
 The same `move_if_noexcept` rvalue-reference branch also supports result-source
 queries on admitted `std::array`, `std::pair` and `std::tuple` objects. This
@@ -424,7 +445,8 @@ signatures, defaults and temporary lifetimes remain checked independently.
 Queries execute no effects or container operations, and evaluated casts retain
 the same object address and reference-field bindings. Trait or function
 replacements, indirect callees, volatile containers, unsupported or nontrivial
-owned elements, and reference arguments yielding lvalues remain rejected.
+owned elements remain rejected for object template arguments. Explicit reference
+arguments use the reference-binding proof above.
 
 The exact pinned Clang builtin also supplies query source for the `const T&`
 copy-fallback branch on these tuple-like containers, including admitted
@@ -437,8 +459,8 @@ Direct/parenthesized calls, imports, utility-cast nesting and checked member or
 `get` projections preserve the same original-source checks. The adapter binds
 the same object without copying or moving it; reference fields and borrowed
 wrappers keep their referents even when the container result is const. This
-proof does not admit reference template arguments merely because `T&&`
-collapses to an lvalue, indirect/cast callees, source or trait replacements,
+proof remains distinct from the reference-binding proof above. It does not
+admit indirect/cast callees, source or trait replacements,
 nontrivial owned elements or standalone source-owned record queries. An
 unrecognized builtin or an independent library body still needs its own proof.
 
@@ -875,8 +897,9 @@ cleanup remain independent requirements. A cast alone does not instantiate an
 unused constructor or member-template body; actual invocation still requires
 its selected method source.
 
-`std::move_if_noexcept` queries also admit source-owned trivial records whose
-owned base and value-member graph has only implicit, defaulted
+With an object template argument, `std::move_if_noexcept` queries also admit
+source-owned trivial records whose owned base and value-member graph has only
+implicit, defaulted
 or deleted default/copy/move constructors and trivial destruction. The exact
 pinned builtin supplies its `T&&` or `const T&` decision, including throwing
 defaulted moves, deleted copies/moves and const operands. Written copy/move and
@@ -2016,8 +2039,10 @@ template arguments, signatures, defaults and temporary cleanup remain checked
 independently. Queries allocate nothing, transfer no ownership and invoke no
 deleter; evaluated reference casts retain the same object and pointer. Missing
 owner/deleter source proofs, source/trait replacements, independent addresses,
-indirect/cast callees, reference template arguments yielding lvalues, volatile
-owners and unadmitted deleters or owner families remain rejected.
+indirect/cast callees, volatile owners and unadmitted deleters or owner families
+remain rejected. Explicit reference template arguments use the separate
+reference-binding proof described above and retain the same owner storage and
+lifetime requirements.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;

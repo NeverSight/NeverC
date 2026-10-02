@@ -2911,6 +2911,30 @@ static bool utilityUniquePtrFunctionSource(Adapter &A,
   return utilitySDKFunctionSource(A, Function, "__memory/unique_ptr.h");
 }
 
+static bool utilityConditionalMoveReferenceSource(Adapter &A,
+                                                  const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Builtin = Function ? Function->getAttr<BuiltinAttr>() : nullptr;
+  if (!Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type || !Builtin ||
+      !Builtin->isImplicit() || Builtin->getID() != Builtin::BImove_if_noexcept ||
+      Function->getBuiltinID() != Builtin::BImove_if_noexcept)
+    return false;
+  const auto Reference = Arguments->get(0).getAsType();
+  // Binding an object reference to the identical reference type is nothrow;
+  // no referent copy/move constructor participates in this trait decision.
+  // Only the exact SDK builtin supplies this collapsed reference cast. Its
+  // declaration chain, parameter and original sources still close separately.
+  return Reference->isReferenceType() &&
+         Reference->getPointeeType()->isObjectType() &&
+         A.Context.hasSameType(Function->getReturnType(), Reference) &&
+         A.Context.hasSameType(Call->getType(), Reference->getPointeeType()) &&
+         (Reference->isLValueReferenceType() ? Call->isLValue()
+                                             : Call->isXValue());
+}
+
 static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
                                          UtilityOperation Operation) {
   if (!Call)
@@ -2954,6 +2978,8 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
                            Function->getBuiltinID() == BuiltinID;
   const auto *Arguments =
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const bool ReferenceArgument =
+      ConditionalMove && utilityConditionalMoveReferenceSource(A, Call);
   // The exact builtin can also bind its unchanged object as const T&. Keep
   // this branch distinct from a reference template argument collapsing T&&
   // to an lvalue; that does not prove the copy-fallback signature.
@@ -2967,7 +2993,8 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
                             Function->getReturnType()->isRValueReferenceType();
   const bool LValueResult =
       Function &&
-      (Operation == UtilityOperation::Forward || AsConst || CopyFallback) &&
+      (Operation == UtilityOperation::Forward || AsConst || CopyFallback ||
+       ReferenceArgument) &&
       Call->isLValue() && Function->getReturnType()->isLValueReferenceType();
   if (!Function || !Function->getIdentifier() || Function->getName() != Name ||
       isa<CXXMethodDecl>(Function) || !Reference ||
@@ -2975,7 +3002,8 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
       Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       Function->getParamDecl(0)->hasDefaultArg() ||
       (!RValueResult && !LValueResult) || !Call->getArg(0)->isGLValue() ||
-      (LValueResult && !CopyFallback && !Call->getArg(0)->isLValue()) ||
+      (LValueResult && !CopyFallback && !ReferenceArgument &&
+       !Call->getArg(0)->isLValue()) ||
       ((LValueResult || ConditionalMove) &&
        !Function->getParamDecl(0)->getType()->isLValueReferenceType()) ||
       !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
@@ -3215,7 +3243,9 @@ static bool utilityValueAdapterSource(
                        Type->isPointerType() || Type->isNullPtrType());
   const bool ReferenceCast = *Operation == UtilityOperation::Move ||
                              *Operation == UtilityOperation::Forward ||
-                             *Operation == UtilityOperation::AsConst;
+                             *Operation == UtilityOperation::AsConst ||
+                             (*Operation == UtilityOperation::MoveIfNoexcept &&
+                              utilityConditionalMoveReferenceSource(A, Call));
   // These casts preserve every fixed array dimension and change only the
   // reference category or const view. Written bounds, element types and
   // operand/lifetime sources remain ordinary dependencies; no element moves.
@@ -3242,18 +3272,18 @@ static bool utilityValueAdapterSource(
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
-  // on their ordinary checks. Conditional move additionally retains the
-  // signatures of its admitted trivial owning constructor/destructor graph.
+  // on their ordinary checks. Conditional move with an object template
+  // argument additionally retains its trivial owning constructor graph.
   const bool OwnedRecord =
       Definition &&
       !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
       !Definition->isUnion() && A.S.owns(A.Sources, Definition->getLocation()) &&
       !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
       Type.getAddressSpace() == LangAS::Default &&
-      (*Operation != UtilityOperation::MoveIfNoexcept ||
+      (ReferenceCast ||
        utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures));
   const bool ConditionalOwner =
-      Record && *Operation == UtilityOperation::MoveIfNoexcept &&
+      Record && *Operation == UtilityOperation::MoveIfNoexcept && !ReferenceCast &&
       utilityUniquePtrConditionalMoveSource(A, Call, Record);
   return (Scalar || FixedArray || TupleLike || FunctionObject || OwnedRecord ||
           ConditionalOwner ||
