@@ -3581,6 +3581,7 @@ static const TypeSourceInfo *functionalMemberPointerAdapterTypeSource(
 
 struct FunctionalMemberPointerSource {
   const ValueDecl *Member;
+  const DeclRefExpr *Reference;
   llvm::SmallVector<std::pair<const Expr *, const DeclRefExpr *>, 16> Carriers;
   llvm::SmallVector<const TypeSourceInfo *, 8> TemplateSources;
 };
@@ -3588,7 +3589,7 @@ struct FunctionalMemberPointerSource {
 static std::optional<FunctionalMemberPointerSource>
 functionalMemberPointerCarrierSource(Adapter &A, const Expr *Expression,
                                      const ValueDecl *Member) {
-  FunctionalMemberPointerSource Result{Member, {}, {}};
+  FunctionalMemberPointerSource Result{Member, nullptr, {}, {}};
   llvm::SmallVector<const CallExpr *, 8> Adapters;
   // Retain the actual source member behind each exact erased expression.
   // Normal traversal still checks written types and address qualifiers; no
@@ -3654,7 +3655,8 @@ functionalMemberPointerCarrierSource(Adapter &A, const Expr *Expression,
       Result.Carriers.emplace_back(E, Source);
     return Source;
   };
-  if (!Retain(Retain, Expression, 0))
+  Result.Reference = Retain(Retain, Expression, 0);
+  if (!Result.Reference)
     return std::nullopt;
   // Written decltype(auto-local) references keep their own completed TypeLoc
   // source and can expose further copy adapters. Authenticate each only once.
@@ -3702,6 +3704,7 @@ static std::optional<FunctionalMemberPointerSource> functionalMemberInvokeSource
 struct FunctionalMemFnSource {
   const ValueDecl *Member;
   const Expr *Callable;
+  std::optional<FunctionalMemberPointerSource> Pointer;
   llvm::SmallVector<const Expr *, 16> Carriers;
   llvm::SmallVector<const TypeSourceInfo *, 8> TemplateSources;
 };
@@ -3709,13 +3712,20 @@ struct FunctionalMemFnSource {
 static std::optional<FunctionalMemFnSource> functionalMemFnCarrierSource(
     Adapter &A, const Expr *Expression, const CallExpr *Factory,
     const ValueDecl *Member, llvm::ArrayRef<const CallExpr *> UseAdapters) {
-  const Expr *CallableSource = Factory->getArg(0)->IgnoreParenImpCasts();
+  auto Pointer = functionalMemberPointerCarrierSource(
+      A, Factory->getArg(0), Member);
+  // Compose the erased wrapper with the exact raw pointer's source proof.
+  // Keep the original reference at the end of that chain, so a wrapper query
+  // never consumes a skipped auto TypeLoc or an adapter's member-pointer type.
+  // Ordinary explicitly typed pointers retain their existing declaration source.
+  const Expr *CallableSource = Pointer
+      ? Pointer->Reference : Factory->getArg(0)->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(CallableSource);
       Address && Address->getOpcode() == UO_AddrOf)
     CallableSource = Address->getSubExpr()->IgnoreParenImpCasts();
   if (!isa<DeclRefExpr>(CallableSource))
     return std::nullopt;
-  FunctionalMemFnSource Result{Member, CallableSource, {}, {}};
+  FunctionalMemFnSource Result{Member, CallableSource, std::move(Pointer), {}, {}};
   llvm::SmallVector<const CallExpr *, 8> Adapters;
   auto RetainAdapter = [&](const CallExpr *Call) {
     if (llvm::is_contained(Adapters, Call))
@@ -11308,6 +11318,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       operationTypeDependency(Source);
   }
   void retainMemFnCarriers(const FunctionalMemFnSource &MemFn) {
+    if (MemFn.Pointer)
+      retainMemberPointerCarriers(*MemFn.Pointer);
     for (const auto *Carrier : MemFn.Carriers) {
       auto [Source, New] =
           MemFnCarrierSources.emplace(Carrier, MemFn.Callable);
@@ -12156,6 +12168,13 @@ public:
         // every layer at its declaration with the exact retained member source.
         if (!WalkUpFromVarDecl(D))
           return false;
+        // The owning factory's raw operand is traversed before any later
+        // wrapper query. Retain its exact adapter/copy sources now, without
+        // skipping the actual factory arguments or granting wrapper type proof.
+        if (Stored->FactoryOwner == D)
+          if (const auto Source = functionalMemberPointerCarrierSource(
+                  A, Stored->Factory->getArg(0), Stored->Member))
+            retainMemberPointerCarriers(*Source);
         if (Stored->Initializer == Stored->Factory)
           return TraverseStmt(D->getInit());
         bool CheckedCarriers = false;

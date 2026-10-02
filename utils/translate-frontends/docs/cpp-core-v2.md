@@ -2512,10 +2512,8 @@ receiver/argument effects and temporary lifetimes. Each adapted member-pointer
 initializer is traversed once at its declaration, including every adapter's
 written template arguments and the terminal member address's written qualifiers,
 even for an unused local. Erasing its storage does not hide unsupported source
-inside an initializer. Materialized `std::invoke` result queries retain these
-adapted pointers as described below. Result-source queries for `mem_fn` through
-adapted raw pointers or their initializer chains still require separate source
-proof and remain outside this boundary.
+inside an initializer. Materialized `std::invoke` and `mem_fn` result queries
+retain these adapted pointers through the exact source proofs described below.
 Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
 direct address or stored data-member pointer may also be applied with native
@@ -2607,6 +2605,20 @@ also supply result sources for `decltype`, result traits, `sizeof`, `alignof`,
 array extents and `noexcept`. Immediate
 factories and locally stored `auto` wrappers, including const wrappers and
 ordinary exact copy-initializer chains, retain their original member address.
+The factory's raw member-pointer operand may itself contain bounded mixed
+`move`, `forward`, `move_if_noexcept` and `as_const` adapters, including exact
+local `auto` pointer copies whose initializers contain those adapters. Every
+raw adapter supplies its own pinned SDK family and exact reference flow, and
+every copied pointer resolves to the selected original member. The wrapper
+source proof retains that original reference together with the raw operand's
+actual carrier and written type sources. A written cv/ref-qualified `decltype`
+of an exact local `auto` pointer retains the same-member restriction above;
+independent pointer types, unrelated members and compound expressions gain no
+exemption. The factory owner retains these sources before its first traversal,
+including for an adapted factory temporary, so later wrapper copies and queries
+reuse completed source dependencies. The actual factory arguments and each raw
+initializer remain checked even for an unused wrapper. Ordinary explicitly
+typed pointers keep their existing declaration-source requirements.
 The factory, selected member-storing constructor, call operator, private
 invocability variable, internal member dispatcher and any receiver `get()` must
 have their exact pinned SDK sources. An outer `std::invoke` additionally pins
