@@ -947,18 +947,19 @@ reference; actual construction from it requires a viable selected constructor.
 
 The owning graph also admits a single public copy taking exactly mutable
 `Record&` at a nontrivial node. That copy may be implicit, defaulted, ordinary
-or deleted. Each such node has no bases or conversion functions, and every
-other constructor is either its exact move or a nonvariadic zero-parameter
-default constructor. The graph retains the original declarations behind
+or deleted. Each such node has no bases or conversion functions. Besides its
+exact move, it may have nonvariadic zero-parameter default constructors or
+ordinary constructors taking exactly one admitted scalar by value, optionally
+with a default argument. The graph retains the original declarations behind
 implicit mutable copies through nested value members and fixed arrays,
 including copies deleted after declaring a move constructor or move assignment.
 Mutable and const queries on these owners preserve `Record&&` and
 `const Record&&`, including owners whose member move is unavailable. Mixed
 graphs can contain const-copy nodes; an enclosing ordinary const-copy retains
 the pinned copy-fallback result when appropriate. Every node still supplies
-its written copy/move/destructor sources, and every actual generated copy,
-move, assignment or cleanup checks its selected member operations. Queries
-alone leave hypothetical member bodies uninstantiated.
+its written copy/move/destructor and scalar-constructor sources, and every
+actual generated copy, move, assignment or cleanup checks its selected member
+operations. Queries alone leave hypothetical member bodies uninstantiated.
 
 Non-owning pointer/reference fields keep their original bindings. Constructor
 templates, inherited constructors, additional copy overloads, extra copy/move
@@ -1033,17 +1034,29 @@ A separate bounded proof admits source-owned records whose only copy
 declaration takes exactly mutable `Record&`. The copy must be written, including
 ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases or conversion
-functions, and every other constructor is either a move or a nonvariadic
-zero-parameter default constructor. Constructor templates, inherited
-constructors, extra copy/move parameters, additional copy overloads and
-converting constructors retain separate requirements. Without a constructor
+functions. Other constructors may be a move, a nonvariadic zero-parameter
+default constructor, or an ordinary nonvariadic constructor with exactly one
+admitted scalar value parameter. Scalar parameters include integers and enums
+up to 64 bits, `float`, `double`, pointers and `decltype(nullptr)`, with the
+profile's ordinary qualifier and type-source checks. Multiple such overloads,
+private or deleted value constructors, and scalar default arguments are included.
+Constructor templates, inherited constructors, extra copy/move parameters,
+additional copy overloads, and other value constructors retain separate
+requirements. In particular, record parameters can introduce their own
+conversion from `const Record&`; reference and multiple-parameter constructors
+also remain outside this bounded proof. Without a constructor
 that can consume `const Record&`, the pinned copy trait is false for mutable
 and const objects, preserving `Record&&` and `const Record&&` respectively.
 No query copies from the operand, modifies it or instantiates a hypothetical
-body. Every written copy/move/destructor signature retains its original
-sources, including aliases and exception expressions. Actual mutable copies,
-moves and generated member operations retain their ordinary source checks and
-preserve any changes they make to the copied-from object.
+body. Every written copy/move/destructor and admitted scalar-constructor
+signature, including every redeclaration, retains its original sources such
+as parameter aliases and exception expressions. An unused concrete template
+scalar constructor may retain its exact nondependent written exception source
+without instantiating its body; unresolved dependent exception sources still
+require a separate proof. Unused template defaults remain lazy. Actual value
+construction, selected defaults, mutable copies, moves and generated member
+operations retain their ordinary source checks and preserve any changes they
+make to the copied-from object.
 
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected

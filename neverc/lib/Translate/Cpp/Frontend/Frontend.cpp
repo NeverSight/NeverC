@@ -3173,13 +3173,31 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
+static bool utilityScalarValueConstructor(Adapter &A,
+                                         const CXXConstructorDecl *Constructor) {
+  if (!Constructor || Constructor->isInvalidDecl() ||
+      Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
+      Constructor->getNumParams() != 1)
+    return false;
+  const auto Type = Constructor->getParamDecl(0)->getType();
+  return !Type->isDependentType() && !Type.isVolatileQualified() &&
+         !Type.isRestrictQualified() && !Type->isAtomicType() &&
+         Type.getAddressSpace() == LangAS::Default &&
+         ((Type->isIntegralOrEnumerationType() &&
+           A.Context.getTypeSize(Type) <= 64) ||
+          Type->isSpecificBuiltinType(BuiltinType::Float) ||
+          Type->isSpecificBuiltinType(BuiltinType::Double) ||
+          Type->isPointerType() || Type->isNullPtrType());
+}
+
 static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+  const bool ScalarConstructor = utilityScalarValueConstructor(A, Constructor);
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||
-      !(Assignment || Destructor ||
+      !(Assignment || Destructor || ScalarConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
@@ -3202,6 +3220,10 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool MatchingOrigin =
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
+      : ScalarConstructor ? OriginConstructor &&
+                                !OriginConstructor->isCopyOrMoveConstructor() &&
+                                !OriginConstructor->isVariadic() &&
+                                OriginConstructor->getNumParams() == 1
                    : OriginConstructor &&
                          OriginConstructor->isCopyConstructor() ==
                              Constructor->isCopyConstructor() &&
@@ -3234,7 +3256,7 @@ static bool utilityLazyConditionalMoveSignatureSource(
       PatternWritten->getNoexceptExpr() != Pattern->getNoexceptExpr())
     return false;
   const auto *Expression = Written->getNoexceptExpr();
-  // An adapter can leave an unused special member's spec uninstantiated.
+  // An adapter can leave an unused member's spec uninstantiated.
   // Its concrete written signature still retains the exact nondependent
   // pattern expression. Check that source without resolving or calling it.
   return !Expression ||
@@ -3242,9 +3264,14 @@ static bool utilityLazyConditionalMoveSignatureSource(
           !Expression->isInstantiationDependent());
 }
 
-static bool utilityMutableCopyConditionalMoveShape(const CXXRecordDecl *Record) {
+static bool utilityMutableCopyConditionalMoveSource(
+    Adapter &A, const CXXRecordDecl *Record,
+    std::vector<const CXXMethodDecl *> *Signatures) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
-  // conversion paths; callers separately check copy/move overloads and sources.
+  // conversion paths, including record-valued parameters with converting
+  // constructors. A scalar value parameter cannot consume this record without
+  // a conversion function. Retain each such constructor's written signatures;
+  // callers separately check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
   for (const auto *Declaration : Record->decls()) {
@@ -3255,10 +3282,14 @@ static bool utilityMutableCopyConditionalMoveShape(const CXXRecordDecl *Record) 
       return false;
     }
   }
-  for (const auto *Constructor : Record->ctors())
-    if (!Constructor->isCopyOrMoveConstructor() &&
-        (Constructor->getNumParams() != 0 || Constructor->isVariadic()))
+  for (const auto *Constructor : Record->ctors()) {
+    if (Constructor->isCopyOrMoveConstructor() ||
+        (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
+      continue;
+    if (!utilityScalarValueConstructor(A, Constructor) ||
+        !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
+  }
   return true;
 }
 
@@ -3344,7 +3375,7 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // makes construction traits false, even in a caller allowed to destroy it.
   // Defaulted deletion through a member retains its separate graph proof.
   // A written mutable-only copy cannot bind a const source. With no other
-  // one-argument constructor, base or conversion function, the copy trait is
+  // viable constructor, base or conversion function, the copy trait is
   // false independently of member lifetimes and hypothetical copy bodies.
   // Besides those declarations, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
@@ -3352,7 +3383,7 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // causes keep their own proof. No hypothetical declaration or body is made.
   if (FoundExplicitCopy || FoundInaccessibleCopy || FoundUnavailableDestructor ||
       (MutableCopyOnly && FoundMutableCopy &&
-       utilityMutableCopyConditionalMoveShape(Record)))
+       utilityMutableCopyConditionalMoveSource(A, Record, Signatures)))
     return true;
   if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
     return false;
@@ -3492,7 +3523,7 @@ static bool utilityRecordConditionalMoveSource(
       return false;
     if (A.Context.hasSameType(Copy->getParamDecl(0)->getType(),
                              MutableCopyParameter) &&
-        !utilityMutableCopyConditionalMoveShape(Record))
+        !utilityMutableCopyConditionalMoveSource(A, Record, Signatures))
       return false;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {
@@ -12221,7 +12252,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 for (const auto *Signature : ConditionalMoveSignatures) {
                   operationTypeDependency(Signature->getTypeSourceInfo());
                   // The exact adapter proof consumes written special-member
-                  // signatures, including defaulted copies and destructors.
+                  // and scalar value-constructor signatures.
                   // Check a resolved signature or its retained written source
                   // without resolving inferred exceptions or generating a body.
                   // Actual operations keep their ordinary/generated proof.
