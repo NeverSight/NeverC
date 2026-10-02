@@ -770,6 +770,16 @@ static void test_from_rgba_full_palette_transparency(void) {
         ASSERT_EQ(out[i * 4 + 3], 255);
     for (int i = 256; i < (int)np; i++)
         ASSERT_EQ(out[i * 4 + 3], 0);
+    /* The 256 colors sit on a 32-step grid, so pixels moved off the slot
+     * taken for transparency should land on a neighbouring grid color. */
+    int worst = 0;
+    for (int i = 0; i < 256; i++) {
+        int err = abs(out[i * 4 + 0] - rgba[i * 4 + 0]) +
+                  abs(out[i * 4 + 1] - rgba[i * 4 + 1]) +
+                  abs(out[i * 4 + 2] - rgba[i * 4 + 2]);
+        if (err > worst) worst = err;
+    }
+    ASSERT_TRUE(worst <= 32);
 
     uint8_t *gif = NULL;
     size_t glen = 0;
