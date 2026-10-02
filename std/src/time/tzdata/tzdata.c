@@ -98,6 +98,7 @@ enum {
     TZ_RULE_MOROCCO = 4,
     TZ_RULE_VANCOUVER = 5,
     TZ_RULE_EDMONTON = 6,
+    TZ_RULE_ISRAEL = 7,
 };
 #define N TZ_RULE_NORTH
 #define S TZ_RULE_SOUTH
@@ -202,7 +203,7 @@ static const tz_entry_t tz_table[] = {
     {"Asia/Tashkent",           "UZT",  NULL,   18000,  0,      0},
     {"Asia/Kabul",              "AFT",  NULL,   16200,  0,      0},
     {"Asia/Baghdad",            "AST",  NULL,   10800,  0,      0},
-    {"Asia/Jerusalem",          "IST",  "IDT",  7200,   10800,  N},
+    {"Asia/Jerusalem",          "IST",  "IDT",  7200,   10800,  TZ_RULE_ISRAEL},
 
     /* Oceania */
     {"Australia/Sydney",        "AEST", "AEDT", 36000,  39600,  S},
@@ -258,7 +259,8 @@ static void fill_zone(neverc_tzdata_zone_t *z, const tz_entry_t *e) {
                   e->rule_id == TZ_RULE_SOUTH ||
                   e->rule_id == TZ_RULE_EGYPT ||
                   e->rule_id == TZ_RULE_VANCOUVER ||
-                  e->rule_id == TZ_RULE_EDMONTON) ? 1 : 0;
+                  e->rule_id == TZ_RULE_EDMONTON ||
+                  e->rule_id == TZ_RULE_ISRAEL) ? 1 : 0;
 }
 
 /* Process-wide zone cache. g_zones_init: 0 = empty, 1 = filling, 2 = ready. */
@@ -994,6 +996,20 @@ static int tz_builtin_special_offset_at(const neverc_tzdata_zone_t *zone,
         *offset = 3600;
         return 1;
     }
+    if (rule_id == TZ_RULE_ISRAEL) {
+        /* Israel since 2013: from the Friday before the last Sunday of March
+         * (Friday on or after March 23) at 02:00 IST until the last Sunday
+         * of October at 02:00 IDT. */
+        int64_t year = tz_unix_year(unix_sec);
+        int start_day = 23 + (5 - tz_wday(year, 3, 23) + 7) % 7;
+        int64_t start = tz_add_sat(
+            tz_unix_civil(year, 3, start_day, 2, 0, 0), -7200);
+        int64_t end = tz_add_sat(
+            tz_unix_civil(year, 10, tz_last_wday(year, 10, 0), 2, 0, 0),
+            -10800);
+        *offset = tz_in_span(unix_sec, start, end) ? 10800 : 7200;
+        return 1;
+    }
     if (rule_id == TZ_RULE_VANCOUVER) {
         /* tzdb 2026c: the last modeled transition is 2026-11-01
          * 02:00 PDT (09:00 UTC), after which UTC-07 is permanent. */
@@ -1076,7 +1092,7 @@ static int tzdata_zone_hemisphere(const neverc_tzdata_zone_t *zone) {
         hemi = 2;
     else if (rule_id == TZ_RULE_NORTH || rule_id == TZ_RULE_EGYPT ||
              rule_id == TZ_RULE_VANCOUVER ||
-             rule_id == TZ_RULE_EDMONTON)
+             rule_id == TZ_RULE_EDMONTON || rule_id == TZ_RULE_ISRAEL)
         hemi = 1;
     else
         hemi = 0;
