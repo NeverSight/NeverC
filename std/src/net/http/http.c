@@ -3532,7 +3532,10 @@ static void http_conn_process(http_conn_t *hc) {
         }
         http_request_context_release(request_context, request_cancel);
 
-        int should_close = !w->keep_alive;
+        /* An HTTP/1.0 stream's body ends only when the connection closes,
+         * whatever Connection value the handler set afterwards. */
+        int should_close = !w->keep_alive ||
+                           (w->chunked && rw_streams_identity(w));
         rw_free(w);
 
         nc_buf_consume(&hc->read_buf, consumed);
@@ -3686,6 +3689,7 @@ static void http1_stream_resume_task(void *argument) {
     http_worker_t *worker = connection->worker;
     int hijacked = task->writer->hijacked;
     int should_close = hijacked || !task->writer->keep_alive ||
+        (task->writer->chunked && rw_streams_identity(task->writer)) ||
         task->body_stream.failed || task->body_stream.canceled ||
         task->body_stream.state != HTTP1_BODY_DONE;
 
