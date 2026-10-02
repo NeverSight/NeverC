@@ -39,6 +39,20 @@ static void reset_allocator(size_t failure) {
     fail_at = failure;
 }
 
+static void temp_file_path(char *buf, size_t cap, const char *name) {
+#if defined(_WIN32)
+    char dir[1024];
+    DWORD n = GetTempPathA((DWORD)sizeof(dir), dir);
+    if (n == 0 || n >= sizeof(dir))
+        snprintf(dir, sizeof(dir), ".\\");
+    snprintf(buf, cap, "%s%s", dir, name);
+#else
+    const char *dir = getenv("TMPDIR");
+    if (!dir || !*dir) dir = "/tmp";
+    snprintf(buf, cap, "%s/%s", dir, name);
+#endif
+}
+
 int main(void) {
     reset_allocator(0);
     neverc_fs_dir_entry_t *entries = NULL;
@@ -70,6 +84,45 @@ int main(void) {
         CHECK(neverc_fs_glob(".", "*", &matches, &count) == -1);
         CHECK(matches == NULL);
         CHECK(count == 0);
+    }
+
+    /* The size hint of a regular file is exact, so reading it must take one
+     * size+1 allocation: EOF has to be found without doubling the buffer. */
+    {
+        enum { READ_FILE_SIZE = 4096 };
+        char path[2048];
+        temp_file_path(path, sizeof(path), "neverc_fs_oom_read.tmp");
+        FILE *f = fopen(path, "wb");
+        CHECK(f != NULL);
+        for (int i = 0; i < READ_FILE_SIZE; i++)
+            CHECK(fputc('a' + i % 26, f) != EOF);
+        CHECK(fclose(f) == 0);
+
+        uint8_t *data = NULL;
+        size_t size = 0;
+        reset_allocator(0);
+        int rc = neverc_fs_read_file(path, &data, &size);
+        size_t read_allocations = allocation_count;
+        int content_ok = rc == 0 && size == READ_FILE_SIZE && data &&
+                         data[0] == 'a' &&
+                         data[READ_FILE_SIZE - 1] ==
+                             'a' + (READ_FILE_SIZE - 1) % 26 &&
+                         data[READ_FILE_SIZE] == 0;
+        free(data);
+
+        int failures_clear = 1;
+        for (size_t failure = 1; failure <= read_allocations; failure++) {
+            reset_allocator(failure);
+            data = (uint8_t *)1;
+            size = 99;
+            rc = neverc_fs_read_file(path, &data, &size);
+            if (rc != -1 || data != NULL || size != 0)
+                failures_clear = 0;
+        }
+        remove(path);
+        CHECK(content_ok);
+        CHECK(failures_clear);
+        CHECK(read_allocations == 1);
     }
     puts("passed");
     return 0;
