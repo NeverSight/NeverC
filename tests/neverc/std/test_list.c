@@ -255,6 +255,8 @@ static void test_remove_foreign_list(void) {
     ASSERT_INT_EQ(TO_INT(neverc_list_remove(a, e)), 42);
     neverc_list_free(a);
     neverc_list_free(b);
+    free(a);
+    free(b);
 }
 
 static void test_push_list(void) {

@@ -136,9 +136,9 @@ static void test_size_overflow_rejected(void) {
     ASSERT_INT_EQ(neverc_slices_max(&a, overflowing_len, 2, cmp_int), -1);
     ASSERT_INT_EQ(neverc_slices_min(&a, (size_t)INT_MAX + 1u, 1, cmp_int), -1);
     ASSERT_INT_EQ(neverc_slices_max(&a, (size_t)INT_MAX + 1u, 1, cmp_int), -1);
-    ASSERT_INT_EQ(neverc_slices_min_int(&a, (size_t)INT_MAX + 1u), -1);
-    ASSERT_INT_EQ(neverc_slices_max_int(&a, (size_t)INT_MAX + 1u), -1);
     int idx_dummy = 1;
+    ASSERT_INT_EQ(neverc_slices_min_int(&idx_dummy, (size_t)INT_MAX + 1u), -1);
+    ASSERT_INT_EQ(neverc_slices_max_int(&idx_dummy, (size_t)INT_MAX + 1u), -1);
     ASSERT_INT_EQ(neverc_slices_index_int(&idx_dummy, (size_t)INT_MAX + 1u, 1),
                   -1);
     ASSERT_TRUE(!neverc_slices_contains_int(&idx_dummy, (size_t)INT_MAX + 1u, 1));

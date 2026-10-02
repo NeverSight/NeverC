@@ -3336,6 +3336,7 @@ static void *tls_handshake_only_server(void *arg) {
         ctx->handshake_ok = 1;
         neverc_tls_close(conn);
     }
+    neverc_tcp_close(ctx->tcp);
     return 0;
 }
 

@@ -247,6 +247,7 @@ static void test_weak_value_after_recycle(void) {
     ASSERT_TRUE(neverc_weak_value(kept) == NULL);
     ASSERT_TRUE(neverc_weak_upgrade(kept).ptr == NULL);
     neverc_weak_ref_release(kept);
+    neverc_weak_ref_release(w);
     neverc_weak_strong_release(&n);
     ASSERT_INT_EQ(payload_frees(), 2);
 }
