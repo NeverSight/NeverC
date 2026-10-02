@@ -1402,7 +1402,51 @@ static void test_executable(void) {
     int rc = neverc_os_executable(buf, sizeof(buf));
     ASSERT_TRUE(rc == 0);
     ASSERT_TRUE(strlen(buf) > 0);
+
+#if defined(__linux__)
+    /* Go os.Executable strips the " (deleted)" suffix Linux appends once the
+     * running binary is unlinked, so a re-exec after an upgrade still finds
+     * the replacement. A copy of this test deletes itself and compares. */
+    {
+        char copy[1024];
+        unsigned char *image = NULL;
+        size_t image_len = 0;
+        make_test_path(copy, sizeof(copy), "neverc_test_os_exe_copy");
+        neverc_os_remove(copy);
+        ASSERT_EQ(neverc_os_read_file("/proc/self/exe", &image, &image_len), 0);
+        ASSERT_EQ(neverc_os_write_file(copy, image, image_len, 0700), 0);
+        free(image);
+        pid_t child = fork();
+        ASSERT_TRUE(child >= 0);
+        if (child == 0) {
+            execl(copy, copy, "--deleted-executable-probe", (char *)NULL);
+            _exit(127);
+        }
+        if (child > 0) {
+            int status = 0;
+            ASSERT_EQ(waitpid(child, &status, 0), child);
+            /* 127: the copy could not be executed (noexec temp dir). */
+            ASSERT_TRUE(WIFEXITED(status) &&
+                        (WEXITSTATUS(status) == 0 ||
+                         WEXITSTATUS(status) == 127));
+        }
+        neverc_os_remove(copy);
+    }
+#endif
 }
+
+#if defined(__linux__)
+static int run_deleted_executable_probe(void) {
+    char before[4096], after[4096];
+    if (neverc_os_executable(before, sizeof(before)) != 0)
+        return 2;
+    if (unlink(before) != 0)
+        return 3;
+    if (neverc_os_executable(after, sizeof(after)) != 0)
+        return 4;
+    return strcmp(before, after) == 0 ? 0 : 1;
+}
+#endif
 
 static void test_chmod_truncate(void) {
     printf("[chmod/truncate]\n");
@@ -1527,7 +1571,14 @@ static void test_error_classification_and_ownership(void) {
 #endif
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+#if defined(__linux__)
+    if (argc == 2 && strcmp(argv[1], "--deleted-executable-probe") == 0)
+        return run_deleted_executable_probe();
+#else
+    (void)argc;
+    (void)argv;
+#endif
     printf("=== NeverC os Module Tests ===\n");
     test_env();
     test_getwd();
