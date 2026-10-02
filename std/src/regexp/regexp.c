@@ -2200,6 +2200,21 @@ static int regexp_append(char **buffer, size_t *length, size_t *capacity,
     return 0;
 }
 
+/* Go Expand: ${name} is the first group of that name that took part in the
+ * match. A name may repeat (one per alternative, say), so this is not
+ * SubexpIndex, which reports the first group of that name by position. */
+static int expand_group_by_name(neverc_regexp_t *re, const char *name,
+                                size_t nlen, const neverc_regexp_match_t *m,
+                                int nm) {
+    if (!re->gnames) return -1;
+    for (int i = 1; i < nm && i <= re->ngroups && i < re->gnames_cap; i++) {
+        const char *g = re->gnames[i];
+        if (g && m[i].start && strlen(g) == nlen && memcmp(g, name, nlen) == 0)
+            return i;
+    }
+    return -1;
+}
+
 /* Go/RE2 Expand: $0 $1 ${name} $$ ; unknown `$` is emitted literally. */
 static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
                                 const char *repl,
@@ -2257,19 +2272,7 @@ static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
             }
             gi = v;
         } else {
-            char name[64];
-            if (nlen >= (int)sizeof(name)) {
-                char *tmp = (char *)NC_REGEXP_MALLOC((size_t)nlen + 1U);
-                if (!tmp) return -1;
-                memcpy(tmp, ns, (size_t)nlen);
-                tmp[nlen] = '\0';
-                gi = neverc_regexp_subexp_index(re, tmp);
-                free(tmp);
-            } else {
-                memcpy(name, ns, (size_t)nlen);
-                name[nlen] = '\0';
-                gi = neverc_regexp_subexp_index(re, name);
-            }
+            gi = expand_group_by_name(re, ns, (size_t)nlen, m, nm);
         }
         if (gi >= 0 && gi < nm && m[gi].start)
             if (regexp_append(buffer, length, capacity, m[gi].start, m[gi].len) != 0)
