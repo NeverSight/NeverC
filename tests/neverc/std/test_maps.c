@@ -273,6 +273,100 @@ static void test_delete_func_callback_can_resize(void) {
     neverc_map_free(m);
 }
 
+/* Go range semantics for callbacks that mutate the map: an entry removed by
+ * an earlier callback is not produced (its value may already be released),
+ * and a value replaced before its entry is reached is seen. */
+static const char *const g_trio[] = {"a", "b", "c"};
+static int g_visits;
+static int g_replacement = 99;
+static int g_second_value;
+
+static void delete_others(neverc_map_t *m, const char *key) {
+    for (int i = 0; i < 3; i++)
+        if (strcmp(g_trio[i], key) != 0) neverc_maps_delete(m, g_trio[i]);
+}
+
+static void delete_others_on_visit(const char *key, void *value,
+                                   void *user_data) {
+    (void)value;
+    g_visits++;
+    delete_others((neverc_map_t *)user_data, key);
+}
+
+static void replace_others_on_visit(const char *key, void *value,
+                                    void *user_data) {
+    if (++g_visits == 2) g_second_value = *(int *)value;
+    for (int i = 0; i < 3; i++)
+        if (strcmp(g_trio[i], key) != 0 &&
+            neverc_maps_has((neverc_map_t *)user_data, g_trio[i]))
+            neverc_maps_set((neverc_map_t *)user_data, g_trio[i],
+                            &g_replacement);
+}
+
+static int delete_others_filter(const char *key, void *value) {
+    (void)value;
+    g_visits++;
+    delete_others(g_filter_map, key);
+    return 0;
+}
+
+static int replace_others_then_match_filter(const char *key, void *value) {
+    int replaced = *(int *)value == g_replacement;
+    g_visits++;
+    for (int i = 0; i < 3; i++)
+        if (strcmp(g_trio[i], key) != 0 && neverc_maps_has(g_filter_map, g_trio[i]))
+            neverc_maps_set(g_filter_map, g_trio[i], &g_replacement);
+    return replaced;
+}
+
+static neverc_map_t *new_trio_map(int *vals) {
+    neverc_map_t *m = neverc_map_new();
+    for (int i = 0; i < 3; i++) {
+        vals[i] = i + 1;
+        neverc_map_set(m, g_trio[i], &vals[i]);
+    }
+    return m;
+}
+
+static void test_callbacks_follow_mutations(void) {
+    printf("[callbacks_follow_mutations]\n");
+    int vals[3];
+
+    neverc_map_t *m = new_trio_map(vals);
+    g_visits = 0;
+    neverc_maps_foreach(m, delete_others_on_visit, m);
+    ASSERT_INT_EQ(g_visits, 1);
+    ASSERT_INT_EQ((int)neverc_map_len(m), 1);
+    neverc_map_free(m);
+
+    m = new_trio_map(vals);
+    g_visits = 0;
+    g_second_value = 0;
+    neverc_maps_foreach(m, replace_others_on_visit, m);
+    ASSERT_INT_EQ(g_visits, 3);
+    ASSERT_INT_EQ(g_second_value, g_replacement);
+    neverc_map_free(m);
+
+    m = new_trio_map(vals);
+    g_filter_map = m;
+    g_visits = 0;
+    neverc_maps_delete_func(m, delete_others_filter);
+    ASSERT_INT_EQ(g_visits, 1);
+    ASSERT_INT_EQ((int)neverc_map_len(m), 1);
+    neverc_map_free(m);
+
+    /* The first visit replaces the other two values, so the predicate sees
+     * the replacement for both and deletes them. */
+    m = new_trio_map(vals);
+    g_filter_map = m;
+    g_visits = 0;
+    neverc_maps_delete_func(m, replace_others_then_match_filter);
+    ASSERT_INT_EQ(g_visits, 3);
+    ASSERT_INT_EQ((int)neverc_map_len(m), 1);
+    g_filter_map = NULL;
+    neverc_map_free(m);
+}
+
 static void test_delete_func_probe_chain(void) {
     printf("[delete_func_probe_chain]\n");
     neverc_map_t *m = neverc_map_new();
@@ -448,6 +542,7 @@ int main(void) {
     test_delete_func_callback_can_delete_current();
     test_foreach_callback_key_survives_mutation();
     test_delete_func_callback_can_resize();
+    test_callbacks_follow_mutations();
     test_tombstone_shrink_then_reinsert();
     test_delete_then_reinsert();
     test_tombstone_reclaim_mid_load();
