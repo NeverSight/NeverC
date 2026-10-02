@@ -56,7 +56,9 @@ static int httptest_valid_field_value(const char *s, size_t length) {
 }
 
 static int httptest_valid_port(const char *s, size_t length) {
-    if (!s || length == 0) return 0;
+    if (!s) return 0;
+    /* RFC 3986 port = *DIGIT: "host:" is valid, as in the server parser. */
+    if (length == 0) return 1;
     unsigned value = 0;
     for (size_t i = 0; i < length; i++) {
         unsigned char c = (unsigned char)s[i];
