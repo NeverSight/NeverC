@@ -3173,9 +3173,8 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
-static bool utilityConditionalMoveValueConstructor(
-    Adapter &A, const CXXConstructorDecl *Constructor,
-    std::vector<const CXXMethodDecl *> *Signatures = nullptr) {
+static bool utilityConditionalMoveDirectConstructor(
+    Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
@@ -3200,20 +3199,36 @@ static bool utilityConditionalMoveValueConstructor(
       Type.isRestrictQualified() || Type->isAtomicType() ||
       Type.getAddressSpace() != LangAS::Default)
     return false;
-  if ((Type->isIntegralOrEnumerationType() &&
-       A.Context.getTypeSize(Type) <= 64) ||
-      Type->isSpecificBuiltinType(BuiltinType::Float) ||
-      Type->isSpecificBuiltinType(BuiltinType::Double) ||
-      Type->isPointerType() || Type->isNullPtrType() ||
-      (ParameterType->isReferenceType() &&
-       A.Context.getAsConstantArrayType(Type)) ||
-      (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
-       Type->isRecordType()))
+  return (Type->isIntegralOrEnumerationType() &&
+          A.Context.getTypeSize(Type) <= 64) ||
+         Type->isSpecificBuiltinType(BuiltinType::Float) ||
+         Type->isSpecificBuiltinType(BuiltinType::Double) ||
+         Type->isPointerType() || Type->isNullPtrType() ||
+         (ParameterType->isReferenceType() &&
+          A.Context.getAsConstantArrayType(Type)) ||
+         (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
+          Type->isRecordType());
+}
+
+static bool utilityConditionalMoveValueConstructor(
+    Adapter &A, const CXXConstructorDecl *Constructor,
+    std::vector<const CXXMethodDecl *> *Signatures = nullptr) {
+  if (!Constructor || Constructor->isInvalidDecl() ||
+      Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
+      Constructor->getNumParams() == 0)
+    return false;
+  if (utilityConditionalMoveDirectConstructor(A, Constructor))
     return true;
-  // A source-owned record with only zero-parameter, copy and move constructors
-  // cannot convert a distinct const record without a source conversion function
-  // or a source-to-base conversion. The queried record excludes both. Require
-  // an existing definition; do not complete a class or instantiate a body.
+  const auto Type = Constructor->getParamDecl(0)->getType().getNonReferenceType();
+  if (Type->isDependentType() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type->isAtomicType() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  // A parameter record's default/copy/move constructors cannot convert the
+  // distinct queried const record. Its other constructors may also exclude
+  // that source by arity or a direct first-parameter proof. Inspect only this
+  // existing constructor set; do not recurse into another parameter record,
+  // complete a class, or instantiate a hypothetical body or default argument.
   const auto *ParameterRecord = Type->getAsCXXRecordDecl();
   ParameterRecord = ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
   if (!ParameterRecord || ParameterRecord->isInvalidDecl() ||
@@ -3230,8 +3245,10 @@ static bool utilityConditionalMoveValueConstructor(
     A.chargeExpansion(1, Candidate->getLocation());
     if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
         Candidate->isInheritingConstructor() ||
-        (Candidate->isCopyOrMoveConstructor() ? Candidate->getNumParams() != 1
-                                            : Candidate->getNumParams() != 0) ||
+        (Candidate->isCopyOrMoveConstructor()
+             ? Candidate->getNumParams() != 1
+             : Candidate->getNumParams() != 0 &&
+                   !utilityConditionalMoveDirectConstructor(A, Candidate)) ||
         !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
       return false;
   }

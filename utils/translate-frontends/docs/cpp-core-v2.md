@@ -1080,8 +1080,9 @@ original record binding and retains mutations made through it.
 
 A completed source-owned record with no bases can also be the first parameter
 by value, by const lvalue reference, or by either mutable or const rvalue
-reference when its constructors are limited to nonvariadic zero-parameter
-constructors and single-parameter copy/move constructors. Zero-parameter
+reference when each constructor is a nonvariadic zero-parameter constructor,
+a single-parameter copy/move constructor, or one of the ordinary constructors
+described below. Zero-parameter
 constructors cannot consume an argument; copy/move constructors cannot convert
 a distinct `const Record&` when the queried record has no bases or conversion
 functions. This includes constructor-free aggregates, non-aggregates, empty
@@ -1089,13 +1090,29 @@ records, private fields, reference members and nontrivial destruction. Explicitl
 defaulted, deleted, inaccessible and user-provided constructors can satisfy
 this shape. Their ordinary type, field and selected lifetime checks still apply.
 
+The parameter record may also have ordinary nonvariadic constructors that
+require at least two arguments, or whose first parameter is an admitted scalar
+by value/reference, a fixed-array reference or a mutable record lvalue
+reference. These forms cannot consume the queried `const Record&` when that
+queried record has no bases or conversion functions. Later parameters retain
+their ordinary type requirements and may have defaults. The argument count
+includes defaults accumulated on the latest redeclaration: adding a default
+that leaves only one required argument removes that arity proof. This admits
+common parameter classes such as `Argument(int = 3)` without requiring a
+hypothetical conversion or default construction. Actual construction checks and
+evaluates selected defaults, preserves scalar/array/record reference bindings,
+and retains mutations and temporary cleanup. This check does not recursively
+inspect the constructors of another record used as the parameter record's
+first parameter; record values, const record lvalue references and record
+rvalue references at that further level retain separate requirements.
+
 Each parameter-record constructor retains its original signature and every
 redeclaration, including aliases and exception sources. Unused class-template
-default/copy/move constructors can retain an exact nondependent written
+constructors can retain an exact nondependent written
 exception specification without instantiating a body or resolving a hypothetical
 exception result; dependent specifications retain their separate requirements.
-SDK records, unions, bases, constructor templates, inherited constructors, other
-ordinary constructors and extra copy/move parameters on the parameter record
+SDK records, unions, bases, constructor templates, inherited constructors,
+other constructor forms and extra copy/move parameters on the parameter record
 remain outside this proof. The proof reads an existing definition and does not
 instantiate an incomplete parameter specialization, default member initializer
 or hypothetical constructor/destructor body. Definitions already completed by
