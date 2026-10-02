@@ -3242,7 +3242,7 @@ static bool utilityLazyConditionalMoveSignatureSource(
           !Expression->isInstantiationDependent());
 }
 
-static bool utilityDeletedCopyConditionalMoveSource(
+static bool utilityUnavailableCopyConditionalMoveSource(
     Adapter &A, const CallExpr *Call, const CXXRecordDecl *Record,
     std::vector<const CXXMethodDecl *> *Signatures) {
   const auto *Function = Call->getDirectCallee();
@@ -3260,6 +3260,7 @@ static bool utilityDeletedCopyConditionalMoveSource(
   const auto CopyParameter = A.Context.getLValueReferenceType(
       A.Context.getRecordType(Record).withConst());
   bool FoundExplicitCopy = false;
+  bool FoundInaccessibleCopy = false;
   bool FoundImplicitCopy = false;
   bool FoundDeclaredMove = false;
   for (const auto *Constructor : Record->ctors()) {
@@ -3274,6 +3275,12 @@ static bool utilityDeletedCopyConditionalMoveSource(
       return false;
     if (Constructor->isMoveConstructor() && !Constructor->isImplicit())
       FoundDeclaredMove = true;
+    if (Constructor->isCopyConstructor() && !Constructor->isImplicit() &&
+        (Constructor->getAccess() == AS_private ||
+         Constructor->getAccess() == AS_protected) &&
+        A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                               CopyParameter))
+      FoundInaccessibleCopy = true;
     if (Constructor->isCopyConstructor() && Constructor->isDeleted() &&
         Constructor->getAccess() == AS_public &&
         A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
@@ -3292,12 +3299,14 @@ static bool utilityDeletedCopyConditionalMoveSource(
       Destructor &&
       !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
     return false;
-  // An exact deleted const-copy makes the copy trait false for T and const T.
-  // Besides an explicit deletion, a user-declared move operation deletes
+  // An exact inaccessible or deleted const-copy makes the pinned copy trait
+  // false for T and const T, independently of the owning graph. Its written
+  // signature still supplies sources; do not instantiate a hypothetical body.
+  // Besides those declarations, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
   // already-declared copy and its source-owned move; other implicit deletion
   // causes keep their own proof. No hypothetical declaration or body is made.
-  if (FoundExplicitCopy)
+  if (FoundExplicitCopy || FoundInaccessibleCopy)
     return true;
   if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
     return false;
@@ -3505,8 +3514,8 @@ static bool utilityValueAdapterSource(
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
   // on their ordinary checks. Conditional move with an object template
-  // argument additionally proves a trivial owning graph, a deleted const-copy
-  // or bounded record special members, retaining their original signatures.
+  // argument additionally proves a trivial owning graph, an unavailable
+  // const-copy or bounded record special members, retaining their signatures.
   const bool OwnedRecord =
       Definition &&
       !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
@@ -3514,8 +3523,8 @@ static bool utilityValueAdapterSource(
       !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
       Type.getAddressSpace() == LangAS::Default &&
       (ReferenceCast ||
-       utilityDeletedCopyConditionalMoveSource(A, Call, Definition,
-                                              ConditionalSignatures) ||
+       utilityUnavailableCopyConditionalMoveSource(A, Call, Definition,
+                                                  ConditionalSignatures) ||
        utilityRecordConditionalMoveSource(A, Definition,
                                           ConditionalSignatures));
   const bool ConditionalOwner =

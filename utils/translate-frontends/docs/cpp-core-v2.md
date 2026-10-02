@@ -964,6 +964,12 @@ destructor; a query alone does not instantiate those hypothetical bodies.
 
 Object-argument queries also admit source-owned nontrivial records with an
 explicitly deleted public copy constructor taking exactly `const Record&`.
+The queried record's private or protected `const Record&` copy supplies the
+same proof, whether it is ordinary, defaulted or deleted: the pinned copy trait
+checks access independently of the caller. A copy-only record or a record with
+an unavailable move is included. This access proof applies to the queried
+record itself; an enclosing public defaulted copy whose deletion depends on an
+inaccessible member copy retains the owning-graph requirements above.
 The same proof admits an already-declared implicit, defaulted, deleted
 `const Record&` copy when the record has a source-owned user-declared move
 constructor or move assignment and no user-declared copy constructor. The
@@ -992,10 +998,11 @@ exact absence of source; its inferred exception result and generated body
 remain lazy. This includes a defaulted move constructor deleted by an unmovable
 value member. Actual construction and assignment still require their ordinary
 body or generated-operation proof. No query performs either operation.
-This deletion-only proof excludes constructor templates, inherited constructors,
-copy/move constructors with extra parameters, user-defaulted deleted copies,
-and other causes of implicit deletion such as an uncopyable member. A deleted
-non-const or volatile-copy overload alone does not
+This copy-unavailability proof excludes constructor templates, inherited
+constructors and copy/move constructors with extra parameters. Public
+user-defaulted deleted copies and other causes of implicit deletion such as an
+uncopyable member require the owning-graph proof above. An inaccessible or
+deleted non-const or volatile-copy overload alone does not
 supply this exact const-copy proof.
 
 The exact public `apply`, index helper and internal invocation must have
