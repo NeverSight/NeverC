@@ -2278,37 +2278,39 @@ static int scan_skip_file_space(FILE *f, int allow_nl) {
 
 static int scan_int_from_file(FILE *f, int *out_int) {
     int c;
-    char buf[128];
-    size_t n = 0;
+    scan_stream_token_t token;
     const char *p;
     int64_t val;
+    int parsed;
     if (!f || !out_int) return 0;
     (void)scan_skip_file_space(f, 1);
     /* Go scanNumber leaves in-token leftovers in the stream. Slurping the
      * whole whitespace token would drop the '8' in "08 9". */
     c = getc(f);
     if (c == EOF) return 0;
+    /* The sign, first digit and base prefix fit the token's local storage. */
+    scan_stream_token_init(&token);
     if (c == '+' || c == '-') {
-        buf[n++] = (char)c;
+        token.data[token.len++] = (char)c;
         c = getc(f);
     }
     if (c < '0' || c > '9') {
         if (c != EOF) ungetc(c, f);
         return 0;
     }
-    buf[n++] = (char)c;
+    token.data[token.len++] = (char)c;
     {
         const char *digits = "0123456789";
         if (c == '0') {
             int prefix = getc(f);
             if (prefix == 'x' || prefix == 'X') {
-                buf[n++] = (char)prefix;
+                token.data[token.len++] = (char)prefix;
                 digits = "0123456789abcdefABCDEF";
             } else if (prefix == 'b' || prefix == 'B') {
-                buf[n++] = (char)prefix;
+                token.data[token.len++] = (char)prefix;
                 digits = "01";
             } else if (prefix == 'o' || prefix == 'O') {
-                buf[n++] = (char)prefix;
+                token.data[token.len++] = (char)prefix;
                 digits = "01234567";
             } else {
                 if (prefix != EOF) ungetc(prefix, f);
@@ -2320,15 +2322,28 @@ static int scan_int_from_file(FILE *f, int *out_int) {
                 ungetc(c, f);
                 break;
             }
-            /* Keep consuming past buf[] so leftover starts after the token
-             * (Go scanNumber), not in the middle of a 128+ digit integer. */
-            if (n + 1U < sizeof(buf))
-                buf[n++] = (char)c;
+            /* Retain the whole token: leading zeros or underscores can keep
+             * a long token in range, so a truncated copy would parse to the
+             * wrong value. Keep consuming even if storage fails so leftover
+             * still starts after the token (Go scanNumber). */
+            if (!token.storage_failed &&
+                (token.len > SIZE_MAX - 2U ||
+                 !scan_stream_token_reserve(&token, token.len + 2U)))
+                token.storage_failed = 1;
+            if (!token.storage_failed)
+                token.data[token.len++] = (char)c;
         }
     }
-    buf[n] = '\0';
-    p = buf;
-    if (scan_int_literal(&p, &val) && scan_value_fits_int(val) && *p == '\0') {
+    if (token.storage_failed) {
+        scan_stream_token_destroy(&token);
+        return 0;
+    }
+    token.data[token.len] = '\0';
+    p = token.data;
+    parsed = scan_int_literal(&p, &val) && scan_value_fits_int(val) &&
+             *p == '\0';
+    scan_stream_token_destroy(&token);
+    if (parsed) {
         *out_int = (int)val;
         /* Same-line spaces stay for a later Scan. Consume a trailing
          * newline so Fscanln can read the next line. */

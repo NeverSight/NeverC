@@ -183,6 +183,27 @@ int main(void) {
     }
 
     {
+        unsigned char int_input[163];
+        FILE *input;
+        int value = 7;
+        int suffix = 0;
+        memset(int_input, '0', 160);
+        int_input[160] = '1';
+        int_input[161] = ' ';
+        int_input[162] = '9';
+        input = open_fmt_oom_input_pipe(int_input, sizeof(int_input));
+        CHECK(input != NULL);
+        reset_allocator(1);
+        CHECK(neverc_fmt_fscan(input, &value) == 0);
+        CHECK(allocation_count == 1);
+        CHECK(value == 7);
+        reset_allocator(0);
+        CHECK(neverc_fmt_fscan(input, &suffix) == 1);
+        CHECK(suffix == 9);
+        CHECK(fclose(input) == 0);
+    }
+
+    {
         static const unsigned char bytes[] = {'A', 0xC2, 0xA0, 'Z'};
         struct {
             char text[3];
