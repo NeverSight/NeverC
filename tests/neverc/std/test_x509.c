@@ -700,6 +700,34 @@ static void test_wildcard_rejects_single_label_suffix(void) {
           neverc_x509_verify_hostname(&cert, "bank.com") != 0);
 }
 
+/* Go crypto/x509 accepts '_' anywhere and '-' after a label's first
+ * character, and lets names outside those rules match only exactly. */
+static void test_hostname_lenient_labels(void) {
+    neverc_x509_cert_t cert;
+    memset(&cert, 0, sizeof(cert));
+    char *names[] = {
+        "my_service.internal", "*.under_score.example", "a-.example.com",
+        "-b.example.com", "*.example.net"
+    };
+    cert.dns_names = names;
+    cert.dns_name_count = sizeof(names) / sizeof(names[0]);
+
+    CHECK("hostname_underscore_exact",
+          neverc_x509_verify_hostname(&cert, "my_service.internal") == 0);
+    CHECK("hostname_underscore_case_and_dot",
+          neverc_x509_verify_hostname(&cert, "MY_SERVICE.Internal.") == 0);
+    CHECK("hostname_underscore_wildcard",
+          neverc_x509_verify_hostname(&cert, "a_b.under_score.example") == 0);
+    CHECK("hostname_trailing_hyphen_label",
+          neverc_x509_verify_hostname(&cert, "a-.example.com") == 0);
+    CHECK("hostname_invalid_name_exact_match",
+          neverc_x509_verify_hostname(&cert, "-B.example.com") == 0);
+    CHECK("hostname_invalid_name_no_wildcard",
+          neverc_x509_verify_hostname(&cert, "-x.example.net") != 0);
+    CHECK("hostname_underscore_wildcard_one_label",
+          neverc_x509_verify_hostname(&cert, "a.b.under_score.example") != 0);
+}
+
 static void test_x509_strings(void) {
     CHECK("sig_sha256_rsa", strcmp(neverc_x509_sig_algorithm_string(NEVERC_X509_SIG_SHA256_RSA),
                                    "SHA256-RSA") == 0);
@@ -1234,6 +1262,7 @@ int main(void) {
     test_x509_name_constraints_parse();
     test_x509_subject_alt_name();
     test_wildcard_rejects_single_label_suffix();
+    test_hostname_lenient_labels();
     test_x509_strings();
     test_x509_time_compare();
     test_x509_format_name();
