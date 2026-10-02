@@ -3065,6 +3065,26 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   return true;
 }
 
+static bool utilityArrayConditionalMoveSource(Adapter &A,
+                                              const CallExpr *Call) {
+  const auto *Function = Call->getDirectCallee();
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Type = Call->getType();
+  // In C++17 an array cannot be constructed from a const array reference, so
+  // the pinned copy trait is false regardless of its elements' constructors.
+  // Authenticate the exact object T and xvalue branch without asking Sema to
+  // inspect or instantiate hypothetical element copies/moves. The caller
+  // still checks the pinned adapter and every original bound/element source.
+  return A.Context.getLangOpts().CPlusPlus17 &&
+         !A.Context.getLangOpts().CPlusPlus20 && Call->isXValue() &&
+         A.Context.getAsConstantArrayType(Type) && Arguments &&
+         Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Arguments->get(0).getAsType()->isObjectType() &&
+         A.Context.hasSameType(Arguments->get(0).getAsType(), Type);
+}
+
 static bool utilityUniquePtrConditionalMoveSource(
     Adapter &A, const CallExpr *Call, const CXXRecordDecl *Record) {
   const auto Owner = utilityUniquePtrSource(A, Record);
@@ -3200,7 +3220,10 @@ static bool utilityValueAdapterSource(
   // reference category or const view. Written bounds, element types and
   // operand/lifetime sources remain ordinary dependencies; no element moves.
   const bool FixedArray =
-      ReferenceCast && A.Context.getAsConstantArrayType(Type) &&
+      A.Context.getAsConstantArrayType(Type) &&
+      (ReferenceCast ||
+       (*Operation == UtilityOperation::MoveIfNoexcept &&
+        utilityArrayConditionalMoveSource(A, Call))) &&
       !Type.isVolatileQualified() &&
       !Type.isRestrictQualified() && Type.getAddressSpace() == LangAS::Default;
   // The tuple-like descriptor supplies only authenticated storage. The exact

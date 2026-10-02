@@ -288,7 +288,7 @@ lifecycle operations; evaluated casts preserve the original storage and perform
 no element copies or moves. Unknown-bound arrays, volatile or unsupported
 elements, source replacements, independent addresses, indirect/cast callees and
 rvalues forwarded as lvalues retain rejection. Conditional `move_if_noexcept`
-array queries still need a separate source proof.
+array queries use the distinct source proof described below.
 
 The same exact `move`/`forward` reference-cast proof also supports result-source
 queries on admitted `std::array`, `std::pair` and `std::tuple` objects, including
@@ -341,7 +341,7 @@ no side effects, element construction or destruction; evaluated references alias
 the original array and observe its subsequent mutations. Unknown-bound arrays,
 volatile elements, unsupported element types, source substitutions, independent
 function addresses and indirect/cast callees retain rejection. Raw-array
-`move_if_noexcept` result-source queries remain separate support work.
+`move_if_noexcept` queries use the distinct conditional-move proof below.
 
 The exact `as_const` const-reference proof also supports result-source queries
 on admitted `std::array`, `std::pair` and `std::tuple` objects, including empty,
@@ -387,6 +387,27 @@ unsupported types/pointees, direct array/record/function/owner references,
 and reference template arguments yielding lvalues remain outside this scalar
 query boundary. The record copy-fallback branch needs its own source proof and
 is not admitted by this scalar extension.
+
+The exact `move_if_noexcept` proof also supports admitted fixed arrays in
+C++17. An array cannot be copy-constructed from a const array reference, so
+the pinned copy trait rules out the copy-fallback branch independently of the
+element constructors. The selected template argument must be the exact
+cv-qualified array object type, with an unchanged `T&` parameter and `T&&`
+result; explicit reference template arguments remain rejected. Const arrays
+retain const elements, and every dimension is preserved without decay. Scalar,
+pointer, callback-pointer, source-owned record, reference-member record and
+multidimensional elements keep their ordinary type and layout checks. Admitted
+nontrivial elements, including throwing or deleted copy/move constructors, do
+not cause element constructor selection or instantiation for this proof.
+Direct and parenthesized names, imports, reexports, explicit object template
+arguments, query-only specializations and nested utility reference casts share
+the exact pinned adapter checks. Written bounds, aliases, element types,
+callback signatures, record fields, original operands, selected defaults,
+exception specifications and temporary cleanup still complete independently.
+Queries perform no effects or lifecycle operations; evaluated casts preserve
+the original array storage without element copies or moves. Unknown-bound or
+volatile arrays, unsupported elements, source function/trait replacements,
+independent function addresses and indirect/cast callees retain rejection.
 
 The same `move_if_noexcept` rvalue-reference branch also supports result-source
 queries on admitted `std::array`, `std::pair` and `std::tuple` objects. This

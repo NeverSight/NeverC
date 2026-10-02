@@ -42860,8 +42860,8 @@ using Bad=long double[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport:
       {"rvalue-forwarded-as-lvalue", R"cpp(
 int f(Row&r){static_assert(__is_same(decltype(Reexport::forward<Row&>(std::move(r))),Row&));return 0;}
 )cpp", "TR0201"},
-      {"conditional-move-stays-separate", R"cpp(
-int f(Row&r){static_assert(__is_same(decltype(std::move_if_noexcept(r)),Row&&));return 0;}
+      {"conditional-move-original-bound", R"cpp(
+using Bad=int[sizeof(long double)];int f(Bad&r){static_assert(__is_same(decltype(std::move_if_noexcept(r)),Bad&&));return 0;}
 )cpp", "TR0201"},
       {"invalid-explicit-move-reference", R"cpp(
 int f(Row&r){static_assert(__is_same(decltype(Reexport::move<Row&>(static_cast<Row&&>(r))),Row&&));return 0;}
@@ -44048,6 +44048,295 @@ using Row=std::array<int,2>;using Pair=std::pair<int,double>;using Tuple=std::tu
   }
 }
 
+TEST_F(TranslateTest, CoreV2FixedArrayMoveIfNoexceptQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("fixed-array-move-if-noexcept-queries.cpp");
+  const auto Output = tmpFile("fixed-array-move-if-noexcept-queries.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+using Row = int[3];
+using Grid = Row[2];
+int calls, effects, defaults, live, destroyed, elements, copies, moves, element_destructions;
+int mark() noexcept { ++defaults; return 1; }
+int effect() noexcept { ++effects; return 2; }
+struct Ticket {
+  int value;
+  Ticket(int n) noexcept : value(n) { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+struct Element {
+  int value;
+  Element(int n) noexcept : value(n) { ++elements; }
+  Element(const Element &r) noexcept(false) : value(r.value) { ++elements; ++copies; }
+  Element(Element &&r) noexcept(false) : value(r.value) { ++elements; ++moves; }
+  ~Element() noexcept { --elements; ++element_destructions; }
+};
+struct Immobile {
+  int value;
+  Immobile(int n) noexcept : value(n) { ++elements; }
+  Immobile(const Immobile &) = delete;
+  Immobile(Immobile &&) = delete;
+  ~Immobile() noexcept { --elements; ++element_destructions; }
+};
+struct Deferred {
+  int value;
+  template<class T> Deferred(T &&) { static_assert(sizeof(T) == 0); }
+};
+struct Box { int value; };
+struct References { int &left; int &&right; };
+Row &select(Row &row, int n = mark()) noexcept { ++calls; return row; }
+const Row &constant(const Row &row) noexcept { ++calls; return row; }
+Row &throwing(Row &row) noexcept(false) { ++calls; return row; }
+Row &with_temporary(Row &row, const Ticket &ticket = Ticket(mark())) noexcept {
+  ++calls; return row;
+}
+int increment(int n) { ++effects; return n + 1; }
+int add_two(int n) noexcept { ++effects; return n + 2; }
+template<class T> bool queries(T &value, const T &cv) {
+  static_assert(!std::is_copy_constructible<T>::value);
+  static_assert(!std::is_copy_constructible<const T>::value);
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(value)), T &&));
+  static_assert(__is_same(decltype((Alias::move_if_noexcept)(value)), T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<T>(value)), T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(cv)), const T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const T>(value)), const T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const T>(std::move(value))), const T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(std::as_const(value))), const T &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(std::forward<T &>(value))), T &&));
+  static_assert(__is_same(decltype(std::move(Alias::move_if_noexcept(value))), T &&));
+  static_assert(__is_same(decltype(std::forward<T>(Alias::move_if_noexcept(value))), T &&));
+  static_assert(sizeof(Alias::move_if_noexcept(value)) == sizeof(T));
+  static_assert(alignof(decltype(Alias::move_if_noexcept(cv))) == alignof(T));
+  static_assert(noexcept(Alias::move_if_noexcept(value)));
+  using Reexport::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(value)), T &&));
+  T &&view = move_if_noexcept(value);
+  const T &&const_view = move_if_noexcept(cv);
+  const T &&bound_rvalue = move_if_noexcept<const T>(std::move(value));
+  return &view == &value && &const_view == &cv && &bound_rvalue == &value;
+}
+int query_only(short (&value)[2]) {
+  static_assert(__is_same(decltype(std::move_if_noexcept(value)), short (&&)[2]));
+  return value[0];
+}
+int deferred(Deferred (&value)[2]) {
+  static_assert(__is_same(decltype(std::move_if_noexcept(value)), Deferred (&&)[2]));
+  return value[0].value;
+}
+int main() {
+  Row row = {1, 2, 3};
+  const Row cv = {4, 5, 6};
+  Grid grid = {{7, 8, 9}, {10, 11, 12}};
+  const Grid const_grid = {{13, 14, 15}, {16, 17, 18}};
+  bool flags[2] = {false, true};
+  double reals[2] = {1.5, 2.5};
+  const char text[4] = "abc";
+  short shorts[2] = {19, 20};
+  Box boxes[2] = {{21}, {22}};
+  int target = 23, other = 24;
+  int *pointers[2] = {&target, &other};
+  Row *row_pointers[2] = {&row, &row};
+  using Callback = int (*)(int);
+  using Nonthrowing = int (*)(int) noexcept;
+  Callback callbacks[2] = {increment, increment};
+  Nonthrowing nonthrowing[2] = {add_two, add_two};
+  References references[1] = {{target, static_cast<int &&>(other)}};
+  if (!queries(row, cv) || !queries<const Row>(cv, cv) || !queries(grid, const_grid) ||
+      !queries(flags, flags) || !queries(reals, reals) || !queries<const char[4]>(text, text) ||
+      !queries(boxes, boxes) || !queries(pointers, pointers) ||
+      !queries(row_pointers, row_pointers) || !queries(callbacks, callbacks) ||
+      !queries(nonthrowing, nonthrowing) || !queries(references, references) ||
+      query_only(shorts) != 19)
+    return 1;
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(grid)), int (&&)[2][3]));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(grid)[0]), Row &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(row)[0]), int &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(pointers)[0]), int *&&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(references)[0].left), int &));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(callbacks)[0](1)), int));
+  static_assert(!noexcept(Alias::move_if_noexcept(callbacks)[0](1)));
+  static_assert(noexcept(Alias::move_if_noexcept(nonthrowing)[0](1)));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(select(row))), Row &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(constant(cv))), const Row &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept((effect(), row))), Row &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(true ? row : cv)), const Row &&));
+  static_assert(noexcept(Alias::move_if_noexcept(select(row))));
+  static_assert(!noexcept(Alias::move_if_noexcept(throwing(row))));
+  static_assert(sizeof(Alias::move_if_noexcept(with_temporary(row))) == sizeof(Row));
+  static_assert(noexcept(Alias::move_if_noexcept(with_temporary(row, Ticket(effect())))));
+  if (calls || effects || defaults || live || destroyed) return 2;
+  Row &&view = Alias::move_if_noexcept(select(row));
+  Row &&temporary_view = Alias::move_if_noexcept(with_temporary(row));
+  Grid &&grid_view = Alias::move_if_noexcept(grid);
+  auto &&pointer_view = Alias::move_if_noexcept(pointers);
+  auto &&callback_view = Alias::move_if_noexcept(callbacks);
+  view[0] = 25;
+  pointer_view[0] = &row[1];
+  *pointer_view[0] = 26;
+  callback_view[0] = add_two;
+  Alias::move_if_noexcept(references)[0].left = 27;
+  Alias::move_if_noexcept(references)[0].right = 28;
+  grid_view[1][2] = 29;
+  if (&view != &row || &temporary_view != &row || row[0] != 25 || row[1] != 26 ||
+      pointers[0] != &row[1] || target != 27 || other != 28 ||
+      &grid_view != &grid || grid[1][2] != 29 || callbacks[0](1) != 3 ||
+      Alias::move_if_noexcept(nonthrowing)[1](2) != 4 || calls != 2 || effects != 2 ||
+      defaults != 2 || live || destroyed != 1)
+    return 3;
+  {
+    Element owned[2] = {Element(30), Element(31)};
+    Immobile fixed[2] = {Immobile(32), Immobile(33)};
+    if (!queries(owned, owned) || !queries(fixed, fixed) ||
+        elements != 4 || copies || moves || element_destructions)
+      return 4;
+    auto &&owned_view = Alias::move_if_noexcept(owned);
+    auto &&fixed_view = Alias::move_if_noexcept(fixed);
+    owned_view[0].value = 34;
+    fixed_view[1].value = 35;
+    if (&owned_view != &owned || &fixed_view != &fixed ||
+        owned[0].value != 34 || fixed[1].value != 35)
+      return 5;
+  }
+  return elements == 0 && !copies && !moves && element_destructions == 4 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("fixed-array-move-if-noexcept-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FixedArrayMoveIfNoexceptQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"operand-expression", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept((sizeof(long double),r))),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+Row&source(Row&r,int n=sizeof(long double))noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(r))),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"original-exception", R"cpp(
+Row&source(Row&r)noexcept(sizeof(long double)>0);Row&source(Row&r)noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(r))),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"original-signature", R"cpp(
+Row&source(Row&r,long double n=0)noexcept{return r;}int f(Row&r){static_assert(sizeof(Reexport::move_if_noexcept(source(r)))==sizeof(Row));return 0;}
+)cpp", "TR0201"},
+      {"adjusted-parameter-bound", R"cpp(
+Row&source(Row&r,int p[sizeof(long double)])noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(r,nullptr))),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"outer-bound", R"cpp(
+using Bad=int[sizeof(long double)];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"inner-bound", R"cpp(
+using Bad=int[2][sizeof(long double)];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"written-template-argument", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept<int[3+0*sizeof(long double)]>(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"erased-alias-argument", R"cpp(
+template<int>using Erased=Row;int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept<Erased<sizeof(long double)>>(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"pointer-pointee", R"cpp(
+using Bad=long double*[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"callback-signature", R"cpp(
+using Callback=int(*)(long double);using Bad=Callback[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"callback-exception", R"cpp(
+using Callback=int(*)(int)noexcept(sizeof(long double)>0);using Bad=Callback[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"record-field-bound", R"cpp(
+struct Box{int n[sizeof(long double)];};using Bad=Box[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"temporary-cleanup", R"cpp(
+struct Ticket{~Ticket(){(void)sizeof(long double);}};Row&source(Row&r,const Ticket&t=Ticket{})noexcept{return r;}int f(Row&r){static_assert(sizeof(Reexport::move_if_noexcept(source(r)))==sizeof(Row));return 0;}
+)cpp", "TR0201"},
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __move_if_noexcept_result_t<T>move_if_noexcept(T&)noexcept;}}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>Row&&move_if_noexcept<Row>(Row&r)noexcept{return static_cast<Row&&>(r);}}}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"const-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const Row&&move_if_noexcept<const Row>(const Row&r)noexcept{return static_cast<const Row&&>(r);}}}int f(const Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),const Row&&));return 0;}
+)cpp", "TR0201"},
+      {"copy-trait-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>struct is_copy_constructible;}}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"move-trait-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"independent-function-address", R"cpp(
+using F=Row&&(*)(Row&)noexcept;int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));static_assert(sizeof(static_cast<F>(&Reexport::move_if_noexcept<Row>))>0);return 0;}
+)cpp", "TR0201"},
+      {"function-reference-call", R"cpp(
+Row&&(&target)(Row&)noexcept=std::move_if_noexcept<Row>;int f(Row&r){static_assert(__is_same(decltype(target(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=Row&&(*)(Row&)noexcept;int f(Row&r){static_assert(__is_same(decltype(static_cast<F>(&Reexport::move_if_noexcept<Row>)(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=Row&&(*)(Row&);int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));static_assert(!noexcept(static_cast<F>(&Reexport::move_if_noexcept<Row>)(r)));return 0;}
+)cpp", "TR0201"},
+      {"volatile-array", R"cpp(
+int f(volatile Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),volatile Row&&));return 0;}
+)cpp", "TR0201"},
+      {"unknown-bound", R"cpp(
+using Bad=int[];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"long-double-element", R"cpp(
+using Bad=long double[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Bad&&));return 0;}
+)cpp", "TR0201"},
+      {"lvalue-template-argument", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept<Row&>(r)),Row&));return 0;}
+)cpp", "TR0201"},
+      {"rvalue-template-argument", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept<Row&&>(r)),Row&&));return 0;}
+)cpp", "TR0201"},
+      // The pinned frontend honors the SDK's no-specializations annotations.
+      {"copy-trait-replacement", R"cpp(
+namespace std{inline namespace __1{template<>struct is_copy_constructible<Row>{static constexpr bool value=false;};}}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));return 0;}
+)cpp", "TR0202"},
+      {"move-trait-replacement", R"cpp(
+namespace std{inline namespace __1{template<>struct is_nothrow_move_constructible<Row>{static constexpr bool value=true;};}}int f(Row&r){static_assert(__is_same(decltype(Reexport::move_if_noexcept(r)),Row&&));return 0;}
+)cpp", "TR0202"},
+      {"invalid-rvalue", R"cpp(
+int f(Row&r){static_assert(noexcept(Reexport::move_if_noexcept(std::move(r))));return 0;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("fixed-array-move-if-noexcept-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("fixed-array-move-if-noexcept-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <utility>
+#include <type_traits>
+using Row=int[3];
+namespace Imported{using std::move_if_noexcept;}
+namespace Reexport{using Imported::move_if_noexcept;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+
 TEST_F(TranslateTest, CoreV2ScalarMoveIfNoexceptQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("scalar-move-if-noexcept-queries.cpp");
   const auto Output = tmpFile("scalar-move-if-noexcept-queries.nc");
@@ -44330,8 +44619,8 @@ int f(volatile int&p){static_assert(__is_same(decltype(std::move_if_noexcept(p))
 int f(long double*&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),long double*&&));return 0;}
 )cpp",
        "TR0201"},
-      {"array-reference", R"cpp(
-int f(int(&p)[2]){static_assert(__is_same(decltype(std::move_if_noexcept(p)),int(&&)[2]));return 0;}
+      {"array-original-bound", R"cpp(
+using Array=int[sizeof(long double)];int f(Array&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Array&&));return 0;}
 )cpp",
        "TR0201"},
       {"nontrivial-move-result-record", R"cpp(
