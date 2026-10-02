@@ -634,9 +634,21 @@ void neverc_http_enable_chunked(neverc_http_response_writer_t *w) {
     w->content_length_override = 0;
 }
 
+static int http_conn_request_is_http10(const http_conn_t *connection);
+
+/* RFC 9112 §6.1: HTTP/1.0 cannot carry Transfer-Encoding. Like Go, a
+ * streamed response to such a request sends identity bytes and ends the
+ * body by closing the connection. */
+static int rw_streams_identity(const neverc_http_response_writer_t *w) {
+    return w->owner && http_conn_request_is_http10(w->owner);
+}
+
 static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
     if (!w || w->aborted) return -1;
     if (w->headers_sent) return 0;
+
+    int identity = rw_streams_identity(w);
+    if (identity) w->keep_alive = 0;
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);
@@ -674,8 +686,8 @@ static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
         if (nc_buf_append(&hdr, ct, strlen(ct)) != 0) goto fail;
     }
     const char *te = "Transfer-Encoding: chunked\r\n";
-    if (nc_buf_append(&hdr, te, strlen(te)) != 0) goto fail;
-    if (w->ntrailers > 0) {
+    if (!identity && nc_buf_append(&hdr, te, strlen(te)) != 0) goto fail;
+    if (!identity && w->ntrailers > 0) {
         if (nc_buf_append(&hdr, "Trailer: ", 9) != 0) goto fail;
         for (int i = 0; i < w->ntrailers; i++) {
             if ((i > 0 && nc_buf_append(&hdr, ", ", 2) != 0) ||
@@ -733,6 +745,12 @@ int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
 
     if (w->body.len == 0) return 0;
 
+    if (rw_streams_identity(w)) {
+        if (rw_write_all(w, w->body.data, w->body.len) != 0) return -1;
+        nc_buf_reset(&w->body);
+        return 0;
+    }
+
     char chunk_hdr[32];
     int n = snprintf(chunk_hdr, sizeof(chunk_hdr), "%zx\r\n", w->body.len);
     if (rw_write_all(w, chunk_hdr, (size_t)n) != 0) return -1;
@@ -769,6 +787,13 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
         return -1;
 
     if (!w->headers_sent && rw_send_chunked_headers(w) != 0) return -1;
+
+    if (rw_streams_identity(w)) {
+        /* Closing the connection ends the body; HTTP/1.0 has no trailers. */
+        w->keep_alive = 0;
+        w->chunked_ended = 1;
+        return 0;
+    }
 
     nc_buf_t ending;
     nc_buf_init(&ending);
@@ -2554,6 +2579,7 @@ struct http_conn {
     uint64_t           last_active;
     uint64_t           request_started;
     int                continue_sent;
+    int                request_http10; /* request being answered is 1.0 */
     int                idle_timeout_ms;
     int                read_header_timeout_ms;
     int                read_timeout_ms;
@@ -2580,6 +2606,10 @@ struct http_conn {
     struct http_conn  *next;
     struct http_conn  *prev;
 };
+
+static int http_conn_request_is_http10(const http_conn_t *connection) {
+    return connection->request_http10;
+}
 
 /* Per-worker connection list for timeout scanning */
 typedef struct {
@@ -3195,6 +3225,8 @@ static int http_conn_start_streaming(http_conn_t *connection,
     task->request.body_stream_read = http1_request_stream_read;
     task->request.body_stream_cancel = http1_request_stream_cancel;
 
+    connection->request_http10 =
+        strcmp(task->parsed.http_version, "HTTP/1.0") == 0;
     task->writer = rw_new(connection->tls ? NC_INVALID_SOCK : connection->fd,
                           task->parsed.keep_alive,
                           connection, 0);
@@ -3389,6 +3421,7 @@ static void http_conn_process(http_conn_t *hc) {
             req.nparams = params.count;
         }
 
+        hc->request_http10 = strcmp(pr.http_version, "HTTP/1.0") == 0;
         neverc_http_response_writer_t *w =
             rw_new(hc->fd, pr.keep_alive, hc, consumed);
         if (!w) {
