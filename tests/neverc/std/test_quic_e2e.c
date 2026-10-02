@@ -759,6 +759,63 @@ static void quic_test_endpoint_close_finishes_accepted(int peer_closed) {
     neverc_network_test_remove_certs(&files);
 }
 
+/* RFC 9002 §6.4: packets sent with discarded Initial or Handshake keys can
+ * never be acknowledged, so their send records have to go with the keys.
+ * Records left behind kept an idle connection from ever reporting its sends
+ * as drained. */
+static void quic_test_handshake_send_records_released(void) {
+    neverc_network_test_files_t files;
+    CHECK(neverc_network_test_write_certs("quic-drained", &files) == 0);
+    int port = quic_test_free_udp_port();
+    CHECK(port > 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *alpn[] = {"neverc-quic-drained/1", NULL};
+    neverc_quic_config_t server_config = neverc_quic_config_default();
+    server_config.cert_file = files.server_cert;
+    server_config.key_file = files.server_key;
+    server_config.alpn = alpn;
+    const char *error = NULL;
+    neverc_quic_endpoint_t *endpoint = neverc_quic_listen(
+        address, &server_config, &error);
+    CHECK(endpoint != NULL);
+    if (!endpoint) {
+        neverc_network_test_remove_certs(&files);
+        return;
+    }
+
+    neverc_quic_config_t client_config = neverc_quic_config_default();
+    client_config.alpn = alpn;
+    client_config.server_name = "localhost";
+    client_config.root_cert_file = files.ca;
+    neverc_quic_conn_t *client = neverc_quic_dial(address, &client_config,
+                                                    &error);
+    CHECK(client != NULL);
+    neverc_quic_conn_t *server =
+        client ? neverc_quic_accept(endpoint, &error) : NULL;
+    CHECK(server != NULL);
+    if (server) {
+        int server_drained = 0;
+        int client_drained = 0;
+        for (int attempt = 0; attempt < 2000; attempt++) {
+            server_drained = neverc_quic_conn_send_drained(server);
+            client_drained = neverc_quic_conn_send_drained(client);
+            if (server_drained && client_drained) break;
+            neverc_time_sleep(1 * NEVERC_TIME_MILLISECOND);
+        }
+        CHECK(server_drained);
+        CHECK(client_drained);
+    }
+
+    neverc_quic_conn_free(server);
+    if (client) {
+        neverc_quic_conn_close(client, 0U, "drained test done");
+        neverc_quic_conn_free(client);
+    }
+    neverc_quic_endpoint_close(endpoint);
+    neverc_network_test_remove_certs(&files);
+}
+
 static void quic_test_clienthello_legacy_session_id_empty(void) {
     neverc_quic_config_t config = neverc_quic_config_default();
     config.insecure_skip_verify = 1;
@@ -819,6 +876,7 @@ int main(void) {
     quic_test_roundtrip();
     quic_test_endpoint_close_finishes_accepted(0);
     quic_test_endpoint_close_finishes_accepted(1);
+    quic_test_handshake_send_records_released();
     quic_test_migration_respects_anti_amplification();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");
