@@ -392,6 +392,25 @@ static void test_parse_idna_alabels(void) {
      * U+D800 using the section 6.2 state machine. */
     ASSERT_INT_EQ(
         neverc_url_parse(&u, "http://xn--ib9b.example/"), -1);
+
+    /* RFC 5890 U-labels and RFC 5891 4.2.3.1: a label must not begin or
+     * end with a hyphen, and "--" is legal in character positions 3 and 4
+     * only as the ACE prefix of an A-label. Those checks apply once any
+     * label is non-ASCII (ToASCII). The all-ASCII fast path still copies
+     * the host, matching the tests above for quotes and Go's idnaASCII
+     * skip. An interior hyphen in a real U-label still encodes. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://-\xc3\xbc.example/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xc3\xbc-.example/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://ab--\xc3\xbc.example/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://\xc3\xbc.example-.test/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://-example.com/"), 0);
+    ASSERT_STR_EQ(u.host, "-example.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://example-.com/"), 0);
+    ASSERT_STR_EQ(u.host, "example-.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://ab--cd.com/"), 0);
+    ASSERT_STR_EQ(u.host, "ab--cd.com");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://b\xc3\xbc-cher.de/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--b-cher-3ya.de");
 }
 
 static void test_string(void) {

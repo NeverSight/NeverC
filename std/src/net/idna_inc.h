@@ -272,6 +272,31 @@ static int neverc_idna_label_dot(uint32_t rune) {
            rune == 0xFF61U;
 }
 
+/* RFC 5890 U-label / RFC 5891 4.2.3.1, applied to the code points of one
+ * label after ASCII case-mapping. A label must not begin or end with
+ * HYPHEN-MINUS. "--" in character positions 3 and 4 is the ACE prefix and
+ * is legal only on an all-ASCII A-label; every other label that has it is
+ * rejected. Empty labels are left to the caller (a trailing DNS root dot
+ * is not a label). Returns 0 when the label may proceed to Punycode. */
+static int neverc_idna_label_hyphens_ok(const uint32_t *cps, int n) {
+    if (n <= 0)
+        return 0;
+    if (cps[0] == (uint32_t)'-' || cps[n - 1] == (uint32_t)'-')
+        return -1;
+    int ascii = 1;
+    for (int i = 0; i < n; i++) {
+        if (cps[i] >= 0x80u)
+            ascii = 0;
+    }
+    int alabel = ascii && n >= 4 && cps[0] == (uint32_t)'x' &&
+                 cps[1] == (uint32_t)'n' && cps[2] == (uint32_t)'-' &&
+                 cps[3] == (uint32_t)'-';
+    if (!alabel && n > 4 && cps[2] == (uint32_t)'-' &&
+        cps[3] == (uint32_t)'-')
+        return -1;
+    return 0;
+}
+
 /* Returns 0 on success. out is always NUL-terminated on success. */
 static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
     if (!in || !out || cap == 0)
@@ -328,6 +353,11 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
                 return -1;
             cps[ncp++] = r;
         }
+        /* ASCII-only names never reach this loop. A non-ASCII name is
+         * ToASCII for every label, so a hyphen that the fast path copies
+         * ("-example.com") is invalid next to a U-label. */
+        if (neverc_idna_label_hyphens_ok(cps, ncp) != 0)
+            return -1;
         size_t label_out_start = used;
         if (has_unicode) {
             if (used + 4 >= cap)
