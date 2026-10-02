@@ -2332,14 +2332,24 @@ static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
     const char *p = cookie_hdr;
 
     while (*p) {
-        while (*p == ' ' || *p == ';') p++;
+        /* Go readCookies trims OWS around each cookie-pair and its name;
+         * the value keeps interior and leading spaces. */
+        while (*p == ' ' || *p == '\t' || *p == ';') p++;
         if (!*p) break;
+        const char *pair_end = p;
+        while (*pair_end && *pair_end != ';') pair_end++;
+        const char *eq = (const char *)memchr(p, '=', (size_t)(pair_end - p));
+        const char *name_end = eq ? eq : p;
+        while (name_end > p && (name_end[-1] == ' ' || name_end[-1] == '\t'))
+            name_end--;
 
-        if (strncmp(p, name, nlen) == 0 && p[nlen] == '=') {
-            const char *val = p + nlen + 1;
-            size_t raw_len = 0;
-            while (val[raw_len] && val[raw_len] != ';')
-                raw_len++;
+        if (eq && (size_t)(name_end - p) == nlen &&
+            strncmp(p, name, nlen) == 0) {
+            const char *val = eq + 1;
+            size_t raw_len = (size_t)(pair_end - val);
+            while (raw_len > 0 &&
+                   (val[raw_len - 1] == ' ' || val[raw_len - 1] == '\t'))
+                raw_len--;
             /* Go parseCookieValue: unwrap a matching DQUOTE pair, then
              * reject leftover '"' / '\\' / CTL. Truncating into buf used
              * to return a prefix of `"secret"` as a successful value. */
@@ -2360,7 +2370,7 @@ static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
             }
         }
 
-        while (*p && *p != ';') p++;
+        p = pair_end;
     }
     return NULL;
 }
