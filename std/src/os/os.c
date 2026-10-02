@@ -896,6 +896,14 @@ static int os_same_file(const struct stat *a, const struct stat *b) {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
 }
 
+/* Go os.RemoveAll returns the first error it met. Remember that errno so
+ * the rest of the walk (readdir resets errno) cannot clear or replace it. */
+static int os_remove_fail(int *first_error, int err) {
+    if (*first_error == 0)
+        *first_error = err;
+    return -1;
+}
+
 static int os_remove_dir_contents(int dir_fd) {
     int scan_fd = dup(dir_fd);
     if (scan_fd < 0) return -1;
@@ -906,11 +914,12 @@ static int os_remove_dir_contents(int dir_fd) {
     }
 
     int result = 0;
+    int first_error = 0;
     for (;;) {
         errno = 0;
         struct dirent *entry = readdir(dir);
         if (!entry) {
-            if (errno != 0) result = -1;
+            if (errno != 0) result = os_remove_fail(&first_error, errno);
             break;
         }
         if (strcmp(entry->d_name, ".") == 0 ||
@@ -920,13 +929,13 @@ static int os_remove_dir_contents(int dir_fd) {
         struct stat before;
         if (fstatat(dir_fd, entry->d_name, &before,
                     AT_SYMLINK_NOFOLLOW) != 0) {
-            if (errno != ENOENT) result = -1;
+            if (errno != ENOENT) result = os_remove_fail(&first_error, errno);
             continue;
         }
         if (!S_ISDIR(before.st_mode)) {
             if (unlinkat(dir_fd, entry->d_name, 0) != 0 &&
                 errno != ENOENT)
-                result = -1;
+                result = os_remove_fail(&first_error, errno);
             continue;
         }
 
@@ -937,11 +946,13 @@ static int os_remove_dir_contents(int dir_fd) {
         int child_fd = openat(dir_fd, entry->d_name, open_flags);
         if (child_fd < 0) {
             /* Go os.RemoveAll: a directory that cannot be opened (no read
-             * permission) is still removed when it is empty. */
-            if (errno != ENOENT &&
+             * permission) is still removed when it is empty; otherwise the
+             * open error is the one reported. */
+            int open_error = errno;
+            if (open_error != ENOENT &&
                 unlinkat(dir_fd, entry->d_name, AT_REMOVEDIR) != 0 &&
                 errno != ENOENT)
-                result = -1;
+                result = os_remove_fail(&first_error, open_error);
             continue;
         }
 
@@ -951,16 +962,16 @@ static int os_remove_dir_contents(int dir_fd) {
             os_same_file(&before, &opened);
         if (!opened_ok ||
             os_remove_dir_contents(child_fd) != 0)
-            result = -1;
+            result = os_remove_fail(&first_error, errno);
         if (close(child_fd) != 0)
-            result = -1;
+            result = os_remove_fail(&first_error, errno);
         if (!opened_ok)
             continue;
 
         struct stat current;
         if (fstatat(dir_fd, entry->d_name, &current,
                     AT_SYMLINK_NOFOLLOW) != 0) {
-            if (errno != ENOENT) result = -1;
+            if (errno != ENOENT) result = os_remove_fail(&first_error, errno);
             continue;
         }
         if (!os_same_file(&opened, &current)) {
@@ -969,11 +980,13 @@ static int os_remove_dir_contents(int dir_fd) {
         }
         if (unlinkat(dir_fd, entry->d_name, AT_REMOVEDIR) != 0 &&
             errno != ENOENT)
-            result = -1;
+            result = os_remove_fail(&first_error, errno);
     }
 
     if (closedir(dir) != 0)
-        result = -1;
+        result = os_remove_fail(&first_error, errno);
+    if (result != 0 && first_error != 0)
+        errno = first_error;
     return result;
 }
 #endif
