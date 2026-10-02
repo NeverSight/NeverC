@@ -919,27 +919,31 @@ Constructor templates, other constructor overloads, nontrivial owning graphs
 and SDK value members retain separate decision-source requirements. Non-owning
 pointer/reference fields do not consume their referents' constructor graph.
 
-An ordinary public copy constructor taking exactly `const Record&` also supplies
-conditional-move query sources. Among copy/move constructors, the record may
-have only that copy and an optional ordinary or explicitly deleted move taking
-exactly `Record&&`. A move may be private; the pinned builtin retains its exact
-access/deletion decision. A copy-only record is included. Every copy/move
-declaration and its original parameter and exception sources are checked. A
-lazy concrete template copy or move signature may retain its exact nondependent
-written exception source without instantiating a body. Unresolved dependent
-exception sources remain outside this proof.
+Records with ordinary value constructors also supply conditional-move query
+sources when they have one exact public `const Record&` copy and at most one
+exact `Record&&` move. These special members may be implicit, explicitly
+defaulted or ordinary; the move may also be private or explicitly deleted.
+A copy-only record is included. An implicit or defaulted copy may be deleted by
+its fields, including an uncopyable value member or an rvalue-reference field.
+The pinned builtin preserves its exact viability and overload decision,
+including a deleted defaulted move that is ignored in favor of copying.
+Every written copy/move declaration retains its parameter and exception sources.
 
-This ordinary-copy proof accepts implicit trivial or ordinary public
-destruction, while retaining the destructor's written sources. Owned bases and
-value members must satisfy the trivial constructor/destructor graph above;
-non-owning pointer/reference fields keep their original bindings. Ordinary
-value constructors are allowed, but constructor templates, inherited
-constructors, additional copy overloads, extra copy/move parameters, defaulted
-root copy/move constructors and explicitly defaulted root destructors retain
-separate requirements. Mutable and const
-operands preserve the pinned `T&&` or `const T&` result, including the copy
-fallback and throwing destruction. The query performs no copy, move or cleanup;
-actual construction and destruction retain their ordinary source checks.
+This record proof accepts implicit, defaulted or ordinary public, non-deleted
+destruction. Owned bases and value members must satisfy the trivial
+constructor/destructor graph above; non-owning pointer/reference fields keep
+their original bindings. That graph supplies the sources of inferred exception
+specifications and defaulted deletion. Constructor templates, inherited
+constructors, additional copy overloads and extra copy/move parameters retain
+separate requirements. Mutable and const operands preserve the pinned `T&&`
+or `const T&` result, including copy fallback and throwing destruction.
+
+Concrete template special-member signatures may retain their exact
+nondependent written exception source, or the exact absence of a specification
+for a defaulted member, while their inferred result and generated body remain
+lazy. Unresolved dependent exception sources remain outside this proof.
+The query performs no copy, move or cleanup; actual construction and destruction
+retain their ordinary body or generated-operation source checks.
 
 Object-argument queries also admit source-owned nontrivial records with an
 explicitly deleted public copy constructor taking exactly `const Record&`.
@@ -971,7 +975,7 @@ exact absence of source; its inferred exception result and generated body
 remain lazy. This includes a defaulted move constructor deleted by an unmovable
 value member. Actual construction and assignment still require their ordinary
 body or generated-operation proof. No query performs either operation.
-This additional proof excludes constructor templates, inherited constructors,
+This deletion-only proof excludes constructor templates, inherited constructors,
 copy/move constructors with extra parameters, user-defaulted deleted copies,
 and other causes of implicit deletion such as an uncopyable member. A deleted
 non-const or volatile-copy overload alone does not
