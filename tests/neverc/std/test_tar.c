@@ -878,12 +878,12 @@ static void test_header_only_and_typeflags(void) {
     uint8_t block[NEVERC_TAR_BLOCK_SIZE];
     test_fill_header(block, "PaxHeaders.0/a", 'x', 0, NULL);
     neverc_tar_reader_init(&reader, block, sizeof(block));
-    check_int("reject pax extended header",
+    check_int("reject pax header without file header",
               neverc_tar_reader_next(&reader, &header), -1);
 
-    /* PAX/GNU specials must fail closed before skipping a claimed payload.
-     * Treating typeflag 'x'/'L' as a regular file would swallow the next
-     * member (the overflow/skip class of Go archive/tar PAX bugs). */
+    /* PAX/GNU payloads are metadata, never a regular file's data: an invalid
+     * pax payload fails, and an empty GNU long name (all NUL bytes, as in Go)
+     * leaves the following header's own name. */
     {
         uint8_t pax_archive[NEVERC_TAR_BLOCK_SIZE * 5U];
         memset(pax_archive, 0, sizeof(pax_archive));
@@ -899,8 +899,10 @@ static void test_header_only_and_typeflags(void) {
         test_fill_header(pax_archive + NEVERC_TAR_BLOCK_SIZE * 2U,
                          "visible.txt", NEVERC_TAR_REG, 0, NULL);
         neverc_tar_reader_init(&reader, pax_archive, sizeof(pax_archive));
-        check_int("reject gnu long-name with payload size",
-                  neverc_tar_reader_next(&reader, &header), -1);
+        check_int("gnu long name with empty payload",
+                  neverc_tar_reader_next(&reader, &header), 1);
+        check_str("empty gnu long name keeps header name",
+                  header.name, "visible.txt");
 
         memset(pax_archive, 0, sizeof(pax_archive));
         test_fill_header(pax_archive, "PaxHeaders.0/g", 'g', 512, NULL);
@@ -913,7 +915,7 @@ static void test_header_only_and_typeflags(void) {
 
     test_fill_header(block, "longname", 'L', 0, NULL);
     neverc_tar_reader_init(&reader, block, sizeof(block));
-    check_int("reject gnu long name",
+    check_int("reject gnu long name without file header",
               neverc_tar_reader_next(&reader, &header), -1);
 
     test_fill_header(block, "dev", '3', 0, NULL);
@@ -923,12 +925,12 @@ static void test_header_only_and_typeflags(void) {
 
     test_fill_header(block, "longlink", 'K', 0, NULL);
     neverc_tar_reader_init(&reader, block, sizeof(block));
-    check_int("reject gnu long link",
+    check_int("reject gnu long link without file header",
               neverc_tar_reader_next(&reader, &header), -1);
 
     test_fill_header(block, "PaxHeaders.0/g", 'g', 0, NULL);
     neverc_tar_reader_init(&reader, block, sizeof(block));
-    check_int("reject pax global header",
+    check_int("reject pax global header without terminator",
               neverc_tar_reader_next(&reader, &header), -1);
 
     test_fill_header(block, "file.txt", 0, 0, NULL);
@@ -1390,6 +1392,576 @@ static void test_cursor_state_is_self_contained(void) {
     neverc_tar_writer_free(&writer);
 }
 
+/* Growable archive builder for pax/GNU fixtures. */
+typedef struct {
+    uint8_t *data;
+    size_t len;
+    size_t cap;
+} test_archive_t;
+
+static uint8_t *test_archive_grow(test_archive_t *archive, size_t extra) {
+    if (archive->len + extra > archive->cap) {
+        size_t next = archive->cap ? archive->cap : 4096U;
+        while (next < archive->len + extra) next *= 2U;
+        uint8_t *grown = (uint8_t *)realloc(archive->data, next);
+        if (!grown) {
+            printf("  FAIL: out of memory\n");
+            exit(1);
+        }
+        archive->data = grown;
+        archive->cap = next;
+    }
+    uint8_t *at = archive->data + archive->len;
+    memset(at, 0, extra);
+    archive->len += extra;
+    return at;
+}
+
+static void test_archive_header(test_archive_t *archive, const char *name,
+                                int typeflag, uint64_t size,
+                                const char *linkname) {
+    test_fill_header(test_archive_grow(archive, NEVERC_TAR_BLOCK_SIZE), name,
+                     typeflag, size, linkname);
+}
+
+static void test_archive_body(test_archive_t *archive, const void *body,
+                              size_t length) {
+    size_t padded = (length + NEVERC_TAR_BLOCK_SIZE - 1U) /
+                    NEVERC_TAR_BLOCK_SIZE * NEVERC_TAR_BLOCK_SIZE;
+    uint8_t *at = test_archive_grow(archive, padded);
+    if (length > 0) memcpy(at, body, length);
+}
+
+/* A metadata block ('x', 'g', 'L', 'K') followed by its payload. */
+static void test_archive_meta(test_archive_t *archive, int typeflag,
+                              const void *payload, size_t length) {
+    test_archive_header(archive,
+                        typeflag == 'L' || typeflag == 'K'
+                            ? "././@LongLink" : "PaxHeaders.0/entry",
+                        typeflag, length, NULL);
+    test_archive_body(archive, payload, length);
+}
+
+static void test_archive_end(test_archive_t *archive) {
+    (void)test_archive_grow(archive, NEVERC_TAR_BLOCK_SIZE * 2U);
+}
+
+static void test_archive_free(test_archive_t *archive) {
+    free(archive->data);
+    memset(archive, 0, sizeof(*archive));
+}
+
+/* Appends one "%d key=value\n" record whose length counts itself. */
+static void test_pax_record(char *records, const char *key,
+                            const char *value) {
+    size_t body = strlen(key) + strlen(value) + 3U;
+    size_t digits = 1;
+    for (size_t n = body + 1U; n >= 10U; n /= 10U) digits++;
+    size_t total = body + digits;
+    char check[32];
+    if ((size_t)snprintf(check, sizeof(check), "%zu", total) != digits)
+        total++;
+    size_t at = strlen(records);
+    sprintf(records + at, "%zu %s=%s\n", total, key, value);
+}
+
+static void test_pax_member(test_archive_t *archive, const char *records,
+                            const char *name, int typeflag, uint64_t size,
+                            const char *linkname, const char *body) {
+    test_archive_meta(archive, 'x', records, strlen(records));
+    test_archive_header(archive, name, typeflag, size, linkname);
+    if (body) test_archive_body(archive, body, strlen(body));
+}
+
+static int test_read_v3_entry(test_archive_t *archive,
+                              neverc_tar_header_v3_t *header) {
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, archive->data, archive->len);
+    return neverc_tar_reader_next_v3(&reader, header);
+}
+
+static neverc_tar_header_v3_t test_v3_header;
+
+static void test_pax_extended_records(void) {
+    printf("[pax extended records]\n");
+    char long_name[400], long_link[300], long_user[120];
+    strcpy(long_name, "dir/");
+    memset(long_name + 4, 'p', 300);
+    long_name[304] = '\0';
+    memset(long_link, 't', 200);
+    long_link[200] = '\0';
+    memset(long_user, 'u', 100);
+    long_user[100] = '\0';
+    char records[2048] = "";
+    test_pax_record(records, "path", long_name);
+    test_pax_record(records, "linkpath", long_link);
+    test_pax_record(records, "uid", "-5");
+    test_pax_record(records, "gid", "+77");
+    test_pax_record(records, "uname", long_user);
+    test_pax_record(records, "gname", "group");
+    test_pax_record(records, "mtime", "-1.25");
+    test_pax_record(records, "atime", "123.9999999999");
+    test_pax_record(records, "ctime", "5.");
+    test_pax_record(records, "comment", "ignored\nvalue");
+    test_pax_record(records, "VENDOR.key", "x");
+
+    test_archive_t archive = {0};
+    test_pax_member(&archive, records, "short", NEVERC_TAR_SYM, 0, "t", NULL);
+    test_archive_header(&archive, "next", NEVERC_TAR_REG, 2, NULL);
+    test_archive_body(&archive, "hi", 2);
+    test_archive_end(&archive);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, archive.data, archive.len);
+    neverc_tar_header_t legacy;
+    neverc_tar_header_v2_t v2;
+    check_int("legacy rejects long pax path",
+              neverc_tar_reader_next(&reader, &legacy), -1);
+    check_int("v2 rejects long pax path",
+              neverc_tar_reader_next_v2(&reader, &v2), -1);
+    check_int("failed versions do not advance",
+              reader.data == archive.data, 1);
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    int result = neverc_tar_reader_next_v3(&reader, header);
+    check_int("v3 reads pax entry", result, 1);
+    if (result == 1) {
+        check_str("pax path", header->name, long_name);
+        check_str("pax linkpath", header->linkname, long_link);
+        check_int("pax symlink type", header->typeflag, NEVERC_TAR_SYM);
+        check_int("pax uid", (int)header->uid, -5);
+        check_int("pax gid", (int)header->gid, 77);
+        check_str("pax uname", header->uname, long_user);
+        check_str("pax gname", header->gname, "group");
+        check_int("pax negative mtime floor", (int)header->mtime, -2);
+        check_int("pax negative mtime nsec", header->mtime_nsec, 750000000);
+        check_int("pax atime", (int)header->atime, 123);
+        check_int("pax atime truncates to nanoseconds", header->atime_nsec,
+                  999999999);
+        check_int("pax ctime", (int)header->ctime, 5);
+        check_int("pax ctime empty fraction", header->ctime_nsec, 0);
+    }
+    check_int("entry after pax", neverc_tar_reader_next(&reader, &legacy), 1);
+    check_str("entry after pax name", legacy.name, "next");
+    check_int("pax archive end", neverc_tar_reader_next(&reader, &legacy), 0);
+    test_archive_free(&archive);
+
+    /* An "atime=1.000000001" keeps the ninth fraction digit. */
+    records[0] = '\0';
+    test_pax_record(records, "atime", "1.000000001");
+    test_pax_member(&archive, records, "f", NEVERC_TAR_REG, 0, NULL, NULL);
+    test_archive_end(&archive);
+    check_int("ninth fraction digit entry",
+              test_read_v3_entry(&archive, header), 1);
+    check_int("ninth fraction digit", header->atime_nsec, 1);
+    test_archive_free(&archive);
+}
+
+static void test_pax_size_and_precedence(void) {
+    printf("[pax size and precedence]\n");
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    char records[512] = "";
+
+    /* A pax size replaces the ustar size field (here 0). */
+    test_archive_t archive = {0};
+    test_pax_record(records, "size", "3");
+    test_pax_member(&archive, records, "sized", NEVERC_TAR_REG, 0, NULL,
+                    "abc");
+    test_archive_header(&archive, "after", NEVERC_TAR_REG, 1, NULL);
+    test_archive_body(&archive, "z", 1);
+    test_archive_end(&archive);
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, archive.data, archive.len);
+    int result = neverc_tar_reader_next_v3(&reader, header);
+    check_int("pax size entry", result, 1);
+    uint8_t body[8] = {0};
+    size_t count = 0;
+    if (result == 1) {
+        check_int("pax size value", (int)header->size, 3);
+        check_int("pax size partial read",
+                  neverc_tar_reader_read_v3(&reader, header, body, 2, &count),
+                  0);
+        check_size("pax size partial count", count, 2);
+        check_int("pax size partial bytes", memcmp(body, "ab", 2), 0);
+    }
+    check_int("skip rest of pax-sized entry",
+              neverc_tar_reader_next_v3(&reader, header), 1);
+    check_str("entry after pax-sized entry", header->name, "after");
+    check_int("read after pax-sized entry",
+              neverc_tar_reader_read_v3(&reader, header, body, 8, &count), 0);
+    check_size("after pax-sized entry count", count, 1);
+    test_archive_free(&archive);
+
+    /* Duplicate keys: the last value wins and is the only one validated;
+     * an empty value keeps the header field. Only the last 'x' applies. */
+    records[0] = '\0';
+    test_pax_record(records, "size", "abc");
+    test_pax_record(records, "size", "2");
+    test_pax_record(records, "path", "replaced");
+    test_pax_record(records, "path", "");
+    test_pax_record(records, "uname", "first");
+    test_archive_meta(&archive, 'x', "11 path=ab\n", 11);
+    test_pax_member(&archive, records, "orig", NEVERC_TAR_REG, 0, NULL, "xy");
+    test_archive_end(&archive);
+    result = test_read_v3_entry(&archive, header);
+    check_int("duplicate pax keys", result, 1);
+    if (result == 1) {
+        check_int("last duplicate size wins", (int)header->size, 2);
+        check_str("empty pax path keeps header name", header->name, "orig");
+        check_str("pax uname", header->uname, "first");
+    }
+    test_archive_free(&archive);
+
+    /* A GNU long name overrides the pax path. */
+    records[0] = '\0';
+    test_pax_record(records, "path", "from-pax");
+    test_archive_meta(&archive, 'x', records, strlen(records));
+    test_archive_meta(&archive, 'L', "from-gnu\0junk", 13);
+    test_archive_header(&archive, "from-ustar", NEVERC_TAR_REG, 0, NULL);
+    test_archive_end(&archive);
+    result = test_read_v3_entry(&archive, header);
+    check_int("gnu long name over pax", result, 1);
+    if (result == 1)
+        check_str("gnu long name wins", header->name, "from-gnu");
+    test_archive_free(&archive);
+
+    /* Size is ignored for header-only types even when negative. */
+    records[0] = '\0';
+    test_pax_record(records, "size", "-1");
+    test_pax_member(&archive, records, "dir/", NEVERC_TAR_DIR, 0, NULL, NULL);
+    test_archive_end(&archive);
+    result = test_read_v3_entry(&archive, header);
+    check_int("negative pax size on directory", result, 1);
+    if (result == 1) check_int("directory size", (int)header->size, 0);
+    test_archive_free(&archive);
+    test_pax_member(&archive, records, "file", NEVERC_TAR_REG, 0, NULL, NULL);
+    test_archive_end(&archive);
+    check_int("reject negative pax size on file",
+              test_read_v3_entry(&archive, header), -1);
+    test_archive_free(&archive);
+    /* '0' with a trailing slash reads as a directory here, but Go treats it
+     * as a file, so a negative size is still invalid; NUL plus a slash is a
+     * directory in both. */
+    test_pax_member(&archive, records, "dir/", NEVERC_TAR_REG, 0, NULL, NULL);
+    test_archive_end(&archive);
+    check_int("reject negative pax size on '0' with slash",
+              test_read_v3_entry(&archive, header), -1);
+    test_archive_free(&archive);
+    test_pax_member(&archive, records, "dir/", 0, 0, NULL, NULL);
+    test_archive_end(&archive);
+    check_int("negative pax size on NUL with slash",
+              test_read_v3_entry(&archive, header), 1);
+    test_archive_free(&archive);
+}
+
+static void test_pax_malformed_records(void) {
+    printf("[pax malformed records]\n");
+    static const struct {
+        const char *label;
+        const char *payload;
+        size_t length;
+        int expected;
+    } cases[] = {
+        {"valid record", "11 path=ab\n", 11, 1},
+        {"plus sign in length", "+11 path=ab\n", 12, -1},
+        {"plus sign counted in length", "+12 path=ab\n", 12, 1},
+        {"no space", "11path=ab\n", 10, -1},
+        {"non-digit length", "1x path=ab\n", 11, -1},
+        {"empty length", " path=ab\n", 9, -1},
+        {"length below five", "4 a=\n", 5, -1},
+        {"length beyond payload", "12 path=ab", 11, -1},
+        {"length not reaching newline", "10 path=ab\n", 11, -1},
+        {"missing newline", "11 path=abc", 11, -1},
+        {"missing equals", "10 pathab\n", 10, -1},
+        {"empty key", "9 =value\n", 9, -1},
+        {"nul in path value", "12 path=a\0b\n", 12, -1},
+        {"nul in key", "11 ke\0y=ab\n", 11, -1},
+        {"nul in other value", "14 comment=\0b\n", 14, 1},
+        {"leading zeros in length", "011 path=ab\n", 12, -1},
+        {"zero-padded exact length", "012 path=ab\n", 12, 1},
+        {"bad uid", "11 uid=12x\n", 11, -1},
+        {"overflowing gid", "27 gid=9223372036854775808\n", 27, -1},
+        {"bad mtime fraction", "13 mtime=1.x\n", 13, -1},
+        {"mtime without seconds", "12 mtime=.5\n", 12, -1},
+        {"two dots in mtime", "15 mtime=1.5.5\n", 15, -1},
+        /* Go wraps this to a garbage time; its floor is unrepresentable. */
+        {"unrepresentable negative time",
+         "32 atime=-9223372036854775808.5\n", 32, -1},
+        {"most negative whole time", "30 atime=-9223372036854775808\n", 30, 1},
+        {"bad size", "10 size=x\n", 10, -1},
+        {"sparse numbytes first", "25 GNU.sparse.numbytes=1\n", 25, -1},
+        {"sparse offset comma", "25 GNU.sparse.offset=1,2\n", 25, -1},
+    };
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        test_archive_t archive = {0};
+        test_archive_meta(&archive, 'x', cases[i].payload, cases[i].length);
+        test_archive_header(&archive, "file", NEVERC_TAR_REG, 0, NULL);
+        test_archive_end(&archive);
+        check_int(cases[i].label, test_read_v3_entry(&archive, header),
+                  cases[i].expected);
+        test_archive_free(&archive);
+    }
+
+    /* A 'g' payload follows the same syntax rules. */
+    test_archive_t archive = {0};
+    test_archive_meta(&archive, 'g', "10 pathab\n", 10);
+    test_archive_header(&archive, "file", NEVERC_TAR_REG, 0, NULL);
+    test_archive_end(&archive);
+    check_int("reject malformed global record",
+              test_read_v3_entry(&archive, header), -1);
+    test_archive_free(&archive);
+
+    /* A truncated payload fails instead of reading past the archive. */
+    test_archive_header(&archive, "PaxHeaders.0/x", 'x', 600, NULL);
+    test_archive_body(&archive, "11 path=ab\n", 11);
+    check_int("reject truncated pax payload",
+              test_read_v3_entry(&archive, header), -1);
+    test_archive_free(&archive);
+}
+
+static void test_gnu_long_names(void) {
+    printf("[gnu long names]\n");
+    char long_name[320], long_link[220];
+    memcpy(long_name, "long/", 5);
+    memset(long_name + 5, 'n', 300);
+    long_name[305] = '\0';
+    memcpy(long_link, "long/", 5);
+    memset(long_link + 5, 'k', 150);
+    long_link[155] = '\0';
+
+    test_archive_t archive = {0};
+    test_archive_meta(&archive, 'L', long_name, strlen(long_name) + 1U);
+    test_archive_meta(&archive, 'K', long_link, strlen(long_link));
+    test_archive_header(&archive, "truncated-name", NEVERC_TAR_SYM, 0,
+                        "truncated-link");
+    memcpy(archive.data + archive.len - NEVERC_TAR_BLOCK_SIZE + 257,
+           "ustar  \0", 8);
+    test_finish_header(archive.data + archive.len - NEVERC_TAR_BLOCK_SIZE);
+    test_archive_header(&archive, "after", NEVERC_TAR_REG, 1, NULL);
+    test_archive_body(&archive, "q", 1);
+    test_archive_end(&archive);
+
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, archive.data, archive.len);
+    int result = neverc_tar_reader_next_v3(&reader, header);
+    check_int("gnu long name entry", result, 1);
+    if (result == 1) {
+        check_str("gnu long name", header->name, long_name);
+        check_str("gnu long link without nul", header->linkname, long_link);
+    }
+    check_int("gnu long names do not leak",
+              neverc_tar_reader_next_v3(&reader, header), 1);
+    check_str("gnu next entry", header->name, "after");
+    check_str("gnu next entry link", header->linkname, "");
+    test_archive_free(&archive);
+}
+
+static void test_pax_global_headers(void) {
+    printf("[pax global headers]\n");
+    char records[256] = "";
+    test_pax_record(records, "comment", "commit-id");
+    test_pax_record(records, "path", "not-applied");
+
+    test_archive_t archive = {0};
+    test_archive_meta(&archive, 'g', records, strlen(records));
+    test_archive_header(&archive, "first", NEVERC_TAR_REG, 1, NULL);
+    test_archive_body(&archive, "1", 1);
+    /* As in Go, a global header drops metadata pending from an 'x'. */
+    records[0] = '\0';
+    test_pax_record(records, "path", "dropped");
+    test_archive_meta(&archive, 'x', records, strlen(records));
+    test_archive_meta(&archive, 'g', "", 0);
+    test_archive_header(&archive, "second", NEVERC_TAR_REG, 0, NULL);
+    test_archive_end(&archive);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t header;
+    neverc_tar_reader_init(&reader, archive.data, archive.len);
+    check_int("global header skipped", neverc_tar_reader_next(&reader, &header),
+              1);
+    check_str("global path not applied", header.name, "first");
+    check_int("global after pax", neverc_tar_reader_next(&reader, &header), 1);
+    check_str("global drops pending pax", header.name, "second");
+    check_int("global archive end", neverc_tar_reader_next(&reader, &header),
+              0);
+    test_archive_free(&archive);
+
+    /* Metadata directly before the end blocks ends the archive. */
+    test_archive_header(&archive, "only", NEVERC_TAR_REG, 0, NULL);
+    test_archive_meta(&archive, 'x', "11 path=ab\n", 11);
+    test_archive_meta(&archive, 'L', "x", 1);
+    test_archive_end(&archive);
+    neverc_tar_reader_init(&reader, archive.data, archive.len);
+    check_int("entry before dangling metadata",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_int("dangling metadata ends archive",
+              neverc_tar_reader_next(&reader, &header), 0);
+    check_int("dangling metadata end is stable",
+              neverc_tar_reader_next(&reader, &header), 0);
+    test_archive_free(&archive);
+}
+
+static void test_special_payload_limit(void) {
+    printf("[special payload limit]\n");
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    for (int over = 0; over <= 1; over++) {
+        size_t total = (size_t)NEVERC_TAR_SPECIAL_MAX + (size_t)over;
+        char *payload = (char *)malloc(total + 1U);
+        if (!payload) {
+            check_int("payload allocation", 0, 1);
+            return;
+        }
+        int prefix = sprintf(payload, "%zu comment=", total);
+        memset(payload + prefix, 'v', total - (size_t)prefix - 1U);
+        payload[total - 1U] = '\n';
+        test_archive_t archive = {0};
+        test_archive_meta(&archive, 'x', payload, total);
+        test_archive_header(&archive, "file", NEVERC_TAR_REG, 0, NULL);
+        test_archive_end(&archive);
+        check_int(over ? "reject payload over limit" : "accept payload at limit",
+                  test_read_v3_entry(&archive, header), over ? -1 : 1);
+        test_archive_free(&archive);
+        free(payload);
+    }
+}
+
+static void test_base256_numbers(void) {
+    printf("[base-256 numbers]\n");
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    test_archive_t archive = {0};
+    test_archive_header(&archive, "big", NEVERC_TAR_REG, 0, NULL);
+    uint8_t *block = archive.data;
+    /* size 3, uid 2^40, mtime -2 */
+    memset(block + 124, 0, 12);
+    block[124] = 0x80;
+    block[135] = 3;
+    memset(block + 108, 0, 8);
+    block[108] = 0x80;
+    block[110] = 0x01;
+    memset(block + 136, 0xFF, 12);
+    block[147] = 0xFE;
+    test_finish_header(block);
+    test_archive_body(&archive, "abc", 3);
+    test_archive_end(&archive);
+    int result = test_read_v3_entry(&archive, header);
+    check_int("base-256 entry", result, 1);
+    if (result == 1) {
+        check_int("base-256 size", (int)header->size, 3);
+        check_int("base-256 uid", header->uid == ((int64_t)1 << 40), 1);
+        check_int("base-256 negative mtime", (int)header->mtime, -2);
+    }
+
+    /* A value needing more than 63 bits is invalid. */
+    memset(block + 136, 0, 12);
+    block[136] = 0x80;
+    block[139] = 0x80;
+    test_finish_header(block);
+    check_int("reject base-256 overflow",
+              test_read_v3_entry(&archive, header), -1);
+
+    /* A negative size is invalid for a file but ignored for a symlink. */
+    memset(block + 136, 0, 12);
+    block[136] = 0x80;
+    memset(block + 124, 0xFF, 12);
+    test_finish_header(block);
+    check_int("reject negative file size",
+              test_read_v3_entry(&archive, header), -1);
+    block[156] = NEVERC_TAR_SYM;
+    memcpy(block + 157, "target", 6);
+    test_finish_header(block);
+    result = test_read_v3_entry(&archive, header);
+    check_int("negative size on symlink", result, 1);
+    if (result == 1) check_int("symlink size", (int)header->size, 0);
+    test_archive_free(&archive);
+}
+
+static void test_sparse_entries_rejected(void) {
+    printf("[sparse entries rejected]\n");
+    static const char *const sparse_records[][2] = {
+        {"GNU.sparse.major", "1"},
+        {"GNU.sparse.map", "0,1"},
+        {"GNU.sparse.offset", "0"},
+    };
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    for (size_t i = 0; i < 3; i++) {
+        char records[256] = "";
+        test_pax_record(records, sparse_records[i][0], sparse_records[i][1]);
+        if (i == 0) test_pax_record(records, "GNU.sparse.minor", "0");
+        test_archive_t archive = {0};
+        test_pax_member(&archive, records, "sparse", NEVERC_TAR_REG, 1, NULL,
+                        "s");
+        test_archive_end(&archive);
+        check_int("reject pax sparse entry",
+                  test_read_v3_entry(&archive, header), -1);
+        test_archive_free(&archive);
+    }
+
+    /* An unknown sparse version is an ordinary file, as in Go. */
+    char records[256] = "";
+    test_pax_record(records, "GNU.sparse.major", "2");
+    test_pax_record(records, "GNU.sparse.map", "0,1");
+    test_archive_t archive = {0};
+    test_pax_member(&archive, records, "plain", NEVERC_TAR_REG, 1, NULL, "p");
+    test_archive_end(&archive);
+    check_int("unknown sparse version is a file",
+              test_read_v3_entry(&archive, header), 1);
+    test_archive_free(&archive);
+
+    test_archive_header(&archive, "oldsparse", 'S', 0, NULL);
+    test_archive_end(&archive);
+    check_int("reject gnu sparse typeflag",
+              test_read_v3_entry(&archive, header), -1);
+    test_archive_free(&archive);
+}
+
+static void test_v3_capacities(void) {
+    printf("[v3 capacities]\n");
+    neverc_tar_header_v3_t *header = &test_v3_header;
+    char *name = (char *)malloc(NEVERC_TAR_V3_NAME_SIZE + 1U);
+    char *records = (char *)malloc(NEVERC_TAR_V3_NAME_SIZE + 64U);
+    if (!name || !records) {
+        free(name);
+        free(records);
+        check_int("capacity allocation", 0, 1);
+        return;
+    }
+    for (int extra = 0; extra <= 1; extra++) {
+        size_t length = NEVERC_TAR_V3_NAME_SIZE - 1U + (size_t)extra;
+        for (size_t i = 0; i < length; i++)
+            name[i] = (char)(i % 50U == 49U ? '/' : 'n');
+        name[length] = '\0';
+        records[0] = '\0';
+        test_pax_record(records, "path", name);
+        test_archive_t archive = {0};
+        test_pax_member(&archive, records, "x", NEVERC_TAR_REG, 0, NULL, NULL);
+        test_archive_end(&archive);
+        int result = test_read_v3_entry(&archive, header);
+        check_int(extra ? "reject name over v3 capacity"
+                        : "accept name at v3 capacity",
+                  result, extra ? -1 : 1);
+        if (result == 1)
+            check_size("v3 name length", strlen(header->name), length);
+        test_archive_free(&archive);
+    }
+    for (int extra = 0; extra <= 1; extra++) {
+        size_t length = NEVERC_TAR_V3_OWNER_SIZE - 1U + (size_t)extra;
+        memset(name, 'o', length);
+        name[length] = '\0';
+        records[0] = '\0';
+        test_pax_record(records, "gname", name);
+        test_archive_t archive = {0};
+        test_pax_member(&archive, records, "x", NEVERC_TAR_REG, 0, NULL, NULL);
+        test_archive_end(&archive);
+        check_int(extra ? "reject owner over v3 capacity"
+                        : "accept owner at v3 capacity",
+                  test_read_v3_entry(&archive, header), extra ? -1 : 1);
+        test_archive_free(&archive);
+    }
+    free(name);
+    free(records);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1411,6 +1983,15 @@ int main(void) {
     test_device_and_time_fields_are_numeric();
     test_cursor_iteration();
     test_cursor_state_is_self_contained();
+    test_pax_extended_records();
+    test_pax_size_and_precedence();
+    test_pax_malformed_records();
+    test_gnu_long_names();
+    test_pax_global_headers();
+    test_special_payload_limit();
+    test_base256_numbers();
+    test_sparse_entries_rejected();
+    test_v3_capacities();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

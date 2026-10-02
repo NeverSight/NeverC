@@ -5,12 +5,25 @@
  * NeverC archive/tar — POSIX tar format.
  *
  * Supports reading and writing regular files, hard links, symbolic links,
- * and directories in POSIX ustar archives, plus pax linkdata hard-link
- * bodies. Readers accept the POSIX unsigned header checksum and the
- * historical signed checksum, and reject a stored value that matches
- * neither. Character/block devices, FIFOs, PAX x/g extended headers, GNU
- * L/K long-name/link and S sparse metadata, and GNU base-256 numeric fields
- * are not supported.
+ * and directories, plus pax linkdata hard-link bodies. The writer produces
+ * POSIX ustar headers.
+ *
+ * Readers accept ustar, pax, GNU, star, and v7 headers as Go archive/tar
+ * does: pax extended ('x') records for path, linkpath, size, uid, gid,
+ * uname, gname, and mtime/atime/ctime with sub-second precision, GNU long
+ * name and link ('L'/'K') blocks, and base-256 numeric fields. Only the last
+ * 'x' block before a file applies, an empty pax value keeps the header
+ * field, and a GNU long name or link overrides the pax value. Global pax
+ * ('g') blocks are validated and skipped: as in Go their records do not carry
+ * into later entries, and unlike Go they are not returned as entries (a 'g'
+ * block also drops metadata pending from earlier 'x'/'L'/'K' blocks, as it
+ * does in Go). Malformed pax records or numbers fail the entry like Go's
+ * ErrHeader. Each pax or GNU metadata payload is limited to
+ * NEVERC_TAR_SPECIAL_MAX bytes, as in Go; the reader never allocates.
+ * Readers accept the POSIX unsigned header checksum and the historical
+ * signed checksum, and reject a stored value that matches neither.
+ * Character/block devices, FIFOs, and sparse files (GNU 'S' and the pax
+ * GNU.sparse formats) are rejected.
  */
 
 #include <stddef.h>
@@ -48,6 +61,36 @@ typedef struct {
     char     gname[33];
 } neverc_tar_header_v2_t;
 
+/* Additive long-name API. V3 holds names, link targets, and owner names that
+ * pax or GNU records extend past the ustar fields, up to the capacities
+ * below (NUL included), and adds owner ids and access/change times. Times
+ * are seconds since the Unix epoch plus nanoseconds in [0, 999999999]
+ * (floor seconds for negative times; v1/v2 report those seconds). An atime
+ * or ctime of 0 with 0 nanoseconds means the archive recorded none. */
+#define NEVERC_TAR_V3_NAME_SIZE  4096
+#define NEVERC_TAR_V3_OWNER_SIZE 256
+
+typedef struct {
+    char     name[NEVERC_TAR_V3_NAME_SIZE];
+    int64_t  size;
+    uint32_t mode;
+    int64_t  mtime;
+    int      typeflag;
+    char     linkname[NEVERC_TAR_V3_NAME_SIZE];
+    char     uname[NEVERC_TAR_V3_OWNER_SIZE];
+    char     gname[NEVERC_TAR_V3_OWNER_SIZE];
+    int64_t  uid;
+    int64_t  gid;
+    int32_t  mtime_nsec;
+    int32_t  atime_nsec;
+    int32_t  ctime_nsec;
+    int64_t  atime;
+    int64_t  ctime;
+} neverc_tar_header_v3_t;
+
+/* Largest pax 'x'/'g' or GNU 'L'/'K' payload the reader accepts. */
+#define NEVERC_TAR_SPECIAL_MAX (1024 * 1024)
+
 #define NEVERC_TAR_REG  '0'
 #define NEVERC_TAR_LINK '1'
 #define NEVERC_TAR_SYM  '2'
@@ -73,10 +116,16 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
  * blocks, or -1 for malformed or unterminated input. All bytes after the
  * second zero block are ignored. POSIX permits undefined complete 512-byte
  * logical records as physical-record padding; ignoring a final partial
- * record also matches Go archive/tar EOF behavior. */
+ * record also matches Go archive/tar EOF behavior. Metadata blocks followed
+ * directly by the end blocks also end the archive, as in Go. An entry whose
+ * name, link target, or owner names exceed the fields of the header version
+ * used fails (-1) without advancing; next_v3 can then read it. On failure
+ * hdr is zeroed. */
 int  neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr);
 int  neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
                                neverc_tar_header_v2_t *hdr);
+int  neverc_tar_reader_next_v3(neverc_tar_reader_t *r,
+                               neverc_tar_header_v3_t *hdr);
 /* Reads the current entry incrementally; unread bytes are skipped by next().
  * hdr must be the header next() returned for the current entry; a header
  * whose size is below the entry's unread byte count fails. Once the entry is
@@ -86,6 +135,9 @@ int  neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *h
                             uint8_t *buf, size_t len, size_t *nread);
 int  neverc_tar_reader_read_v2(neverc_tar_reader_t *r,
                                const neverc_tar_header_v2_t *hdr,
+                               uint8_t *buf, size_t len, size_t *nread);
+int  neverc_tar_reader_read_v3(neverc_tar_reader_t *r,
+                               const neverc_tar_header_v3_t *hdr,
                                uint8_t *buf, size_t len, size_t *nread);
 
 /* --- Writer --- */

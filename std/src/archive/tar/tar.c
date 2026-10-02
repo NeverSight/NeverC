@@ -5,13 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int tar_path_is_safe(const char *name, size_t capacity,
+/* No name or link target longer than the v3 field is read or written. */
+#define TAR_PATH_LIMIT ((size_t)NEVERC_TAR_V3_NAME_SIZE)
+
+/* name holds len bytes followed by a NUL. */
+static int tar_path_is_safe(const char *name, size_t len,
                             int allow_root_directory) {
-    if (!name || !name[0]) return 0;
-    size_t len = 0;
-    while (len < capacity && name[len] != '\0') len++;
-    if (len == capacity || capacity > sizeof(((neverc_tar_header_v2_t *)0)->name))
-        return 0;
+    if (!name || len == 0 || len >= TAR_PATH_LIMIT) return 0;
     if (allow_root_directory && len == 2U &&
         name[0] == '.' && name[1] == '/')
         return 1;
@@ -21,7 +21,7 @@ static int tar_path_is_safe(const char *name, size_t capacity,
     /* Dot components are lexical no-ops and cannot escape an extraction
      * root. Validate a dot-free spelling while preserving the archive's
      * original name bytes for interoperability. */
-    char normalized[sizeof(((neverc_tar_header_v2_t *)0)->name)];
+    char normalized[TAR_PATH_LIMIT];
     size_t input = 0;
     size_t output = 0;
     while (input < len) {
@@ -115,14 +115,6 @@ static size_t tar_field_length(const uint8_t *field, size_t width) {
     return length;
 }
 
-static void copy_tar_field(char *destination, size_t capacity,
-                           const uint8_t *field, size_t width) {
-    size_t length = tar_field_length(field, width);
-    if (length >= capacity) length = capacity - 1U;
-    if (length > 0) memcpy(destination, field, length);
-    destination[length] = '\0';
-}
-
 static int tar_padded_size(size_t size, size_t *padded) {
     if (size > SIZE_MAX - (NEVERC_TAR_BLOCK_SIZE - 1U)) return -1;
     if (padded)
@@ -203,107 +195,556 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
  * boundary, which makes len % 512 the distance from data to the next one and
  * yields the padding that follows a payload without the entry's size. */
 
-/* 1 = entry, 0 = two-block terminator, -1 = malformed. block starts at a
- * header boundary with avail bytes before the end of the archive. */
-static int tar_parse_header_at(const uint8_t *block, size_t avail,
-                               neverc_tar_header_v2_t *hdr,
-                               size_t *payload_out, size_t *padded_out) {
-    if (!hdr || !payload_out || !padded_out ||
-        avail < NEVERC_TAR_BLOCK_SIZE)
-        return -1;
-    memset(hdr, 0, sizeof(*hdr));
-    int all_zero = 1;
-    for (size_t i = 0; i < NEVERC_TAR_BLOCK_SIZE; i++) {
-        if (block[i] != 0) {
-            all_zero = 0;
-            break;
+/* A string made of archive bytes: head, then '/' and tail when joined (a
+ * ustar prefix and name). The bytes never contain NUL. */
+typedef struct {
+    const uint8_t *head;
+    size_t head_len;
+    const uint8_t *tail;
+    size_t tail_len;
+    int joined;
+} tar_text_t;
+
+static void tar_text_set(tar_text_t *text, const uint8_t *bytes,
+                         size_t length) {
+    text->head = bytes;
+    text->head_len = length;
+    text->tail = NULL;
+    text->tail_len = 0;
+    text->joined = 0;
+}
+
+static size_t tar_text_length(const tar_text_t *text) {
+    return text->head_len + (text->joined ? 1U + text->tail_len : 0U);
+}
+
+static int tar_text_has_slash_suffix(const tar_text_t *text) {
+    if (text->joined)
+        return text->tail_len == 0 || text->tail[text->tail_len - 1U] == '/';
+    return text->head_len > 0 && text->head[text->head_len - 1U] == '/';
+}
+
+/* Copies text and its NUL terminator into destination[capacity]. */
+static int tar_text_copy(char *destination, size_t capacity,
+                         const tar_text_t *text, size_t *length_out) {
+    size_t length = tar_text_length(text);
+    if (length >= capacity) return -1;
+    size_t offset = 0;
+    if (text->head_len > 0) {
+        memcpy(destination, text->head, text->head_len);
+        offset = text->head_len;
+    }
+    if (text->joined) {
+        destination[offset++] = '/';
+        if (text->tail_len > 0) {
+            memcpy(destination + offset, text->tail, text->tail_len);
+            offset += text->tail_len;
         }
     }
-    if (all_zero) {
-        if (avail < NEVERC_TAR_BLOCK_SIZE * 2U)
-            return -1;
-        for (size_t i = NEVERC_TAR_BLOCK_SIZE;
-             i < NEVERC_TAR_BLOCK_SIZE * 2U; i++) {
-            if (block[i] != 0)
-                return -1;
+    destination[offset] = '\0';
+    if (length_out) *length_out = length;
+    return 0;
+}
+
+static int tar_text_equals(const uint8_t *bytes, size_t length,
+                           const char *literal) {
+    size_t literal_length = strlen(literal);
+    return length == literal_length &&
+           (length == 0 || memcmp(bytes, literal, length) == 0);
+}
+
+/* Mirrors Go's strconv.ParseInt(s, 10, 64): an optional sign, then one or
+ * more decimal digits, within int64 range. */
+static int tar_parse_decimal(const uint8_t *text, size_t length,
+                             int64_t *value) {
+    size_t i = 0;
+    int negative = 0;
+    if (length > 0 && (text[0] == '+' || text[0] == '-')) {
+        negative = text[0] == '-';
+        i = 1;
+    }
+    if (i == length) return -1;
+    uint64_t limit = negative ? (uint64_t)INT64_MAX + 1U : (uint64_t)INT64_MAX;
+    uint64_t result = 0;
+    for (; i < length; i++) {
+        if (text[i] < '0' || text[i] > '9') return -1;
+        unsigned digit = (unsigned)(text[i] - '0');
+        if (result > (limit - digit) / 10U) return -1;
+        result = result * 10U + digit;
+    }
+    if (!negative)
+        *value = (int64_t)result;
+    else if (result == (uint64_t)INT64_MAX + 1U)
+        *value = INT64_MIN;
+    else
+        *value = -(int64_t)result;
+    return 0;
+}
+
+/* Pax times are "%d" or "%d.%d" with any number of fraction digits, of which
+ * the first nine are nanoseconds. A negative time subtracts its fraction,
+ * which is normalized to floor seconds plus nanoseconds in [0, 1e9). */
+static int tar_parse_pax_time(const uint8_t *text, size_t length,
+                              int64_t *seconds, int32_t *nanoseconds) {
+    size_t dot = 0;
+    while (dot < length && text[dot] != '.') dot++;
+    int64_t whole = 0;
+    if (tar_parse_decimal(text, dot, &whole) != 0) return -1;
+    int32_t fraction = 0;
+    size_t digits = 0;
+    for (size_t i = dot + 1U; i < length; i++, digits++) {
+        if (text[i] < '0' || text[i] > '9') return -1;
+        if (digits < 9U) fraction = fraction * 10 + (int32_t)(text[i] - '0');
+    }
+    for (; digits < 9U; digits++) fraction *= 10;
+    if (text[0] == '-' && fraction != 0) {
+        /* Floor of INT64_MIN minus a fraction is not representable. */
+        if (whole == INT64_MIN) return -1;
+        whole -= 1;
+        fraction = 1000000000 - fraction;
+    }
+    *seconds = whole;
+    *nanoseconds = fraction;
+    return 0;
+}
+
+/* Numeric header fields are octal, or GNU base-256 when the first byte has
+ * its high bit set: two's complement big-endian with bit 6 of the first byte
+ * as the sign. Values must fit in int64, as in Go. */
+static int tar_parse_numeric(const uint8_t *field, size_t width,
+                             int64_t *value) {
+    if (width > 0 && (field[0] & 0x80U) != 0) {
+        uint8_t invert = (field[0] & 0x40U) != 0 ? 0xFFU : 0x00U;
+        uint64_t result = 0;
+        for (size_t i = 0; i < width; i++) {
+            uint8_t byte = (uint8_t)(field[i] ^ invert);
+            if (i == 0) byte &= 0x7FU;
+            if ((result >> 56) != 0) return -1;
+            result = (result << 8) | byte;
         }
+        if ((result >> 63) != 0) return -1;
+        *value = invert ? -(int64_t)result - 1 : (int64_t)result;
         return 0;
     }
+    uint64_t octal = 0;
+    if (parse_octal(field, width, &octal) != 0 || octal > INT64_MAX)
+        return -1;
+    *value = (int64_t)octal;
+    return 0;
+}
 
-    uint64_t stored_checksum = 0;
-    uint64_t mode = 0, uid = 0, gid = 0, size = 0, mtime = 0;
-    if (parse_octal(block + 148, 8, &stored_checksum) != 0 ||
-        !tar_checksum_matches(block, stored_checksum) ||
-        parse_octal(block + 100, 8, &mode) != 0 ||
-        parse_octal(block + 108, 8, &uid) != 0 ||
-        parse_octal(block + 116, 8, &gid) != 0 ||
-        parse_octal(block + 124, 12, &size) != 0 ||
-        parse_octal(block + 136, 12, &mtime) != 0 ||
-        mode > UINT32_MAX || size > INT64_MAX || !tar_size_fits(size) ||
-        mtime > INT64_MAX)
-        return -1;
-
-    size_t name_length = tar_field_length(block, 100);
-    size_t prefix_length = 0;
-    int format = tar_header_format(block);
-    uint64_t ignored = 0;
-    if (format != TAR_FORMAT_V7 &&
-        (parse_octal(block + 329, 8, &ignored) != 0 ||
-         parse_octal(block + 337, 8, &ignored) != 0))
-        return -1;
-    if (format == TAR_FORMAT_STAR &&
-        (parse_octal(block + 476, 12, &ignored) != 0 ||
-         parse_octal(block + 488, 12, &ignored) != 0))
-        return -1;
-    if (format == TAR_FORMAT_USTAR || format == TAR_FORMAT_STAR)
-        prefix_length = tar_field_length(
-            block + 345, format == TAR_FORMAT_STAR ? 131 : 155);
-    size_t full_length = name_length;
-    if (prefix_length > 0) {
-        if (prefix_length > SIZE_MAX - name_length - 1U) return -1;
-        full_length = prefix_length + 1U + name_length;
-    }
-    if (name_length == 0 || full_length >= sizeof(hdr->name)) return -1;
-
-    memset(hdr, 0, sizeof(*hdr));
-    size_t offset = 0;
-    if (prefix_length > 0) {
-        memcpy(hdr->name, block + 345, prefix_length);
-        offset = prefix_length;
-        hdr->name[offset++] = '/';
-    }
-    memcpy(hdr->name + offset, block, name_length);
-    hdr->name[full_length] = '\0';
-    int typeflag = tar_resolve_typeflag((int)block[156], hdr->name);
-    if (!tar_type_supported(typeflag) ||
-        !tar_path_is_safe(hdr->name, sizeof(hdr->name),
-                          typeflag == NEVERC_TAR_DIR))
-        return -1;
-    uint64_t payload = tar_type_header_only(typeflag) ? 0 : size;
-    size_t padded = 0;
-    if (tar_padded_size((size_t)payload, &padded) != 0 ||
-        padded > avail - NEVERC_TAR_BLOCK_SIZE)
-        return -1;
-
-    hdr->mode = (uint32_t)mode;
-    hdr->size = (int64_t)payload;
-    hdr->mtime = (int64_t)mtime;
-    hdr->typeflag = typeflag;
-    copy_tar_field(hdr->linkname, sizeof(hdr->linkname),
-                   block + 157, 100);
-    if ((hdr->typeflag == NEVERC_TAR_SYM ||
-         hdr->typeflag == NEVERC_TAR_LINK) &&
-        (hdr->linkname[0] == '\0' ||
-         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname), 0)))
-        return -1;
-    if (format != TAR_FORMAT_V7) {
-        copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
-        copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
-    }
-
-    *payload_out = (size_t)payload;
-    *padded_out = padded;
+static int tar_block_is_zero(const uint8_t *block) {
+    for (size_t i = 0; i < NEVERC_TAR_BLOCK_SIZE; i++)
+        if (block[i] != 0) return 0;
     return 1;
+}
+
+/* One header block's fields, before pax or GNU metadata is applied. */
+typedef struct {
+    int typeflag;
+    int64_t size, mode, uid, gid, mtime, atime, ctime;
+    tar_text_t name, linkname, uname, gname;
+} tar_block_t;
+
+static int tar_parse_block(const uint8_t *block, tar_block_t *parsed) {
+    memset(parsed, 0, sizeof(*parsed));
+    uint64_t stored_checksum = 0;
+    if (parse_octal(block + 148, 8, &stored_checksum) != 0 ||
+        !tar_checksum_matches(block, stored_checksum))
+        return -1;
+    int format = tar_header_format(block);
+    if (tar_parse_numeric(block + 100, 8, &parsed->mode) != 0 ||
+        tar_parse_numeric(block + 108, 8, &parsed->uid) != 0 ||
+        tar_parse_numeric(block + 116, 8, &parsed->gid) != 0 ||
+        tar_parse_numeric(block + 124, 12, &parsed->size) != 0 ||
+        tar_parse_numeric(block + 136, 12, &parsed->mtime) != 0)
+        return -1;
+    parsed->typeflag = (int)block[156];
+    tar_text_set(&parsed->name, block, tar_field_length(block, 100));
+    tar_text_set(&parsed->linkname, block + 157,
+                 tar_field_length(block + 157, 100));
+    if (format == TAR_FORMAT_V7) return 0;
+
+    tar_text_set(&parsed->uname, block + 265,
+                 tar_field_length(block + 265, 32));
+    tar_text_set(&parsed->gname, block + 297,
+                 tar_field_length(block + 297, 32));
+    int64_t device = 0;
+    if (tar_parse_numeric(block + 329, 8, &device) != 0 ||
+        tar_parse_numeric(block + 337, 8, &device) != 0)
+        return -1;
+    size_t prefix_length = 0;
+    if (format == TAR_FORMAT_STAR) {
+        if (tar_parse_numeric(block + 476, 12, &parsed->atime) != 0 ||
+            tar_parse_numeric(block + 488, 12, &parsed->ctime) != 0)
+            return -1;
+        prefix_length = tar_field_length(block + 345, 131);
+    } else if (format == TAR_FORMAT_USTAR) {
+        prefix_length = tar_field_length(block + 345, 155);
+    } else {
+        /* GNU atime/ctime are optional; an unparsable pair is dropped. */
+        int64_t atime = 0, ctime = 0;
+        if ((block[345] == 0 ||
+             tar_parse_numeric(block + 345, 12, &atime) == 0) &&
+            (block[357] == 0 ||
+             tar_parse_numeric(block + 357, 12, &ctime) == 0)) {
+            parsed->atime = atime;
+            parsed->ctime = ctime;
+        }
+    }
+    if (prefix_length > 0) {
+        parsed->name.tail = parsed->name.head;
+        parsed->name.tail_len = parsed->name.head_len;
+        parsed->name.head = block + 345;
+        parsed->name.head_len = prefix_length;
+        parsed->name.joined = 1;
+    }
+    return 0;
+}
+
+typedef struct {
+    const uint8_t *key;
+    size_t key_len;
+    const uint8_t *value;
+    size_t value_len;
+} tar_pax_record_t;
+
+static int tar_pax_key_is(const tar_pax_record_t *record, const char *key) {
+    return tar_text_equals(record->key, record->key_len, key);
+}
+
+/* Splits one "%d %s=%s\n" record off the front of *records, where the
+ * decimal length counts the whole record. Keys must be non-empty and free of
+ * NUL; path, linkpath, uname, and gname values must be free of NUL. */
+static int tar_pax_next_record(const uint8_t **records, size_t *remaining,
+                               tar_pax_record_t *record) {
+    const uint8_t *text = *records;
+    size_t available = *remaining;
+    const uint8_t *space = (const uint8_t *)memchr(text, ' ', available);
+    if (!space) return -1;
+    size_t digits = (size_t)(space - text);
+    int64_t declared = 0;
+    if (tar_parse_decimal(text, digits, &declared) != 0 || declared < 5 ||
+        (uint64_t)declared > (uint64_t)available ||
+        (size_t)declared <= digits + 1U)
+        return -1;
+    size_t length = (size_t)declared;
+    const uint8_t *body = space + 1;
+    size_t body_len = length - digits - 1U;
+    if (body[body_len - 1U] != '\n') return -1;
+    const uint8_t *equals =
+        (const uint8_t *)memchr(body, '=', body_len - 1U);
+    if (!equals) return -1;
+    record->key = body;
+    record->key_len = (size_t)(equals - body);
+    record->value = equals + 1;
+    record->value_len = body_len - 1U - record->key_len - 1U;
+    if (record->key_len == 0) return -1;
+    if (tar_pax_key_is(record, "path") || tar_pax_key_is(record, "linkpath") ||
+        tar_pax_key_is(record, "uname") || tar_pax_key_is(record, "gname")) {
+        if (record->value_len > 0 &&
+            memchr(record->value, '\0', record->value_len) != NULL)
+            return -1;
+    } else if (memchr(record->key, '\0', record->key_len) != NULL) {
+        return -1;
+    }
+    *records = text + length;
+    *remaining = available - length;
+    return 0;
+}
+
+/* The last value of each pax key that affects an entry; a later record
+ * replaces an earlier one, and an absent key reads as an empty value. */
+typedef struct {
+    tar_pax_record_t path, linkpath, uname, gname, uid, gid, size;
+    tar_pax_record_t mtime, atime, ctime;
+    tar_pax_record_t sparse_major, sparse_minor, sparse_map;
+    size_t sparse_values;
+    int sparse_first_empty;
+} tar_pax_view_t;
+
+/* Validates a pax payload ('x' or 'g'), collecting its keys into view when
+ * one is supplied. GNU sparse 0.0 offset/numbytes records must alternate,
+ * starting with an offset, and contain no comma. */
+static int tar_pax_scan(const uint8_t *records, size_t length,
+                        tar_pax_view_t *view) {
+    tar_pax_view_t local;
+    if (!view) view = &local;
+    memset(view, 0, sizeof(*view));
+    while (length > 0) {
+        tar_pax_record_t record;
+        if (tar_pax_next_record(&records, &length, &record) != 0) return -1;
+        int offset = tar_pax_key_is(&record, "GNU.sparse.offset");
+        if (offset || tar_pax_key_is(&record, "GNU.sparse.numbytes")) {
+            if ((view->sparse_values % 2U == 0U) != offset ||
+                (record.value_len > 0 &&
+                 memchr(record.value, ',', record.value_len) != NULL))
+                return -1;
+            if (view->sparse_values == 0)
+                view->sparse_first_empty = record.value_len == 0;
+            view->sparse_values++;
+        }
+        else if (tar_pax_key_is(&record, "path")) view->path = record;
+        else if (tar_pax_key_is(&record, "linkpath")) view->linkpath = record;
+        else if (tar_pax_key_is(&record, "uname")) view->uname = record;
+        else if (tar_pax_key_is(&record, "gname")) view->gname = record;
+        else if (tar_pax_key_is(&record, "uid")) view->uid = record;
+        else if (tar_pax_key_is(&record, "gid")) view->gid = record;
+        else if (tar_pax_key_is(&record, "size")) view->size = record;
+        else if (tar_pax_key_is(&record, "mtime")) view->mtime = record;
+        else if (tar_pax_key_is(&record, "atime")) view->atime = record;
+        else if (tar_pax_key_is(&record, "ctime")) view->ctime = record;
+        else if (tar_pax_key_is(&record, "GNU.sparse.major"))
+            view->sparse_major = record;
+        else if (tar_pax_key_is(&record, "GNU.sparse.minor"))
+            view->sparse_minor = record;
+        else if (tar_pax_key_is(&record, "GNU.sparse.map"))
+            view->sparse_map = record;
+    }
+    return 0;
+}
+
+/* Matches Go's detection of the GNU pax sparse formats 0.0, 0.1, and 1.0;
+ * an unknown version is an ordinary file. Offset/numbytes records replace
+ * any GNU.sparse.map record. */
+static int tar_pax_is_sparse(const tar_pax_view_t *view) {
+    const tar_pax_record_t *major = &view->sparse_major;
+    const tar_pax_record_t *minor = &view->sparse_minor;
+    if (tar_text_equals(major->value, major->value_len, "0") &&
+        (tar_text_equals(minor->value, minor->value_len, "0") ||
+         tar_text_equals(minor->value, minor->value_len, "1")))
+        return 1;
+    if (tar_text_equals(major->value, major->value_len, "1") &&
+        tar_text_equals(minor->value, minor->value_len, "0"))
+        return 1;
+    if (major->value_len > 0 || minor->value_len > 0) return 0;
+    if (view->sparse_values > 0)
+        return view->sparse_values > 1U || !view->sparse_first_empty;
+    return view->sparse_map.value_len > 0;
+}
+
+/* An entry after its metadata blocks have been applied. */
+typedef struct {
+    tar_text_t name, linkname, uname, gname;
+    int typeflag;
+    int64_t size;
+    uint32_t mode;
+    int64_t uid, gid;
+    int64_t mtime, atime, ctime;
+    int32_t mtime_nsec, atime_nsec, ctime_nsec;
+} tar_entry_t;
+
+static int tar_entry_apply_pax(tar_entry_t *entry, int64_t *size,
+                               const uint8_t *records, size_t length) {
+    tar_pax_view_t view;
+    if (tar_pax_scan(records, length, &view) != 0) return -1;
+    if (view.path.value_len > 0)
+        tar_text_set(&entry->name, view.path.value, view.path.value_len);
+    if (view.linkpath.value_len > 0)
+        tar_text_set(&entry->linkname, view.linkpath.value,
+                     view.linkpath.value_len);
+    if (view.uname.value_len > 0)
+        tar_text_set(&entry->uname, view.uname.value, view.uname.value_len);
+    if (view.gname.value_len > 0)
+        tar_text_set(&entry->gname, view.gname.value, view.gname.value_len);
+    if ((view.uid.value_len > 0 &&
+         tar_parse_decimal(view.uid.value, view.uid.value_len,
+                           &entry->uid) != 0) ||
+        (view.gid.value_len > 0 &&
+         tar_parse_decimal(view.gid.value, view.gid.value_len,
+                           &entry->gid) != 0) ||
+        (view.size.value_len > 0 &&
+         tar_parse_decimal(view.size.value, view.size.value_len, size) != 0) ||
+        (view.mtime.value_len > 0 &&
+         tar_parse_pax_time(view.mtime.value, view.mtime.value_len,
+                            &entry->mtime, &entry->mtime_nsec) != 0) ||
+        (view.atime.value_len > 0 &&
+         tar_parse_pax_time(view.atime.value, view.atime.value_len,
+                            &entry->atime, &entry->atime_nsec) != 0) ||
+        (view.ctime.value_len > 0 &&
+         tar_parse_pax_time(view.ctime.value, view.ctime.value_len,
+                            &entry->ctime, &entry->ctime_nsec) != 0))
+        return -1;
+    return tar_pax_is_sparse(&view) ? -1 : 0;
+}
+
+/* Go treats these typeflags as having no data even when size is set. */
+static int tar_typeflag_has_no_data(int typeflag) {
+    return typeflag >= '1' && typeflag <= '6';
+}
+
+/* Reads one entry starting at a header boundary: any pax ('x'/'g') or GNU
+ * ('L'/'K') metadata blocks, then the file header. Returns 1 with *offset at
+ * the entry's payload, 0 with *offset at the two-block terminator, or -1. */
+static int tar_read_entry(const uint8_t *data, size_t avail,
+                          tar_entry_t *entry, size_t *offset) {
+    size_t position = 0;
+    const uint8_t *pax = NULL;
+    size_t pax_len = 0;
+    tar_text_t long_name, long_link;
+    tar_text_set(&long_name, NULL, 0);
+    tar_text_set(&long_link, NULL, 0);
+    for (;;) {
+        if (avail - position < NEVERC_TAR_BLOCK_SIZE) return -1;
+        const uint8_t *block = data + position;
+        if (tar_block_is_zero(block)) {
+            if (avail - position < NEVERC_TAR_BLOCK_SIZE * 2U ||
+                !tar_block_is_zero(block + NEVERC_TAR_BLOCK_SIZE))
+                return -1;
+            *offset = position;
+            return 0;
+        }
+        tar_block_t parsed;
+        if (tar_parse_block(block, &parsed) != 0 ||
+            (parsed.size < 0 && !tar_typeflag_has_no_data(parsed.typeflag)))
+            return -1;
+        position += NEVERC_TAR_BLOCK_SIZE;
+
+        int typeflag = parsed.typeflag;
+        if (typeflag == 'x' || typeflag == 'g' ||
+            typeflag == 'L' || typeflag == 'K') {
+            if ((uint64_t)parsed.size > (uint64_t)NEVERC_TAR_SPECIAL_MAX)
+                return -1;
+            size_t length = (size_t)parsed.size, padded = 0;
+            if (tar_padded_size(length, &padded) != 0 ||
+                padded > avail - position)
+                return -1;
+            const uint8_t *payload = data + position;
+            position += padded;
+            if (typeflag == 'x' || typeflag == 'g') {
+                if (tar_pax_scan(payload, length, NULL) != 0) return -1;
+                if (typeflag == 'x') {
+                    pax = payload;
+                    pax_len = length;
+                } else {
+                    /* Go returns a global header as its own entry, so
+                     * metadata pending for the next file is dropped. */
+                    pax = NULL;
+                    pax_len = 0;
+                    tar_text_set(&long_name, NULL, 0);
+                    tar_text_set(&long_link, NULL, 0);
+                }
+            } else {
+                const uint8_t *nul = length > 0
+                    ? (const uint8_t *)memchr(payload, '\0', length) : NULL;
+                tar_text_set(typeflag == 'L' ? &long_name : &long_link,
+                             payload,
+                             nul ? (size_t)(nul - payload) : length);
+            }
+            continue;
+        }
+
+        memset(entry, 0, sizeof(*entry));
+        entry->name = parsed.name;
+        entry->linkname = parsed.linkname;
+        entry->uname = parsed.uname;
+        entry->gname = parsed.gname;
+        entry->uid = parsed.uid;
+        entry->gid = parsed.gid;
+        entry->mtime = parsed.mtime;
+        entry->atime = parsed.atime;
+        entry->ctime = parsed.ctime;
+        int64_t size = parsed.size;
+        if (pax && tar_entry_apply_pax(entry, &size, pax, pax_len) != 0)
+            return -1;
+        if (long_name.head_len > 0) entry->name = long_name;
+        if (long_link.head_len > 0) entry->linkname = long_link;
+        /* As in Go, a negative size is invalid unless the type carries no
+         * data. Go makes only NUL (not '0') plus a trailing slash a
+         * directory, so '0' with a slash still rejects a negative size. */
+        int slash = tar_text_has_slash_suffix(&entry->name);
+        int go_typeflag = typeflag == 0
+            ? (slash ? NEVERC_TAR_DIR : NEVERC_TAR_REG) : typeflag;
+        if (size < 0 && !tar_typeflag_has_no_data(go_typeflag)) return -1;
+        if (typeflag == 0 || typeflag == NEVERC_TAR_REG)
+            typeflag = slash ? NEVERC_TAR_DIR : NEVERC_TAR_REG;
+        if (!tar_type_supported(typeflag) ||
+            parsed.mode < 0 || parsed.mode > (int64_t)UINT32_MAX)
+            return -1;
+        if (tar_type_header_only(typeflag)) size = 0;
+        size_t padded = 0;
+        if (size < 0 || !tar_size_fits((uint64_t)size) ||
+            tar_padded_size((size_t)size, &padded) != 0 ||
+            padded > avail - position)
+            return -1;
+        entry->typeflag = typeflag;
+        entry->size = size;
+        entry->mode = (uint32_t)parsed.mode;
+        *offset = position;
+        return 1;
+    }
+}
+
+/* Copies an entry's strings into fields of the given capacities and applies
+ * the path policy to the copied name and link target. */
+static int tar_entry_strings(const tar_entry_t *entry,
+                             char *name, size_t name_capacity,
+                             char *linkname, size_t link_capacity,
+                             char *uname, size_t uname_capacity,
+                             char *gname, size_t gname_capacity) {
+    size_t name_length = 0, link_length = 0;
+    if (tar_text_copy(name, name_capacity, &entry->name, &name_length) != 0 ||
+        tar_text_copy(linkname, link_capacity, &entry->linkname,
+                      &link_length) != 0 ||
+        tar_text_copy(uname, uname_capacity, &entry->uname, NULL) != 0 ||
+        tar_text_copy(gname, gname_capacity, &entry->gname, NULL) != 0 ||
+        !tar_path_is_safe(name, name_length,
+                          entry->typeflag == NEVERC_TAR_DIR))
+        return -1;
+    if ((entry->typeflag == NEVERC_TAR_SYM ||
+         entry->typeflag == NEVERC_TAR_LINK) &&
+        !tar_path_is_safe(linkname, link_length, 0))
+        return -1;
+    return 0;
+}
+
+static int tar_entry_to_legacy(const tar_entry_t *entry,
+                               neverc_tar_header_t *hdr) {
+    if (tar_entry_strings(entry, hdr->name, sizeof(hdr->name),
+                          hdr->linkname, sizeof(hdr->linkname),
+                          hdr->uname, sizeof(hdr->uname),
+                          hdr->gname, sizeof(hdr->gname)) != 0)
+        return -1;
+    hdr->size = entry->size;
+    hdr->mode = entry->mode;
+    hdr->mtime = entry->mtime;
+    hdr->typeflag = entry->typeflag;
+    return 0;
+}
+
+static int tar_entry_to_v2(const tar_entry_t *entry,
+                           neverc_tar_header_v2_t *hdr) {
+    if (tar_entry_strings(entry, hdr->name, sizeof(hdr->name),
+                          hdr->linkname, sizeof(hdr->linkname),
+                          hdr->uname, sizeof(hdr->uname),
+                          hdr->gname, sizeof(hdr->gname)) != 0)
+        return -1;
+    hdr->size = entry->size;
+    hdr->mode = entry->mode;
+    hdr->mtime = entry->mtime;
+    hdr->typeflag = entry->typeflag;
+    return 0;
+}
+
+static int tar_entry_to_v3(const tar_entry_t *entry,
+                           neverc_tar_header_v3_t *hdr) {
+    if (tar_entry_strings(entry, hdr->name, sizeof(hdr->name),
+                          hdr->linkname, sizeof(hdr->linkname),
+                          hdr->uname, sizeof(hdr->uname),
+                          hdr->gname, sizeof(hdr->gname)) != 0)
+        return -1;
+    hdr->size = entry->size;
+    hdr->mode = entry->mode;
+    hdr->mtime = entry->mtime;
+    hdr->typeflag = entry->typeflag;
+    hdr->uid = entry->uid;
+    hdr->gid = entry->gid;
+    hdr->mtime_nsec = entry->mtime_nsec;
+    hdr->atime = entry->atime;
+    hdr->atime_nsec = entry->atime_nsec;
+    hdr->ctime = entry->ctime;
+    hdr->ctime_nsec = entry->ctime_nsec;
+    return 0;
 }
 
 /* Positions a reader at its next header boundary without changing it:
@@ -328,75 +769,65 @@ static int tar_reader_boundary(const neverc_tar_reader_t *r,
     return 0;
 }
 
-/* Parses the next header and reports the cursor that follows it. Nothing is
+/* Parses the next entry and reports the cursor that follows it. Nothing is
  * committed here, so a caller that fails afterwards leaves r unchanged. */
 static int tar_reader_prepare_next(const neverc_tar_reader_t *r,
-                                   neverc_tar_header_v2_t *hdr,
+                                   tar_entry_t *entry,
                                    neverc_tar_reader_t *next) {
     const uint8_t *block = NULL;
-    size_t avail = 0;
-    if (!r || !hdr || !next || tar_reader_boundary(r, &block, &avail) != 0)
+    size_t avail = 0, offset = 0;
+    if (!r || !entry || !next || tar_reader_boundary(r, &block, &avail) != 0)
         return -1;
-    size_t payload = 0, padded = 0;
-    int parsed = tar_parse_header_at(block, avail, hdr, &payload, &padded);
+    int parsed = tar_read_entry(block, avail, entry, &offset);
     if (parsed < 0) return -1;
+    /* At the end, stay on the terminator so every later next() reports it. */
     *next = *r;
-    if (parsed == 0) {
-        /* Stay on the terminator so every later next() reports the end. */
-        next->data = block;
-        next->len = avail;
-        next->pos = 0;
-        return 0;
-    }
-    next->data = block + NEVERC_TAR_BLOCK_SIZE;
-    next->len = avail - NEVERC_TAR_BLOCK_SIZE;
-    next->pos = payload;
-    return 1;
+    next->data = block + offset;
+    next->len = avail - offset;
+    next->pos = parsed == 1 ? (size_t)entry->size : 0U;
+    return parsed;
 }
 
-static int tar_header_v2_to_legacy(const neverc_tar_header_v2_t *source,
-                                   neverc_tar_header_t *destination) {
-    size_t name_length = strlen(source->name);
-    size_t link_length = strlen(source->linkname);
-    size_t uname_length = strlen(source->uname);
-    size_t gname_length = strlen(source->gname);
-    if (name_length >= sizeof(destination->name) ||
-        link_length >= sizeof(destination->linkname) ||
-        uname_length >= sizeof(destination->uname) ||
-        gname_length >= sizeof(destination->gname))
+int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
+    if (!hdr) return -1;
+    memset(hdr, 0, sizeof(*hdr));
+    tar_entry_t entry;
+    neverc_tar_reader_t next;
+    int result = tar_reader_prepare_next(r, &entry, &next);
+    if (result == 1 && tar_entry_to_legacy(&entry, hdr) != 0) {
+        memset(hdr, 0, sizeof(*hdr));
         return -1;
-    memset(destination, 0, sizeof(*destination));
-    memcpy(destination->name, source->name, name_length + 1U);
-    memcpy(destination->linkname, source->linkname, link_length + 1U);
-    memcpy(destination->uname, source->uname, uname_length + 1U);
-    memcpy(destination->gname, source->gname, gname_length + 1U);
-    destination->size = source->size;
-    destination->mode = source->mode;
-    destination->mtime = source->mtime;
-    destination->typeflag = source->typeflag;
-    return 0;
+    }
+    if (result >= 0) *r = next;
+    return result;
 }
 
 int neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
                               neverc_tar_header_v2_t *hdr) {
     if (!hdr) return -1;
     memset(hdr, 0, sizeof(*hdr));
-    neverc_tar_header_v2_t parsed = {0};
+    tar_entry_t entry;
     neverc_tar_reader_t next;
-    int result = tar_reader_prepare_next(r, &parsed, &next);
-    if (result == 1) *hdr = parsed;
+    int result = tar_reader_prepare_next(r, &entry, &next);
+    if (result == 1 && tar_entry_to_v2(&entry, hdr) != 0) {
+        memset(hdr, 0, sizeof(*hdr));
+        return -1;
+    }
     if (result >= 0) *r = next;
     return result;
 }
 
-int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
+int neverc_tar_reader_next_v3(neverc_tar_reader_t *r,
+                              neverc_tar_header_v3_t *hdr) {
     if (!hdr) return -1;
     memset(hdr, 0, sizeof(*hdr));
-    neverc_tar_header_v2_t parsed;
+    tar_entry_t entry;
     neverc_tar_reader_t next;
-    int result = tar_reader_prepare_next(r, &parsed, &next);
-    if (result == 1 && tar_header_v2_to_legacy(&parsed, hdr) != 0)
+    int result = tar_reader_prepare_next(r, &entry, &next);
+    if (result == 1 && tar_entry_to_v3(&entry, hdr) != 0) {
+        memset(hdr, 0, sizeof(*hdr));
         return -1;
+    }
     if (result >= 0) *r = next;
     return result;
 }
@@ -439,6 +870,16 @@ int neverc_tar_reader_read(neverc_tar_reader_t *r,
 
 int neverc_tar_reader_read_v2(neverc_tar_reader_t *r,
                               const neverc_tar_header_v2_t *hdr,
+                              uint8_t *buf, size_t len, size_t *nread) {
+    if (!hdr) {
+        if (nread) *nread = 0;
+        return -1;
+    }
+    return tar_reader_read_size(r, hdr->size, buf, len, nread);
+}
+
+int neverc_tar_reader_read_v3(neverc_tar_reader_t *r,
+                              const neverc_tar_header_v3_t *hdr,
                               uint8_t *buf, size_t len, size_t *nread) {
     if (!hdr) {
         if (nread) *nread = 0;
@@ -600,13 +1041,13 @@ static int tar_writer_write_header_common(neverc_tar_writer_t *w,
         return -1;
     int typeflag = tar_resolve_typeflag(hdr->typeflag, hdr->name);
     if (!tar_type_supported(typeflag) ||
-        !tar_path_is_safe(hdr->name, sizeof(hdr->name),
+        !tar_path_is_safe(hdr->name, name_length,
                           typeflag == NEVERC_TAR_DIR) ||
         (tar_type_header_only(typeflag) && hdr->size != 0))
         return -1;
     if ((typeflag == NEVERC_TAR_SYM || typeflag == NEVERC_TAR_LINK) &&
         (link_length == 0 ||
-         !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname), 0)))
+         !tar_path_is_safe(hdr->linkname, link_length, 0)))
         return -1;
 
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
