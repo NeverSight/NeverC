@@ -172,6 +172,24 @@ static void test_clean(void) {
         check_int("clean overflow", neverc_path_clean("/abc/def", tiny, sizeof(tiny)), -1);
         check_int("clean overflow nul", tiny[0] == '\0', 1);
     }
+
+    {
+        /* A buffer that holds the cleaned result is not too small, even when
+         * the input, and the output before ".." backs up, is longer. */
+        char two[2];
+        check_int("clean result-sized buffer",
+                  neverc_path_clean("abc/def/../..", two, sizeof(two)), 1);
+        check_str("clean result-sized value", two, ".");
+        check_int("clean rooted result-sized buffer",
+                  neverc_path_clean("/a/..", two, sizeof(two)), 1);
+        check_str("clean rooted result-sized value", two, "/");
+        check_int("join result-sized buffer",
+                  neverc_path_join2("abc/def", "../../x", two, sizeof(two)), 1);
+        check_str("join result-sized value", two, "x");
+        check_int("dir result-sized buffer",
+                  neverc_path_dir("abc/def/../../x", two, sizeof(two)), 1);
+        check_str("dir result-sized value", two, ".");
+    }
 }
 
 /* ===== Test: Join ===== */
