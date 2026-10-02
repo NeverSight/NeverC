@@ -1049,6 +1049,69 @@ static void test_named_groups_and_replace_expand(void) {
                   m[1].start == text + 2 && m[1].len == 0, 1);
         neverc_regexp_free(re);
     }
+
+    /* Non-greedy quantifiers keep their priority for submatches while the
+     * overall match stays leftmost-longest (Go regexp with Longest()). */
+    {
+        static const struct {
+            const char *pat, *text;
+            int g1s, g1e, g2s, g2e;
+        } lazy[] = {
+            {"(a*?)(a*)", "aaa", 0, 0, 0, 3},
+            {"(a+?)(a*)", "aaa", 0, 1, 1, 3},
+            {"(a?\?)(a*)", "aaa", 0, 0, 0, 3},
+            {"(a{1,3}?)(a*)", "aaaa", 0, 1, 1, 4},
+            {"(a{2,}?)(a*)", "aaaa", 0, 2, 2, 4},
+            {"^(.*?)(\\d*)$", "abc123", 0, 3, 3, 6},
+        };
+        for (size_t i = 0; i < sizeof(lazy) / sizeof(lazy[0]); i++) {
+            const char *t = lazy[i].text;
+            re = neverc_regexp_compile(lazy[i].pat, NULL);
+            memset(m, 0, sizeof(m));
+            check_int(lazy[i].pat, neverc_regexp_find_submatch(re, t, m, 3), 1);
+            check_int("lazy whole match is longest",
+                      m[0].start == t && m[0].len == strlen(t), 1);
+            check_int("lazy group 1",
+                      m[1].start == t + lazy[i].g1s &&
+                          (int)m[1].len == lazy[i].g1e - lazy[i].g1s, 1);
+            check_int("lazy group 2",
+                      m[2].start == t + lazy[i].g2s &&
+                          (int)m[2].len == lazy[i].g2e - lazy[i].g2s, 1);
+            neverc_regexp_free(re);
+        }
+
+        re = neverc_regexp_compile("^(.*?)(\\d*)$", NULL);
+        r = neverc_regexp_replace_all(re, "abc123", "$2-$1", &outlen);
+        check_str("lazy prefix replace", r, "123-abc");
+        free(r);
+        neverc_regexp_free(re);
+
+        /* Optional copies nest as in Go (the second copy sits inside the
+         * first), so the lazy skip of the inner copy is tried before the
+         * outer one runs: group 1 is the second pass, [1,2]. */
+        static const char text[] = "ab";
+        re = neverc_regexp_compile("(a|ab|b){0,2}?", NULL);
+        memset(m, 0, sizeof(m));
+        check_int("(a|ab|b){0,2}? found", neverc_regexp_find_submatch(re, text, m, 2), 1);
+        check_int("(a|ab|b){0,2}? whole", m[0].start == text && m[0].len == 2, 1);
+        check_int("(a|ab|b){0,2}? g1 second copy",
+                  m[1].start == text + 1 && m[1].len == 1, 1);
+        neverc_regexp_free(re);
+
+        /* A lazy star over a body that cannot match empty is a single loop
+         * split, as in Go, so the outer loop re-entering it at the same
+         * position is cut and group 1 keeps the pass that started at 0. */
+        static const char *const lazy_loop[] = { "(b*?)+", "(b*?)*" };
+        static const char bb[] = "bb";
+        for (size_t i = 0; i < sizeof(lazy_loop) / sizeof(lazy_loop[0]); i++) {
+            re = neverc_regexp_compile(lazy_loop[i], NULL);
+            memset(m, 0, sizeof(m));
+            check_int(lazy_loop[i], neverc_regexp_find_submatch(re, bb, m, 2), 1);
+            check_int("lazy star re-entry keeps first pass",
+                      m[1].start == bb && m[1].len == 2, 1);
+            neverc_regexp_free(re);
+        }
+    }
 }
 
 static void test_utf8_class_and_nfa_bound(void) {
