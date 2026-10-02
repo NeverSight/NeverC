@@ -1,8 +1,9 @@
 #include "neverc/std/path.h"
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
-int neverc_path_clean(const char *path, char *buf, size_t bufsize) {
+static int clean_into(const char *path, char *buf, size_t bufsize) {
     if (!buf || bufsize == 0)
         return -1;
 
@@ -79,4 +80,31 @@ int neverc_path_clean(const char *path, char *buf, size_t bufsize) {
     out[w] = '\0';
     if (w > (size_t)INT_MAX) return -1;
     return (int)w;
+}
+
+/* clean_into never writes past the bytes it has read, so a buffer longer
+ * than the input always suffices. A shorter buffer may still hold the
+ * result even though the output written before a ".." backs up would not,
+ * so clean into scratch space sized for the input first. */
+int neverc_path_clean(const char *path, char *buf, size_t bufsize) {
+    if (!buf || bufsize == 0)
+        return -1;
+    size_t n = path ? strlen(path) : 0;
+    if (bufsize > n)
+        return clean_into(path, buf, bufsize);
+
+    char *tmp = (char *)malloc(n + 1);
+    if (!tmp) {
+        buf[0] = '\0';
+        return -1;
+    }
+    int len = clean_into(path, tmp, n + 1);
+    if (len < 0 || (size_t)len >= bufsize) {
+        buf[0] = '\0';
+        len = -1;
+    } else {
+        memcpy(buf, tmp, (size_t)len + 1);
+    }
+    free(tmp);
+    return len;
 }
