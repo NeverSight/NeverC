@@ -641,7 +641,6 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
             int prev_code = -1;
             uint8_t first_byte = 0;
-            int saw_eoi = 0;
             int lzw_error = 0;
             /*
              * Decode every *complete* code, not just while input bytes remain.
@@ -662,7 +661,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 bit_buf >>= code_size;
                 bit_cnt -= code_size;
 
-                if (code == eoi_code) { saw_eoi = 1; break; }
+                if (code == eoi_code) break;
                 if (code == clear_code) {
                     next_code_d = eoi_code + 1;
                     code_size = min_code_size + 1;
@@ -759,7 +758,10 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             }
 
             free(lzw_data);
-            if (lzw_error || !saw_eoi || pix_pos != pixel_count) {
+            /* The End-Of-Information code is optional once every pixel is
+             * decoded (as in Go image/gif and common decoders); codes past
+             * the frame already set lzw_error above. */
+            if (lzw_error || pix_pos != pixel_count) {
                 free(indices);
                 goto decode_failed;
             }
