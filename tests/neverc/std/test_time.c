@@ -1021,6 +1021,17 @@ static void test_parse_layout_go_tokens(void) {
     ok = neverc_time_parse("MST", "ChST", &t);
     check_int("parse ChST", ok, 0);
     check_int("parse MeST", neverc_time_parse("MST", "MeST", &t), 0);
+
+    /* Go stdTZ: a value starting with "UTC" is UTC and consumes exactly
+     * those three bytes, whatever upper-case letters follow. */
+    ok = neverc_time_parse("MSTJan", "UTCFeb", &t);
+    check_int("parse UTC before upper-case month", ok, 0);
+    check_int("parse UTC before upper-case month value",
+              neverc_time_month(t), 2);
+    check_int("parse UTCT leaves extra text",
+              neverc_time_parse("MST", "UTCT", &t), -1);
+    check_int("parse UTCX leaves extra text",
+              neverc_time_parse("MST", "UTCX", &t), -1);
 }
 
 static void test_parse_in_location_dst(void) {
