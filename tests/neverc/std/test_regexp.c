@@ -1013,6 +1013,42 @@ static void test_named_groups_and_replace_expand(void) {
                   m[1].start == text + 2 && m[1].len == 0, 1);
         neverc_regexp_free(re);
     }
+
+    /* A star whose body can match empty runs it once before giving up, as
+     * Go compiles such x* as (x+)?: group 1 of `(a*)*b` on "b" is [0,0],
+     * not unmatched. An unbounded {n,} still reports its last iteration. */
+    {
+        static const char *const nullable_star[] = {
+            "(a*)*b", "(a*){0,}b", "()*b", "(a|)*b"
+        };
+        static const char text[] = "b";
+        for (size_t i = 0; i < sizeof(nullable_star) / sizeof(nullable_star[0]);
+             i++) {
+            re = neverc_regexp_compile(nullable_star[i], NULL);
+            memset(m, 0, sizeof(m));
+            check_int(nullable_star[i],
+                      neverc_regexp_find_submatch(re, text, m, 2), 1);
+            check_int("nullable star group set empty",
+                      m[1].start == text && m[1].len == 0, 1);
+            neverc_regexp_free(re);
+        }
+    }
+    {
+        static const char text[] = "aab";
+        re = neverc_regexp_compile("(a*){1,}b", NULL);
+        memset(m, 0, sizeof(m));
+        check_int("(a*){1,}b found", neverc_regexp_find_submatch(re, text, m, 2), 1);
+        check_int("(a*){1,}b g1 last real iteration",
+                  m[1].start == text && m[1].len == 2, 1);
+        neverc_regexp_free(re);
+
+        re = neverc_regexp_compile("(a*){2,}b", NULL);
+        memset(m, 0, sizeof(m));
+        check_int("(a*){2,}b found", neverc_regexp_find_submatch(re, text, m, 2), 1);
+        check_int("(a*){2,}b g1 second copy empty",
+                  m[1].start == text + 2 && m[1].len == 0, 1);
+        neverc_regexp_free(re);
+    }
 }
 
 static void test_utf8_class_and_nfa_bound(void) {
