@@ -600,6 +600,48 @@ static void test_accepts_missing_end_code(void) {
     ASSERT_TRUE(img.frames == NULL);
 }
 
+/* Like Go image/gif (golang.org/issue/15059), a transparent index past the
+ * color table grows the frame palette with transparent black entries. */
+static void test_transparent_index_past_palette(void) {
+    printf("[transparent_index_past_palette]\n");
+    static const uint8_t past_palette[] = {
+        'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x80, 0, 0,
+        0, 0, 0, 255, 255, 255,
+        0x21, 0xf9, 4, 0x01, 0, 0, 2, 0,   /* transparent index 2 */
+        0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0,
+        2, 1, 0x14, 0,                     /* clear, pixel 2 */
+        0x3b
+    };
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(past_palette, sizeof(past_palette), &img), 0);
+    ASSERT_EQ(img.num_frames, 1);
+    if (img.num_frames == 1) {
+        const neverc_gif_frame_t *f = &img.frames[0];
+        ASSERT_EQ(f->palette_size, 3);
+        ASSERT_EQ(f->has_transparency, 1);
+        ASSERT_EQ(f->transparent_index, 2);
+        ASSERT_EQ(f->indices[0], 2);
+        ASSERT_EQ(f->palette[1].r, 255);
+        ASSERT_EQ(f->palette[2].r, 0);
+        uint8_t *rgba = NULL;
+        size_t rgba_len = 0;
+        ASSERT_EQ(neverc_gif_frame_to_rgba(f, &rgba, &rgba_len), 0);
+        ASSERT_TRUE(rgba != NULL && rgba_len == 4 && rgba[3] == 0);
+        free(rgba);
+    }
+    neverc_gif_free(&img);
+
+    /* Without any color table there is nothing to extend. */
+    static const uint8_t no_table[] = {
+        'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x00, 0, 0,
+        0x21, 0xf9, 4, 0x01, 0, 0, 2, 0,
+        0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0,
+        2, 1, 0x0c, 0,
+        0x3b
+    };
+    ASSERT_EQ(neverc_gif_decode(no_table, sizeof(no_table), &img), -1);
+}
+
 static void test_failed_decode_clears_geometry(void) {
     printf("[failed_decode_clears_geometry]\n");
     /* GCT flag set (2 entries) but only 3 of 6 color bytes are present. */
@@ -778,6 +820,7 @@ int main(void) {
     test_plain_text_consumes_gce();
     test_rejects_truncated_and_oversize_lzw();
     test_accepts_missing_end_code();
+    test_transparent_index_past_palette();
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();
     test_from_rgba_full_palette_transparency();
