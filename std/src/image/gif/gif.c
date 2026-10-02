@@ -1153,11 +1153,19 @@ static void gif_apply_rgba_transparency(const uint8_t *rgba, size_t npixels,
         }
         if (tidx < 0) {
             tidx = NEVERC_GIF_MAX_PALETTE - 1;
+            /* Move the slot's opaque pixels to the closest other palette
+             * color; any used slot can be an unrelated color. */
             uint8_t remap = 0;
+            long best = -1;
             for (int i = 0; i < NEVERC_GIF_MAX_PALETTE; i++) {
-                if (i != tidx && used[i]) {
+                if (i == tidx) continue;
+                long dr = (long)frame->palette[i].r - frame->palette[tidx].r;
+                long dg = (long)frame->palette[i].g - frame->palette[tidx].g;
+                long db = (long)frame->palette[i].b - frame->palette[tidx].b;
+                long d = dr * dr + dg * dg + db * db;
+                if (best < 0 || d < best) {
+                    best = d;
                     remap = (uint8_t)i;
-                    break;
                 }
             }
             for (size_t i = 0; i < npixels; i++) {
