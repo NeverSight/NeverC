@@ -265,9 +265,32 @@ static void test_parse_repeat(void) {
     check_int("a{} nsubs", n ? n->nsubs : 0, 3);
     neverc_regexp_syntax_free(n);
 
-    n = neverc_regexp_syntax_parse("{3}", 0, &err);
-    check_not_null("{3} literals", n);
-    check_op("{3} op", n, NC_RE_OP_CONCAT);
+    /* Go: a complete repeat with nothing to repeat is an error, not text. */
+    {
+        static const char *const no_operand[] = {
+            "{3}", "{0}", "{1,2}", "{3,}", "{2,1}", "{1001}", "x|{2}",
+            "({2})", "(?:{2})", "(?i:{2})", "(?P<n>{2})", "{3}?"
+        };
+        for (size_t i = 0; i < sizeof(no_operand) / sizeof(no_operand[0]);
+             i++) {
+            err = NULL;
+            n = neverc_regexp_syntax_parse(no_operand[i], 0, &err);
+            check_null(no_operand[i], n);
+            check_not_null("repeat without operand err",
+                           (void *)(size_t)(err != NULL));
+            neverc_regexp_syntax_free(n);
+        }
+    }
+
+    /* A `{` that cannot form a repeat stays literal there. */
+    n = neverc_regexp_syntax_parse("{,3}", 0, &err);
+    check_not_null("{,3} literals", n);
+    check_op("{,3} op", n, NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_free(n);
+
+    n = neverc_regexp_syntax_parse("{01}", 0, &err);
+    check_not_null("{01} literals", n);
+    check_op("{01} op", n, NC_RE_OP_CONCAT);
     neverc_regexp_syntax_free(n);
 
     /* Go parseInt: leading zeros are not a repeat count. */
