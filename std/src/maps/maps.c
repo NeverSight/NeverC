@@ -39,9 +39,12 @@ typedef struct {
     size_t   key_len;
 } map_entry_t;
 
+/* Callback snapshot: owned key copies plus what is needed to re-find each
+ * entry, so a callback that mutates the map never invalidates the walk. */
 typedef struct {
-    char *key;
-    void *value;
+    char    *key;
+    uint64_t hash;
+    size_t   key_len;
 } map_callback_entry_t;
 
 struct neverc_map {
@@ -310,11 +313,21 @@ static map_callback_entry_t *map_callback_snapshot(const neverc_map_t *m,
             return NULL;
         }
         memcpy(entries[k].key, m->slots[i].key, len + 1);
-        entries[k].value = m->slots[i].value;
+        entries[k].hash = m->slots[i].hash;
+        entries[k].key_len = len;
         k++;
     }
     *count = k;
     return entries;
+}
+
+/* Re-find a snapshot entry in the live map. Go range semantics: an entry an
+ * earlier callback deleted is not produced, and a replaced value is seen —
+ * never a stale snapshot value the caller may already have released. */
+static size_t map_find_snapshot_entry(const neverc_map_t *m,
+                                      const map_callback_entry_t *e) {
+    return map_find(m, e->key, e->hash, (uint8_t)(e->hash & 0x7F),
+                    e->key_len);
 }
 
 /* ------------------------------------------------------------------ *
@@ -524,8 +537,11 @@ void neverc_maps_foreach(const neverc_map_t *m, neverc_maps_iter_func_t fn, void
     size_t count;
     map_callback_entry_t *entries = map_callback_snapshot(m, &count);
     if (!entries) return;
-    for (size_t i = 0; i < count; i++)
-        fn(entries[i].key, entries[i].value, user_data);
+    for (size_t i = 0; i < count; i++) {
+        size_t idx = map_find_snapshot_entry(m, &entries[i]);
+        if (idx != (size_t)-1)
+            fn(entries[i].key, m->slots[idx].value, user_data);
+    }
     map_free_callback_snapshot(entries, count);
 }
 
@@ -534,9 +550,11 @@ void neverc_maps_delete_func(neverc_map_t *m, neverc_maps_filter_func_t fn) {
     size_t count;
     map_callback_entry_t *entries = map_callback_snapshot(m, &count);
     if (!entries) return;
-    for (size_t i = 0; i < count; i++)
-        if (fn(entries[i].key, entries[i].value))
+    for (size_t i = 0; i < count; i++) {
+        size_t idx = map_find_snapshot_entry(m, &entries[i]);
+        if (idx != (size_t)-1 && fn(entries[i].key, m->slots[idx].value))
             neverc_maps_delete(m, entries[i].key);
+    }
     map_free_callback_snapshot(entries, count);
 }
 
