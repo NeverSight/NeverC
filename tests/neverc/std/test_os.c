@@ -739,6 +739,48 @@ static void test_rename(void) {
         neverc_os_remove(old);
         neverc_os_remove_all(dirbuf);
     }
+
+#if !defined(_WIN32)
+    /* Go os.Rename refuses an existing directory target with EEXIST, even an
+     * empty one or the source itself; rename(2) alone would replace it. */
+    {
+        char srcdir[1024], dstdir[1024], missing[1024], marker[1100];
+        make_test_path(srcdir, sizeof(srcdir), "neverc_test_rename_srcdir");
+        make_test_path(dstdir, sizeof(dstdir), "neverc_test_rename_dstdir");
+        make_test_path(missing, sizeof(missing), "neverc_test_rename_missing");
+        neverc_os_remove_all(srcdir);
+        neverc_os_remove_all(dstdir);
+        neverc_os_remove_all(missing);
+        ASSERT_EQ(neverc_os_mkdir(srcdir, 0700), 0);
+        ASSERT_EQ(neverc_os_mkdir(dstdir, 0700), 0);
+        snprintf(marker, sizeof(marker), "%s/marker", srcdir);
+        ASSERT_EQ(neverc_os_write_file(marker, (const unsigned char *)"m", 1,
+                                       0600), 0);
+
+        errno = 0;
+        ASSERT_EQ(neverc_os_rename(srcdir, dstdir), -1);
+        ASSERT_EQ(errno, EEXIST);
+        ASSERT_TRUE(neverc_os_exists(marker));
+        ASSERT_TRUE(neverc_os_is_dir(dstdir));
+
+        errno = 0;
+        ASSERT_EQ(neverc_os_rename(srcdir, srcdir), -1);
+        ASSERT_EQ(errno, EEXIST);
+        ASSERT_TRUE(neverc_os_exists(marker));
+
+        /* The source error still wins when the source is missing. */
+        errno = 0;
+        ASSERT_EQ(neverc_os_rename(missing, dstdir), -1);
+        ASSERT_EQ(errno, ENOENT);
+
+        /* A file renamed onto itself remains a successful no-op. */
+        ASSERT_EQ(neverc_os_rename(marker, marker), 0);
+        ASSERT_TRUE(neverc_os_exists(marker));
+
+        neverc_os_remove_all(srcdir);
+        neverc_os_remove_all(dstdir);
+    }
+#endif
 }
 
 static void test_process(void) {
