@@ -858,6 +858,48 @@ static void test_dwarf_many_abbrevs(void) {
     free(info);
 }
 
+/* Many units naming one large abbreviation table. The table must be parsed
+ * once for the run of units that share it, not once per unit: that is
+ * quadratic and crawls at this size. */
+static void test_dwarf_shared_abbrev_table(void) {
+    printf("[shared_abbrev_table]\n");
+    enum { ABBREVS = 60000, UNITS = 40000, UNIT_SIZE = 12 };
+    uint8_t *abbrev = (uint8_t *)malloc((size_t)ABBREVS * 8U + 16U);
+    uint8_t *info = (uint8_t *)malloc((size_t)UNITS * UNIT_SIZE);
+    CHECK("shared-table buffers", abbrev != NULL && info != NULL);
+    if (!abbrev || !info) {
+        free(abbrev);
+        free(info);
+        return;
+    }
+
+    size_t abbrev_len = 0;
+    for (uint32_t code = 2; code <= ABBREVS + 1U; code++)
+        abbrev_len += put_abbrev(abbrev + abbrev_len, code,
+                                 NEVERC_DW_TAG_base_type, 0);
+    abbrev_len += put_abbrev(abbrev + abbrev_len, 1,
+                             NEVERC_DW_TAG_compile_unit, 0);
+    abbrev[abbrev_len++] = 0;
+
+    for (size_t unit = 0; unit < UNITS; unit++) {
+        uint8_t *u = info + unit * UNIT_SIZE;
+        build_v4_header(u, UNIT_SIZE - 4);
+        u[11] = 1;
+    }
+
+    neverc_dwarf_data_t d;
+    long entries = 0;
+    CHECK("shared-table init",
+          neverc_dwarf_init(&d, info, (size_t)UNITS * UNIT_SIZE, abbrev,
+                            abbrev_len, NULL, 0) == 0);
+    CHECK("shared-table walk",
+          neverc_dwarf_walk_entries(&d, count_entry_cb, &entries) == 0);
+    CHECK("shared-table entry count", entries == (long)UNITS);
+    neverc_dwarf_free(&d);
+    free(abbrev);
+    free(info);
+}
+
 int main(void) {
     printf("=== NeverC debug/dwarf Tests ===\n\n");
 
@@ -871,6 +913,7 @@ int main(void) {
     test_dwarf_big_endian();
     test_dwarf_abbrev_offset_and_dwarf64();
     test_dwarf_many_abbrevs();
+    test_dwarf_shared_abbrev_table();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)
