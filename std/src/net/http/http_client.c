@@ -3841,24 +3841,42 @@ neverc_sse_t *neverc_sse_start(neverc_http_response_writer_t *w) {
 
     /* RFC 9112 §6.1: no chunked framing for an HTTP/1.0 client. */
     int identity = nc_http_writer_streams_identity(w);
+
+    /* The stream's header block carries every field already set on the
+     * writer (handler and CORS headers), not just the SSE defaults. */
+    nc_buf_t headers;
+    nc_buf_init(&headers);
+    int failed = append_cstr(&headers, "HTTP/1.1 200 OK\r\n") != 0;
+    for (int i = 0; !failed && i < w->nheaders; i++) {
+        if (strcasecmp(w->header_names[i], "Content-Length") == 0 ||
+            strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
+            strcasecmp(w->header_names[i], "Connection") == 0)
+            continue;
+        failed = append_cstr(&headers, w->header_names[i]) != 0 ||
+                 append_cstr(&headers, ": ") != 0 ||
+                 append_cstr(&headers, w->header_values[i]) != 0 ||
+                 append_cstr(&headers, "\r\n") != 0;
+    }
+    if (!failed)
+        failed = append_cstr(&headers, identity
+            ? "Connection: close\r\n\r\n"
+            : "Connection: keep-alive\r\n"
+              "Transfer-Encoding: chunked\r\n\r\n") != 0;
+    if (failed) {
+        nc_buf_free(&headers);
+        return NULL;
+    }
+
     neverc_tcp_conn_t *connection = neverc_http_hijack(w);
-    if (!connection) return NULL;
+    if (!connection) {
+        nc_buf_free(&headers);
+        return NULL;
+    }
     (void)neverc_tcp_set_write_timeout(connection, w->write_timeout_ms);
 
-    const char *headers = identity
-        ? "HTTP/1.1 200 OK\r\n"
-          "Content-Type: text/event-stream\r\n"
-          "Cache-Control: no-cache\r\n"
-          "Connection: close\r\n"
-          "X-Accel-Buffering: no\r\n\r\n"
-        : "HTTP/1.1 200 OK\r\n"
-          "Content-Type: text/event-stream\r\n"
-          "Cache-Control: no-cache\r\n"
-          "Connection: keep-alive\r\n"
-          "X-Accel-Buffering: no\r\n"
-          "Transfer-Encoding: chunked\r\n\r\n";
     int write_result = sse_tcp_write_all(
-        connection, headers, strlen(headers));
+        connection, headers.data, headers.len);
+    nc_buf_free(&headers);
     if (write_result != 0) {
         neverc_tcp_close(connection);
         return NULL;
