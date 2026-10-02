@@ -1834,6 +1834,24 @@ static void test_expect_continue(void) {
               strstr(buf, "Hello, World!") != NULL, 1);
 
     neverc_tcp_close(conn);
+
+    /* RFC 9110 §10.1.1 / Go: an HTTP/1.0 request's 100-continue is ignored,
+     * and an HTTP/1.0 client must never receive a 1xx response. */
+    {
+        char rbuf[4096];
+        int n = do_http_request(port,
+            "POST /post HTTP/1.0\r\nHost: localhost\r\n"
+            "Content-Length: 4\r\nExpect: 100-continue\r\n\r\ndata",
+            rbuf, sizeof(rbuf));
+        check_int("http10 expect response", n > 0, 1);
+        check_int("http10 expect no 100",
+                  strstr(rbuf, "100 Continue") == NULL, 1);
+        check_int("http10 expect final status first",
+                  strncmp(rbuf, "HTTP/1.1 201 ", 13) == 0, 1);
+        check_int("http10 expect body received",
+                  strstr(rbuf, "received 4 bytes") != NULL, 1);
+    }
+
     stop_test_server(server_pid);
 }
 
