@@ -3396,8 +3396,9 @@ static bool utilityRecordConditionalMoveSource(
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
     // Each nontrivial node keeps one exact public const-copy and at most one
-    // exact rvalue move. Defaulted copies may be deleted, and defaulted moves
-    // may be ignored in favor of copying; preserve the SDK's selected result.
+    // exact rvalue move. A public copy may also be explicitly deleted, which
+    // can delete an enclosing implicit/defaulted copy. Defaulted moves may be
+    // ignored in favor of copying; preserve the SDK's selected result.
     for (const auto *Declaration : Record->decls())
       if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
           Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
@@ -3417,8 +3418,7 @@ static bool utilityRecordConditionalMoveSource(
               Constructor->getParamDecl(0)->getType(),
               IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
                      : A.Context.getRValueReferenceType(Object)) ||
-          (IsCopy && ((Constructor->isDeleted() && !Constructor->isDefaulted()) ||
-                      Constructor->getAccess() != AS_public)) ||
+          (IsCopy && Constructor->getAccess() != AS_public) ||
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
       auto *&Selected = IsCopy ? Copy : Move;

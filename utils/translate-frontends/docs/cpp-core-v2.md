@@ -922,7 +922,7 @@ pointer/reference fields do not consume their referents' constructor graph.
 Records with ordinary value constructors also supply conditional-move query
 sources when they have one exact public `const Record&` copy and at most one
 exact `Record&&` move. These special members may be implicit, explicitly
-defaulted or ordinary; the move may also be private or explicitly deleted.
+defaulted, ordinary or explicitly deleted; the move may also be private.
 A copy-only record is included. An implicit or defaulted copy may be deleted by
 its fields, including an uncopyable value member or an rvalue-reference field.
 The pinned builtin preserves its exact viability and overload decision,
@@ -938,10 +938,17 @@ written parameter and exception sources. The graph supplies inferred exception
 and defaulted-deletion sources, including an inaccessible member move that
 deletes an enclosing defaulted move and permits a copy instead.
 
+A nontrivial member's explicitly deleted public `const Member&` copy can delete
+enclosing implicit or defaulted copies through nested members and fixed arrays.
+Such owners retain the pinned `T&&` branch for mutable and const operands, even
+when moving throws or is also deleted. Every deleted declaration still supplies
+its original parameter and exception sources. The query returns an unchanged
+reference; actual construction from it requires a viable selected constructor.
+
 Non-owning pointer/reference fields keep their original bindings. Constructor
 templates, inherited constructors, additional copy overloads, extra copy/move
-parameters and nontrivial members with inaccessible copies/destructors or
-explicitly deleted copies retain separate requirements. SDK members and
+parameters and nontrivial members with inaccessible copies/destructors
+retain separate requirements. SDK members and
 nontrivial bases retain their existing source and layout requirements. Mutable
 and const operands preserve the pinned `T&&` or `const T&` result, including
 copy fallback and throwing destruction.
