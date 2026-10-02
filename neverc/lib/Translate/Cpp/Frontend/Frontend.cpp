@@ -3173,13 +3173,14 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
-static bool utilityScalarValueConstructor(Adapter &A,
-                                         const CXXConstructorDecl *Constructor) {
+static bool utilityScalarParameterConstructor(
+    Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() != 1)
     return false;
-  const auto Type = Constructor->getParamDecl(0)->getType();
+  const auto Type =
+      Constructor->getParamDecl(0)->getType().getNonReferenceType();
   return !Type->isDependentType() && !Type.isVolatileQualified() &&
          !Type.isRestrictQualified() && !Type->isAtomicType() &&
          Type.getAddressSpace() == LangAS::Default &&
@@ -3193,7 +3194,8 @@ static bool utilityScalarValueConstructor(Adapter &A,
 static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
-  const bool ScalarConstructor = utilityScalarValueConstructor(A, Constructor);
+  const bool ScalarConstructor =
+      utilityScalarParameterConstructor(A, Constructor);
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||
@@ -3268,10 +3270,11 @@ static bool utilityMutableCopyConditionalMoveSource(
     Adapter &A, const CXXRecordDecl *Record,
     std::vector<const CXXMethodDecl *> *Signatures) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
-  // conversion paths, including record-valued parameters with converting
-  // constructors. A scalar value parameter cannot consume this record without
-  // a conversion function. Retain each such constructor's written signatures;
-  // callers separately check copy/move overloads and sources.
+  // conversion paths, including record value/reference parameters that can
+  // consume a converting temporary. A scalar value or reference parameter
+  // cannot consume this record without a conversion function. Retain each
+  // such constructor's written signatures; callers separately check copy/move
+  // overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
   for (const auto *Declaration : Record->decls()) {
@@ -3286,7 +3289,7 @@ static bool utilityMutableCopyConditionalMoveSource(
     if (Constructor->isCopyOrMoveConstructor() ||
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
-    if (!utilityScalarValueConstructor(A, Constructor) ||
+    if (!utilityScalarParameterConstructor(A, Constructor) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
   }
@@ -12252,7 +12255,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 for (const auto *Signature : ConditionalMoveSignatures) {
                   operationTypeDependency(Signature->getTypeSourceInfo());
                   // The exact adapter proof consumes written special-member
-                  // and scalar value-constructor signatures.
+                  // and scalar-parameter constructor signatures.
                   // Check a resolved signature or its retained written source
                   // without resolving inferred exceptions or generating a body.
                   // Actual operations keep their ordinary/generated proof.
