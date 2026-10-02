@@ -106,7 +106,7 @@ typedef struct {
 } neverc_pe_section_t;
 
 typedef struct {
-    char     name[256];
+    char     name[256]; /* Truncated to 255 bytes. */
     uint32_t value;
     int16_t  section_number;
     uint16_t type;

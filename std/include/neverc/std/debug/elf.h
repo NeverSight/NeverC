@@ -120,7 +120,8 @@ typedef struct {
 } neverc_elf_file_header_t;
 
 typedef struct {
-    char     name[256];
+    char     name[256]; /* Truncated to 255 bytes; neverc_elf_section()
+                           matches the truncated name. */
     uint32_t type;
     uint64_t flags;
     uint64_t addr;
@@ -145,7 +146,7 @@ typedef struct {
 } neverc_elf_prog_t;
 
 typedef struct {
-    char     name[256];
+    char     name[256]; /* Truncated to 255 bytes. */
     uint64_t value;
     uint64_t size;
     uint8_t  bind;
@@ -192,11 +193,13 @@ int neverc_elf_section_data(const neverc_elf_file_t *f,
                              const neverc_elf_section_t *s,
                              uint8_t **out, size_t *out_len);
 
-/* Get symbol table. Caller must free *syms. Returns symbol count, or -1 on error. */
+/* Get symbol table, without the null symbol at index 0 (as in Go). Caller
+   must free *syms. Returns 0 with the symbol count in *count (0 when there
+   is no symbol table), or -1 on error. */
 int neverc_elf_symbols(const neverc_elf_file_t *f,
                         neverc_elf_symbol_t **syms, int *count);
 
-/* Get dynamic symbols. Caller must free *syms. */
+/* Get dynamic symbols. Same conventions as neverc_elf_symbols. */
 int neverc_elf_dynamic_symbols(const neverc_elf_file_t *f,
                                 neverc_elf_symbol_t **syms, int *count);
 

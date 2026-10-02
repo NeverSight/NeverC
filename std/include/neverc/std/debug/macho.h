@@ -95,7 +95,7 @@ typedef struct {
 } neverc_macho_segment_t;
 
 typedef struct {
-    char     name[256];
+    char     name[256]; /* Truncated to 255 bytes. */
     uint8_t  type;
     uint8_t  sect;
     int16_t  desc;
@@ -103,7 +103,7 @@ typedef struct {
 } neverc_macho_symbol_t;
 
 typedef struct {
-    char     name[256];
+    char     name[256]; /* Truncated to 255 bytes. */
     uint32_t time;
     uint32_t current_version;
     uint32_t compat_version;
