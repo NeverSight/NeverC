@@ -2241,13 +2241,14 @@ static int http_cookie_name_ok(const char *name) {
     return 1;
 }
 
+/* Go validCookieValueByte. SP and ',' are allowed but force the value into
+ * DQUOTEs (Go sanitizeCookieValue); any other invalid byte rejects the
+ * cookie instead of being silently dropped. */
 static int http_cookie_value_ok(const char *value) {
     if (!value) return 0;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
-        if (*p != 0x21 && !(*p >= 0x23 && *p <= 0x2b) &&
-            !(*p >= 0x2d && *p <= 0x3a) &&
-            !(*p >= 0x3c && *p <= 0x5b) &&
-            !(*p >= 0x5d && *p <= 0x7e))
+        if (*p < 0x20 || *p >= 0x7f || *p == '"' || *p == ';' ||
+            *p == '\\')
             return 0;
     }
     return 1;
@@ -2283,9 +2284,12 @@ void neverc_http_set_cookie(neverc_http_response_writer_t *w,
 
     nc_buf_t value;
     nc_buf_init(&value);
+    int quote = strpbrk(c->value, " ,") != NULL;
     int failed = nc_buf_append(&value, c->name, strlen(c->name)) != 0 ||
                  nc_buf_append(&value, "=", 1) != 0 ||
-                 nc_buf_append(&value, c->value, strlen(c->value)) != 0;
+                 (quote && nc_buf_append(&value, "\"", 1) != 0) ||
+                 nc_buf_append(&value, c->value, strlen(c->value)) != 0 ||
+                 (quote && nc_buf_append(&value, "\"", 1) != 0);
     if (!failed && c->path && c->path[0])
         failed = nc_buf_append(&value, "; Path=", 7) != 0 ||
                  nc_buf_append(&value, c->path, strlen(c->path)) != 0;
