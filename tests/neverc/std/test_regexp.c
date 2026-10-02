@@ -922,6 +922,21 @@ static void test_named_groups_and_replace_expand(void) {
               neverc_regexp_subexp_index(re, "x"), 1);
     neverc_regexp_free(re);
 
+    /* Go extract(): a digit run that reaches 1e8 before its last digit is a
+     * name, so a 10-digit group name can be expanded; 9 digits stay a
+     * (missing) group number. */
+    re = neverc_regexp_compile("(?P<1000000000>a)(?P<100000000>b)?", NULL);
+    r = neverc_regexp_replace_all(re, "ab", "[$1000000000]", &outlen);
+    check_str("replace 10-digit name", r, "[a]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "ab", "[${1000000000}]", &outlen);
+    check_str("replace braced 10-digit name", r, "[a]");
+    free(r);
+    r = neverc_regexp_replace_all(re, "ab", "[$100000000]", &outlen);
+    check_str("replace 9-digit number", r, "[]");
+    free(r);
+    neverc_regexp_free(re);
+
     /* Go extract() walks unicode.IsLetter/IsDigit. Unknown names vanish. */
     re = neverc_regexp_compile("a", NULL);
     r = neverc_regexp_replace_all(re, "a", "$\xc3\xa9", &outlen);
