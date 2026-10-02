@@ -567,6 +567,27 @@ static void test_escaped_newline_terminates_string(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+/* Error counts from Go text/scanner: an escape cut off by a newline or the
+ * end of input is itself an invalid escape, and the character after an
+ * invalid escape is counted as one more element of a char literal. */
+static void test_bad_escape_error_counts(void) {
+    printf("[bad_escape_error_counts]\n");
+    static const struct { const char *src; int errors; } cases[] = {
+        {"'\\q'", 2}, {"'\\8'", 2}, {"\"a\\", 2}, {"\"ab\\\ncd", 2},
+        {"'a\\\nb", 3}, {"\"\\q\"", 1}, {"'\\", 2}, {"'\\'", 1},
+        {"'\\q", 3}, {"'\\qq'", 2}, {"\"\\8\" x", 1},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        neverc_scanner_t s;
+        neverc_scanner_init(&s, cases[i].src, strlen(cases[i].src));
+        while (neverc_scanner_scan(&s) != NEVERC_SCANNER_EOF) {
+        }
+        if (neverc_scanner_error_count(&s) != cases[i].errors)
+            printf("  input: %s\n", cases[i].src);
+        ASSERT_INT_EQ(neverc_scanner_error_count(&s), cases[i].errors);
+    }
+}
+
 static void test_unknown_escape_reports_error(void) {
     printf("[unknown_escape_reports_error]\n");
     neverc_scanner_t s;
@@ -846,6 +867,7 @@ int main(void) {
     test_eof_position();
     test_escaped_newline_terminates_string();
     test_unknown_escape_reports_error();
+    test_bad_escape_error_counts();
     test_hex_escape_requires_two_digits();
     test_fixed_width_escapes_require_all_digits();
     test_char_literals_require_one_element();
