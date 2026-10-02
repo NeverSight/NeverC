@@ -1274,6 +1274,21 @@ static void test_template_url_and_script(void) {
               "<script><!--<script></script></script><a href=\"#\">x</a>");
     free(out);
 
+    /* HTML tag names run to whitespace, '/' or '>', so these are unknown
+     * elements rather than script elements. */
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<script_x>hi</script_x><a href=\"{{.X}}\">x</a>", &data);
+    check_str("script prefix tag is not a script", out,
+              "<script_x>hi</script_x><a href=\"#\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<script.x>hi</script.x><a href=\"{{.X}}\">x</a>", &data);
+    check_str("dotted script prefix tag is not a script", out,
+              "<script.x>hi</script.x><a href=\"#\">x</a>");
+    free(out);
+
     neverc_html_template_data_set(&data, "X", ";alert(1)//");
     out = neverc_html_template_render(
         "<script>var x=\"ok\"{{.X}}</script>", &data);
