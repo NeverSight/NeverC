@@ -629,6 +629,53 @@ static void test_x509_subject_alt_name(void) {
         }
     }
 
+    /* RFC 5280 4.2 (and Go's parser): an extension may appear only once,
+     * including extensions this parser does not interpret. */
+    {
+        static const uint8_t single_unknown[] = {
+            0xa3, 0x0d, 0x30, 0x0b,
+            0x30, 0x09, 0x06, 0x03, 0x2a, 0x03, 0x04, 0x04, 0x02, 0x05, 0x00
+        };
+        static const uint8_t duplicate_unknown[] = {
+            0xa3, 0x18, 0x30, 0x16,
+            0x30, 0x09, 0x06, 0x03, 0x2a, 0x03, 0x04, 0x04, 0x02, 0x05, 0x00,
+            0x30, 0x09, 0x06, 0x03, 0x2a, 0x03, 0x04, 0x04, 0x02, 0x05, 0x00
+        };
+        const uint8_t *const blocks[] = {single_unknown, duplicate_unknown};
+        const size_t block_lens[] = {
+            sizeof(single_unknown), sizeof(duplicate_unknown)
+        };
+        uint8_t der[2][256];
+        size_t der_len[2];
+        for (size_t i = 0; i < 2; ++i) {
+            const size_t prefix = 125;
+            const size_t old_ext = 15;
+            size_t suffix = sizeof(empty_san_cert_der) - prefix - old_ext;
+            memcpy(der[i], empty_san_cert_der, prefix);
+            memcpy(der[i] + prefix, blocks[i], block_lens[i]);
+            memcpy(der[i] + prefix + block_lens[i],
+                   empty_san_cert_der + prefix + old_ext, suffix);
+            der[i][2] = (uint8_t)(prefix + block_lens[i] + suffix - 3);
+            der[i][5] = (uint8_t)(prefix + block_lens[i] - 6);
+            der_len[i] = prefix + block_lens[i] + suffix;
+        }
+        rc = neverc_x509_parse_certificate(&cert, der[0], der_len[0]);
+        CHECK("single_unknown_extension_parses", rc == 0);
+        if (rc == 0)
+            neverc_x509_cert_free(&cert);
+        rc = neverc_x509_parse_certificate(&cert, der[1], der_len[1]);
+        CHECK("duplicate_unknown_extension_fails", rc < 0);
+        if (rc == 0)
+            neverc_x509_cert_free(&cert);
+
+        neverc_x509_cert_t raw_only;
+        memset(&raw_only, 0, sizeof(raw_only));
+        raw_only.raw = der[1];
+        raw_only.raw_len = der_len[1];
+        CHECK("duplicate_unknown_extension_constraints_fail",
+              neverc_x509_has_name_constraints(&raw_only) == -1);
+    }
+
     rc = neverc_x509_parse_certificate(
         &cert, test_cert_der, sizeof(test_cert_der));
     CHECK("legacy_cn_parse_success", rc == 0);
