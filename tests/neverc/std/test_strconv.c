@@ -1042,6 +1042,30 @@ static void test_complex(void) {
               neverc_strconv_parse_complex("+NaNi", &re, &im),
               NEVERC_STRCONV_ERR_SYNTAX);
 
+    /* Go reads each part with one prefix scan, so a long literal parses in
+     * linear time. Re-parsing every prefix of this 300000-digit real part
+     * does not finish within the test timeout. */
+    {
+        static const char pattern[] = "2345678901";
+        const size_t digits = 300000;
+        char *big = (char *)malloc(digits + 8);
+        check_true("parse_complex long literal alloc", big != NULL);
+        if (big) {
+            big[0] = '1';
+            big[1] = '.';
+            for (size_t i = 0; i < digits; i++)
+                big[2 + i] = pattern[i % 10];
+            memcpy(big + 2 + digits, "+2i", 4);
+            re = 7.0; im = 9.0;
+            check_int("parse_complex long literal",
+                      neverc_strconv_parse_complex(big, &re, &im), 0);
+            check_true("parse_complex long literal re",
+                       re == 1.2345678901234567);
+            check_true("parse_complex long literal im", im == 2.0);
+            free(big);
+        }
+    }
+
     /* 'f' of 1e100 is ~104 chars; the old 64-byte scratch buffers failed. */
     char large[512];
     n = neverc_strconv_format_complex(1e100, 2e100, 'f', 1, large, sizeof(large));
