@@ -1101,6 +1101,31 @@ static void test_octal_bytes_after_nul(void) {
               neverc_tar_reader_next(&reader, &header), -1);
 }
 
+static void test_star_prefix_width(void) {
+    printf("[star prefix width]\n");
+    /* The star format shares the ustar magic but ends the block with a
+     * "tar\0" trailer; its prefix is 131 bytes, followed by atime/ctime. */
+    uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 3U];
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "name", NEVERC_TAR_REG, 0, NULL);
+    memset(archive + 345, 'p', 131);
+    test_write_octal(archive + 476, 12, 5);
+    test_write_octal(archive + 488, 12, 6);
+    memcpy(archive + 508, "tar", 4);
+    test_finish_header(archive);
+
+    char expected[160];
+    memset(expected, 'p', 131);
+    memcpy(expected + 131, "/name", 6);
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t header = {0};
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int("star header", result, 1);
+    if (result == 1)
+        check_str("star prefix stops before atime", header.name, expected);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1117,6 +1142,7 @@ int main(void) {
     test_pax_linkdata_hardlink();
     test_header_only_and_typeflags();
     test_octal_bytes_after_nul();
+    test_star_prefix_width();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
