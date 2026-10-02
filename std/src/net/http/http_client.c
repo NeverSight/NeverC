@@ -3610,22 +3610,103 @@ static const char *http_json_skip_value(const char *p, const char *end) {
     return p;
 }
 
+static int http_json_hex4(const char *p, const char *end, unsigned *out) {
+    if (end - p < 4) return -1;
+    unsigned value = 0;
+    for (int i = 0; i < 4; i++) {
+        int digit = http_hex_nibble((unsigned char)p[i]);
+        if (digit < 0) return -1;
+        value = value * 16U + (unsigned)digit;
+    }
+    *out = value;
+    return 0;
+}
+
+static size_t http_json_utf8(unsigned cp, char *out) {
+    if (cp < 0x80) {
+        out[0] = (char)cp;
+        return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    }
+    if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    return 4;
+}
+
+/* Decode the JSON string token at value (its opening quote) the way Go's
+ * decoder does: escapes are resolved and an unpaired surrogate becomes
+ * U+FFFD. U+0000 cannot be returned in a C string. Malformed escapes and
+ * unterminated strings fail. */
+static int http_json_copy_string(const char *value, const char *end,
+                                 char *buf, size_t buflen) {
+    const char *p = value + 1;
+    size_t length = 0;
+    while (p < end && *p != '"') {
+        char bytes[4];
+        size_t count = 1;
+        unsigned char c = (unsigned char)*p++;
+        bytes[0] = (char)c;
+        if (c == '\\') {
+            if (p >= end) return 0;
+            c = (unsigned char)*p++;
+            switch (c) {
+            case '"': case '\\': case '/': bytes[0] = (char)c; break;
+            case 'b': bytes[0] = '\b'; break;
+            case 'f': bytes[0] = '\f'; break;
+            case 'n': bytes[0] = '\n'; break;
+            case 'r': bytes[0] = '\r'; break;
+            case 't': bytes[0] = '\t'; break;
+            case 'u': {
+                unsigned cp;
+                if (http_json_hex4(p, end, &cp) != 0) return 0;
+                p += 4;
+                if (cp >= 0xD800 && cp <= 0xDBFF) {
+                    unsigned low;
+                    if (end - p >= 6 && p[0] == '\\' && p[1] == 'u' &&
+                        http_json_hex4(p + 2, end, &low) == 0 &&
+                        low >= 0xDC00 && low <= 0xDFFF) {
+                        cp = 0x10000U + ((cp - 0xD800U) << 10) +
+                             (low - 0xDC00U);
+                        p += 6;
+                    } else {
+                        cp = 0xFFFD;
+                    }
+                } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                    cp = 0xFFFD;
+                }
+                if (cp == 0) return 0;
+                count = http_json_utf8(cp, bytes);
+                break;
+            }
+            default:
+                return 0;
+            }
+        }
+        for (size_t i = 0; i < count; i++)
+            if (length < buflen - 1) buf[length++] = bytes[i];
+    }
+    if (p >= end) return 0;
+    buf[length] = '\0';
+    return 1;
+}
+
 static int http_json_copy_scalar(const char *value, const char *end,
                                  char *buf, size_t buflen) {
     if (value >= end || buflen == 0) return 0;
-    if (*value == '"' ) {
-        const char *vstart = value + 1;
-        const char *vend = vstart;
-        while (vend < end && *vend != '"') {
-            if (*vend == '\\' && vend + 1 < end) vend++;
-            vend++;
-        }
-        size_t vlen = (size_t)(vend - vstart);
-        if (vlen >= buflen) vlen = buflen - 1;
-        memcpy(buf, vstart, vlen);
-        buf[vlen] = '\0';
-        return 1;
-    }
+    if (*value == '"')
+        return http_json_copy_string(value, end, buf, buflen);
     if (*value == '{' || *value == '[')
         return 0;
     const char *vend = value;
