@@ -1063,6 +1063,44 @@ static void test_header_only_and_typeflags(void) {
     neverc_tar_writer_free(&writer);
 }
 
+static void test_octal_bytes_after_nul(void) {
+    printf("[octal bytes after nul]\n");
+    /* Go archive/tar trims spaces and NULs, then parses only the digits
+     * before the first remaining NUL; bytes after it are ignored. */
+    uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 4U];
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memcpy(archive + 124, "3\0zzzzzzzzzz", 12);
+    test_finish_header(archive);
+    memcpy(archive + NEVERC_TAR_BLOCK_SIZE, "abc", 3);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t header = {0};
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int("octal field with bytes after nul", result, 1);
+    if (result != 1) return;
+    check_int("octal field value before nul", (int)header.size, 3);
+    uint8_t body[8] = {0};
+    size_t count = 0;
+    check_int("octal field body read",
+              neverc_tar_reader_read(&reader, &header, body, sizeof(body),
+                                     &count), 0);
+    check_size("octal field body size", count, 3);
+    check_int("octal field body", memcmp(body, "abc", 3), 0);
+    check_int("octal field archive end",
+              neverc_tar_reader_next(&reader, &header), 0);
+
+    /* Bytes between digits remain invalid. */
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memcpy(archive + 100, "1 2\0\0\0\0\0", 8);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("reject space between octal digits",
+              neverc_tar_reader_next(&reader, &header), -1);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1078,6 +1116,7 @@ int main(void) {
     test_gnu_magic_ignores_prefix();
     test_pax_linkdata_hardlink();
     test_header_only_and_typeflags();
+    test_octal_bytes_after_nul();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
