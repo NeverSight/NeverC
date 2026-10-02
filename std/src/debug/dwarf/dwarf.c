@@ -287,12 +287,72 @@ malformed:
     return -1;
 }
 
-static const neverc_dwarf_abbrev_t *find_abbrev(const neverc_dwarf_data_t *d,
-                                                  uint32_t code) {
-    for (int i = 0; i < d->abbrev_count; i++) {
-        if (d->abbrevs[i].code == code) return &d->abbrevs[i];
+/* Orders a parsed table by code so each DIE resolves its abbreviation by
+ * binary search instead of scanning the table. The byte-wise radix sort is
+ * stable, so a duplicated code still resolves to its first definition, and
+ * its cost does not depend on the (file-controlled) code values. */
+static int index_abbrevs(const neverc_dwarf_data_t *d, uint32_t **by_code) {
+    *by_code = NULL;
+    if (d->abbrev_count <= 0)
+        return 0;
+    size_t count = (size_t)d->abbrev_count;
+    if (count > SIZE_MAX / (2U * sizeof(uint32_t)))
+        return -1;
+    uint32_t *order = (uint32_t *)malloc(count * 2U * sizeof(uint32_t));
+    if (!order)
+        return -1;
+    int sorted = 1;
+    for (size_t i = 0; i < count; i++) {
+        order[i] = (uint32_t)i;
+        if (i > 0 && d->abbrevs[i - 1].code > d->abbrevs[i].code)
+            sorted = 0;
     }
+    uint32_t *source = order;
+    uint32_t *scratch = order + count;
+    /* Four passes (an even count) leave the result back in `order`. */
+    for (unsigned shift = 0; !sorted && shift < 32; shift += 8) {
+        size_t buckets[256] = {0};
+        for (size_t i = 0; i < count; i++)
+            buckets[(d->abbrevs[source[i]].code >> shift) & 0xffU]++;
+        size_t next = 0;
+        for (size_t b = 0; b < 256; b++) {
+            size_t bucket_size = buckets[b];
+            buckets[b] = next;
+            next += bucket_size;
+        }
+        for (size_t i = 0; i < count; i++) {
+            unsigned b = (d->abbrevs[source[i]].code >> shift) & 0xffU;
+            scratch[buckets[b]++] = source[i];
+        }
+        uint32_t *swap = source;
+        source = scratch;
+        scratch = swap;
+    }
+    *by_code = order;
+    return 0;
+}
+
+static const neverc_dwarf_abbrev_t *find_abbrev(const neverc_dwarf_data_t *d,
+                                                  const uint32_t *by_code,
+                                                  uint32_t code) {
+    size_t count = d->abbrev_count > 0 ? (size_t)d->abbrev_count : 0;
+    size_t lo = 0;
+    size_t hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2U;
+        if (d->abbrevs[by_code[mid]].code < code)
+            lo = mid + 1U;
+        else
+            hi = mid;
+    }
+    if (lo < count && d->abbrevs[by_code[lo]].code == code)
+        return &d->abbrevs[by_code[lo]];
     return NULL;
+}
+
+static void release_abbrevs(neverc_dwarf_data_t *table, uint32_t *by_code) {
+    free(by_code);
+    free_abbrevs(table);
 }
 
 /* ===== Public API ===== */
@@ -835,14 +895,19 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
         neverc_dwarf_data_t local = *d;
         local.abbrevs = NULL;
         local.abbrev_count = 0;
+        uint32_t *by_code = NULL;
         if (parse_abbrevs(&local, hdr.abbrev_offset) < 0)
             return -1;
+        if (index_abbrevs(&local, &by_code) < 0) {
+            release_abbrevs(&local, by_code);
+            return -1;
+        }
 
         size_t initial_size = hdr.is_64bit ? 12U : 4U;
         size_t cu_start_data = cu_offset + hdr.header_size;
         size_t cu_end = cu_offset + initial_size + (size_t)hdr.unit_length;
         if (cu_start_data > cu_end) {
-            free_abbrevs(&local);
+            release_abbrevs(&local, by_code);
             return -1;
         }
 
@@ -854,26 +919,26 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
             uint64_t die_offset = (uint64_t)(p - d->debug_info);
             uint64_t abbrev_code;
             if (read_uleb128(&p, end, &abbrev_code) < 0) {
-                free_abbrevs(&local);
+                release_abbrevs(&local, by_code);
                 return -1;
             }
             if (abbrev_code == 0) {
                 if (depth == 0) {
-                    free_abbrevs(&local);
+                    release_abbrevs(&local, by_code);
                     return -1;
                 }
                 depth--;
                 continue;
             }
             if (abbrev_code > UINT32_MAX) {
-                free_abbrevs(&local);
+                release_abbrevs(&local, by_code);
                 return -1;
             }
 
             const neverc_dwarf_abbrev_t *abbrev =
-                find_abbrev(&local, (uint32_t)abbrev_code);
+                find_abbrev(&local, by_code, (uint32_t)abbrev_code);
             if (!abbrev) {
-                free_abbrevs(&local);
+                release_abbrevs(&local, by_code);
                 return -1;
             }
 
@@ -890,7 +955,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
 
                 if (form == NEVERC_DW_FORM_implicit_const) {
                     if (hdr.version < 5) {
-                        free_abbrevs(&local);
+                        release_abbrevs(&local, by_code);
                         return -1;
                     }
                     set_entry_uint_attr(
@@ -907,7 +972,7 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                         form, d, hdr.address_size, hdr.is_64bit,
                         hdr.version, be, &p, end, &s);
                     if (rc < 0) {
-                        free_abbrevs(&local);
+                        release_abbrevs(&local, by_code);
                         return -1;
                     }
                     if (rc > 0) {
@@ -925,14 +990,14 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                     form, hdr.address_size, hdr.is_64bit, hdr.version,
                     be, &p, end, &val, &resolved_form);
                 if (rc < 0) {
-                    free_abbrevs(&local);
+                    release_abbrevs(&local, by_code);
                     return -1;
                 }
                 if (rc > 0) {
                     if (attr == NEVERC_DW_AT_type &&
                         dwarf_form_is_cu_relative_ref(resolved_form)) {
                         if (val > UINT64_MAX - (uint64_t)cu_offset) {
-                            free_abbrevs(&local);
+                            release_abbrevs(&local, by_code);
                             return -1;
                         }
                         val += (uint64_t)cu_offset;
@@ -943,20 +1008,20 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
                     p = before;
                     if (!skip_form(form, hdr.address_size, hdr.is_64bit,
                                    hdr.version, be, &p, end)) {
-                        free_abbrevs(&local);
+                        release_abbrevs(&local, by_code);
                         return -1;
                     }
                 }
             }
 
             if (cb(&entry, user) != 0) {
-                free_abbrevs(&local);
+                release_abbrevs(&local, by_code);
                 return 1;
             }
 
             if (abbrev->has_children) {
                 if (depth == INT_MAX) {
-                    free_abbrevs(&local);
+                    release_abbrevs(&local, by_code);
                     return -1;
                 }
                 depth++;
@@ -964,10 +1029,10 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
         }
 
         if (depth != 0) {
-            free_abbrevs(&local);
+            release_abbrevs(&local, by_code);
             return -1;
         }
-        free_abbrevs(&local);
+        release_abbrevs(&local, by_code);
 
         cu_offset = cu_end;
     }
