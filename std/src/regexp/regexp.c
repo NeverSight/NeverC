@@ -296,6 +296,20 @@ static int brace_repeat_leading_zeros(const char *s) {
     return 0;
 }
 
+/* True when s starts a complete {n}, {n,} or {n,m} that Go parseRepeat
+ * accepts; any other `{` is literal text. */
+static int brace_repeat_complete(const char *s) {
+    if (!s || *s != '{' || brace_repeat_leading_zeros(s)) return 0;
+    s++;
+    if (*s < '0' || *s > '9') return 0;
+    while (*s >= '0' && *s <= '9') s++;
+    if (*s == ',') {
+        s++;
+        while (*s >= '0' && *s <= '9') s++;
+    }
+    return *s == '}';
+}
+
 static int cap_slot_count(int ngroups, int *nslots) {
     if (ngroups < 0 || ngroups > (INT_MAX / 2) - 1) return 0;
     *nslots = 2 * (ngroups + 1);
@@ -1008,6 +1022,14 @@ static frag_t parse_atom(parser_t *par) {
 
     if (c == '\\') {
         par->err = "trailing backslash";
+        return frag(NULL, NULL);
+    }
+
+    /* parse_repeat takes a complete {n,m} that follows an atom, so one seen
+     * here has nothing to repeat (pattern start, after `(` or `|`): Go
+     * reports that rather than reading the braces as text. */
+    if (c == '{' && brace_repeat_complete(par->p)) {
+        par->err = "missing argument to repetition operator";
         return frag(NULL, NULL);
     }
 
