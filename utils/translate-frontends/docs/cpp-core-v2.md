@@ -272,6 +272,24 @@ outside this scalar query boundary. Rvalue arguments forwarded as lvalue
 results, source replacements, independent function addresses, casts or
 compound postfix callees and erased nonthrowing signatures remain rejected.
 
+The exact `move`/`forward` source proof also accepts admitted fixed arrays,
+preserving all dimensions and element qualifications without decay. `move`
+produces the checked array rvalue reference; `forward<T&>` preserves an actual
+lvalue, while `forward<T>` and `forward<T&&>` retain their checked rvalue result
+from either matching lvalue or rvalue parameters. Const arrays keep const
+elements. Scalar, pointer, callback-pointer, source-owned record and
+multidimensional elements retain their ordinary type, layout and source checks.
+Direct and parenthesized calls, imports, reexports, explicit template arguments,
+query-only specializations and nested `move`/`forward`/`as_const` calls share
+this proof. Written bounds, aliases, callback signatures, record fields,
+original operands, selected defaults, exception specifications and temporary
+cleanup remain independent dependencies. Queries execute no effects or element
+lifecycle operations; evaluated casts preserve the original storage and perform
+no element copies or moves. Unknown-bound arrays, volatile or unsupported
+elements, source replacements, independent addresses, indirect/cast callees and
+rvalues forwarded as lvalues retain rejection. Conditional `move_if_noexcept`
+array queries still need a separate source proof.
+
 The same exact `move`/`forward` reference-cast proof also supports result-source
 queries on admitted `std::array`, `std::pair` and `std::tuple` objects, including
 empty containers, reference fields, mixed reference/value fields, trivial
@@ -323,8 +341,7 @@ no side effects, element construction or destruction; evaluated references alias
 the original array and observe its subsequent mutations. Unknown-bound arrays,
 volatile elements, unsupported element types, source substitutions, independent
 function addresses and indirect/cast callees retain rejection. Raw-array
-`move`, `forward` and `move_if_noexcept` result-source queries remain separate
-support work.
+`move_if_noexcept` result-source queries remain separate support work.
 
 The exact `as_const` const-reference proof also supports result-source queries
 on admitted `std::array`, `std::pair` and `std::tuple` objects, including empty,

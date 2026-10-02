@@ -3193,19 +3193,19 @@ static bool utilityValueAdapterSource(
                        Type->isSpecificBuiltinType(BuiltinType::Float) ||
                        Type->isSpecificBuiltinType(BuiltinType::Double) ||
                        Type->isPointerType() || Type->isNullPtrType());
-  // as_const preserves every fixed array dimension and only adds const to
-  // its elements. Written bounds, element types and operand/lifetime sources
-  // remain ordinary dependencies; this reference cast performs no lifecycle.
+  const bool ReferenceCast = *Operation == UtilityOperation::Move ||
+                             *Operation == UtilityOperation::Forward ||
+                             *Operation == UtilityOperation::AsConst;
+  // These casts preserve every fixed array dimension and change only the
+  // reference category or const view. Written bounds, element types and
+  // operand/lifetime sources remain ordinary dependencies; no element moves.
   const bool FixedArray =
-      *Operation == UtilityOperation::AsConst &&
-      A.Context.getAsConstantArrayType(Type) && !Type.isVolatileQualified() &&
+      ReferenceCast && A.Context.getAsConstantArrayType(Type) &&
+      !Type.isVolatileQualified() &&
       !Type.isRestrictQualified() && Type.getAddressSpace() == LangAS::Default;
   // The tuple-like descriptor supplies only authenticated storage. The exact
   // reference cast, element layouts and every original operand/type source
   // still close separately; this proof does not perform container lifecycle.
-  const bool OwnerReferenceCast = *Operation == UtilityOperation::Move ||
-                                  *Operation == UtilityOperation::Forward ||
-                                  *Operation == UtilityOperation::AsConst;
   const bool TupleLike =
       Type->isRecordType() &&
       approvedUtilityTupleLikeSource(A.S, A.Sources, Type, A.Context);
@@ -3234,7 +3234,7 @@ static bool utilityValueAdapterSource(
       utilityUniquePtrConditionalMoveSource(A, Call, Record);
   return (Scalar || FixedArray || TupleLike || FunctionObject || OwnedRecord ||
           ConditionalOwner ||
-          (OwnerReferenceCast && utilityUniquePtrSource(A, Record))) &&
+          (ReferenceCast && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
