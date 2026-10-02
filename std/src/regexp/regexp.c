@@ -2265,15 +2265,15 @@ static int regexp_append_expand(char **buffer, size_t *length, size_t *capacity,
         for (int k = 0; k < nlen; k++)
             if (ns[k] < '0' || ns[k] > '9') { digits = 0; break; }
         if (digits && !(ns[0] == '0' && nlen > 1)) {
+            /* Go extract(): a number that reaches 1e8 before its last digit
+             * is looked up as a name instead. */
             int v = 0;
-            for (int k = 0; k < nlen; k++) {
-                if (v > (INT_MAX - (ns[k] - '0')) / 10) { v = -1; break; }
-                v = v * 10 + (ns[k] - '0');
-            }
+            for (int k = 0; k < nlen && v >= 0; k++)
+                v = v >= 100000000 ? -1 : v * 10 + (ns[k] - '0');
             gi = v;
-        } else {
-            gi = expand_group_by_name(re, ns, (size_t)nlen, m, nm);
         }
+        if (gi < 0)
+            gi = expand_group_by_name(re, ns, (size_t)nlen, m, nm);
         if (gi >= 0 && gi < nm && m[gi].start)
             if (regexp_append(buffer, length, capacity, m[gi].start, m[gi].len) != 0)
                 return -1;
