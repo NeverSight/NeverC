@@ -3244,6 +3244,13 @@ static void cookie_handler(neverc_http_request_t *req,
     del.max_age = -1;
     neverc_http_set_cookie(w, &del);
 
+    /* Go Cookie.String quotes values containing SP or ',' instead of
+     * dropping the cookie. */
+    neverc_http_cookie_t spaced = {0};
+    spaced.name = "spaced";
+    spaced.value = "a b,c";
+    neverc_http_set_cookie(w, &spaced);
+
     /* Check incoming cookie */
     char buf[128];
     const char *v = neverc_http_get_cookie(req, "test_cookie", buf, sizeof(buf));
@@ -3419,6 +3426,8 @@ static void test_cookies(void) {
                      strstr(resp, "Domain=.example.com") == NULL, 1);
         check_int("Path without leading slash",
                      strstr(resp, "Path=foo") != NULL, 1);
+        check_int("Set-Cookie quotes value with space and comma",
+                     strstr(resp, "Set-Cookie: spaced=\"a b,c\"\r\n") != NULL, 1);
         check_int("body has cookie value",
                      strstr(resp, "cookie=hello_world") != NULL, 1);
     }
