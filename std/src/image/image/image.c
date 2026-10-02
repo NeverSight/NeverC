@@ -128,7 +128,8 @@ neverc_rect_t neverc_rect_intersect(neverc_rect_t r, neverc_rect_t s) {
         {nc_max(r.min.x, s.min.x), nc_max(r.min.y, s.min.y)},
         {nc_min(r.max.x, s.max.x), nc_min(r.max.y, s.max.y)}
     };
-    if (out.min.x > out.max.x || out.min.y > out.max.y)
+    /* Go: any empty result (including a shared edge) is the zero rect. */
+    if (neverc_rect_empty(out))
         return (neverc_rect_t){{0,0},{0,0}};
     return out;
 }
