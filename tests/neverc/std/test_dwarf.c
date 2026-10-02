@@ -798,6 +798,66 @@ static void test_dwarf_abbrev_offset_and_dwarf64(void) {
     neverc_dwarf_free(&d);
 }
 
+static int count_entry_cb(const neverc_dwarf_entry_t *e, void *user) {
+    (void)e;
+    (*(long *)user)++;
+    return 0;
+}
+
+/* Appends abbreviation `code` with no attributes. */
+static size_t put_abbrev(uint8_t *buf, uint32_t code, uint16_t tag,
+                         int children) {
+    size_t n = (size_t)write_uleb128(buf, code);
+    n += (size_t)write_uleb128(buf + n, tag);
+    buf[n++] = (uint8_t)children;
+    buf[n++] = 0;
+    buf[n++] = 0;
+    return n;
+}
+
+/* One unit with many abbreviations and many DIEs. The DIEs use code 1,
+ * defined last, so resolving a code must not scan the whole table for every
+ * DIE: that is quadratic and crawls at this size. */
+static void test_dwarf_many_abbrevs(void) {
+    printf("[many_abbrevs]\n");
+    enum { ABBREVS = 80000, DIES = 1000000 };
+    uint8_t *abbrev = (uint8_t *)malloc((size_t)ABBREVS * 8U + 16U);
+    uint8_t *info = (uint8_t *)malloc((size_t)DIES + 16U);
+    CHECK("many-abbrev buffers", abbrev != NULL && info != NULL);
+    if (!abbrev || !info) {
+        free(abbrev);
+        free(info);
+        return;
+    }
+
+    size_t abbrev_len = put_abbrev(abbrev, 2, NEVERC_DW_TAG_compile_unit, 1);
+    for (uint32_t code = 3; code <= ABBREVS + 1U; code++)
+        abbrev_len += put_abbrev(abbrev + abbrev_len, code,
+                                 NEVERC_DW_TAG_base_type, 0);
+    abbrev_len += put_abbrev(abbrev + abbrev_len, 1,
+                             NEVERC_DW_TAG_variable, 0);
+    abbrev[abbrev_len++] = 0;
+
+    size_t info_len = 11;
+    info[info_len++] = 2;
+    memset(info + info_len, 1, DIES);
+    info_len += DIES;
+    info[info_len++] = 0;
+    build_v4_header(info, (uint32_t)(info_len - 4U));
+
+    neverc_dwarf_data_t d;
+    long entries = 0;
+    CHECK("many-abbrev init",
+          neverc_dwarf_init(&d, info, info_len, abbrev, abbrev_len,
+                            NULL, 0) == 0);
+    CHECK("many-abbrev walk",
+          neverc_dwarf_walk_entries(&d, count_entry_cb, &entries) == 0);
+    CHECK("many-abbrev entry count", entries == (long)DIES + 1);
+    neverc_dwarf_free(&d);
+    free(abbrev);
+    free(info);
+}
+
 int main(void) {
     printf("=== NeverC debug/dwarf Tests ===\n\n");
 
@@ -810,6 +870,7 @@ int main(void) {
     test_dwarf_v5_type_header();
     test_dwarf_big_endian();
     test_dwarf_abbrev_offset_and_dwarf64();
+    test_dwarf_many_abbrevs();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)
