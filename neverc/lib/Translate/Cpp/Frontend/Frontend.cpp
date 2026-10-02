@@ -3065,6 +3065,48 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   return true;
 }
 
+static bool utilityUniquePtrConditionalMoveSource(
+    Adapter &A, const CallExpr *Call, const CXXRecordDecl *Record) {
+  const auto Owner = utilityUniquePtrSource(A, Record);
+  const auto *Function = Call->getDirectCallee();
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Type = Call->getType();
+  if (!Owner || !Call->isXValue() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default ||
+      !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Arguments->get(0).getAsType()->isObjectType() ||
+      !A.Context.hasSameType(Arguments->get(0).getAsType(), Type))
+    return false;
+  // The pinned owner cannot select the copy-fallback branch, including for
+  // const owners. Inspect the implicit deleted copy already declared by the
+  // selected SDK trait; do not ask Sema to declare or instantiate anything.
+  bool FoundCopy = false;
+  for (const auto *Constructor : Owner->Record->ctors()) {
+    if (!Constructor->isCopyConstructor())
+      continue;
+    FoundCopy = true;
+    for (const auto *Declaration : Constructor->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto *Copy = cast<CXXConstructorDecl>(Declaration);
+      if (!Copy->isImplicit() || !Copy->isDefaulted() || !Copy->isDeleted() ||
+          Copy->isInvalidDecl() || Copy->isVariadic() ||
+          Copy->getAccess() != AS_public || Copy->getNumParams() != 1 ||
+          Copy->getTypeSourceInfo() ||
+          Copy->getParent()->getCanonicalDecl() !=
+              Owner->Record->getCanonicalDecl() ||
+          !A.Context.hasSameType(
+              Copy->getParamDecl(0)->getType(),
+              A.Context.getLValueReferenceType(
+                  A.Context.getRecordType(Owner->Record).withConst())) ||
+          !approvedStandardSDKDeclaration(A.S, A.Sources, Copy))
+        return false;
+    }
+  }
+  return FoundCopy;
+}
+
 static bool utilityTrivialConditionalMoveSource(
     Adapter &A, const CXXRecordDecl *Root,
     std::vector<const TypeSourceInfo *> *Signatures) {
@@ -3179,7 +3221,11 @@ static bool utilityValueAdapterSource(
       Type.getAddressSpace() == LangAS::Default &&
       (*Operation != UtilityOperation::MoveIfNoexcept ||
        utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures));
+  const bool ConditionalOwner =
+      Record && *Operation == UtilityOperation::MoveIfNoexcept &&
+      utilityUniquePtrConditionalMoveSource(A, Call, Record);
   return (Scalar || TupleLike || FunctionObject || OwnedRecord ||
+          ConditionalOwner ||
           (MoveOrForward && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }

@@ -1927,6 +1927,24 @@ owner. Volatile owners, rvalue arguments forwarded as lvalue results and
 unadmitted owner families remain outside this boundary. Scalar reference-cast
 queries use the separate bounded utility source proof described above.
 
+Exact pinned `std::move_if_noexcept` queries also accept these admitted
+`unique_ptr` owners. The storage/deleter descriptor and the already declared
+implicit deleted copy constructor authenticate the noncopyable owner; no new
+constructor declaration or body is instantiated for this proof. The single
+object template argument, selected lvalue parameter and xvalue result must
+retain the same cv-qualified owner type. Mutable owners yield `T&&`, and const
+owners yield `const T&&` without selecting a copy fallback. Explicit const
+parameters can also bind admitted existing xvalues or owning temporaries.
+Direct/parenthesized names, imports/reexports, checked utility-cast nesting,
+scalar and array owners (including bounded inner arrays), and admitted empty
+custom deleters share this boundary. Original pointee/deleter types, operands,
+template arguments, signatures, defaults and temporary cleanup remain checked
+independently. Queries allocate nothing, transfer no ownership and invoke no
+deleter; evaluated reference casts retain the same object and pointer. Missing
+owner/deleter source proofs, source/trait replacements, independent addresses,
+indirect/cast callees, reference template arguments yielding lvalues, volatile
+owners and unadmitted deleters or owner families remain rejected.
+
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
 array `T` may contain complete bounded inner extents. The

@@ -44270,6 +44270,248 @@ namespace Reexport{using Imported::move,Imported::forward;}
 }
 
 TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrMoveIfNoexceptQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unique-ptr-move-if-noexcept-queries.cpp");
+  const auto Output = tmpFile("unique-ptr-move-if-noexcept-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+namespace Directed { using namespace Alias; }
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, calls, defaults, effects, callbacks, live, destroyed;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Box {
+  int n;
+  explicit Box(int v) noexcept : n(v) { ++live; }
+  ~Box() noexcept { --live; ++destroyed; }
+};
+struct Count {
+  void operator()(int *p) const noexcept { ++callbacks; delete p; }
+};
+struct CountArray {
+  void operator()(int *p) const noexcept { ++callbacks; delete[] p; }
+};
+using P = std::unique_ptr<int>;
+P &select(P &p, int n = (++defaults, 9)) noexcept {
+  ++calls;
+  effects = effects * 10 + n;
+  return p;
+}
+const P &constant(const P &p) noexcept { ++calls; return p; }
+P &throwing(P &p) { ++calls; return p; }
+int mark(int n = (++defaults, 7)) noexcept { ++calls; return n; }
+P &with_temporary(P &p, P temporary = std::make_unique<int>(mark())) noexcept {
+  ++calls;
+  return p;
+}
+template <class Owner> bool queries(Owner &p) {
+  const Owner &cp = p;
+  static_assert(__is_same(decltype(std::move_if_noexcept(p)), Owner &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(cp)), const Owner &&));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(p)), Owner &&));
+  static_assert(__is_same(decltype(Directed::move_if_noexcept<Owner>(p)), Owner &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const Owner>(p)), const Owner &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const Owner>(std::move(p))), const Owner &&));
+  static_assert(__is_same(decltype(std::move_if_noexcept(std::forward<Owner &>(p))), Owner &&));
+  static_assert(__is_same(decltype(std::forward<Owner>(std::move_if_noexcept(p))), Owner &&));
+  static_assert(__is_rvalue_reference(decltype(std::move_if_noexcept(p))));
+  static_assert(!__is_lvalue_reference(decltype(std::move_if_noexcept(cp))));
+  static_assert(sizeof(Alias::move_if_noexcept(p)) == sizeof(Owner));
+  static_assert(alignof(decltype(Alias::move_if_noexcept(cp))) == alignof(Owner));
+  static_assert(noexcept(Alias::move_if_noexcept(p)) && noexcept(Alias::move_if_noexcept(cp)));
+  auto pointer = p.get();
+  Owner &&reference = Alias::move_if_noexcept(p);
+  const Owner &&const_reference = Directed::move_if_noexcept(cp);
+  if (&reference != &p || &const_reference != &p || reference.get() != pointer ||
+      const_reference.get() != pointer || p.get() != pointer)
+    return false;
+  if (!(p == cp) || (p == nullptr) != (pointer == nullptr))
+    return false;
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(p).get()), decltype(pointer)));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(cp).get()), decltype(pointer)));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(p) == cp), bool));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(cp) == nullptr), bool));
+  return true;
+}
+int check() {
+  P p(new int(3));
+  std::unique_ptr<const int> qualified(new int(4));
+  std::unique_ptr<int[]> array(new int[2]{5, 6});
+  std::unique_ptr<const int[]> const_array(new int[2]{7, 8});
+  std::unique_ptr<int[][2]> matrix(new int[1][2]{{9, 10}});
+  std::unique_ptr<int, Count> custom(new int(11));
+  std::unique_ptr<int[], CountArray> custom_array(new int[2]{12, 13});
+  auto box = std::make_unique<Box>(14);
+  P empty;
+  if (!queries(p) || !queries(qualified) || !queries(array) ||
+      !queries(const_array) || !queries(matrix) || !queries(custom) ||
+      !queries(custom_array) || !queries(box) || !queries(empty))
+    return 1;
+  auto address = p.get();
+  {
+    using Alias::move_if_noexcept;
+    P &&reference = move_if_noexcept(select(p, 1));
+    if (&reference != &p || reference.get() != address || calls != 1 || effects != 1)
+      return 2;
+    reference.reset(new int(15));
+    if (*p != 15 || p.get() == address)
+      return 3;
+    static_assert(__is_same(decltype(move_if_noexcept(select(p))), P &&));
+    static_assert(__is_same(decltype(move_if_noexcept(constant(p))), const P &&));
+    static_assert(__is_same(decltype(move_if_noexcept(throwing(p))), P &&));
+    static_assert(noexcept(move_if_noexcept(select(p))) && !noexcept(move_if_noexcept(throwing(p))));
+  }
+  P &&from_temporary = Alias::move_if_noexcept(
+      with_temporary(p, std::make_unique<int>(mark(4))));
+  if (&from_temporary != &p || calls != 3 || effects != 1 || defaults)
+    return 4;
+  int before_allocated = allocated, before_released = released,
+      before_callbacks = callbacks, before_calls = calls,
+      before_live = live, before_destroyed = destroyed;
+  address = p.get();
+  P *pointer = &p;
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(*pointer)), P &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept((mark(), p))), P &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(true ? p : constant(p))), const P &&));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept(with_temporary(p))), P &&));
+  static_assert(sizeof(Alias::move_if_noexcept(with_temporary(p))) == sizeof(P));
+  static_assert(!noexcept(Alias::move_if_noexcept(with_temporary(p))));
+  static_assert(alignof(decltype(Alias::move_if_noexcept(with_temporary(p)))) == alignof(P));
+  static_assert(__is_same(decltype(Alias::move_if_noexcept<const P>(std::make_unique<int>(mark()))), const P &&));
+  if (allocated != before_allocated || released != before_released ||
+      callbacks != before_callbacks || calls != before_calls ||
+      live != before_live || destroyed != before_destroyed || effects != 1 ||
+      defaults || p.get() != address || *p != 15 || matrix[Size(0)][1] != 10)
+    return 5;
+  return 0;
+}
+int main() {
+  int result = check();
+  if (result) return result;
+  return allocated == released && callbacks == 2 && !live && destroyed == 1 && !defaults ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-ptr-move-if-noexcept-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrMoveIfNoexceptQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source;
+    const char *Code = "TR0201";
+  } Cases[] = {
+      {"operand-expression", R"cpp(
+int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept((sizeof(long double),p))),P&&));return 0;}
+)cpp"},
+      {"selected-default", R"cpp(
+P&source(P&p,int n=sizeof(long double))noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(p))),P&&));return 0;}
+)cpp"},
+      {"original-exception", R"cpp(
+P&source(P&p)noexcept(sizeof(long double)>0);P&source(P&p)noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(p))),P&&));return 0;}
+)cpp"},
+      {"original-signature", R"cpp(
+P&source(P&p,long double n=0)noexcept{return p;}int f(P&p){p.get();static_assert(sizeof(Reexport::move_if_noexcept(source(p)))==sizeof(P));return 0;}
+)cpp"},
+      {"adjusted-parameter-bound", R"cpp(
+P&source(P&p,int a[sizeof(long double)])noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(p,nullptr))),P&&));return 0;}
+)cpp"},
+      {"written-template-argument", R"cpp(
+int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept<decltype((sizeof(long double),P()))>(p)),P&&));return 0;}
+)cpp"},
+      {"erased-owner-alias", R"cpp(
+using Erased=decltype((sizeof(long double),P()));int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept<Erased>(p)),P&&));return 0;}
+)cpp"},
+      {"owned-element-source", R"cpp(
+struct Box{int values[sizeof(long double)];};using Owner=std::unique_ptr<Box>;int f(Owner&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),Owner&&));return 0;}void materialize_box_deleter(){std::default_delete<Box>{}(nullptr);}
+)cpp"},
+      {"custom-deleter-exception", R"cpp(
+struct D{void operator()(int*p)const noexcept(sizeof(long double)>0){delete p;}};using Owner=std::unique_ptr<int,D>;int f(Owner&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),Owner&&));return 0;}
+)cpp"},
+      {"temporary-cleanup", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};P&source(P&p,Ticket t=Ticket())noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(source(p))),P&&));return 0;}
+)cpp"},
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __move_if_noexcept_result_t<T>move_if_noexcept(T&)noexcept;}}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),P&&));return 0;}
+)cpp"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>P&&move_if_noexcept<P>(P&p)noexcept{return static_cast<P&&>(p);}}}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),P&&));return 0;}
+)cpp"},
+      {"const-source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const P&&move_if_noexcept<const P>(const P&p)noexcept{return static_cast<const P&&>(p);}}}int f(const P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),const P&&));return 0;}
+)cpp"},
+      {"copy-trait-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>struct is_copy_constructible;}}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),P&&));return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+using F=P&&(*)(P&)noexcept;int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),P&&));static_assert(sizeof(static_cast<F>(&Reexport::move_if_noexcept<P>))>0);return 0;}
+)cpp"},
+      {"cast-postfix", R"cpp(
+using F=P&&(*)(P&)noexcept;int f(P&p){p.get();static_assert(__is_same(decltype(static_cast<F>(&Reexport::move_if_noexcept<P>)(p)),P&&));return 0;}
+)cpp"},
+      {"erased-noexcept", R"cpp(
+using F=P&&(*)(P&);int f(P&p){p.get();static_assert(!noexcept(static_cast<F>(&Reexport::move_if_noexcept<P>)(p)));return 0;}
+)cpp"},
+      {"reference-template-argument", R"cpp(
+int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::move_if_noexcept<P&>(p)),P&));return 0;}
+)cpp"},
+      {"volatile-owner", R"cpp(
+int f(volatile P&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),volatile P&&));return 0;}
+)cpp"},
+      {"stateful-deleter", R"cpp(
+struct D{int n;void operator()(int*p)const noexcept{delete p;}};using Owner=std::unique_ptr<int,D>;int f(Owner&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),Owner&&));return 0;}
+)cpp", "TR0203"},
+      {"unadmitted-owner", R"cpp(
+using Owner=std::shared_ptr<int>;int f(Owner&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept(p)),Owner&&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("unique-ptr-move-if-noexcept-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("unique-ptr-move-if-noexcept-reject-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <memory>
+#include <utility>
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void*p)noexcept{free(p);}
+void operator delete(void*p,Size)noexcept{free(p);}
+namespace Imported{using std::move_if_noexcept;}
+namespace Reexport{using Imported::move_if_noexcept;}
+using P=std::unique_ptr<int>;
+void materialize_default_deleter(){std::default_delete<int>{}(nullptr);}
+)cpp") + Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2MemoryUniquePtrLValueForwardQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("memory-unique-ptr-lvalue-forward-queries.cpp");
   const auto Output = tmpFile("memory-unique-ptr-lvalue-forward-queries.nc");
