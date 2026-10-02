@@ -3174,7 +3174,8 @@ static bool utilityConditionalMoveSignatureSource(
 }
 
 static bool utilityConditionalMoveDefaultsSource(
-    Adapter &A, const CXXConstructorDecl *Constructor, bool UnrelatedAccess) {
+    Adapter &A, const CXXConstructorDecl *Constructor, bool UnrelatedAccess,
+    bool ConstObject) {
   if (Constructor->getNumParams() == 1)
     return true;
   // With an available const-copy, extra defaults can change nothrow
@@ -3184,7 +3185,7 @@ static bool utilityConditionalMoveDefaultsSource(
   // Do not instantiate a template default to make this proof succeed.
   const bool UnavailableMove =
       Constructor->isMoveConstructor() &&
-      (Constructor->isDeleted() ||
+      (ConstObject || Constructor->isDeleted() ||
        (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
                             Constructor->getAccess() == AS_protected)));
   for (const auto *Declaration : Constructor->redecls()) {
@@ -3201,10 +3202,11 @@ static bool utilityConditionalMoveDefaultsSource(
         return false;
       if (operationDefaultInitializer(A, Parameter))
         continue;
-      // A deleted or inaccessible exact move cannot provide construction to
-      // the SDK traits. If Sema left its template default uninstantiated, keep
-      // that original source lazy; parameter types and every written signature
-      // still pass ordinary traversal. Resolved defaults keep the checks above.
+      // An exact mutable rvalue move cannot bind a const object. A deleted or
+      // inaccessible move also cannot provide construction to the SDK traits.
+      // If Sema left its template default uninstantiated, keep that original
+      // source lazy; parameter types and every written signature still pass
+      // ordinary traversal. Resolved defaults keep the checks above.
       if (!UnavailableMove || !lazyTemplateDefault(Parameter) ||
           Parameter->isInvalidDecl() || Parameter->isImplicit() ||
           !A.S.owns(A.Sources, Parameter->getLocation()))
@@ -3587,11 +3589,23 @@ static bool utilityTrivialConditionalMoveSource(
 }
 
 static bool utilityRecordConditionalMoveSource(
-    Adapter &A, const CXXRecordDecl *Root,
+    Adapter &A, const CallExpr *Call, const CXXRecordDecl *Root,
     std::vector<const CXXMethodDecl *> *Signatures) {
   // The pinned builtin retains overload selection and inferred exceptions.
   // Supply their original sources through a bounded graph of owned records,
   // without generating hypothetical copies, moves or destructor bodies.
+  const auto *Function = Call->getDirectCallee();
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  // Use the adapter's actual object T: a mutable query's copy-fallback result
+  // is also const, but its mutable rvalue move can still affect that decision.
+  // This binding proof applies only to the queried root. Owned operations
+  // retain their independent checks, including mutable fields and user bodies.
+  const bool RootConstObject =
+      Arguments && Arguments->size() == 1 &&
+      Arguments->get(0).getKind() == TemplateArgument::Type &&
+      A.Context.hasSameType(Arguments->get(0).getAsType(),
+                           A.Context.getRecordType(Root).withConst());
   std::set<std::pair<const CXXRecordDecl *, const CXXRecordDecl *>> Seen;
   auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
                    unsigned Depth, bool RootConstCopyUnavailable,
@@ -3635,7 +3649,8 @@ static bool utilityRecordConditionalMoveSource(
       if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
           (!RootConstCopyUnavailable &&
            !utilityConditionalMoveDefaultsSource(A, Constructor,
-                                                 UnrelatedAccess)))
+                                                 UnrelatedAccess,
+                                                 RootConstObject && Depth == 0)))
         return false;
       if ((!A.Context.hasSameType(
               Constructor->getParamDecl(0)->getType(),
@@ -3665,7 +3680,7 @@ static bool utilityRecordConditionalMoveSource(
     // still supplies the sources behind defaulted deletion, and every
     // signature remains a dependency; selected operations check defaults and
     // bodies. Do not declare or resolve a hypothetical copy to learn deletion.
-    // Available const-copies require the resolved-default source proof above.
+    // Available const-copies retain the default-source checks above.
     if (Depth == 0 && (MutableCopy || Copy->isDeleted()))
       RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
@@ -3759,7 +3774,7 @@ static bool utilityValueAdapterSource(
       (ReferenceCast ||
        utilityUnavailableCopyConditionalMoveSource(A, Call, Definition,
                                                   ConditionalSignatures) ||
-       utilityRecordConditionalMoveSource(A, Definition,
+       utilityRecordConditionalMoveSource(A, Call, Definition,
                                           ConditionalSignatures));
   const bool ConditionalOwner =
       Record && *Operation == UtilityOperation::MoveIfNoexcept && !ReferenceCast &&

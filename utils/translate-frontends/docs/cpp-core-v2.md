@@ -1022,6 +1022,20 @@ Sema can still instantiate defaults during
 other queries, including a direct mutable query on an inaccessible move;
 this proof does not suppress those diagnostics.
 
+A const object query also keeps uninstantiated extra defaults of the queried
+record's exact mutable rvalue move lazy, including a public move. That move
+cannot bind a const object. The proof uses the adapter's actual object template
+argument, including an explicit `const Record` argument; a mutable query's
+`const Record&` copy-fallback result does not establish this binding restriction.
+The pinned copy and destruction traits still choose between `const Record&`
+and `const Record&&`. Every original prototype parameter, type, alias, bound,
+exception source and redeclaration remains checked, and already-resolved
+defaults retain their usual checks. This exception applies to the queried root;
+owned records still need their own default and access proofs. It does not
+cover a `const Record&&` move, which can bind the const object. Query-only
+defaults and bodies remain lazy; actual selected copies evaluate and check
+their defaults and bodies, including temporary and object destruction.
+
 These defaults can affect the pinned reference result: a `noexcept` move
 constructor with a potentially throwing default argument, or with a default
 argument temporary whose destructor may throw, can cause copy fallback.
@@ -1229,8 +1243,8 @@ these constructor proofs do not instantiate an otherwise incomplete template
 record.
 
 Constructor templates, inherited constructors, unresolved extra copy/move
-defaults outside the unavailable-move proof above, additional copy overloads, and
-other value constructors retain separate
+defaults outside the unavailable-move and const-object proofs above, additional
+copy overloads, and other value constructors retain separate
 requirements. In particular, a first record parameter passed by value, by
 const lvalue reference or by rvalue reference can introduce its own conversion
 from `const Record&` when it has a converting constructor and a single argument
