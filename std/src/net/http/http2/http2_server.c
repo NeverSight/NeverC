@@ -2243,7 +2243,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
     neverc_hpack_decoder_set_max_list_size(
         conn.hpack_dec, conn.local_settings.max_header_list_size);
 
-    if (h2_write_settings(&conn.io, &conn.local_settings) != 0)
+    /* The connection is already registered, so a concurrent shutdown can
+     * write GOAWAY; header and payload must not interleave with it. */
+    nc_mutex_lock(&conn.write_lock);
+    int settings_written = h2_write_settings(&conn.io, &conn.local_settings);
+    nc_mutex_unlock(&conn.write_lock);
+    if (settings_written != 0)
         goto cleanup;
     conn.settings_ack_owed = 1;
 
