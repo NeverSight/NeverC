@@ -379,11 +379,16 @@ neverc_quic_conn_t *neverc_quic_accept(neverc_quic_endpoint_t *endpoint,
         return NULL;
     }
     nc_mutex_lock(&endpoint->lock);
+    /* neverc_quic_endpoint_close wakes this wait from another thread and
+     * may drop its own reference before the wait returns; hold one until
+     * the endpoint is no longer touched. */
+    nc_atomic_inc(&endpoint->ref_count);
     while (endpoint->accept_count == 0 &&
            nc_atomic_load(&endpoint->running))
         nc_cond_wait(&endpoint->accept_cond, &endpoint->lock);
     if (endpoint->accept_count == 0) {
         nc_mutex_unlock(&endpoint->lock);
+        quic_endpoint_release(endpoint);
         quic_set_error(errp, "QUIC endpoint is closed");
         return NULL;
     }
@@ -395,6 +400,7 @@ neverc_quic_conn_t *neverc_quic_accept(neverc_quic_endpoint_t *endpoint,
     conn->application_owned = 1;
     nc_atomic_inc(&endpoint->ref_count);
     nc_mutex_unlock(&endpoint->lock);
+    quic_endpoint_release(endpoint);
     quic_set_error(errp, NULL);
     return conn;
 }
