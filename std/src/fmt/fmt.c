@@ -2318,7 +2318,9 @@ static int scan_int_from_file(FILE *f, int *out_int) {
             }
         }
         while ((c = getc(f)) != EOF) {
-            if (c != '_' && !strchr(digits, c)) {
+            /* strchr() also matches the terminator, so a NUL byte must be
+             * rejected explicitly or it would be taken as a digit. */
+            if (c == '\0' || (c != '_' && !strchr(digits, c))) {
                 ungetc(c, f);
                 break;
             }
