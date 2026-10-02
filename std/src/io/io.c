@@ -333,7 +333,10 @@ int neverc_io_read_at_least(neverc_io_reader_t *r, uint8_t *buf,
 
 int64_t neverc_io_copy_buffer(neverc_io_writer_t *dst, neverc_io_reader_t *src,
                                uint8_t *buf, size_t buflen) {
-    if (!dst || !dst->write || !src || !src->read || !buf || buflen == 0)
+    /* Go io.CopyBuffer: a nil buffer falls back to Copy's own buffer; only a
+     * supplied zero-length buffer is rejected. */
+    if (!buf) return neverc_io_copy(dst, src);
+    if (!dst || !dst->write || !src || !src->read || buflen == 0)
         return 0;
     int64_t written = 0;
     unsigned empty_reads = 0;
