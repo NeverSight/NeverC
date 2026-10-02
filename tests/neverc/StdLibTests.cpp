@@ -715,19 +715,20 @@ TEST_F(StdLibTest, TarWriterAliasedHeaderGrowth) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c",
-         "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
+STD_TEST(zip, "src/archive/zip/zip.c", "src/compress/flate/flate.c",
+         "src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
+         "src/unicode/utf8/utf8.c")
 STD_TEST(zip_writer_abi, "src/archive/zip/zip.c",
-         "src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
-         "src/unicode/utf8/utf8.c")
+         "src/compress/flate/flate.c", "src/hash/crc32/crc32.c",
+         "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
 STD_TEST(zip_entry_limit, "src/archive/zip/zip.c",
-         "src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
-         "src/unicode/utf8/utf8.c")
+         "src/compress/flate/flate.c", "src/hash/crc32/crc32.c",
+         "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c")
 TEST_F(StdLibTest, ZipWriterAliasedInputGrowth) {
   auto r = compileAndRunStdTest(
       "zip_writer_alias",
-      {"src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
-       "src/unicode/utf8/utf8.c"},
+      {"src/compress/flate/flate.c", "src/hash/crc32/crc32.c",
+       "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c"},
       {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
@@ -735,8 +736,8 @@ TEST_F(StdLibTest, ZipWriterAliasedInputGrowth) {
 TEST_F(StdLibTest, ZipAllocationFailure) {
   auto r = compileAndRunStdTest(
       "zip_oom",
-      {"src/hash/crc32/crc32.c", "src/io/fs/fs.c", "src/path/match.c",
-       "src/unicode/utf8/utf8.c"},
+      {"src/compress/flate/flate.c", "src/hash/crc32/crc32.c",
+       "src/io/fs/fs.c", "src/path/match.c", "src/unicode/utf8/utf8.c"},
       {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;

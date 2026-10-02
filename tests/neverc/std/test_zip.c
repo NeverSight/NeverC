@@ -1,4 +1,5 @@
 #include "neverc/std/archive/zip.h"
+#include "neverc/std/compress/flate.h"
 #include "neverc/std/hash/crc32.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -964,6 +965,283 @@ static void test_zip64_sentinels(void) {
     }
 }
 
+/* "hello, zip! " x20 + "\n" compressed by a mainstream command-line zip at
+ * its maximum level: general-purpose bit 1 set, extended-timestamp and
+ * Unix-owner extra fields in both headers. */
+static const uint8_t cli_deflate_zip[] = {
+    0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x02, 0x00, 0x08, 0x00, 0xab, 0x08,
+    0x42, 0x5d, 0x22, 0x2c, 0x8e, 0x67, 0x12, 0x00, 0x00, 0x00, 0xf1, 0x00,
+    0x00, 0x00, 0x09, 0x00, 0x1c, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e,
+    0x74, 0x78, 0x74, 0x55, 0x54, 0x09, 0x00, 0x03, 0xc1, 0x65, 0xbf, 0x6a,
+    0xc1, 0x65, 0xbf, 0x6a, 0x75, 0x78, 0x0b, 0x00, 0x01, 0x04, 0xe8, 0x03,
+    0x00, 0x00, 0x04, 0xe8, 0x03, 0x00, 0x00, 0xcb, 0x48, 0xcd, 0xc9, 0xc9,
+    0xd7, 0x51, 0xa8, 0xca, 0x2c, 0x50, 0x54, 0xc8, 0x18, 0x01, 0x6c, 0x2e,
+    0x00, 0x50, 0x4b, 0x01, 0x02, 0x1e, 0x03, 0x14, 0x00, 0x02, 0x00, 0x08,
+    0x00, 0xab, 0x08, 0x42, 0x5d, 0x22, 0x2c, 0x8e, 0x67, 0x12, 0x00, 0x00,
+    0x00, 0xf1, 0x00, 0x00, 0x00, 0x09, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x00, 0x00, 0xb4, 0x81, 0x00, 0x00, 0x00, 0x00, 0x68,
+    0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0x55, 0x54, 0x05, 0x00,
+    0x03, 0xc1, 0x65, 0xbf, 0x6a, 0x75, 0x78, 0x0b, 0x00, 0x01, 0x04, 0xe8,
+    0x03, 0x00, 0x00, 0x04, 0xe8, 0x03, 0x00, 0x00, 0x50, 0x4b, 0x05, 0x06,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4f, 0x00, 0x00, 0x00,
+    0x55, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+/* 240 bytes of "hello, zip! " written by Go's archive/zip Writer.Create:
+ * Deflate, zero CRC/sizes in the local header, signed data descriptor. */
+static const uint8_t go_deflate_zip[] = {
+    0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x08, 0x00, 0x08, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e,
+    0x74, 0x78, 0x74, 0xca, 0x48, 0xcd, 0xc9, 0xc9, 0xd7, 0x51, 0xa8, 0xca,
+    0x2c, 0x50, 0x54, 0x18, 0x09, 0x6c, 0xc0, 0x00, 0x50, 0x4b, 0x07, 0x08,
+    0xb7, 0x9e, 0x0c, 0x5c, 0x11, 0x00, 0x00, 0x00, 0xf0, 0x00, 0x00, 0x00,
+    0x50, 0x4b, 0x01, 0x02, 0x14, 0x00, 0x14, 0x00, 0x08, 0x00, 0x08, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xb7, 0x9e, 0x0c, 0x5c, 0x11, 0x00, 0x00, 0x00,
+    0xf0, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65,
+    0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0x50, 0x4b, 0x05, 0x06, 0x00,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x37, 0x00, 0x00, 0x00, 0x48,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static int hello_matches(const uint8_t *data, size_t len, size_t expected) {
+    static const char unit[] = "hello, zip! ";
+    if (len != expected) return 0;
+    for (size_t i = 0; i < len; i++) {
+        uint8_t want = (uint8_t)unit[i % 12U];
+        if (expected == 241U && i == 240U) want = '\n';
+        if (data[i] != want) return 0;
+    }
+    return 1;
+}
+
+/* One-entry archive with an arbitrary method, payload and declared
+ * uncompressed size/CRC, so malformed Deflate bodies can be exercised. */
+static size_t build_method_zip(uint8_t *out, size_t cap, const char *name,
+                               uint16_t method, uint16_t flags,
+                               const uint8_t *payload, size_t payload_len,
+                               uint32_t uncompressed, uint32_t crc) {
+    size_t name_len = strlen(name);
+    size_t central = 46U + name_len;
+    size_t need = 30U + name_len + payload_len + central + 22U;
+    if (name_len == 0 || name_len > 255U || need > cap) return 0;
+    memset(out, 0, need);
+    put32(out, 0x04034b50U);
+    put16(out + 4, 20);
+    put16(out + 6, flags);
+    put16(out + 8, method);
+    put32(out + 14, crc);
+    put32(out + 18, (uint32_t)payload_len);
+    put32(out + 22, uncompressed);
+    put16(out + 26, (uint16_t)name_len);
+    memcpy(out + 30, name, name_len);
+    if (payload_len > 0) memcpy(out + 30 + name_len, payload, payload_len);
+    size_t pos = 30U + name_len + payload_len;
+    put32(out + pos, 0x02014b50U);
+    put16(out + pos + 4, 20);
+    put16(out + pos + 6, 20);
+    put16(out + pos + 8, flags);
+    put16(out + pos + 10, method);
+    put32(out + pos + 16, crc);
+    put32(out + pos + 20, (uint32_t)payload_len);
+    put32(out + pos + 24, uncompressed);
+    put16(out + pos + 28, (uint16_t)name_len);
+    memcpy(out + pos + 46, name, name_len);
+    put32(out + pos + central, 0x06054b50U);
+    put16(out + pos + central + 8, 1);
+    put16(out + pos + central + 10, 1);
+    put32(out + pos + central + 12, (uint32_t)central);
+    put32(out + pos + central + 16, (uint32_t)pos);
+    return need;
+}
+
+static int read_entry(const uint8_t *archive, size_t len, uint8_t *dst,
+                      size_t cap, size_t *got) {
+    neverc_zip_reader_t reader;
+    *got = cap;
+    if (neverc_zip_reader_init(&reader, archive, len) != 0) {
+        *got = 0;
+        return -2;
+    }
+    int result = neverc_zip_reader_file_read(&reader, 0, dst, got);
+    neverc_zip_reader_free(&reader);
+    return result;
+}
+
+static void test_deflate_reader(void) {
+    printf("[deflate reader]\n");
+    uint8_t out[512];
+    neverc_zip_reader_t reader;
+    check_int("cli deflate archive",
+              neverc_zip_reader_init(&reader, cli_deflate_zip,
+                                     sizeof(cli_deflate_zip)), 0);
+    {
+        const neverc_zip_file_header_t *f = neverc_zip_reader_file(&reader, 0);
+        check_int("cli deflate entry", f != NULL, 1);
+        if (f) {
+            check_str("cli deflate name", f->name, "hello.txt");
+            check_int("cli deflate method", f->method, NEVERC_ZIP_DEFLATED);
+            check_size("cli deflate size", (size_t)f->uncompressed_size, 241);
+            check_size("cli deflate packed", (size_t)f->compressed_size, 18);
+        }
+        size_t view_len = 1;
+        check_int("no raw view of deflate data",
+                  neverc_zip_reader_file_data(&reader, 0, &view_len) == NULL,
+                  1);
+        check_size("raw view length cleared", view_len, 0);
+        size_t got = sizeof(out);
+        check_int("cli deflate read",
+                  neverc_zip_reader_file_read(&reader, 0, out, &got), 0);
+        check_int("cli deflate content", hello_matches(out, got, 241), 1);
+        got = 240;
+        check_int("reject short destination",
+                  neverc_zip_reader_file_read(&reader, 0, out, &got), -1);
+        check_size("short destination length", got, 0);
+        got = 241;
+        check_int("reject null destination",
+                  neverc_zip_reader_file_read(&reader, 0, NULL, &got), -1);
+        got = sizeof(out);
+        check_int("reject out-of-range read",
+                  neverc_zip_reader_file_read(&reader, 1, out, &got), -1);
+    }
+    neverc_zip_reader_free(&reader);
+
+    size_t got = 0;
+    check_int("go deflate descriptor archive",
+              read_entry(go_deflate_zip, sizeof(go_deflate_zip), out,
+                         sizeof(out), &got), 0);
+    check_int("go deflate content", hello_matches(out, got, 240), 1);
+
+    /* Stored entries read through the same call. */
+    {
+        uint8_t stored[128];
+        size_t n = build_stored_zip(stored, sizeof(stored), "s.txt",
+                                    (const uint8_t *)"stored", 6, 0, 0, 0);
+        check_int("stored read fixture", n > 0, 1);
+        check_int("stored entry read",
+                  read_entry(stored, n, out, sizeof(out), &got), 0);
+        check_int("stored entry content",
+                  got == 6 && memcmp(out, "stored", 6) == 0, 1);
+    }
+
+    uint8_t plain[300];
+    for (size_t i = 0; i < sizeof(plain); i++)
+        plain[i] = (uint8_t)"deflate body "[i % 13U];
+    uint32_t plain_crc = neverc_crc32_ieee(plain, sizeof(plain));
+    uint8_t packed[400];
+    size_t packed_len = sizeof(packed) - 4U;
+    int compressed = neverc_flate_compress(plain, sizeof(plain), packed,
+                                           &packed_len,
+                                           NEVERC_FLATE_DEFAULT);
+    check_int("compress fixture", compressed == 0 && packed_len > 4U, 1);
+    if (compressed != 0 || packed_len <= 4U) return;
+
+    uint8_t archive[1024];
+    size_t n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                                packed, packed_len, sizeof(plain), plain_crc);
+    check_int("crafted deflate read",
+              read_entry(archive, n, out, sizeof(out), &got), 0);
+    check_int("crafted deflate content",
+              got == sizeof(plain) && memcmp(out, plain, sizeof(plain)) == 0,
+              1);
+
+    /* Go's reader ignores bytes after the final block within the
+     * compressed size. */
+    memcpy(packed + packed_len, "junk", 4);
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                         packed, packed_len + 4U, sizeof(plain), plain_crc);
+    check_int("accept bytes after final block",
+              read_entry(archive, n, out, sizeof(out), &got), 0);
+
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                         packed, packed_len, sizeof(plain), plain_crc ^ 1U);
+    memset(out, 0xa5, sizeof(out));
+    check_int("reject deflate crc mismatch",
+              read_entry(archive, n, out, sizeof(out), &got), -1);
+    {
+        int cleared = 1;
+        for (size_t i = 0; i < sizeof(plain); i++)
+            if (out[i] != 0) cleared = 0;
+        check_int("failed read clears output", cleared, 1);
+        check_size("failed read length", got, 0);
+    }
+
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                         packed, packed_len, sizeof(plain) + 1U, plain_crc);
+    check_int("reject stream shorter than declared",
+              read_entry(archive, n, out, sizeof(out), &got), -1);
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                         packed, packed_len, sizeof(plain) - 1U, plain_crc);
+    check_int("reject stream longer than declared",
+              read_entry(archive, n, out, sizeof(out), &got), -1);
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                         packed, packed_len - 1U, sizeof(plain), plain_crc);
+    check_int("reject truncated stream",
+              read_entry(archive, n, out, sizeof(out), &got), -1);
+    {
+        uint8_t corrupt[400];
+        memcpy(corrupt, packed, packed_len);
+        corrupt[0] |= 0x06U; /* reserved block type 3 */
+        n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                             corrupt, packed_len, sizeof(plain), plain_crc);
+        check_int("reject invalid block type",
+                  read_entry(archive, n, out, sizeof(out), &got), -1);
+    }
+
+    /* "03 00" is the empty final fixed-Huffman block. No DEFLATE stream
+     * expands past 1032 bytes per input byte, so 2 bytes cannot claim more
+     * than 2064 output bytes. */
+    static const uint8_t empty_stream[] = { 0x03, 0x00 };
+    n = build_method_zip(archive, sizeof(archive), "bomb.bin", 8, 0,
+                         empty_stream, 2, 2064, 0);
+    check_int("accept maximum deflate ratio",
+              neverc_zip_reader_init(&reader, archive, n), 0);
+    neverc_zip_reader_free(&reader);
+    n = build_method_zip(archive, sizeof(archive), "bomb.bin", 8, 0,
+                         empty_stream, 2, 2065, 0);
+    check_int("reject impossible deflate ratio",
+              neverc_zip_reader_init(&reader, archive, n), -1);
+    neverc_zip_reader_free(&reader);
+
+    n = build_method_zip(archive, sizeof(archive), "empty.txt", 8, 0,
+                         empty_stream, 2, 0, 0);
+    check_int("empty deflate file",
+              read_entry(archive, n, NULL, 0, &got), 0);
+    check_size("empty deflate length", got, 0);
+    n = build_method_zip(archive, sizeof(archive), "nostream.txt", 8, 0,
+                         NULL, 0, 0, 0);
+    check_int("reject empty deflate body for a file",
+              read_entry(archive, n, NULL, 0, &got), -1);
+
+    /* Some jar writers label empty directories as Deflate. */
+    n = build_method_zip(archive, sizeof(archive), "dir/", 8, 0,
+                         empty_stream, 2, 0, 0);
+    check_int("deflate directory",
+              read_entry(archive, n, NULL, 0, &got), 0);
+    n = build_method_zip(archive, sizeof(archive), "dir/", 8, 0,
+                         packed, packed_len, sizeof(plain), plain_crc);
+    check_int("reject deflate directory with data",
+              neverc_zip_reader_init(&reader, archive, n), -1);
+    neverc_zip_reader_free(&reader);
+
+    /* Level hints in bits 1-2 are accepted; encryption is not. */
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0x0006,
+                         packed, packed_len, sizeof(plain), plain_crc);
+    check_int("accept deflate level flags",
+              read_entry(archive, n, out, sizeof(out), &got), 0);
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0x0001,
+                         packed, packed_len, sizeof(plain), plain_crc);
+    check_int("reject encrypted entry",
+              neverc_zip_reader_init(&reader, archive, n), -1);
+    neverc_zip_reader_free(&reader);
+    n = build_method_zip(archive, sizeof(archive), "body.txt", 12, 0,
+                         packed, packed_len, sizeof(plain), plain_crc);
+    check_int("reject unsupported method",
+              neverc_zip_reader_init(&reader, archive, n), -1);
+    neverc_zip_reader_free(&reader);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
@@ -978,6 +1256,7 @@ int main(void) {
     test_unsigned_descriptor_crc_signature_collision();
     test_overlapping_entries();
     test_zip64_sentinels();
+    test_deflate_reader();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

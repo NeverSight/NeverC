@@ -4,10 +4,13 @@
 /*
  * NeverC archive/zip — ZIP archive format (mirrors Go archive/zip).
  *
- * Supports reading and writing single-disk ZIP archives in stored
- * (no-compression) mode. Readers validate the central directory, local
- * headers, bounds, CRC32, data descriptors, and non-overlapping local
- * records before exposing file data.
+ * Supports single-disk ZIP archives. Readers accept the Stored
+ * (no-compression) and Deflate methods; writers produce Stored entries.
+ * Readers validate the central directory, local headers, bounds, data
+ * descriptors, and non-overlapping local records before exposing file data.
+ * Stored entries are CRC-32 checked by reader_init; Deflate entries are
+ * inflated and checked against their declared size and CRC-32 by
+ * reader_file_read. Entry names are limited to 255 bytes.
  */
 
 #include <stddef.h>
@@ -42,11 +45,27 @@ typedef struct {
 /* The reader borrows data for its entire lifetime. File-header and file-data
  * pointers are reader-owned views invalidated by reader_free. Call
  * reader_free before reinitializing a reader that completed successfully.
- * Returns 0 on success or -1 for malformed/unsupported archives. */
+ * Returns 0 on success or -1 for malformed/unsupported archives. A Deflate
+ * entry whose declared uncompressed_size exceeds 1032 times its
+ * compressed_size (more than any DEFLATE stream can expand) is malformed. */
 int  neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len);
 int  neverc_zip_reader_count(const neverc_zip_reader_t *r);
 const neverc_zip_file_header_t *neverc_zip_reader_file(const neverc_zip_reader_t *r, int idx);
+/* Returns a view of a Stored entry's bytes and sets *len to their count.
+ * Returns NULL with *len = 0 for an invalid index or an entry using any other
+ * method; use reader_file_read for those. */
 const uint8_t *neverc_zip_reader_file_data(const neverc_zip_reader_t *r, int idx, size_t *len);
+/* Copies entry idx's uncompressed contents into dst, inflating Deflate
+ * entries (mirrors reading Go's File.Open to EOF). On input *dst_len is the
+ * capacity of dst and must be at least the entry's uncompressed_size; dst
+ * may be NULL only when that size is 0. Inflation is bounded by the declared
+ * uncompressed_size, and the output must match it and the entry's CRC-32.
+ * Returns 0 and sets *dst_len to uncompressed_size on success. Returns -1
+ * with *dst_len = 0 on failure; bytes already inflated into dst are cleared
+ * so unverified data is never exposed. Safe to call concurrently on one
+ * reader. */
+int  neverc_zip_reader_file_read(const neverc_zip_reader_t *r, int idx,
+                                 uint8_t *dst, size_t *dst_len);
 void neverc_zip_reader_free(neverc_zip_reader_t *r);
 
 /* --- Writer --- */

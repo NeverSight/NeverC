@@ -2352,13 +2352,14 @@
     },
     "archive/zip": {
       "header": "include/neverc/std/archive/zip.h",
-      "description": "ZIP archive format reader/writer (stored mode, mirrors Go archive/zip package)",
-      "deps": ["io/fs"],
+      "description": "ZIP archive format reader (stored and deflate) and stored-mode writer (mirrors Go archive/zip package)",
+      "deps": ["compress/flate", "hash/crc32", "io/fs"],
       "symbols": {
         "neverc_zip_reader_init": "src/archive/zip/zip.c",
         "neverc_zip_reader_count": "src/archive/zip/zip.c",
         "neverc_zip_reader_file": "src/archive/zip/zip.c",
         "neverc_zip_reader_file_data": "src/archive/zip/zip.c",
+        "neverc_zip_reader_file_read": "src/archive/zip/zip.c",
         "neverc_zip_writer_init": "src/archive/zip/zip.c",
         "neverc_zip_writer_add": "src/archive/zip/zip.c",
         "neverc_zip_writer_close": "src/archive/zip/zip.c",
@@ -2374,7 +2375,8 @@
         "writer_add": "neverc_zip_writer_add",
         "writer_close": "neverc_zip_writer_close",
         "writer_free": "neverc_zip_writer_free",
-        "reader_file_data": "neverc_zip_reader_file_data"
+        "reader_file_data": "neverc_zip_reader_file_data",
+        "reader_file_read": "neverc_zip_reader_file_read"
       }
     },
     "text/template": {

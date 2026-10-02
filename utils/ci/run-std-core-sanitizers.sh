@@ -76,6 +76,7 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   "-I$std_root/include" \
   "$test_root/test_zip_writer_abi.c" \
   "$std_root/src/archive/zip/zip.c" \
+  "$std_root/src/compress/flate/flate.c" \
   "$std_root/src/hash/crc32/crc32.c" \
   "$std_root/src/io/fs/fs.c" \
   "$std_root/src/path/match.c" \

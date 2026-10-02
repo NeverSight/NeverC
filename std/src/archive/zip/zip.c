@@ -1,8 +1,15 @@
 #include "neverc/std/archive/zip.h"
+#include "neverc/std/compress/flate.h"
 #include "neverc/std/hash/crc32.h"
 #include "neverc/std/io/fs.h"
 #include <stdlib.h>
 #include <string.h>
+
+/* DEFLATE's densest encoding spends two bits (a one-bit length code for 258
+ * and a one-bit distance code) per 258 output bytes, so no stream inflates
+ * past 1032 bytes per input byte. A larger declared size can never be
+ * produced and is rejected before callers size buffers from it. */
+#define ZIP_DEFLATE_MAX_RATIO 1032U
 
 static uint16_t read16(const uint8_t *p) { return p[0] | (p[1] << 8); }
 static uint32_t read32(const uint8_t *p) { return p[0] | (p[1]<<8) | (p[2]<<16) | ((uint32_t)p[3]<<24); }
@@ -199,13 +206,20 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         uint32_t local_offset = read32(central + 42U);
         uint64_t central_record_size =
             46U + (uint64_t)name_length + extra_length + comment_length;
+        /* Bits 1-2 carry the DEFLATE compression-level hint, which writers
+         * also leave on entries they fell back to storing; any other bit
+         * besides the data descriptor and UTF-8 flags (encryption, patched
+         * data, reserved) is unsupported. */
+        int deflated = method == NEVERC_ZIP_DEFLATED;
         if (central_record_size > central_end - cursor ||
-            start_disk != 0 || (flags & ~(uint16_t)0x0808U) != 0 ||
-            method != NEVERC_ZIP_STORED ||
+            start_disk != 0 || (flags & ~(uint16_t)0x080EU) != 0 ||
+            (method != NEVERC_ZIP_STORED && !deflated) ||
             compressed_size == UINT32_MAX ||
             uncompressed_size == UINT32_MAX ||
             local_offset == UINT32_MAX ||
-            compressed_size != uncompressed_size ||
+            (!deflated && compressed_size != uncompressed_size) ||
+            (deflated && (uint64_t)uncompressed_size >
+                 (uint64_t)compressed_size * ZIP_DEFLATE_MAX_RATIO) ||
             name_length > 255U || name_length == 0 ||
             memchr(central + 46U, '\0', name_length) != NULL)
             return zip_reader_fail(r, ranges);
@@ -313,9 +327,11 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
     }
     /* Validate the local-range graph before touching payload bytes.  Central
      * entries can otherwise alias one large stored payload and amplify the
-     * same CRC work once per entry before the overlap is finally rejected. */
+     * same CRC work once per entry before the overlap is finally rejected.
+     * Compressed entries are checked when reader_file_read inflates them. */
     for (uint16_t i = 0; i < total_entries; i++) {
-        if (neverc_crc32_ieee(r->file_data[i],
+        if (r->files[i].method == NEVERC_ZIP_STORED &&
+            neverc_crc32_ieee(r->file_data[i],
                               r->files[i].compressed_size) !=
             r->files[i].crc32)
             return zip_reader_fail(r, ranges);
@@ -336,9 +352,58 @@ const neverc_zip_file_header_t *neverc_zip_reader_file(const neverc_zip_reader_t
 const uint8_t *neverc_zip_reader_file_data(const neverc_zip_reader_t *r, int idx, size_t *len) {
     if (!len) return NULL;
     *len = 0;
-    if (!r || idx < 0 || idx >= r->nfiles) return NULL;
+    if (!r || idx < 0 || idx >= r->nfiles ||
+        r->files[idx].method != NEVERC_ZIP_STORED)
+        return NULL;
     *len = (size_t)r->files[idx].compressed_size;
     return r->file_data[idx];
+}
+
+int neverc_zip_reader_file_read(const neverc_zip_reader_t *r, int idx,
+                                uint8_t *dst, size_t *dst_len) {
+    if (!dst_len) return -1;
+    size_t capacity = *dst_len;
+    *dst_len = 0;
+    if (!r || !r->files || !r->file_data || idx < 0 || idx >= r->nfiles)
+        return -1;
+    const neverc_zip_file_header_t *file = &r->files[idx];
+    if (file->uncompressed_size > (uint64_t)SIZE_MAX ||
+        file->compressed_size > (uint64_t)SIZE_MAX)
+        return -1;
+    size_t size = (size_t)file->uncompressed_size;
+    if (size > capacity || (!dst && size != 0)) return -1;
+    const uint8_t *source = r->file_data[idx];
+
+    if (file->method == NEVERC_ZIP_STORED) {
+        /* reader_init already verified the stored bytes' CRC-32. */
+        if (size > 0) memcpy(dst, source, size);
+        *dst_len = size;
+        return 0;
+    }
+    if (file->method != NEVERC_ZIP_DEFLATED) return -1;
+
+    /* Go archive/zip File.Open: a directory never has data to inflate, even
+     * when a writer labelled its empty body as Deflate. reader_init already
+     * guarantees its uncompressed size is zero. */
+    size_t name_length = strlen(file->name);
+    if (name_length > 0 && file->name[name_length - 1U] == '/')
+        return 0;
+
+    /* Bound the output by the declared size rather than the caller's
+     * capacity: a stream that produces more is as malformed as one that ends
+     * short. Bytes after the final block inside the compressed size are
+     * ignored, as Go's reader does. */
+    size_t produced = size;
+    size_t consumed = 0;
+    if (neverc_flate_decompress_consumed(
+            source, (size_t)file->compressed_size, dst, &produced,
+            &consumed) != 0 ||
+        produced != size || neverc_crc32_ieee(dst, size) != file->crc32) {
+        if (size > 0) memset(dst, 0, size);
+        return -1;
+    }
+    *dst_len = size;
+    return 0;
 }
 
 void neverc_zip_reader_free(neverc_zip_reader_t *r) {
