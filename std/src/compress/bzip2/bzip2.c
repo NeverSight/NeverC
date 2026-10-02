@@ -290,7 +290,7 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
         uint32_t n_groups = bz_bits(&br, 3);
         if (br.eof || n_groups < 2 || n_groups > 6) goto err;
         uint32_t n_selectors = bz_bits(&br, 15);
-        if (br.eof || n_selectors == 0 || n_selectors > BZ_MAX_SELECTORS) goto err;
+        if (br.eof || n_selectors == 0) goto err;
 
         uint8_t selector_list[BZ_MAX_SELECTORS];
         uint8_t mtf_sel[BZ_N_GROUPS];
@@ -308,8 +308,12 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
             uint8_t tmp = mtf_sel[j];
             for (int k = j; k > 0; k--) mtf_sel[k] = mtf_sel[k - 1];
             mtf_sel[0] = tmp;
-            selector_list[i] = tmp;
+            if (i < BZ_MAX_SELECTORS) selector_list[i] = tmp;
         }
+        /* The 15-bit count may declare more selectors than any block can
+         * use: BZ_MAX_SELECTORS groups of BZ_G_SIZE symbols already cover
+         * the largest block, so the surplus is validated but never read. */
+        if (n_selectors > BZ_MAX_SELECTORS) n_selectors = BZ_MAX_SELECTORS;
 
         huff_table_t tables[BZ_N_GROUPS];
         uint8_t tree_lens[BZ_MAX_ALPHA];
