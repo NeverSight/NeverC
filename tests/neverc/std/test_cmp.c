@@ -174,6 +174,12 @@ static void test_or(void) {
     /* IEEE -0.0 == 0.0, so Or treats it as the zero value. */
     ASSERT_DBL_EQ(neverc_cmp_or_float64(-0.0, 3.14), 3.14);
     ASSERT_TRUE(neverc_cmp_isnan_float64(neverc_cmp_or_float64(NaN, 1.0)));
+    /* With every argument zero, Go's Or returns the zero value itself (+0),
+     * not a trailing -0 argument. */
+    double all_zero = neverc_cmp_or_float64(0.0, -0.0);
+    ASSERT_TRUE(all_zero == 0.0 && 1.0 / all_zero > 0.0);
+    all_zero = neverc_cmp_or_float64(-0.0, -0.0);
+    ASSERT_TRUE(all_zero == 0.0 && 1.0 / all_zero > 0.0);
 }
 
 int main(void) {
