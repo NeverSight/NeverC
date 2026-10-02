@@ -3295,18 +3295,27 @@ static bool utilityUnavailableCopyConditionalMoveSource(
         FoundImplicitCopy = true;
     }
   }
-  if (const auto *Destructor = Record->getDestructor();
-      Destructor &&
-      !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
-    return false;
+  bool FoundUnavailableDestructor = false;
+  if (const auto *Destructor = Record->getDestructor()) {
+    if (!utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
+      return false;
+    FoundUnavailableDestructor =
+        !Destructor->isImplicit() && !Destructor->isInvalidDecl() &&
+        (Destructor->getAccess() == AS_private ||
+         Destructor->getAccess() == AS_protected ||
+         Destructor->getCanonicalDecl()->isDeletedAsWritten());
+  }
   // An exact inaccessible or deleted const-copy makes the pinned copy trait
   // false for T and const T, independently of the owning graph. Its written
   // signature still supplies sources; do not instantiate a hypothetical body.
+  // The queried record's inaccessible or explicitly deleted destructor also
+  // makes construction traits false, even in a caller allowed to destroy it.
+  // Defaulted deletion through a member retains its separate graph proof.
   // Besides those declarations, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
   // already-declared copy and its source-owned move; other implicit deletion
   // causes keep their own proof. No hypothetical declaration or body is made.
-  if (FoundExplicitCopy || FoundInaccessibleCopy)
+  if (FoundExplicitCopy || FoundInaccessibleCopy || FoundUnavailableDestructor)
     return true;
   if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
     return false;

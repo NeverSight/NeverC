@@ -970,6 +970,15 @@ checks access independently of the caller. A copy-only record or a record with
 an unavailable move is included. This access proof applies to the queried
 record itself; an enclosing public defaulted copy whose deletion depends on an
 inaccessible member copy retains the owning-graph requirements above.
+The queried record's private/protected destructor or explicitly deleted public
+destructor also proves the pinned construction traits false. Mutable and const
+operands therefore retain `Record&&` and `const Record&&` respectively, including
+inside a member allowed to destroy the object. An inaccessible destructor may
+be ordinary or defaulted. Its written exception source and all copy/move
+signatures remain checked; no hypothetical constructor or destructor body is
+instantiated. A public defaulted destructor deleted because of a member retains
+separate owning-graph requirements. Actual destruction from an accessible
+context still checks the selected destructor or every generated member cleanup.
 The same proof admits an already-declared implicit, defaulted, deleted
 `const Record&` copy when the record has a source-owned user-declared move
 constructor or move assignment and no user-declared copy constructor. The
