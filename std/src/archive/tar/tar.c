@@ -167,6 +167,27 @@ static int tar_resolve_typeflag(int typeflag, const char *name) {
     return tar_name_has_slash_suffix(name) ? NEVERC_TAR_DIR : NEVERC_TAR_REG;
 }
 
+/* Header layouts are told apart by magic: v7 has none, POSIX ustar uses
+ * "ustar\0" (star adds a "tar\0" trailer and a 131-byte prefix followed by
+ * atime/ctime), and GNU uses "ustar " with version " \0". Only the ustar,
+ * star, and GNU layouts carry owner names. */
+enum {
+    TAR_FORMAT_V7,
+    TAR_FORMAT_USTAR,
+    TAR_FORMAT_STAR,
+    TAR_FORMAT_GNU
+};
+
+static int tar_header_format(const uint8_t *block) {
+    if (memcmp(block + 257, "ustar\0", 6) == 0)
+        return memcmp(block + 508, "tar\0", 4) == 0 ? TAR_FORMAT_STAR
+                                                    : TAR_FORMAT_USTAR;
+    if (memcmp(block + 257, "ustar ", 6) == 0 &&
+        memcmp(block + 263, " \0", 2) == 0)
+        return TAR_FORMAT_GNU;
+    return TAR_FORMAT_V7;
+}
+
 void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t len) {
     if (!r) return;
     memset(r, 0, sizeof(*r));
@@ -231,13 +252,10 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
 
     size_t name_length = tar_field_length(block, 100);
     size_t prefix_length = 0;
-    /* POSIX ustar is "ustar\0"; GNU is "ustar " and offset 345 is not prefix.
-     * The star variant ends the block with "tar\0" and stores atime/ctime
-     * after a 131-byte prefix. */
-    if (memcmp(block + 257, "ustar", 5) == 0 && block[262] == '\0') {
-        int star = memcmp(block + 508, "tar", 4) == 0;
-        prefix_length = tar_field_length(block + 345, star ? 131 : 155);
-    }
+    int format = tar_header_format(block);
+    if (format == TAR_FORMAT_USTAR || format == TAR_FORMAT_STAR)
+        prefix_length = tar_field_length(
+            block + 345, format == TAR_FORMAT_STAR ? 131 : 155);
     size_t full_length = name_length;
     if (prefix_length > 0) {
         if (prefix_length > SIZE_MAX - name_length - 1U) return -1;
@@ -276,8 +294,10 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
         (hdr->linkname[0] == '\0' ||
          !tar_path_is_safe(hdr->linkname, sizeof(hdr->linkname), 0)))
         return -1;
-    copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
-    copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
+    if (format != TAR_FORMAT_V7) {
+        copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
+        copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
+    }
 
     *payload_out = (size_t)payload;
     *padded_out = padded;
