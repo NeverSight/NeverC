@@ -1170,6 +1170,69 @@ static void test_v7_header_has_no_owner_names(void) {
     }
 }
 
+static void test_device_and_time_fields_are_numeric(void) {
+    printf("[device and time fields are numeric]\n");
+    /* Go rejects a header whose device numbers (ustar, star, GNU) or star
+     * atime/ctime are not numeric. GNU atime/ctime stay lenient, and v7
+     * blocks have no such fields. */
+    uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 3U];
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t header;
+
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memcpy(archive + 329, "zzzzzzz", 8);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("reject non-numeric ustar devmajor",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memcpy(archive + 257, "ustar  \0", 8);
+    memcpy(archive + 337, "9", 2);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("reject non-octal gnu devminor",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memcpy(archive + 476, "zzzzzzzzzzz", 12);
+    memcpy(archive + 508, "tar", 4);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("reject non-numeric star atime",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memcpy(archive + 488, "zzzzzzzzzzz", 12);
+    memcpy(archive + 508, "tar", 4);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("reject non-numeric star ctime",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memset(archive + 257, 0, 8);
+    memcpy(archive + 329, "zzzzzzz", 8);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("v7 header has no device fields",
+              neverc_tar_reader_next(&reader, &header), 1);
+
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    test_write_octal(archive + 329, 8, 7);
+    test_write_octal(archive + 337, 8, 3);
+    test_finish_header(archive);
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("accept numeric device fields",
+              neverc_tar_reader_next(&reader, &header), 1);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1188,6 +1251,7 @@ int main(void) {
     test_octal_bytes_after_nul();
     test_star_prefix_width();
     test_v7_header_has_no_owner_names();
+    test_device_and_time_fields_are_numeric();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
