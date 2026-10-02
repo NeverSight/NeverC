@@ -195,29 +195,23 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
     r->len = len;
 }
 
-/* The released reader has only data/len/pos. The archive is immutable by
- * contract, so entry state can be reconstructed from its beginning without a
- * side table, allocation, hidden pointer, or public-layout change. */
-typedef struct {
-    size_t data_pos;
-    size_t entry_size;
-    size_t padded_size;
-    size_t entry_read;
-    size_t previous_size;
-    int entry_active;
-    int has_previous;
-    int ended;
-} tar_reader_state_t;
+/* The released reader has only data/len/pos, so it is kept as a cursor that
+ * never revisits earlier headers: data/len cover the unconsumed archive and
+ * pos counts the payload bytes of the current entry that remain at data.
+ * Every accept/reject decision is made in whole blocks, so len is trimmed to
+ * whole blocks at a header boundary. From then on data + len is a block
+ * boundary, which makes len % 512 the distance from data to the next one and
+ * yields the padding that follows a payload without the entry's size. */
 
-/* 1 = entry, 0 = two-block terminator, -1 = malformed. */
-static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
+/* 1 = entry, 0 = two-block terminator, -1 = malformed. block starts at a
+ * header boundary with avail bytes before the end of the archive. */
+static int tar_parse_header_at(const uint8_t *block, size_t avail,
                                neverc_tar_header_v2_t *hdr,
                                size_t *payload_out, size_t *padded_out) {
-    if (!r || !hdr || !payload_out || !padded_out || position > r->len ||
-        r->len - position < NEVERC_TAR_BLOCK_SIZE)
+    if (!hdr || !payload_out || !padded_out ||
+        avail < NEVERC_TAR_BLOCK_SIZE)
         return -1;
     memset(hdr, 0, sizeof(*hdr));
-    const uint8_t *block = r->data + position;
     int all_zero = 1;
     for (size_t i = 0; i < NEVERC_TAR_BLOCK_SIZE; i++) {
         if (block[i] != 0) {
@@ -226,8 +220,7 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
         }
     }
     if (all_zero) {
-        size_t remaining = r->len - position;
-        if (remaining < NEVERC_TAR_BLOCK_SIZE * 2U)
+        if (avail < NEVERC_TAR_BLOCK_SIZE * 2U)
             return -1;
         for (size_t i = NEVERC_TAR_BLOCK_SIZE;
              i < NEVERC_TAR_BLOCK_SIZE * 2U; i++) {
@@ -289,7 +282,7 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
     uint64_t payload = tar_type_header_only(typeflag) ? 0 : size;
     size_t padded = 0;
     if (tar_padded_size((size_t)payload, &padded) != 0 ||
-        padded > r->len - position - NEVERC_TAR_BLOCK_SIZE)
+        padded > avail - NEVERC_TAR_BLOCK_SIZE)
         return -1;
 
     hdr->mode = (uint32_t)mode;
@@ -313,61 +306,52 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
     return 1;
 }
 
-static int tar_reader_replay(const neverc_tar_reader_t *r,
-                             tar_reader_state_t *state) {
-    if (!r || !state || (!r->data && r->len != 0) || r->pos > r->len)
+/* Positions a reader at its next header boundary without changing it:
+ * skips the unread payload of the current entry plus its padding, or trims a
+ * partial trailing record when already at a boundary. */
+static int tar_reader_boundary(const neverc_tar_reader_t *r,
+                               const uint8_t **block, size_t *avail) {
+    if (!r || (!r->data && r->len != 0) || r->pos > r->len)
         return -1;
-    memset(state, 0, sizeof(*state));
-    size_t cursor = 0;
-    for (;;) {
-        if (cursor == r->pos) return 0;
-        neverc_tar_header_v2_t ignored;
-        size_t payload = 0, padded = 0;
-        int parsed = tar_parse_header_at(r, cursor, &ignored,
-                                         &payload, &padded);
-        if (parsed < 0) return -1;
-        if (parsed == 0) {
-            if (r->pos != r->len) return -1;
-            state->ended = 1;
-            return 0;
-        }
-        size_t data_pos = cursor + NEVERC_TAR_BLOCK_SIZE;
-        size_t padded_end = data_pos + padded;
-        if (r->pos >= data_pos && r->pos < data_pos + payload) {
-            state->data_pos = data_pos;
-            state->entry_size = payload;
-            state->padded_size = padded;
-            state->entry_read = r->pos - data_pos;
-            state->entry_active = 1;
-            return 0;
-        }
-        if (r->pos > data_pos && r->pos < padded_end) return -1;
-        if (r->pos < data_pos) return -1;
-        state->previous_size = payload;
-        state->has_previous = 1;
-        cursor = padded_end;
-        if (cursor > r->pos) return -1;
+    const uint8_t *cursor = r->data;
+    size_t remaining = r->len;
+    if (r->pos > 0) {
+        size_t skip = r->pos +
+            (remaining - r->pos) % NEVERC_TAR_BLOCK_SIZE;
+        cursor += skip;
+        remaining -= skip;
+    } else {
+        remaining -= remaining % NEVERC_TAR_BLOCK_SIZE;
     }
+    *block = cursor;
+    *avail = remaining;
+    return 0;
 }
 
+/* Parses the next header and reports the cursor that follows it. Nothing is
+ * committed here, so a caller that fails afterwards leaves r unchanged. */
 static int tar_reader_prepare_next(const neverc_tar_reader_t *r,
                                    neverc_tar_header_v2_t *hdr,
-                                   size_t *next_position) {
-    tar_reader_state_t state;
-    if (!r || !hdr || !next_position || tar_reader_replay(r, &state) != 0)
+                                   neverc_tar_reader_t *next) {
+    const uint8_t *block = NULL;
+    size_t avail = 0;
+    if (!r || !hdr || !next || tar_reader_boundary(r, &block, &avail) != 0)
         return -1;
-    if (state.ended) {
-        *next_position = r->len;
+    size_t payload = 0, padded = 0;
+    int parsed = tar_parse_header_at(block, avail, hdr, &payload, &padded);
+    if (parsed < 0) return -1;
+    *next = *r;
+    if (parsed == 0) {
+        /* Stay on the terminator so every later next() reports the end. */
+        next->data = block;
+        next->len = avail;
+        next->pos = 0;
         return 0;
     }
-    size_t position = state.entry_active
-        ? state.data_pos + state.padded_size : r->pos;
-    size_t payload = 0, padded = 0;
-    int parsed = tar_parse_header_at(r, position, hdr, &payload, &padded);
-    if (parsed < 0) return -1;
-    *next_position = parsed == 0
-        ? r->len : position + NEVERC_TAR_BLOCK_SIZE;
-    return parsed;
+    next->data = block + NEVERC_TAR_BLOCK_SIZE;
+    next->len = avail - NEVERC_TAR_BLOCK_SIZE;
+    next->pos = payload;
+    return 1;
 }
 
 static int tar_header_v2_to_legacy(const neverc_tar_header_v2_t *source,
@@ -398,10 +382,10 @@ int neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
     if (!hdr) return -1;
     memset(hdr, 0, sizeof(*hdr));
     neverc_tar_header_v2_t parsed = {0};
-    size_t next_position = 0;
-    int result = tar_reader_prepare_next(r, &parsed, &next_position);
+    neverc_tar_reader_t next;
+    int result = tar_reader_prepare_next(r, &parsed, &next);
     if (result == 1) *hdr = parsed;
-    if (result >= 0) r->pos = next_position;
+    if (result >= 0) *r = next;
     return result;
 }
 
@@ -409,45 +393,37 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     if (!hdr) return -1;
     memset(hdr, 0, sizeof(*hdr));
     neverc_tar_header_v2_t parsed;
-    size_t next_position = 0;
-    int result = tar_reader_prepare_next(r, &parsed, &next_position);
-    if (result <= 0) {
-        if (result == 0) r->pos = next_position;
-        return result;
-    }
-    if (tar_header_v2_to_legacy(&parsed, hdr) != 0) return -1;
-    r->pos = next_position;
-    return 1;
+    neverc_tar_reader_t next;
+    int result = tar_reader_prepare_next(r, &parsed, &next);
+    if (result == 1 && tar_header_v2_to_legacy(&parsed, hdr) != 0)
+        return -1;
+    if (result >= 0) *r = next;
+    return result;
 }
 
+/* hdr must describe the current entry; the cursor cannot recover its full
+ * size, so only a header too small for the unread payload is rejected. */
 static int tar_reader_read_size(neverc_tar_reader_t *r, int64_t header_size,
                                 uint8_t *buf, size_t len, size_t *nread) {
     if (!nread) return -1;
     *nread = 0;
     if (!r || header_size < 0 || (!buf && len != 0) ||
-        !tar_size_fits((uint64_t)header_size))
+        !tar_size_fits((uint64_t)header_size) ||
+        (!r->data && r->len != 0) || r->pos > r->len)
         return -1;
-    tar_reader_state_t state;
-    if (tar_reader_replay(r, &state) != 0) return -1;
-    if (!state.entry_active) {
-        if (header_size == 0 ||
-            (state.has_previous &&
-             (size_t)header_size == state.previous_size))
-            return 0;
-        return -1;
+    if (r->pos == 0) return 0;
+    if ((uint64_t)header_size < (uint64_t)r->pos) return -1;
+    size_t amount = r->pos < len ? r->pos : len;
+    if (amount > 0) memcpy(buf, r->data, amount);
+    r->data += amount;
+    r->len -= amount;
+    r->pos -= amount;
+    if (r->pos == 0) {
+        size_t padding = r->len % NEVERC_TAR_BLOCK_SIZE;
+        r->data += padding;
+        r->len -= padding;
     }
-    if ((size_t)header_size != state.entry_size ||
-        state.entry_read > state.entry_size)
-        return -1;
-    size_t remaining = state.entry_size - state.entry_read;
-    if (remaining == 0) return 0;
-    size_t amount = remaining < len ? remaining : len;
-    if (amount > r->len - r->pos) return -1;
-    if (amount > 0) memcpy(buf, r->data + r->pos, amount);
-    r->pos += amount;
     *nread = amount;
-    if (state.entry_read + amount == state.entry_size)
-        r->pos = state.data_pos + state.padded_size;
     return 0;
 }
 

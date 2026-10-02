@@ -1233,6 +1233,163 @@ static void test_device_and_time_fields_are_numeric(void) {
               neverc_tar_reader_next(&reader, &header), 1);
 }
 
+static void test_cursor_iteration(void) {
+    printf("[cursor iteration]\n");
+    /* The reader keeps a cursor instead of rescanning earlier headers, so a
+     * large archive iterates in linear time. Mix full, partial, and skipped
+     * reads with payload sizes on both sides of a block boundary. */
+    enum { ENTRY_COUNT = 20000 };
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    uint8_t body[1100];
+    for (size_t i = 0; i < sizeof(body); i++) body[i] = (uint8_t)(i * 7U + 1U);
+    int write_failures = 0;
+    for (int i = 0; i < ENTRY_COUNT; i++) {
+        neverc_tar_header_t header = {0};
+        snprintf(header.name, sizeof(header.name), "dir/entry-%d", i);
+        header.size = (int64_t)((size_t)i % sizeof(body));
+        header.mode = 0644;
+        header.typeflag = NEVERC_TAR_REG;
+        if (neverc_tar_writer_write_header(&writer, &header) != 0 ||
+            neverc_tar_writer_write(&writer, body, (size_t)header.size) != 0)
+            write_failures++;
+    }
+    check_int("cursor fixture writes", write_failures, 0);
+    check_int("cursor fixture close", neverc_tar_writer_close(&writer), 0);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    neverc_tar_header_t header;
+    uint8_t buffer[sizeof(body)];
+    int entries = 0, mismatches = 0, result;
+    while ((result = neverc_tar_reader_next(&reader, &header)) == 1) {
+        char expected_name[64];
+        snprintf(expected_name, sizeof(expected_name), "dir/entry-%d",
+                 entries);
+        size_t expected_size = (size_t)entries % sizeof(body);
+        if (strcmp(header.name, expected_name) != 0 ||
+            header.size != (int64_t)expected_size)
+            mismatches++;
+        size_t total = 0, count = 0;
+        size_t limit = entries % 3 == 0 ? expected_size
+                     : entries % 3 == 1 ? expected_size / 2U : 0U;
+        while (total < limit) {
+            size_t chunk = 1U + (size_t)entries % 700U;
+            if (chunk > limit - total) chunk = limit - total;
+            if (neverc_tar_reader_read(&reader, &header, buffer + total,
+                                       chunk, &count) != 0 ||
+                count != chunk) {
+                mismatches++;
+                break;
+            }
+            total += count;
+        }
+        if (memcmp(buffer, body, total) != 0) mismatches++;
+        if (limit == expected_size &&
+            (neverc_tar_reader_read(&reader, &header, buffer,
+                                    sizeof(buffer), &count) != 0 ||
+             count != 0))
+            mismatches++;
+        entries++;
+    }
+    check_int("cursor iteration end", result, 0);
+    check_int("cursor iteration count", entries, ENTRY_COUNT);
+    check_int("cursor iteration mismatches", mismatches, 0);
+    check_int("cursor end is stable",
+              neverc_tar_reader_next(&reader, &header), 0);
+    neverc_tar_writer_free(&writer);
+}
+
+static void test_cursor_state_is_self_contained(void) {
+    printf("[cursor state is self-contained]\n");
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    neverc_tar_header_t header = {0};
+    uint8_t body[600];
+    for (size_t i = 0; i < sizeof(body); i++) body[i] = (uint8_t)i;
+    strcpy(header.name, "first");
+    header.size = (int64_t)sizeof(body);
+    header.typeflag = NEVERC_TAR_REG;
+    check_int("state fixture first",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("state fixture first body",
+              neverc_tar_writer_write(&writer, body, sizeof(body)), 0);
+    strcpy(header.name, "second");
+    header.size = 1;
+    check_int("state fixture second",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("state fixture second body",
+              neverc_tar_writer_write(&writer, (const uint8_t *)"z", 1), 0);
+    check_int("state fixture close", neverc_tar_writer_close(&writer), 0);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    check_int("state first entry",
+              neverc_tar_reader_next(&reader, &header), 1);
+    uint8_t buffer[sizeof(body)];
+    size_t count = 0;
+    check_int("state partial read",
+              neverc_tar_reader_read(&reader, &header, buffer, 100, &count),
+              0);
+    check_size("state partial count", count, 100);
+
+    /* A copy carries the whole position; both continue independently. */
+    neverc_tar_reader_t copy = reader;
+    check_int("state copy continues",
+              neverc_tar_reader_read(&copy, &header, buffer, sizeof(buffer),
+                                     &count), 0);
+    check_size("state copy rest", count, sizeof(body) - 100U);
+    check_int("state copy bytes", memcmp(buffer, body + 100, count), 0);
+
+    neverc_tar_header_t small = header;
+    small.size = 10;
+    check_int("state rejects header smaller than unread payload",
+              neverc_tar_reader_read(&reader, &small, buffer, 1, &count), -1);
+    check_size("state rejected read count", count, 0);
+    check_int("state original continues",
+              neverc_tar_reader_read(&reader, &header, buffer, 1, &count), 0);
+    check_int("state original byte", buffer[0], body[100]);
+
+    check_int("state original skips rest",
+              neverc_tar_reader_next(&reader, &header), 1);
+    check_str("state second name", header.name, "second");
+    check_int("state copy reaches second",
+              neverc_tar_reader_next(&copy, &header), 1);
+    check_str("state copy second name", header.name, "second");
+    check_int("state second read",
+              neverc_tar_reader_read(&copy, &header, buffer, 8, &count), 0);
+    check_size("state second count", count, 1);
+    check_int("state second byte", buffer[0], 'z');
+    check_int("state exhausted entry",
+              neverc_tar_reader_read(&copy, &header, buffer, 8, &count), 0);
+    check_size("state exhausted count", count, 0);
+    check_int("state copy end", neverc_tar_reader_next(&copy, &header), 0);
+    check_int("state original end",
+              neverc_tar_reader_next(&reader, &header), 0);
+    check_int("state read after end",
+              neverc_tar_reader_read(&reader, &header, buffer, 8, &count), 0);
+    check_size("state read after end count", count, 0);
+
+    /* Failures leave the cursor untouched. */
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    check_int("state reread first",
+              neverc_tar_reader_next(&reader, &header), 1);
+    neverc_tar_reader_t before = reader;
+    neverc_tar_header_v2_t v2;
+    uint8_t *mutable_data = writer.data;
+    mutable_data[NEVERC_TAR_BLOCK_SIZE * 3U] ^= 1U;
+    check_int("state corrupt second header",
+              neverc_tar_reader_next_v2(&reader, &v2), -1);
+    check_int("state failure keeps data", reader.data == before.data, 1);
+    check_size("state failure keeps len", reader.len, before.len);
+    check_size("state failure keeps pos", reader.pos, before.pos);
+    mutable_data[NEVERC_TAR_BLOCK_SIZE * 3U] ^= 1U;
+    check_int("state retry after repair",
+              neverc_tar_reader_next_v2(&reader, &v2), 1);
+    check_str("state retry name", v2.name, "second");
+    neverc_tar_writer_free(&writer);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1252,6 +1409,8 @@ int main(void) {
     test_star_prefix_width();
     test_v7_header_has_no_owner_names();
     test_device_and_time_fields_are_numeric();
+    test_cursor_iteration();
+    test_cursor_state_is_self_contained();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

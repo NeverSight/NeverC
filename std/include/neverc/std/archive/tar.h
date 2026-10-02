@@ -61,7 +61,13 @@ typedef struct {
 } neverc_tar_reader_t;
 
 /* The reader borrows data; it must remain unchanged and alive until the last
- * next/read call. Reinitializing a reader is safe and releases no storage. */
+ * next/read call. Reinitializing a reader is safe and releases no storage.
+ * After init, data/len/pos are the reader's cursor rather than the init
+ * arguments: next/read advance data and shrink len past consumed bytes, and
+ * pos counts the unread payload bytes of the current entry. Keep a separate
+ * pointer to the buffer passed to init. A copy of the struct is an
+ * independent cursor. Each call does work proportional to the bytes it
+ * consumes, so iterating an archive is linear in its size. */
 void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t len);
 /* Returns 1 for an entry, 0 after the required two consecutive zero end
  * blocks, or -1 for malformed or unterminated input. All bytes after the
@@ -71,7 +77,11 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
 int  neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr);
 int  neverc_tar_reader_next_v2(neverc_tar_reader_t *r,
                                neverc_tar_header_v2_t *hdr);
-/* Reads the current entry incrementally; unread bytes are skipped by next(). */
+/* Reads the current entry incrementally; unread bytes are skipped by next().
+ * hdr must be the header next() returned for the current entry; a header
+ * whose size is below the entry's unread byte count fails. Once the entry is
+ * exhausted (or before the first next()), reads return 0 with *nread == 0.
+ * A failed next() or read() leaves the reader unchanged. */
 int  neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *hdr,
                             uint8_t *buf, size_t len, size_t *nread);
 int  neverc_tar_reader_read_v2(neverc_tar_reader_t *r,
