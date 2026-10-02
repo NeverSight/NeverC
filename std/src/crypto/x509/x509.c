@@ -1769,10 +1769,17 @@ int neverc_x509_verify_hostname(const neverc_x509_cert_t *cert,
     size_t address_len = 0;
     if (parse_ip_literal(identity, identity_len,
                          address, &address_len) == 0) {
+        /* As with Go's net.IP.Equal, an IPv4-mapped IPv6 literal names the
+         * same address as a 4-byte SAN entry. */
+        const uint8_t *mapped_v4 =
+            x509_ip_is_v4_mapped(address, address_len) ? address + 12 : NULL;
         for (size_t i = 0; i < cert->ip_address_count; ++i) {
             if (cert->ip_addresses[i].len == address_len &&
                 memcmp(cert->ip_addresses[i].bytes, address,
                        address_len) == 0)
+                return 0;
+            if (mapped_v4 && cert->ip_addresses[i].len == 4 &&
+                memcmp(cert->ip_addresses[i].bytes, mapped_v4, 4) == 0)
                 return 0;
         }
         return -1;
