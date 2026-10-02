@@ -261,8 +261,14 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
 #if defined(__linux__) || defined(__ANDROID__)
         if (ifa->ifa_addr->sa_family == AF_PACKET) {
             struct sockaddr_ll *sll = (struct sockaddr_ll *)ifa->ifa_addr;
+            size_t shown = sll->sll_halen < sizeof(sll->sll_addr)
+                               ? sll->sll_halen : sizeof(sll->sll_addr);
+            int nonzero = 0;
+            for (size_t k = 0; k < shown; k++)
+                nonzero |= sll->sll_addr[k] != 0;
             iface_note_index(iface, (int)sll->sll_ifindex);
-            if (sll->sll_halen >= 6)
+            /* Go net.Interfaces omits an all-zero link address (lo). */
+            if (sll->sll_halen >= 6 && nonzero)
                 format_mac(sll->sll_addr, (int)sll->sll_halen,
                             iface->hw_addr, sizeof(iface->hw_addr));
         }
