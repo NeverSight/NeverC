@@ -3,7 +3,14 @@ name: windows-x64-neverc-build
 permissions:
   contents: write
 
-on: [push, pull_request]
+# Markdown changes are checked by lint-docs without rebuilding LLVM.
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
