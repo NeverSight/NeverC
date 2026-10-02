@@ -518,6 +518,7 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
         zip_writer_has_failed(w) ||
         (!data && len != 0) || len > UINT32_MAX ||
         w->len > UINT32_MAX || w->nentries < 0 ||
+        w->nentries > w->entries_cap ||
         w->nentries >= UINT16_MAX ||
         !zip_path_is_safe(name))
         return -1;
