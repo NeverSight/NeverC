@@ -981,6 +981,38 @@ static void test_named_groups_and_replace_expand(void) {
     check_int("(a?)b on b", neverc_regexp_find_submatch(re, "b", m, 2), 1);
     check_int("(a?)b g1 empty", m[1].start != NULL && (int)m[1].len == 0, 1);
     neverc_regexp_free(re);
+
+    /* A greedy optional group prefers to run; when its body matches empty the
+     * group is set to that empty span (Go [0 1 0 0]). The skip branch used to
+     * claim the shared exit first and leave the group unmatched. */
+    {
+        static const char *const nullable_opt[] = {
+            "(a*)?b", "(a*){0,1}b", "(a|)?b", "(a?)?b"
+        };
+        static const char text[] = "b";
+        for (size_t i = 0; i < sizeof(nullable_opt) / sizeof(nullable_opt[0]);
+             i++) {
+            re = neverc_regexp_compile(nullable_opt[i], NULL);
+            memset(m, 0, sizeof(m));
+            check_int(nullable_opt[i],
+                      neverc_regexp_find_submatch(re, text, m, 2), 1);
+            check_int("nullable optional group set empty",
+                      m[1].start == text && m[1].len == 0, 1);
+            neverc_regexp_free(re);
+        }
+    }
+
+    /* The optional second copy runs empty after the first takes "aa":
+     * Go reports the last iteration, [2,2]. */
+    {
+        static const char text[] = "aab";
+        re = neverc_regexp_compile("(a*){1,2}b", NULL);
+        memset(m, 0, sizeof(m));
+        check_int("(a*){1,2}b found", neverc_regexp_find_submatch(re, text, m, 2), 1);
+        check_int("(a*){1,2}b g1 last empty",
+                  m[1].start == text + 2 && m[1].len == 0, 1);
+        neverc_regexp_free(re);
+    }
 }
 
 static void test_utf8_class_and_nfa_bound(void) {
