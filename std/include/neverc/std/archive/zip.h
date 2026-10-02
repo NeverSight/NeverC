@@ -14,7 +14,9 @@
  * checked against their declared size and CRC-32 by reader_file_read.
  * Entry names are limited to 255 bytes and archives to INT_MAX entries. A
  * ZIP64 locator must reference a ZIP64 end record that ends at the locator
- * and agrees with every unsaturated classic end-record field.
+ * and agrees with every unsaturated classic end-record field. Writers use
+ * ZIP64 fields for sizes and offsets that reach 0xFFFFFFFF, and ZIP64 end
+ * records for those archives and for more than 65535 entries.
  */
 
 #include <stddef.h>
@@ -86,7 +88,8 @@ typedef struct {
 /* The writer owns its output and entry arrays. The completed archive remains
  * available through w->data until writer_free; call writer_free before
  * reinitializing a writer that has been used. Input name/data passed to add are
- * copied and need only remain valid for the duration of that call. */
+ * copied and need only remain valid for the duration of that call. offsets
+ * holds the low 32 bits of each local header offset. */
 void neverc_zip_writer_init(neverc_zip_writer_t *w);
 /* Adds a Stored entry. Returns 0 on success or -1 on error. */
 int  neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,

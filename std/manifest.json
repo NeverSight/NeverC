@@ -2352,7 +2352,7 @@
     },
     "archive/zip": {
       "header": "include/neverc/std/archive/zip.h",
-      "description": "ZIP archive format reader/writer (stored and deflate; ZIP64 reading; mirrors Go archive/zip package)",
+      "description": "ZIP archive format reader/writer (stored and deflate, ZIP64; mirrors Go archive/zip package)",
       "deps": ["compress/flate", "hash/crc32", "io/fs"],
       "symbols": {
         "neverc_zip_reader_init": "src/archive/zip/zip.c",

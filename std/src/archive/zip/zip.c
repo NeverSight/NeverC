@@ -19,6 +19,10 @@ static uint64_t read64(const uint8_t *p) {
 }
 static void write16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
 static void write32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v>>8; p[2] = v>>16; p[3] = v>>24; }
+static void write64(uint8_t *p, uint64_t v) {
+    write32(p, (uint32_t)v);
+    write32(p + 4U, (uint32_t)(v >> 32U));
+}
 
 static int zip_path_is_safe(const char *name) {
     if (!name || !name[0]) return 0;
@@ -737,26 +741,44 @@ static uint8_t *zip_writer_deflate(const uint8_t *data, size_t len,
     return packed;
 }
 
+/* Go archive/zip writes a ZIP64 field for any value that reaches
+ * 0xFFFFFFFF: readers treat that value as the ZIP64 marker. */
+static int zip_needs_zip64(uint64_t value) {
+    return value >= UINT32_MAX;
+}
+
+/* Local records carry both sizes in a 20-byte ZIP64 field (APPNOTE 4.5.3)
+ * when either needs it, so a record's length follows from its entry alone
+ * and writer_close can rebuild 64-bit offsets from the entries. */
+static int zip_entry_local_zip64(const neverc_zip_file_header_t *e) {
+    return zip_needs_zip64(e->compressed_size) ||
+           zip_needs_zip64(e->uncompressed_size);
+}
+
+static uint64_t zip_entry_local_length(const neverc_zip_file_header_t *e,
+                                       size_t name_length) {
+    return 30U + (uint64_t)name_length +
+           (zip_entry_local_zip64(e) ? 20U : 0U) + e->compressed_size;
+}
+
 static int zip_writer_add_entry(neverc_zip_writer_t *w, const char *name,
                                 const uint8_t *data, size_t len,
                                 uint16_t method) {
     if (!w || !name || zip_writer_is_closed(w) ||
         zip_writer_has_failed(w) ||
-        (!data && len != 0) || len > UINT32_MAX ||
-        w->len > UINT32_MAX || w->nentries < 0 ||
+        (!data && len != 0) || w->nentries < 0 ||
         w->nentries > w->entries_cap ||
-        w->nentries >= UINT16_MAX ||
         !zip_path_is_safe(name))
         return -1;
     size_t name_size = strlen(name);
     if (name_size == 0 || name_size > 255 ||
-        name_size > SIZE_MAX - 30U ||
-        len > SIZE_MAX - 30U - name_size ||
+        len > SIZE_MAX - 50U - name_size ||
         (name[name_size - 1U] == '/' && len != 0))
         return -1;
     uint16_t name_len = (uint16_t)name_size;
-    size_t record_len = 30U + name_size + len;
-    if (record_len > UINT32_MAX - w->len)
+    size_t record_len =
+        30U + name_size + (zip_needs_zip64(len) ? 20U : 0U) + len;
+    if (record_len > SIZE_MAX - w->len)
         return -1;
     char name_copy[sizeof(((neverc_zip_file_header_t *)0)->name)];
     memcpy(name_copy, name, name_size + 1U);
@@ -771,7 +793,9 @@ static int zip_writer_add_entry(neverc_zip_writer_t *w, const char *name,
     uint8_t *packed = method == NEVERC_ZIP_DEFLATED
         ? zip_writer_deflate(data, len, &packed_len) : NULL;
     size_t payload_len = packed ? packed_len : len;
-    if (packed) record_len = 30U + name_size + packed_len;
+    int zip64 = zip_needs_zip64(payload_len) || zip_needs_zip64(len);
+    size_t header_len = 30U + name_size + (zip64 ? 20U : 0U);
+    record_len = header_len + payload_len;
     if (!wgrow(w, record_len)) {
         free(packed);
         return -1;
@@ -782,28 +806,36 @@ static int zip_writer_add_entry(neverc_zip_writer_t *w, const char *name,
      * writer allocation observes the bytes supplied at call entry. */
     uint8_t *p = w->data + w->len;
     if (packed) {
-        memcpy(p + 30 + name_len, packed, packed_len);
+        memcpy(p + header_len, packed, packed_len);
         free(packed);
     } else if (len > 0) {
-        memmove(p + 30 + name_len, data, len);
+        memmove(p + header_len, data, len);
     }
     uint16_t entry_method = packed ? NEVERC_ZIP_DEFLATED : NEVERC_ZIP_STORED;
     write32(p, 0x04034b50);
-    write16(p + 4, 20);
+    write16(p + 4, zip64 ? 45 : 20);
     write16(p + 6, zip_name_flags(name_copy, name_size));
     write16(p + 8, entry_method);
     write16(p + 10, 0);
     write16(p + 12, 0);
     write32(p + 14, crc);
-    write32(p + 18, (uint32_t)payload_len);
-    write32(p + 22, (uint32_t)len);
+    write32(p + 18, zip64 ? UINT32_MAX : (uint32_t)payload_len);
+    write32(p + 22, zip64 ? UINT32_MAX : (uint32_t)len);
     write16(p + 26, name_len);
-    write16(p + 28, 0);
+    write16(p + 28, zip64 ? 20 : 0);
     memcpy(p + 30, name_copy, name_len);
+    if (zip64) {
+        uint8_t *extra = p + 30 + name_len;
+        write16(extra, 0x0001);
+        write16(extra + 2, 16);
+        write64(extra + 4, len);
+        write64(extra + 12, payload_len);
+    }
 
     /* Grow entry metadata only after all caller-owned input has been copied:
      * name/data may themselves be views into the old metadata arrays. */
     if (!wentries_grow(w)) return -1;
+    /* Only the low 32 bits fit; writer_close rebuilds the full offsets. */
     w->offsets[w->nentries] = (uint32_t)w->len;
     neverc_zip_file_header_t *e = &w->entries[w->nentries];
     memset(e, 0, sizeof(*e));
@@ -813,7 +845,7 @@ static int zip_writer_add_entry(neverc_zip_writer_t *w, const char *name,
     e->compressed_size = payload_len;
     e->uncompressed_size = len;
     w->nentries++;
-    w->len += 30 + name_len + payload_len;
+    w->len += record_len;
 
     return 0;
 }
@@ -831,69 +863,138 @@ int neverc_zip_writer_add_method(neverc_zip_writer_t *w, const char *name,
     return zip_writer_add_entry(w, name, data, len, method);
 }
 
+/* Size of an entry's central ZIP64 field: Go archive/zip lists exactly the
+ * uncompressed size, compressed size and local offset that reach
+ * 0xFFFFFFFF, in that order. */
+static size_t zip_central_zip64_length(const neverc_zip_file_header_t *e,
+                                       uint64_t offset) {
+    size_t fields = (size_t)zip_needs_zip64(e->uncompressed_size) +
+                    (size_t)zip_needs_zip64(e->compressed_size) +
+                    (size_t)zip_needs_zip64(offset);
+    return fields ? 4U + 8U * fields : 0U;
+}
+
+static uint32_t zip_saturate32(uint64_t value) {
+    return zip_needs_zip64(value) ? UINT32_MAX : (uint32_t)value;
+}
+
 int neverc_zip_writer_close(neverc_zip_writer_t *w) {
     if (!w || zip_writer_has_failed(w) || w->nentries < 0 ||
-        w->nentries > UINT16_MAX || w->nentries > w->entries_cap ||
-        (w->nentries > 0 && (!w->entries || !w->offsets)) ||
-        w->len > UINT32_MAX)
+        w->nentries > w->entries_cap ||
+        (w->nentries > 0 && (!w->entries || !w->offsets)))
         return -1;
     if (zip_writer_is_closed(w)) return 0;
 
+    /* Rebuild each local record's 64-bit offset from the entries, checked
+     * against the low 32 bits recorded by add and the output length. */
+    uint64_t offset = 0;
     size_t central_bytes = 0;
+    int zip64 = w->nentries > UINT16_MAX;
     for (int i = 0; i < w->nentries; i++) {
-        size_t name_length = strlen(w->entries[i].name);
+        const neverc_zip_file_header_t *e = &w->entries[i];
+        size_t name_length = strlen(e->name);
         if (name_length == 0 || name_length > 255U ||
-            name_length > SIZE_MAX - 46U ||
-            central_bytes > SIZE_MAX - 46U - name_length)
+            (uint32_t)offset != w->offsets[i])
             return -1;
-        central_bytes += 46U + name_length;
+        size_t extra = zip_central_zip64_length(e, offset);
+        if (extra != 0) zip64 = 1;
+        uint64_t local = zip_entry_local_length(e, name_length);
+        if (central_bytes > SIZE_MAX - 46U - name_length - extra ||
+            e->compressed_size > (uint64_t)w->len ||
+            local > UINT64_MAX - offset)
+            return -1;
+        central_bytes += 46U + name_length + extra;
+        offset += local;
     }
-    if (central_bytes > UINT32_MAX - 22U ||
-        w->len > UINT32_MAX - central_bytes - 22U ||
-        central_bytes > SIZE_MAX - 22U ||
-        !wgrow(w, central_bytes + 22U)) {
+    if (offset != (uint64_t)w->len) return -1;
+    uint64_t central_offset = w->len;
+    if (zip_needs_zip64(central_bytes) || zip_needs_zip64(central_offset))
+        zip64 = 1;
+    size_t end_bytes = (zip64 ? 56U + 20U : 0U) + 22U;
+    if (central_bytes > SIZE_MAX - end_bytes ||
+        !wgrow(w, central_bytes + end_bytes)) {
         zip_writer_set_failed(w);
         return -1;
     }
-    uint32_t cd_start = (uint32_t)w->len;
 
+    offset = 0;
     for (int i = 0; i < w->nentries; i++) {
         neverc_zip_file_header_t *e = &w->entries[i];
         uint16_t name_len = (uint16_t)strlen(e->name);
+        size_t extra = zip_central_zip64_length(e, offset);
 
         uint8_t *p = w->data + w->len;
         write32(p, 0x02014b50);
         write16(p + 4, 20);
-        write16(p + 6, 20);
+        write16(p + 6, extra != 0 ? 45 : 20);
         write16(p + 8, zip_name_flags(e->name, name_len));
         write16(p + 10, e->method);
         write16(p + 12, e->mod_time);
         write16(p + 14, e->mod_date);
         write32(p + 16, e->crc32);
-        write32(p + 20, (uint32_t)e->compressed_size);
-        write32(p + 24, (uint32_t)e->uncompressed_size);
+        write32(p + 20, zip_saturate32(e->compressed_size));
+        write32(p + 24, zip_saturate32(e->uncompressed_size));
         write16(p + 28, name_len);
-        write16(p + 30, 0);
+        write16(p + 30, (uint16_t)extra);
         write16(p + 32, 0);
         write16(p + 34, 0);
         write16(p + 36, 0);
         write32(p + 38, 0);
-        write32(p + 42, w->offsets[i]);
+        write32(p + 42, zip_saturate32(offset));
         memcpy(p + 46, e->name, name_len);
-        w->len += 46 + name_len;
+        if (extra != 0) {
+            uint8_t *field = p + 46 + name_len;
+            write16(field, 0x0001);
+            write16(field + 2, (uint16_t)(extra - 4U));
+            field += 4;
+            if (zip_needs_zip64(e->uncompressed_size)) {
+                write64(field, e->uncompressed_size);
+                field += 8;
+            }
+            if (zip_needs_zip64(e->compressed_size)) {
+                write64(field, e->compressed_size);
+                field += 8;
+            }
+            if (zip_needs_zip64(offset)) write64(field, offset);
+        }
+        w->len += 46 + name_len + extra;
+        offset += zip_entry_local_length(e, name_len);
     }
 
-    uint32_t cd_size = (uint32_t)w->len - cd_start;
+    uint64_t central_size = (uint64_t)w->len - central_offset;
+    uint64_t records = (uint64_t)w->nentries;
+    if (zip64) {
+        /* ZIP64 end record and locator (APPNOTE 4.3.14-4.3.15), written
+         * whenever any entry or end field needed ZIP64, as Go does. */
+        uint64_t end64 = w->len;
+        uint8_t *p = w->data + w->len;
+        write32(p, 0x06064b50);
+        write64(p + 4, 44);
+        write16(p + 12, 45);
+        write16(p + 14, 45);
+        write32(p + 16, 0);
+        write32(p + 20, 0);
+        write64(p + 24, records);
+        write64(p + 32, records);
+        write64(p + 40, central_size);
+        write64(p + 48, central_offset);
+        write32(p + 56, 0x07064b50);
+        write32(p + 60, 0);
+        write64(p + 64, end64);
+        write32(p + 72, 1);
+        w->len += 76;
+    }
 
-    /* End of central directory */
+    /* End of central directory; values that do not fit are saturated. A
+     * classic archive may hold exactly 0xFFFF entries. */
     uint8_t *p = w->data + w->len;
     write32(p, 0x06054b50);
     write16(p + 4, 0);
     write16(p + 6, 0);
-    write16(p + 8, (uint16_t)w->nentries);
-    write16(p + 10, (uint16_t)w->nentries);
-    write32(p + 12, cd_size);
-    write32(p + 16, cd_start);
+    write16(p + 8, records > UINT16_MAX ? UINT16_MAX : (uint16_t)records);
+    write16(p + 10, records > UINT16_MAX ? UINT16_MAX : (uint16_t)records);
+    write32(p + 12, zip_saturate32(central_size));
+    write32(p + 16, zip_saturate32(central_offset));
     write16(p + 20, 0);
     w->len += 22;
     zip_writer_set_closed(w);

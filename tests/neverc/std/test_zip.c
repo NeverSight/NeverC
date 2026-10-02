@@ -861,12 +861,36 @@ static void test_overlapping_entries(void) {
 
 static void test_zip64_sentinels(void) {
     printf("[zip64 sentinels]\n");
+    /* A fresh writer has room for 16 entries; a forged count must not be
+     * trusted (65536+ entries are covered by test_zip_entry_limit). */
     neverc_zip_writer_t writer;
     neverc_zip_writer_init(&writer);
     writer.nentries = UINT16_MAX;
-    check_int("writer rejects entry 65536",
+    check_int("writer rejects forged entry count",
               neverc_zip_writer_add(
                   &writer, "x", (const uint8_t *)"x", 1), -1);
+    neverc_zip_writer_free(&writer);
+
+    /* writer_close rebuilds 64-bit local offsets from the entry sizes and
+     * must refuse metadata that no longer describes the written records. */
+    neverc_zip_writer_init(&writer);
+    int built = neverc_zip_writer_add(&writer, "a",
+                                      (const uint8_t *)"aa", 2) == 0 &&
+                neverc_zip_writer_add(&writer, "b",
+                                      (const uint8_t *)"bb", 2) == 0;
+    check_int("offset rebuild fixture", built, 1);
+    if (built) {
+        writer.offsets[1]++;
+        check_int("close rejects offset disagreeing with sizes",
+                  neverc_zip_writer_close(&writer), -1);
+        writer.offsets[1]--;
+        writer.entries[1].compressed_size++;
+        check_int("close rejects sizes disagreeing with output",
+                  neverc_zip_writer_close(&writer), -1);
+        writer.entries[1].compressed_size--;
+        check_int("close accepts restored metadata",
+                  neverc_zip_writer_close(&writer), 0);
+    }
     neverc_zip_writer_free(&writer);
 
     uint8_t eocd[22];

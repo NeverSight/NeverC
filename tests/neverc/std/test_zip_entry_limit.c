@@ -1,6 +1,7 @@
 /* APPNOTE 4.4.21: 0xFFFF in the EOCD entry counts only redirects to ZIP64
  * when a ZIP64 locator actually precedes the EOCD. An archive holding exactly
- * 65535 entries encodes that count exactly and must stay readable. */
+ * 65535 entries encodes that count exactly and must stay readable; larger
+ * counts are written through the ZIP64 end records. */
 #include "neverc/std/archive/zip.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -197,8 +198,6 @@ int main(void) {
     }
     check_int("writer accepts 65535 entries", (int)added, (int)ENTRY_COUNT);
     if (added == ENTRY_COUNT) {
-        check_int("writer rejects entry 65536",
-                  neverc_zip_writer_add(&writer, "f", NULL, 0), -1);
         int close_result = neverc_zip_writer_close(&writer);
         check_int("writer closes 65535-entry classic archive", close_result,
                   0);
@@ -214,6 +213,53 @@ int main(void) {
                       get16(eocd + 10) == UINT16_MAX, 1);
             check_int("writer omits ZIP64 locator",
                       get32(eocd - 20) != UINT32_C(0x07064b50), 1);
+        }
+    }
+    neverc_zip_writer_free(&writer);
+
+    /* One entry more no longer fits the classic count: the EOCD saturates it
+     * and the ZIP64 end record and locator carry the real value. */
+    neverc_zip_writer_init(&writer);
+    for (added = 0; added <= ENTRY_COUNT; added++) {
+        if (neverc_zip_writer_add(&writer, "f", NULL, 0) != 0) break;
+    }
+    check_int("writer accepts entry 65536", (int)added,
+              (int)ENTRY_COUNT + 1);
+    if (added == ENTRY_COUNT + 1U) {
+        int close_result = neverc_zip_writer_close(&writer);
+        check_int("writer closes ZIP64 archive", close_result, 0);
+        if (close_result == 0 && writer.len >= 98U) {
+            const uint8_t *eocd = writer.data + writer.len - 22U;
+            const uint8_t *locator = eocd - 20U;
+            const uint8_t *end64 = locator - 56U;
+            check_int("ZIP64 EOCD saturates entry count",
+                      get16(eocd + 8) == UINT16_MAX &&
+                          get16(eocd + 10) == UINT16_MAX,
+                      1);
+            check_int("ZIP64 locator signature",
+                      get32(locator) == UINT32_C(0x07064b50), 1);
+            check_int("ZIP64 locator references end record",
+                      get32(locator + 8) == writer.len - 98U &&
+                          get32(locator + 12) == 0 &&
+                          get32(locator + 16) == 1,
+                      1);
+            check_int("ZIP64 end record signature",
+                      get32(end64) == UINT32_C(0x06064b50), 1);
+            check_int("ZIP64 end record entry count",
+                      get32(end64 + 32) == ENTRY_COUNT + 1U &&
+                          get32(end64 + 36) == 0,
+                      1);
+            check_int("read ZIP64 entry count",
+                      neverc_zip_reader_init(&reader, writer.data,
+                                             writer.len), 0);
+            check_int("ZIP64 archive entry count",
+                      neverc_zip_reader_count(&reader),
+                      (int)ENTRY_COUNT + 1);
+            const neverc_zip_file_header_t *last =
+                neverc_zip_reader_file(&reader, (int)ENTRY_COUNT);
+            check_int("ZIP64 archive last entry",
+                      last != NULL && strcmp(last->name, "f") == 0, 1);
+            neverc_zip_reader_free(&reader);
         }
     }
     neverc_zip_writer_free(&writer);
