@@ -631,7 +631,8 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
 
 /* Convert header name to canonical form: first letter and letters
  * following '-' are uppercased, rest lowercased.
- * E.g. "accept-encoding" → "Accept-Encoding".
+ * E.g. "accept-encoding" → "Accept-Encoding". As in Go, a key containing
+ * any non-token byte (space, separator, non-ASCII) is copied unchanged.
  * Writes result to buf. Returns buf. */
 char *neverc_http_canonical_header_key(const char *key, char *buf,
                                          size_t buflen);

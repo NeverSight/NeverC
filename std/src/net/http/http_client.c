@@ -3411,11 +3411,23 @@ char *neverc_http_canonical_header_key(const char *key, char *buf,
                                          size_t buflen) {
     if (!key || !buf || buflen == 0) return buf;
 
+    /* Go CanonicalHeaderKey returns a key containing any byte that is not
+     * a token character (space, separators, non-ASCII) unchanged. */
+    int canonicalize = 1;
+    for (const unsigned char *p = (const unsigned char *)key; *p; p++) {
+        if (!client_is_tchar(*p)) {
+            canonicalize = 0;
+            break;
+        }
+    }
+
     int upper = 1;
     size_t i;
     for (i = 0; key[i] && i < buflen - 1; i++) {
         unsigned char c = (unsigned char)key[i];
-        if (c == '-') {
+        if (!canonicalize) {
+            buf[i] = (char)c;
+        } else if (c == '-') {
             buf[i] = '-';
             upper = 1;
         } else if (upper) {
