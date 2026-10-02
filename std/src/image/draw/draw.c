@@ -5,19 +5,27 @@
 #include <string.h>
 
 /*
- * Porter-Duff "over" for a single 8-bit channel, premultiply-free form:
- *   out = src + dst * (255 - srcAlpha)   (rounded /255)
- * Valid premultiplied input has src <= srcAlpha, so the result is in
- * [0, 255]. Clamp anyway: draw_uniform / draw_gray_over pass the caller's
- * RGB and alpha independently, and src > alpha makes the unclamped sum
- * 256..510, which wrapped through uint8_t (white OVER white with a=128
- * became 126).
+ * Porter-Duff "over" for a single premultiplied channel, computed like Go
+ * image/draw (drawCopyOver / drawFillOver) on 16-bit values:
+ *   out = (dst * a / 0xffff + src * 0x101) >> 8,  a = (0xffff - sa * 0x101) * 0x101
+ * dst * a fits in 32 bits. Valid premultiplied input has src <= srcAlpha,
+ * so the result is in [0, 255]. Clamp anyway: draw_uniform passes the
+ * caller's RGB and alpha independently, and src > alpha would otherwise
+ * wrap through uint8_t (white OVER white with a=128 became 126).
  */
 static inline uint8_t over_component(uint8_t dst, uint8_t src, uint8_t sa) {
-    uint32_t s = src;
-    uint32_t d = dst;
-    uint32_t a = sa;
-    uint32_t v = (s * 255 + d * (255 - a) + 127) / 255;
+    uint32_t a = (0xffffu - (uint32_t)sa * 0x101u) * 0x101u;
+    uint32_t v = ((uint32_t)dst * a / 0xffffu + (uint32_t)src * 0x101u) >> 8;
+    return (uint8_t)(v > 255u ? 255u : v);
+}
+
+/* Go image/draw drawGlyphOver: OVER with coverage ma = mask * 0x101 applied
+ * to the 16-bit premultiplied color; `a` is (0xffff - sa16 * ma / 0xffff)
+ * * 0x101. 64-bit so src > alpha cannot wrap before the clamp. */
+static inline uint8_t mask_over_component(uint8_t dst, uint8_t src,
+                                          uint32_t a, uint32_t ma) {
+    uint64_t v = ((uint64_t)dst * a + (uint64_t)src * 0x101u * ma) /
+                 0xffffu >> 8;
     return (uint8_t)(v > 255u ? 255u : v);
 }
 
@@ -331,8 +339,8 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
     size_t rows = clip_height_safe(clip);
     if (rows == 0) return;
     /* Coverage is ca * mask; a fully transparent color is a no-op even
-     * when the mask is opaque. Without this, over_component(dst, src, 0)
-     * adds src into dst (and used to wrap). */
+     * when the mask is opaque. Without this, OVER with alpha 0 adds a
+     * non-premultiplied src into dst. */
     if (ca == 0) return;
 
     int64_t mx = (int64_t)mp.x + (int64_t)x0 - (int64_t)r.min.x;
@@ -376,14 +384,13 @@ void neverc_draw_gray_over(neverc_image_rgba_t *dst, neverc_rect_t r,
         for (size_t i = 0; i < w; i++) {
             uint8_t mv = mrow[i];
             if (mv != 0) {
-                uint32_t eff_a = ((uint32_t)ca * mv + 127) / 255;
-                uint32_t eff_r = ((uint32_t)cr * mv + 127) / 255;
-                uint32_t eff_g = ((uint32_t)cg * mv + 127) / 255;
-                uint32_t eff_b = ((uint32_t)cb * mv + 127) / 255;
-                drow[0] = over_component(drow[0], (uint8_t)eff_r, (uint8_t)eff_a);
-                drow[1] = over_component(drow[1], (uint8_t)eff_g, (uint8_t)eff_a);
-                drow[2] = over_component(drow[2], (uint8_t)eff_b, (uint8_t)eff_a);
-                drow[3] = over_component(drow[3], (uint8_t)eff_a, (uint8_t)eff_a);
+                uint32_t ma = (uint32_t)mv * 0x101u;
+                uint32_t a = (0xffffu - (uint32_t)ca * 0x101u * ma / 0xffffu) *
+                             0x101u;
+                drow[0] = mask_over_component(drow[0], cr, a, ma);
+                drow[1] = mask_over_component(drow[1], cg, a, ma);
+                drow[2] = mask_over_component(drow[2], cb, a, ma);
+                drow[3] = mask_over_component(drow[3], ca, a, ma);
             }
             drow += 4;
         }
