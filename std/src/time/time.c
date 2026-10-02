@@ -1294,9 +1294,17 @@ int neverc_time_parse_in_location(const char *layout, const char *value,
             (void)idx;
             li += 3;
         } else if (li + 3 <= llen && memcmp(layout + li, "MST", 3) == 0) {
-            if (parse_time_zone(value, vlen, &vi, zone_name, sizeof(zone_name),
-                                &gmt_off, &has_gmt_off) != 0)
+            /* Go stdTZ: "UTC" is recognized before parseTimeZone and
+             * consumes exactly three bytes ("UTCFeb" is UTC + "Feb"). */
+            if (vlen - vi >= 3 && memcmp(value + vi, "UTC", 3) == 0) {
+                memcpy(zone_name, "UTC", 4);
+                has_gmt_off = 0;
+                vi += 3;
+            } else if (parse_time_zone(value, vlen, &vi, zone_name,
+                                       sizeof(zone_name), &gmt_off,
+                                       &has_gmt_off) != 0) {
                 return -1;
+            }
             has_named_zone = 1;
             li += 3;
         } else if (li + 9 <= llen && memcmp(layout + li, "Z07:00:00", 9) == 0) {
