@@ -3816,6 +3816,7 @@ int neverc_http_json_error(neverc_http_response_writer_t *w,
 struct neverc_sse {
     neverc_tcp_conn_t *connection;
     int                closed;
+    int                identity; /* HTTP/1.0: raw bytes, close ends body */
 };
 
 static int sse_tcp_write_all(neverc_tcp_conn_t *connection,
@@ -3838,17 +3839,24 @@ neverc_sse_t *neverc_sse_start(neverc_http_response_writer_t *w) {
     neverc_http_set_header(w, "Connection", "keep-alive");
     neverc_http_set_header(w, "X-Accel-Buffering", "no");
 
+    /* RFC 9112 §6.1: no chunked framing for an HTTP/1.0 client. */
+    int identity = nc_http_writer_streams_identity(w);
     neverc_tcp_conn_t *connection = neverc_http_hijack(w);
     if (!connection) return NULL;
     (void)neverc_tcp_set_write_timeout(connection, w->write_timeout_ms);
 
-    const char *headers =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/event-stream\r\n"
-        "Cache-Control: no-cache\r\n"
-        "Connection: keep-alive\r\n"
-        "X-Accel-Buffering: no\r\n"
-        "Transfer-Encoding: chunked\r\n\r\n";
+    const char *headers = identity
+        ? "HTTP/1.1 200 OK\r\n"
+          "Content-Type: text/event-stream\r\n"
+          "Cache-Control: no-cache\r\n"
+          "Connection: close\r\n"
+          "X-Accel-Buffering: no\r\n\r\n"
+        : "HTTP/1.1 200 OK\r\n"
+          "Content-Type: text/event-stream\r\n"
+          "Cache-Control: no-cache\r\n"
+          "Connection: keep-alive\r\n"
+          "X-Accel-Buffering: no\r\n"
+          "Transfer-Encoding: chunked\r\n\r\n";
     int write_result = sse_tcp_write_all(
         connection, headers, strlen(headers));
     if (write_result != 0) {
@@ -3863,11 +3871,20 @@ neverc_sse_t *neverc_sse_start(neverc_http_response_writer_t *w) {
     }
     sse->connection = connection;
     sse->closed = 0;
+    sse->identity = identity;
     return sse;
 }
 
 static int sse_write_chunk(neverc_sse_t *sse, const char *data, size_t len) {
     if (!sse || sse->closed || !sse->connection) return -1;
+
+    if (sse->identity) {
+        if (sse_tcp_write_all(sse->connection, data, len) != 0) {
+            sse->closed = 1;
+            return -1;
+        }
+        return 0;
+    }
 
     char size_buf[32];
     int slen = snprintf(size_buf, sizeof(size_buf), "%zx\r\n", len);
@@ -3957,7 +3974,7 @@ int neverc_sse_comment(neverc_sse_t *sse, const char *text) {
 
 void neverc_sse_close(neverc_sse_t *sse) {
     if (!sse) return;
-    if (!sse->closed && sse->connection) {
+    if (!sse->closed && sse->connection && !sse->identity) {
         (void)sse_tcp_write_all(sse->connection, "0\r\n\r\n", 5);
     }
     if (sse->connection) neverc_tcp_close(sse->connection);

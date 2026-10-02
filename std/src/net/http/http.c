@@ -643,6 +643,11 @@ static int rw_streams_identity(const neverc_http_response_writer_t *w) {
     return w->owner && http_conn_request_is_http10(w->owner);
 }
 
+int nc_http_writer_streams_identity(
+    const neverc_http_response_writer_t *writer) {
+    return writer && rw_streams_identity(writer);
+}
+
 static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
     if (!w || w->aborted) return -1;
     if (w->headers_sent) return 0;
