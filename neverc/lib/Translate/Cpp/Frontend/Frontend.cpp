@@ -3187,9 +3187,11 @@ static bool utilityConditionalMoveValueConstructor(
   A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
   if (Latest->getMinRequiredArguments() > 1)
     return true;
-  // With no conversion function on the queried record, a scalar or fixed-array
-  // reference first parameter excludes a const-record argument regardless of
-  // later defaults. Array elements cannot provide a conversion to the array.
+  // With no bases or conversion functions on the queried record, a scalar,
+  // fixed-array reference or mutable record lvalue reference first parameter
+  // excludes a const-record argument regardless of later defaults. Array
+  // elements cannot convert to the array, and a converting record temporary
+  // cannot bind a mutable lvalue reference.
   // Every parameter still supplies its original checked signature source.
   const auto ParameterType = Constructor->getParamDecl(0)->getType();
   const auto Type = ParameterType.getNonReferenceType();
@@ -3202,7 +3204,9 @@ static bool utilityConditionalMoveValueConstructor(
           Type->isSpecificBuiltinType(BuiltinType::Double) ||
           Type->isPointerType() || Type->isNullPtrType() ||
           (ParameterType->isReferenceType() &&
-           A.Context.getAsConstantArrayType(Type)));
+           A.Context.getAsConstantArrayType(Type)) ||
+          (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
+           Type->isRecordType()));
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
@@ -3287,11 +3291,10 @@ static bool utilityMutableCopyConditionalMoveSource(
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths. An ordinary constructor requiring two arguments cannot
   // consume this record alone, even through a converting temporary. Otherwise
-  // require a scalar or fixed-array reference first parameter: it cannot
-  // consume this record without a conversion function, even if later
-  // parameters have defaults. Retain every written signature, including
-  // each nonviable constructor's parameter
-  // types; callers separately check copy/move overloads and sources.
+  // require a first parameter that cannot consume this record without a
+  // conversion function, even if later parameters have defaults. Retain every
+  // written signature, including each nonviable constructor's parameter types;
+  // callers separately check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
   for (const auto *Declaration : Record->decls()) {
