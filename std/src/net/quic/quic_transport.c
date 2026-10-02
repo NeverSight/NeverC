@@ -1704,11 +1704,13 @@ static int qt_send_item(struct neverc_quic_conn *conn,
         conn->candidate_bytes_sent =
             conn->candidate_bytes_sent > UINT64_MAX - packet_len
                 ? UINT64_MAX : conn->candidate_bytes_sent + packet_len;
-    if (included_ack) {
+    /* A deferred discard waits for this ACK. It runs only after the packet
+     * is recorded so the discard drops the packet too; recorded afterwards,
+     * nothing could ever acknowledge it and its probe timer stayed armed. */
+    int discard_level = included_ack &&
+        (conn->pending_key_discard & (1u << meta->level)) != 0;
+    if (included_ack)
         conn->pn[space].ack_pending = 0;
-        if (conn->pending_key_discard & (1u << meta->level))
-            qt_discard_encryption_level_now(conn, meta->level);
-    }
     if (ack_eliciting) {
         memset(record, 0, sizeof(*record));
         record->used = 1;
@@ -1755,6 +1757,8 @@ static int qt_send_item(struct neverc_quic_conn *conn,
             conn->sent_ack_eliciting_since_recv = 1;
         }
     }
+    if (discard_level)
+        qt_discard_encryption_level_now(conn, meta->level);
     return 0;
 }
 
