@@ -1609,20 +1609,28 @@ void neverc_os_clearenv(void) {
     FreeEnvironmentStringsA(env);
 #else
     extern char **environ;
-    while (environ && environ[0]) {
-        char *eq = strchr(environ[0], '=');
-        if (!eq || eq == environ[0]) break;
-        size_t nlen = (size_t)(eq - environ[0]);
+    size_t i = 0;
+    while (environ && environ[i]) {
+        char *entry = environ[i];
+        char *eq = strchr(entry, '=');
+        /* Go os.Clearenv clears every named variable. An entry without a
+         * name cannot be unset; step over it instead of stopping. */
+        if (!eq || eq == entry) {
+            i++;
+            continue;
+        }
+        size_t nlen = (size_t)(eq - entry);
         char stack_name[256];
         char *name = nlen < sizeof(stack_name)
                          ? stack_name
                          : (char *)malloc(nlen + 1);
         if (!name) break;
-        memcpy(name, environ[0], nlen);
+        memcpy(name, entry, nlen);
         name[nlen] = '\0';
         int rc = unsetenv(name);
         if (name != stack_name) free(name);
-        if (rc != 0) break;
+        if (rc != 0 || (environ && environ[i] == entry))
+            i++;
     }
 #endif
 }
