@@ -1505,6 +1505,44 @@ static void test_child_cloexec(const char *executable) {
     close(fds[1]);
 }
 
+/* With stdin and stdout closed, the exec-error pipe can occupy fds 0-1.
+ * Go os/exec still reports the failed exec instead of letting the child's
+ * stdout redirection replace that pipe and turn the error into output. */
+static void test_exec_failure_with_closed_stdio(void) {
+    printf("[exec_failure_closed_stdio]\n");
+    neverc_exec_cmd_t *cmd =
+        neverc_exec_command("/nonexistent/neverc_no_such_prog", NULL, 0);
+    ASSERT_TRUE(cmd != NULL);
+    if (!cmd) return;
+    fflush(stdout);
+    int saved_in = dup(STDIN_FILENO);
+    int saved_out = dup(STDOUT_FILENO);
+    if (saved_in > STDERR_FILENO && saved_out > STDERR_FILENO) {
+        neverc_exec_output_t out = {0};
+        neverc_exec_exit_status_t st = {0};
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        int rc_output = neverc_exec_cmd_output(cmd, &out, &st);
+        size_t len_output = out.len;
+        neverc_exec_output_free(&out);
+        int rc_combined = neverc_exec_cmd_combined_output(cmd, &out, &st);
+        size_t len_combined = out.len;
+        neverc_exec_output_free(&out);
+        dup2(saved_in, STDIN_FILENO);
+        dup2(saved_out, STDOUT_FILENO);
+        ASSERT_INT_EQ(rc_output, -1);
+        ASSERT_INT_EQ((int)len_output, 0);
+        ASSERT_INT_EQ(rc_combined, -1);
+        ASSERT_INT_EQ((int)len_combined, 0);
+    } else {
+        tests_run++;
+        tests_passed++;
+    }
+    if (saved_in >= 0) close(saved_in);
+    if (saved_out >= 0) close(saved_out);
+    neverc_exec_cmd_free(cmd);
+}
+
 static void test_child_cloexec_above_65536(const char *executable) {
     printf("[child_cloexec_above_65536]\n");
     const int high_fd = 70000;
@@ -1681,6 +1719,7 @@ int main(int argc, char **argv) {
     test_start_kill_wait(argv[0]);
 #if !defined(_WIN32)
     test_child_cloexec(argv[0]);
+    test_exec_failure_with_closed_stdio();
     test_child_cloexec_above_65536(argv[0]);
     test_multithreaded_exec_is_fork_safe(argv[0]);
     test_unread_stdin_is_not_failure();
