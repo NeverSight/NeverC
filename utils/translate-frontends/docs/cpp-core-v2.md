@@ -1081,14 +1081,25 @@ original record binding and retains mutations made through it.
 A completed source-owned record with no bases can also be the first parameter
 by value, by const lvalue reference, or by either mutable or const rvalue
 reference when each constructor is a nonvariadic zero-parameter constructor,
-a single-parameter copy/move constructor, or one of the ordinary constructors
-described below. Zero-parameter
+a copy/move constructor (including extra defaulted parameters), or one of the
+ordinary constructors described below. Zero-parameter
 constructors cannot consume an argument; copy/move constructors cannot convert
 a distinct `const Record&` when the queried record has no bases or conversion
 functions. This includes constructor-free aggregates, non-aggregates, empty
 records, private fields, reference members and nontrivial destruction. Explicitly
 defaulted, deleted, inaccessible and user-provided constructors can satisfy
 this shape. Their ordinary type, field and selected lifetime checks still apply.
+
+For example, a parameter record's `Argument(const Argument&, int = 0)` or
+`Argument(Argument&&, Seed = {})` retains a first reference to that same
+parameter record. Extra defaults do not make it accept the distinct queried
+record. All later parameter types and original sources are checked, including
+record types, aliases and fixed-array reference bounds. Unused class-template
+defaults stay uninstantiated; an actual copy or move checks and evaluates its
+selected defaults and body, including reference mutations and temporary
+destruction. This extension applies to parameter records; extra copy/move
+parameters on the queried record or its owned subobjects retain their separate
+requirements.
 
 The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
@@ -1112,9 +1123,9 @@ constructors can retain an exact nondependent written
 exception specification without instantiating a body or resolving a hypothetical
 exception result; dependent specifications retain their separate requirements.
 SDK records, unions, bases, constructor templates, inherited constructors,
-other constructor forms and extra copy/move parameters on the parameter record
-remain outside this proof. The proof reads an existing definition and does not
-instantiate an incomplete parameter specialization, default member initializer
+other constructor forms remain outside this proof. The proof reads an existing
+definition and does not instantiate an incomplete parameter specialization,
+default member initializer
 or hypothetical constructor/destructor body. Definitions already completed by
 Clang's ordinary overload resolution for the trait query qualify without an
 explicit type-completion expression. A constructor requiring two arguments can

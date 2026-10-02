@@ -3225,7 +3225,9 @@ static bool utilityConditionalMoveValueConstructor(
       Type.getAddressSpace() != LangAS::Default)
     return false;
   // A parameter record's default/copy/move constructors cannot convert the
-  // distinct queried const record. Its other constructors may also exclude
+  // distinct queried const record. Extra defaulted copy/move parameters do
+  // not change that first self-reference; retain their complete signatures
+  // without evaluating an unused default. Its other constructors may exclude
   // that source by arity or a direct first-parameter proof. Inspect only this
   // existing constructor set; do not recurse into another parameter record,
   // complete a class, or instantiate a hypothetical body or default argument.
@@ -3245,10 +3247,9 @@ static bool utilityConditionalMoveValueConstructor(
     A.chargeExpansion(1, Candidate->getLocation());
     if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
         Candidate->isInheritingConstructor() ||
-        (Candidate->isCopyOrMoveConstructor()
-             ? Candidate->getNumParams() != 1
-             : Candidate->getNumParams() != 0 &&
-                   !utilityConditionalMoveDirectConstructor(A, Candidate)) ||
+        (Candidate->getNumParams() != 0 &&
+         !Candidate->isCopyOrMoveConstructor() &&
+         !utilityConditionalMoveDirectConstructor(A, Candidate)) ||
         !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
       return false;
   }
@@ -3296,6 +3297,9 @@ static bool utilityLazyConditionalMoveSignatureSource(
                                OriginConstructor->getNumParams() ==
                                    Constructor->getNumParams()
                    : OriginConstructor &&
+                         !OriginConstructor->isVariadic() &&
+                         OriginConstructor->getNumParams() ==
+                             Constructor->getNumParams() &&
                          OriginConstructor->isCopyConstructor() ==
                              Constructor->isCopyConstructor() &&
                          OriginConstructor->isMoveConstructor() ==
@@ -12325,7 +12329,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 for (const auto *Signature : ConditionalMoveSignatures) {
                   operationTypeDependency(Signature->getTypeSourceInfo());
                   // The exact adapter proof consumes written special-member
-                  // and scalar-parameter constructor signatures.
+                  // and nonconverting constructor signatures.
                   // Check a resolved signature or its retained written source
                   // without resolving inferred exceptions or generating a body.
                   // Actual operations keep their ordinary/generated proof.
