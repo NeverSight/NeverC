@@ -100,12 +100,69 @@ static void test_prime(void) {
     check_bool("2-bit is 3", buf[0] == 3, 1);
 }
 
+static uint64_t load_le(const uint8_t *buf, size_t len) {
+    uint64_t v = 0;
+    for (size_t i = 0; i < len; i++) v |= (uint64_t)buf[i] << (8 * i);
+    return v;
+}
+
+static void test_prime_top_two_bits(void) {
+    printf("[prime top two bits]\n");
+    /* As with Go's crypto/rand.Prime, both top bits are set, so the product
+     * of two bits-bit primes always has exactly 2*bits bits. */
+    int calls_ok = 1, top_ok = 1, product_ok = 1;
+    for (int i = 0; i < 64; i++) {
+        uint8_t a[4], b[4];
+        if (neverc_crypto_rand_prime(a, 32) != 0 ||
+            neverc_crypto_rand_prime(b, 32) != 0) {
+            calls_ok = 0;
+            break;
+        }
+        uint64_t p = load_le(a, 4), q = load_le(b, 4);
+        if ((p >> 30) != 3 || (q >> 30) != 3) top_ok = 0;
+        if (((p * q) >> 63) != 1) product_ok = 0;
+    }
+    check_bool("32-bit primes ok", calls_ok, 1);
+    check_bool("32-bit primes set both top bits", top_ok, 1);
+    check_bool("32-bit prime products have 64 bits", product_ok, 1);
+
+    /* That leaves a single 3-bit prime (7) and a single 4-bit one (13). */
+    int only_7 = 1, only_13 = 1;
+    for (int i = 0; i < 32; i++) {
+        uint8_t b3 = 0, b4 = 0;
+        if (neverc_crypto_rand_prime(&b3, 3) != 0 || b3 != 7) only_7 = 0;
+        if (neverc_crypto_rand_prime(&b4, 4) != 0 || b4 != 13) only_13 = 0;
+    }
+    check_bool("3-bit prime is 7", only_7, 1);
+    check_bool("4-bit prime is 13", only_13, 1);
+
+    int width_ok = 1;
+    for (size_t bits = 2; bits <= 64; bits++) {
+        for (int i = 0; i < 4; i++) {
+            uint8_t buf[8];
+            size_t len = (bits + 7) / 8;
+            memset(buf, 0, sizeof(buf));
+            if (neverc_crypto_rand_prime(buf, bits) != 0) {
+                width_ok = 0;
+                continue;
+            }
+            uint64_t v = load_le(buf, len);
+            if (((v >> (bits - 2)) != 3 || (v & 1) == 0) && width_ok) {
+                printf("  bits=%zu got %llu\n", bits, (unsigned long long)v);
+                width_ok = 0;
+            }
+        }
+    }
+    check_bool("every width sets both top bits", width_ok, 1);
+}
+
 int main(void) {
     printf("=== NeverC Crypto/Rand Module Tests ===\n\n");
     test_read();
     test_read_large();
     test_rand_int();
     test_prime();
+    test_prime_top_two_bits();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }
