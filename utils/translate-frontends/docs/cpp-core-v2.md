@@ -777,8 +777,28 @@ promotions and comparison/logical boolean results retain their actual result
 types. Only the checked operation supplies the canonical scalar result behind
 its SDK-only return spelling. Written callable template arguments, tuple-like
 element types and their original expressions are still checked independently.
-Source function objects, member pointers, member adapters and reference-wrapped
-callables retain separate `apply` query-source requirements.
+Member pointers, member adapters and reference-wrapped callables retain
+separate `apply` query-source requirements.
+
+Source-owned function objects also supply these queries for the scalar or
+reference parameter and scalar, reference or `void` result boundary above. The
+selected `operator()` must have its exact completed source definition and match
+the pinned internal dispatch, including its cv/ref overload, argument
+conversions, result category and exception specification. Runtime `apply` also
+reuses the selected method's parameter proof, including exact function-pointer
+value parameters. Each checked call retains that method as a separate
+definition dependency, with its original signature, all relevant declarations,
+written result/parameter types and exception expressions. Class-template
+methods and concrete member-template operators retain their completed
+specialization sources. A method whose return type deduction completes its body
+can therefore qualify in a pure query; this proof does not instantiate a
+missing body. The original method return spelling supplies the result source
+without canonicalizing away caller-owned aliases or adjusted array bounds.
+Receiver state, carrier elements, default arguments and temporary object
+lifetimes remain independently checked and are not executed by result queries.
+Nontrivial receiver temporaries retain their existing constructor/destructor
+requirements. By-value record parameters/results retain separate `apply`
+query-source requirements, even when their runtime invocation is admitted.
 
 Pinned `std::move`, `std::forward`, `std::as_const` and
 `std::move_if_noexcept` reference casts of these standard function objects also

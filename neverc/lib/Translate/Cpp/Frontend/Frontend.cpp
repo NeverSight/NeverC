@@ -3572,28 +3572,50 @@ static bool utilityApplyInvocationSource(Adapter &A, const CallExpr *Call,
          Exception(Dispatch, Inner);
 }
 
-static QualType utilityApplyResultSource(Adapter &A, const CallExpr *Call) {
+struct UtilityApplySource {
+  QualType Result;
+  const CXXMethodDecl *UserMethod = nullptr;
+};
+
+static UtilityApplySource utilityApplyResultSource(Adapter &A,
+                                                 const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "apply" ||
       Call->getNumArgs() != 2)
     return {};
+  // Scalar/reference parameters and scalar/reference/void results add no
+  // hidden record lifetime. Referent layouts keep their independent sources.
+  auto Signature = [](const FunctionProtoType *Target) {
+    if (!Target || Target->getReturnType()->isRecordType())
+      return false;
+    for (const auto Parameter : Target->param_types())
+      if (Parameter->isRecordType())
+        return false;
+    return true;
+  };
   const auto Callable = Call->getArg(0)->getType();
   if (Callable->isFunctionType() || Callable->isFunctionPointerType()) {
     const auto *Target = (Callable->isFunctionType()
                              ? Callable : Callable->getPointeeType())
                             ->getAs<FunctionProtoType>();
-    // Hidden by-value record construction/destruction needs its own selected
-    // source proof. Referent layouts still close independently.
-    if (!Target || Target->getReturnType()->isRecordType())
+    if (!Signature(Target))
       return {};
-    for (const auto Parameter : Target->param_types())
-      if (Parameter->isRecordType())
-        return {};
     const auto Operation =
         approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
     return Operation && *Operation == UtilityOperation::TupleApply &&
                    utilityApplyInvocationSource(A, Call, Target)
-               ? Target->getReturnType() : QualType();
+               ? UtilityApplySource{Target->getReturnType()} : UtilityApplySource{};
+  }
+  if (const auto User =
+          approvedUtilityTupleApplyUserCall(A.S, A.Sources, Call, A.Context)) {
+    const auto *Target = User->Method->getType()->getAs<FunctionProtoType>();
+    if (!Signature(Target) ||
+        !utilityApplyInvocationSource(A, Call, Target, User->Method))
+      return {};
+    // The pinned SDK dispatch proves only invocation. Retain the selected
+    // source operator's original signature, exception and completed definition,
+    // including a specialization selected solely by an unevaluated query.
+    return {Target->getReturnType(), User->Method};
   }
   const auto Object =
       approvedUtilityTupleApplyObjectOperation(A.S, A.Sources, Call, A.Context);
@@ -3606,7 +3628,7 @@ static QualType utilityApplyResultSource(Adapter &A, const CallExpr *Call) {
   // The exact SDK operation proves this scalar result, including its private
   // decltype spelling. The caller's written types and expressions keep their
   // independent sources; no general type canonicalization is permitted.
-  return A.Context.getCanonicalType(Object->Operation.ResultType);
+  return {A.Context.getCanonicalType(Object->Operation.ResultType)};
 }
 
 static bool functionalObjectInvokeSource(Adapter &A, const CallExpr *Call) {
@@ -8602,7 +8624,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const MemberExpr *, const CallExpr *>
       AuthenticatedVectorEndpointReferences;
   std::map<const Expr *, const CallExpr *> AuthenticatedUtilityReferences;
-  std::map<const CallExpr *, QualType> ApplyResultSources;
+  std::map<const CallExpr *, UtilityApplySource> ApplyResultSources;
   std::map<const CallExpr *, const ValueDecl *> AuthenticatedUserInvokeSources;
   std::map<const Stmt *, const Expr *> MemFnCarrierSources;
   std::map<const Stmt *, const DeclRefExpr *> MemberPointerCarrierSources;
@@ -11177,16 +11199,20 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       A.chargeExpansion(1, Location.getBeginLoc());
     return true;
   }
-  QualType applyResultSource(const CallExpr *Call) {
+  const UtilityApplySource *applySource(const CallExpr *Call) {
     const auto *Function = Call ? Call->getDirectCallee() : nullptr;
     if (!Function || !Function->getIdentifier() || Function->getName() != "apply")
-      return {};
+      return nullptr;
     auto [Source, New] = ApplyResultSources.try_emplace(Call);
     if (New) {
       A.chargeExpansion(1, Call->getExprLoc());
       Source->second = utilityApplyResultSource(A, Call);
     }
-    return Source->second;
+    return Source->second.Result.isNull() ? nullptr : &Source->second;
+  }
+  QualType applyResultSource(const CallExpr *Call) {
+    const auto *Source = applySource(Call);
+    return Source ? Source->Result : QualType();
   }
   QualType applyExpressionSource(const Expr *Expression) {
     const auto Original = Expression->getType();
@@ -11627,6 +11653,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const ValueDecl *UserInvoke = UserMethod;
         if (!ReferenceInvoke) {
           UserInvoke = functionalUserInvokeSource(A, Call);
+          if (!UserInvoke)
+            if (const auto *Apply = applySource(Call))
+              UserInvoke = Apply->UserMethod;
           if (!UserInvoke)
             if (const auto Pointer = functionalMemberInvokeSource(A, Call)) {
               UserInvoke = Pointer->Member;

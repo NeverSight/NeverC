@@ -28856,7 +28856,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Function->getReturnType())))))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->size(); ++I) {
-      if (ObjectOperation || ReferenceCallable || MemberCallable)
+      // Each callable descriptor already proves its selected parameter flow,
+      // including exact function-pointer value parameters for user operators.
+      if (UserCallable || ObjectOperation || ReferenceCallable || MemberCallable)
         continue;
       const auto StoredElement = Tuple->elementType(I);
       const auto Element = StoredElement->isReferenceType()

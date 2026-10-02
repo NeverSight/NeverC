@@ -74132,6 +74132,280 @@ using G=std::plus<>;
   }
 }
 
+TEST_F(TranslateTest, CoreV2UserObjectApplyQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("user-object-apply-queries.cpp");
+  const auto Output = tmpFile("user-object-apply-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+int calls, defaults, operators, live, destroyed;
+using Tuple = std::tuple<int>;
+using Row = std::array<int, 2>;
+using Single = std::array<int, 1>;
+using Array = int[3];
+using Callback = int (*)(int) noexcept;
+struct Function {
+  int value;
+  int operator()(short n) & noexcept { ++operators; return value += n; }
+  long operator()(short n) const & { ++operators; return value + n + 10; }
+  int operator()(short n) && noexcept { ++operators; return value + n + 20; }
+};
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+struct Owner {
+  int value;
+  explicit Owner(int n) noexcept : value(n) { ++live; }
+  ~Owner() noexcept { --live; ++destroyed; }
+  int operator()(int n) && noexcept { ++operators; return value + n; }
+};
+struct Outside { int operator()(int n) const noexcept; };
+int Outside::operator()(int n) const noexcept { return n + 1; }
+template<class T> struct Typed {
+  T offset;
+  T operator()(T n) const noexcept(sizeof(T) > 0) { return offset + n; }
+};
+struct Generic {
+  template<class T> auto operator()(T n) const noexcept { ++operators; return n + 1; }
+};
+template<class T> struct Reference {
+  T &operator()(T &n) const noexcept { ++operators; return n; }
+};
+struct Rvalue {
+  int &&operator()(int &&n) const noexcept { ++operators; return static_cast<int &&>(n); }
+};
+struct Set { void operator()(int &n) const noexcept { ++operators; n = 99; } };
+struct Box { int value; };
+struct Narrow { unsigned char operator()(unsigned char n) const noexcept { return n; } };
+struct Sum { int operator()(long a, double b) const noexcept { return int(a + long(b)); } };
+struct Empty { int operator()() const noexcept { ++operators; return 17; } };
+struct Pointer { Callback operator()(Callback p) const noexcept { return p; } };
+int one(int n) noexcept { return n + 1; }
+Function &receiver(Function &f, int n = (++defaults, 1)) noexcept { ++calls; return f; }
+Tuple &arguments(Tuple &t, int n = (++defaults, 1), Ticket ticket = Ticket()) noexcept {
+  ++calls; return t;
+}
+Tuple &throwing_arguments(Tuple &t) { ++calls; return t; }
+Owner temporary(int n = (++defaults, 5)) noexcept { ++calls; return Owner(n); }
+int query_only(Tuple &t) {
+  Outside outside;
+  Generic generic;
+  // These queries alone complete the apply chain. Deduced operator returns
+  // also retain the selected member-template definition as a source root.
+  static_assert(__is_same(decltype(std::apply(outside, t)), int));
+  static_assert(__is_same(decltype(std::apply(generic, t)), int));
+  static_assert(noexcept(std::apply(outside, t)) && noexcept(std::apply(generic, t)));
+  return 0;
+}
+int main() {
+  Function function{10};
+  const Function constant{20};
+  auto *pointer = &function;
+  Tuple tuple(2);
+  const Tuple fixed(3);
+  Typed<short> typed{7};
+  std::array<short, 1> small{{4}};
+  std::pair<int, int> pair(3, 4);
+  const Row row{{5, 6}};
+  Single single{{9}};
+  const Single fixed_single{{13}};
+  Tuple narrow(257);
+  std::tuple<> empty;
+  std::array<int, 0> zero{};
+  if (std::apply(function, tuple) != 12 || std::apply(constant, tuple) != 32 ||
+      std::apply(Function{30}, tuple) != 52 ||
+      std::apply(static_cast<Function &&>(function), fixed) != 35 ||
+      std::apply(Owner(5), tuple) != 7 || std::apply(Outside{}, tuple) != 3 ||
+      std::apply(typed, small) != 11 || std::apply(Narrow{}, narrow) != 1 ||
+      std::apply(Sum{}, pair) != 7 || std::apply(Sum{}, row) != 11 ||
+      std::apply(Empty{}, empty) != 17 || std::apply(Empty{}, zero) != 17) return 1;
+  Array array{1, 2, 3};
+  Box box{7};
+  Callback callback = one;
+  std::tuple<Array &> arrays(array);
+  std::tuple<Box &> boxes(box);
+  std::tuple<Callback &> callbacks(callback);
+  std::array<Row, 1> rows{{Row{{8, 9}}}};
+  std::apply(Reference<int>{}, single) = 10;
+  std::apply(Reference<Array>{}, arrays)[1] = 4;
+  std::apply(Reference<Box>{}, boxes).value = 11;
+  int &&alias = std::apply(Rvalue{}, static_cast<Single &&>(single));
+  alias = 12;
+  Tuple cleared(1);
+  std::apply(Set{}, cleared);
+  if (&std::apply(Reference<const int>{}, fixed_single) != &fixed_single[0] ||
+      &std::apply(Reference<Callback>{}, callbacks) != &callback ||
+      &std::apply(Reference<Row>{}, rows) != &rows[0] ||
+      std::apply(Pointer{}, callbacks)(2) != 3 || std::get<0>(cleared) != 99) return 2;
+  calls = defaults = operators = live = destroyed = 0;
+  static_assert(__is_same(decltype(std::apply(function, tuple)), int));
+  static_assert(__is_same(decltype((std::apply)(*pointer, tuple)), int));
+  static_assert(__is_same(decltype(std::apply(constant, tuple)), long));
+  static_assert(__is_same(decltype(std::apply(Function(function), tuple)), int));
+  static_assert(__is_same(decltype(std::apply(static_cast<Function &&>(function), fixed)), int));
+  static_assert(__is_same(decltype(std::apply(typed, small)), short));
+  static_assert(__is_same(decltype(std::apply(Narrow{}, narrow)), unsigned char));
+  static_assert(__is_same(decltype(std::apply(Sum{}, pair)), int));
+  static_assert(__is_same(decltype(std::apply(Sum{}, row)), int));
+  static_assert(__is_same(decltype(std::apply(Empty{}, empty)), int));
+  static_assert(__is_same(decltype(std::apply(Empty{}, zero)), int));
+  static_assert(__is_same(decltype(std::apply(Reference<int>{}, single)), int &));
+  static_assert(__is_same(decltype(std::apply(Reference<const int>{}, fixed_single)), const int &));
+  static_assert(__is_same(decltype(std::apply(Reference<Array>{}, arrays)), Array &));
+  static_assert(__is_same(decltype(std::apply(Reference<Box>{}, boxes)), Box &));
+  static_assert(__is_same(decltype(std::apply(Reference<Callback>{}, callbacks)), Callback &));
+  static_assert(__is_same(decltype(std::apply(Reference<Row>{}, rows)), Row &));
+  static_assert(__is_same(decltype(std::apply(Rvalue{}, static_cast<Single &&>(single))), int &&));
+  static_assert(__is_same(decltype(std::apply(Set{}, cleared)), void));
+  static_assert(__is_same(decltype(std::apply(Pointer{}, callbacks)), Callback));
+  static_assert(std::is_signed<decltype(std::apply(constant, tuple))>::value);
+  static_assert(__array_extent(typename std::remove_reference<decltype(std::apply(Reference<Array>{}, arrays))>::type, 0) == 3);
+  static_assert(noexcept(std::apply(function, arguments(tuple))));
+  static_assert(!noexcept(std::apply(constant, tuple)));
+  static_assert(!noexcept(std::apply(function, throwing_arguments(tuple))));
+  static_assert(noexcept(std::apply(typed, small)) && noexcept(std::apply(Set{}, cleared)));
+  static_assert(sizeof(std::apply(receiver(function), arguments(tuple))) == sizeof(int));
+  static_assert(sizeof(std::apply(temporary(), tuple)) == sizeof(int));
+  static_assert(sizeof(std::apply(Reference<Array>{}, arrays)) == sizeof(array));
+  static_assert(alignof(decltype(std::apply(Reference<Box>{}, boxes))) == alignof(Box));
+  static_assert(__is_same(decltype(std::apply((++calls, function), (++calls, tuple))), int));
+  using Result = decltype(std::apply(function, arguments(tuple, 1, Ticket())));
+  static_assert(__is_same(Result, int));
+  int extent[sizeof(decltype(std::apply(function, tuple))) == sizeof(int) ? 2 : 1]{};
+  if (query_only(tuple) || sizeof(extent) != 2 * sizeof(int) || function.value != 12 ||
+      single[0] != 12 || array[1] != 4 || box.value != 11 || callback != one ||
+      calls || defaults || operators || live || destroyed) return 3;
+  const auto observed = std::apply(receiver(function), arguments(tuple));
+  const auto owned = std::apply(temporary(), tuple);
+  return observed == 14 && owned == 7 && calls == 3 && defaults == 3 &&
+         operators == 2 && live == 0 && destroyed == 2 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("user-object-apply-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserObjectApplyQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"method-body", R"cpp(
+struct C{int operator()(int n)const noexcept{long double hidden=0;return n;}};int f(C&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"selected-template-body", R"cpp(
+struct C{template<class U>auto operator()(U n)const noexcept{long double hidden=0;return n;}};int f(C&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"method-original-exception", R"cpp(
+struct C{int operator()(int n)noexcept(sizeof(long double)>0);};int C::operator()(int n)noexcept{return n;}int f(C&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));static_assert(noexcept(std::apply(c,t)));return 0;}
+)cpp"},
+      {"method-return-alias", R"cpp(
+using E=decltype((sizeof(long double),int{}));struct C{E operator()(int n)const noexcept{return n;}};int f(C&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"method-parameter-alias", R"cpp(
+using E=decltype((sizeof(long double),int{}));struct C{int operator()(E n)const noexcept{return n;}};int f(C&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"adjusted-method-array-bound", R"cpp(
+struct C{int operator()(int a[(sizeof(long double),2)])const noexcept{return a[0];}};int f(C&c,std::tuple<int*>&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"receiver-written-template-argument", R"cpp(
+template<class U>struct C{int operator()(int n)const noexcept{return n;}};using E=decltype((sizeof(long double),int{}));int f(C<E>&c,T&t){int n=std::apply(c,t);static_assert(__is_same(decltype(std::apply(c,t)),int));return n;}
+)cpp"},
+      {"receiver-expression", R"cpp(
+int f(F&c,T&t){static_assert(__is_same(decltype(std::apply((sizeof(long double),c),t)),int));return 0;}
+)cpp"},
+      {"carrier-expression", R"cpp(
+int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,(sizeof(long double),t))),int));return 0;}
+)cpp"},
+      {"receiver-initializer", R"cpp(
+int f(T&t){F c=(sizeof(long double),F{});static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"element-initializer", R"cpp(
+int f(F&c){T t((sizeof(long double),1));static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"carrier-written-element", R"cpp(
+using E=decltype((sizeof(long double),int{}));int f(F&c,std::tuple<E>&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"explicit-template-argument", R"cpp(
+int f(F&c,T&t){static_assert(__is_same(decltype(std::apply<decltype((sizeof(long double),c)),T&>(c,t)),int));return 0;}
+)cpp"},
+      {"selected-receiver-default", R"cpp(
+F&source(F&c,int n=sizeof(long double))noexcept{return c;}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(source(c),t)),int));return 0;}
+)cpp"},
+      {"selected-carrier-default", R"cpp(
+T&source(T&t,int n=sizeof(long double))noexcept{return t;}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,source(t))),int));return 0;}
+)cpp"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};T&source(T&t,Ticket=Ticket())noexcept{return t;}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,source(t))),int));return 0;}
+)cpp"},
+      {"temporary-destructor-exception", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};T&source(T&t,Ticket=Ticket())noexcept{return t;}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,source(t))),int));return 0;}
+)cpp"},
+      {"independent-apply-address", R"cpp(
+int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));static_assert(sizeof(&std::apply<F&,T&>)>0);return 0;}
+)cpp"},
+      {"independent-helper-address", R"cpp(
+int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));static_assert(sizeof(&std::__apply_tuple_impl<F&,T&,0>)>0);return 0;}
+)cpp"},
+      {"cast-apply-callee", R"cpp(
+using I=int(*)(F&,T&)noexcept;int f(F&c,T&t){static_assert(__is_same(decltype(static_cast<I>(&std::apply<F&,T&>)(c,t)),int));return 0;}
+)cpp"},
+      {"apply-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class Fn,class Tuple>constexpr decltype(auto) apply(Fn&&fn,Tuple&&t)noexcept(noexcept(std::__apply_tuple_impl(std::forward<Fn>(fn),std::forward<Tuple>(t),typename __make_tuple_indices<tuple_size_v<remove_reference_t<Tuple>>>::type{})));}}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"helper-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class Fn,class Tuple,size_t...I>constexpr decltype(auto) __apply_tuple_impl(Fn&&fn,Tuple&&t,__tuple_indices<I...>)noexcept(noexcept(std::__invoke(std::forward<Fn>(fn),std::get<I>(std::forward<Tuple>(t))...)));}}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"dispatch-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class Fn,class...A>constexpr decltype(std::declval<Fn>()(std::declval<A>()...)) __invoke(Fn&&fn,A&&...a)noexcept(noexcept(static_cast<Fn&&>(fn)(static_cast<A&&>(a)...)));}}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"forward-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class U>constexpr U&&forward(__libcpp_remove_reference_t<U>&)noexcept;}}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"get-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<size_t I,class...U>constexpr typename tuple_element<I,tuple<U...>>::type&get(tuple<U...>&)noexcept;}}int f(F&c,T&t){static_assert(__is_same(decltype(std::apply(c,t)),int));return 0;}
+)cpp"},
+      {"record-value-parameter-remains-separate", R"cpp(
+struct Box{int value;};struct C{int operator()(Box b)const noexcept{return b.value;}};int f(C&c,std::tuple<Box>&t){int n=std::apply(c,t);static_assert(__is_same(decltype(std::apply(c,t)),int));return n;}
+)cpp"},
+      {"record-value-result-remains-separate", R"cpp(
+struct Box{int value;};struct C{Box operator()(int n)const noexcept{return Box{n};}};int f(C&c,T&t){Box n=std::apply(c,t);static_assert(__is_same(decltype(std::apply(c,t)),Box));return n.value;}
+)cpp"},
+      {"wrapped-user-object-remains-separate", R"cpp(
+int f(F&c,T&t){auto w=std::ref(c);int n=std::apply(w,t);static_assert(__is_same(decltype(std::apply(w,t)),int));return n;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("user-object-apply-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("user-object-apply-query-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+struct F { int operator()(int n) const noexcept { return n; } };
+using T = std::tuple<int>;
+)cpp") + Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ObjectApplyQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("object-apply-queries.cpp");
   const auto Output = tmpFile("object-apply-queries.nc");
@@ -74634,8 +74908,8 @@ struct Box{int value;};int other(Box b)noexcept{return b.value;}int f(std::tuple
       {"record-value-result-remains-separate", R"cpp(
 struct Box{int value;};Box other(int n)noexcept{return Box{n};}int f(T&t){Box n=std::apply(other,t);static_assert(__is_same(decltype(std::apply(other,t)),Box));return n.value;}
 )cpp"},
-      {"object-callable-remains-separate", R"cpp(
-struct Call{int operator()(int n)const noexcept{return n;}};int f(T&t){Call c;int n=std::apply(c,t);static_assert(__is_same(decltype(std::apply(c,t)),int));return n;}
+      {"wrapped-object-callable-remains-separate", R"cpp(
+struct Call{int operator()(int n)const noexcept{return n;}};int f(T&t){Call c;auto w=std::ref(c);int n=std::apply(w,t);static_assert(__is_same(decltype(std::apply(w,t)),int));return n;}
 )cpp"},
   };
   for (const auto &Case : Cases) {
