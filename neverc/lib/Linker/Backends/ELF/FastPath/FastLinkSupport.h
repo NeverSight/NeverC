@@ -27,6 +27,18 @@
 #ifndef R_X86_64_REX_GOTPCRELX
 #define R_X86_64_REX_GOTPCRELX 42
 #endif
+#ifndef SHT_RELR
+#define SHT_RELR 19
+#endif
+#ifndef DT_RELRSZ
+#define DT_RELRSZ 35
+#endif
+#ifndef DT_RELR
+#define DT_RELR 36
+#endif
+#ifndef DT_RELRENT
+#define DT_RELRENT 37
+#endif
 
 #include <algorithm>
 #include <atomic>

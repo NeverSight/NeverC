@@ -1818,7 +1818,8 @@ void scanRelocations() {
           if (f && ri.global)
             atomicOr(ctx.flags[ri.id], f);
           else if (f)
-            o->localIfuncs.push_back({ELF64_R_SYM(r.r_info), f, UINT32_MAX});
+            o->localIfuncs.push_back(
+                {static_cast<uint32_t>(ELF64_R_SYM(r.r_info)), f, UINT32_MAX});
         }
         if (ri.kind == K_GdToIe || ri.kind == K_GdToLe || ri.kind == K_LdToLe) {
           checkTlsSequence(o, sec, rels, n, k, ri.kind);
