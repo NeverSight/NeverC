@@ -520,9 +520,10 @@ static int append_ip_address(neverc_x509_cert_t *cert,
     return 0;
 }
 
-/* Returns 1 when the SAN parsed but no dNSName/iPAddress was stored
+/* Returns 1 when the SAN holds no dNSName, iPAddress, rfc822Name or URI
  * (Go crypto/x509: a critical SAN with only skipped GeneralNames is
- * unhandled). Negative is a parse error. */
+ * unhandled). rfc822Name and URI are recognized but not stored. Negative is
+ * a parse error. */
 static int parse_subject_alt_name(neverc_x509_cert_t *cert,
                                   const uint8_t *data, size_t len) {
     asn1_reader_t wrapper = {data, len, 0};
@@ -545,6 +546,8 @@ static int parse_subject_alt_name(neverc_x509_cert_t *cert,
         } else if (tag == 0x87) {
             if (append_ip_address(cert, value, value_len) != 0)
                 return -1;
+            extracted++;
+        } else if (tag == 0x81 || tag == 0x86) {
             extracted++;
         }
     }
