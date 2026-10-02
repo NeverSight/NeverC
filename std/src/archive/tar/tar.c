@@ -231,9 +231,13 @@ static int tar_parse_header_at(const neverc_tar_reader_t *r, size_t position,
 
     size_t name_length = tar_field_length(block, 100);
     size_t prefix_length = 0;
-    /* POSIX ustar is "ustar\0"; GNU is "ustar " and offset 345 is not prefix. */
-    if (memcmp(block + 257, "ustar", 5) == 0 && block[262] == '\0')
-        prefix_length = tar_field_length(block + 345, 155);
+    /* POSIX ustar is "ustar\0"; GNU is "ustar " and offset 345 is not prefix.
+     * The star variant ends the block with "tar\0" and stores atime/ctime
+     * after a 131-byte prefix. */
+    if (memcmp(block + 257, "ustar", 5) == 0 && block[262] == '\0') {
+        int star = memcmp(block + 508, "tar", 4) == 0;
+        prefix_length = tar_field_length(block + 345, star ? 131 : 155);
+    }
     size_t full_length = name_length;
     if (prefix_length > 0) {
         if (prefix_length > SIZE_MAX - name_length - 1U) return -1;
