@@ -3173,6 +3173,46 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
+static bool utilityUninstantiatedMoveSignatureSource(
+    Adapter &A, const CXXMethodDecl *Method) {
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+  if (!Constructor || !Constructor->isMoveConstructor() ||
+      Constructor->isImplicit() || Constructor->isDefaulted() ||
+      Constructor->isDeleted() || Constructor->isInvalidDecl() ||
+      Constructor->isUsed(/*CheckUsedAttr=*/false) || Constructor->hasBody() ||
+      !concreteClassFunction(Constructor))
+    return false;
+  const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
+  const auto *Origin = dyn_cast_or_null<CXXConstructorDecl>(
+      Constructor->getInstantiatedFromMemberFunction());
+  const auto *Info = Constructor->getTypeSourceInfo();
+  const auto *OriginInfo = Origin ? Origin->getTypeSourceInfo() : nullptr;
+  if (!Prototype || Prototype->getExceptionSpecType() != EST_Uninstantiated ||
+      Prototype->getExceptionSpecDecl() != Constructor || !Origin ||
+      Prototype->getExceptionSpecTemplate() != Origin || !Info || !OriginInfo ||
+      !A.S.owns(A.Sources, Constructor->getLocation()) ||
+      !A.S.owns(A.Sources, Origin->getLocation()) ||
+      Info->getType()->isInstantiationDependentType())
+    return false;
+  const auto *Written = Info->getType()->getAs<FunctionProtoType>();
+  const auto *Pattern = Origin->getType()->getAs<FunctionProtoType>();
+  const auto *PatternWritten = OriginInfo->getType()->getAs<FunctionProtoType>();
+  if (!standardExceptionSpecification(Written) ||
+      !standardExceptionSpecification(Pattern) || !PatternWritten ||
+      Written->getExceptionSpecType() != Pattern->getExceptionSpecType() ||
+      PatternWritten->getExceptionSpecType() != Pattern->getExceptionSpecType() ||
+      Written->getNoexceptExpr() != Pattern->getNoexceptExpr() ||
+      PatternWritten->getNoexceptExpr() != Pattern->getNoexceptExpr())
+    return false;
+  const auto *Expression = Written->getNoexceptExpr();
+  // A const-only adapter can leave this move's exception spec uninstantiated.
+  // Its concrete written signature still retains the exact nondependent
+  // pattern expression. Check that source without resolving or calling it.
+  return !Expression ||
+         (!Expression->isTypeDependent() && !Expression->isValueDependent() &&
+          !Expression->isInstantiationDependent());
+}
+
 static bool utilityDeletedCopyConditionalMoveSource(
     Adapter &A, const CallExpr *Call, const CXXRecordDecl *Record,
     std::vector<const CXXMethodDecl *> *Signatures) {
@@ -3190,7 +3230,9 @@ static bool utilityDeletedCopyConditionalMoveSource(
       return false; // Constructor-template selection keeps its own sources.
   const auto CopyParameter = A.Context.getLValueReferenceType(
       A.Context.getRecordType(Record).withConst());
-  bool FoundCopy = false;
+  bool FoundExplicitCopy = false;
+  bool FoundImplicitCopy = false;
+  bool FoundDeclaredMove = false;
   for (const auto *Constructor : Record->ctors()) {
     A.chargeExpansion(1, Constructor->getLocation());
     if (Constructor->isInheritingConstructor())
@@ -3201,23 +3243,35 @@ static bool utilityDeletedCopyConditionalMoveSource(
         Constructor->getNumParams() != 1 ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
-    if (Constructor->isCopyConstructor() && !Constructor->isImplicit() &&
-        Constructor->isDeleted() &&
-        Constructor->getCanonicalDecl()->isDeletedAsWritten() &&
+    if (Constructor->isMoveConstructor() && !Constructor->isImplicit())
+      FoundDeclaredMove = true;
+    if (Constructor->isCopyConstructor() && Constructor->isDeleted() &&
         Constructor->getAccess() == AS_public &&
         A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
-                               CopyParameter))
-      FoundCopy = true;
+                               CopyParameter)) {
+      if (!Constructor->isImplicit() &&
+          Constructor->getCanonicalDecl()->isDeletedAsWritten())
+        FoundExplicitCopy = true;
+      else if (Constructor->isImplicit() && Constructor->isDefaulted() &&
+               !Constructor->getTypeSourceInfo() &&
+               Constructor->getCanonicalDecl() == Constructor &&
+               Constructor->getMostRecentDecl() == Constructor)
+        FoundImplicitCopy = true;
+    }
   }
   if (const auto *Destructor = Record->getDestructor();
       Destructor &&
       !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
     return false;
-  // An explicitly deleted exact const-copy makes the copy trait false for
-  // both T and const T. This proves the pinned T&& branch independently of
-  // move bodies or the owning graph. Retain written special-member sources,
-  // but never declare, instantiate or execute a hypothetical operation.
-  return FoundCopy;
+  // An exact deleted const-copy makes the copy trait false for T and const T.
+  // Besides an explicit deletion, a user-declared move constructor deletes
+  // the implicit copy independently of the owning graph. Require that exact
+  // already-declared copy and its source-owned move; other implicit deletion
+  // causes keep their own proof. No hypothetical declaration or body is made.
+  return FoundExplicitCopy ||
+         (FoundImplicitCopy && FoundDeclaredMove &&
+          Record->hasUserDeclaredMoveConstructor() &&
+          !Record->hasUserDeclaredCopyConstructor());
 }
 
 static bool utilityTrivialConditionalMoveSource(
@@ -3325,8 +3379,8 @@ static bool utilityValueAdapterSource(
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
   // on their ordinary checks. Conditional move with an object template
-  // argument additionally proves a trivial owning graph or an explicit
-  // deleted const-copy, retaining the original special-member signatures.
+  // argument additionally proves a trivial owning graph or a deleted
+  // const-copy, retaining the original special-member signatures.
   const bool OwnedRecord =
       Definition &&
       !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
@@ -8790,6 +8844,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              ArraySources.count(Copy->Loop->getCommonExpr())));
   }
   const CXXMethodDecl *CurrentMethod = nullptr;
+  const CXXMethodDecl *CurrentWrittenConditionalMoveSignature = nullptr;
   const FunctionDecl *CurrentFunction = nullptr;
   const DeclaratorDecl *CurrentDeclarator = nullptr;
   const FieldDecl *CurrentDefaultField = nullptr;
@@ -11974,12 +12029,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   operationTypeDependency(Signature->getTypeSourceInfo());
                   // A class instance may still have lazy copy/move bodies.
                   // The exact adapter proof consumes its written signature,
-                  // so queue only an already resolved signature for checking.
+                  // so check an already resolved signature or its exact
+                  // retained nondependent move signature without resolution.
                   // Defaulted members retain their existing generated proof.
                   if (concreteClassFunction(Signature) &&
                       !Signature->isDefaulted() &&
-                      standardExceptionSpecification(
-                          Signature->getType()->getAs<FunctionProtoType>()) &&
+                      (standardExceptionSpecification(
+                           Signature->getType()->getAs<FunctionProtoType>()) ||
+                       utilityUninstantiatedMoveSignatureSource(A, Signature)) &&
                       QueuedConditionalMoveSignatures.insert(Signature).second) {
                     A.chargeExpansion(1, Call->getExprLoc());
                     ConsumedConditionalMoveSignatures.push_back(Signature);
@@ -16141,6 +16198,8 @@ public:
     if (!Outer || Outer.getOpaqueData() != TL.getOpaqueData() ||
         Outer.getType() != TL.getType())
       return Normal();
+    if (CurrentWrittenConditionalMoveSignature == CurrentFunction)
+      return Normal(); // The exact adapter authorized only this written source.
     const auto *Written = TL.getTypePtr();
     const auto *Resolved = CurrentFunction->getType()->getAs<FunctionProtoType>();
     const auto *OldExpression = Written->getNoexceptExpr();
@@ -16730,7 +16789,8 @@ public:
     Entry->second.Complete = Result && A.S.Diagnostics.empty();
     return Entry->second.Complete;
   }
-  bool checkConsumedOperationSignature(const CXXMethodDecl *Method) {
+  bool checkConsumedOperationSignature(const CXXMethodDecl *Method,
+                                       bool ConditionalMove = false) {
     const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
     const auto Written = CheckedOperationTypes.find(operationTypeSourceKey(Location));
     // An incomplete existing source cannot be replayed or repaired here.
@@ -16739,6 +16799,7 @@ public:
     auto *SavedFunction = CurrentFunction;
     auto *SavedMethod = CurrentMethod;
     auto *SavedDeclarator = CurrentDeclarator;
+    auto *SavedWrittenConditionalMove = CurrentWrittenConditionalMoveSignature;
     auto *SavedField = CurrentDefaultField;
     auto SavedOwner = ImplicitInitializerOwner;
     const auto DefinitionDepth = DefinitionFrames.size();
@@ -16747,12 +16808,16 @@ public:
     CurrentFunction = Method;
     CurrentMethod = Method;
     CurrentDeclarator = Method;
+    CurrentWrittenConditionalMoveSignature =
+        ConditionalMove && utilityUninstantiatedMoveSignatureSource(A, Method)
+            ? Method : nullptr;
     CurrentDefaultField = nullptr;
     ImplicitInitializerOwner = Method->getLocation();
     auto Restore = llvm::make_scope_exit([&] {
       CurrentFunction = SavedFunction;
       CurrentMethod = SavedMethod;
       CurrentDeclarator = SavedDeclarator;
+      CurrentWrittenConditionalMoveSignature = SavedWrittenConditionalMove;
       CurrentDefaultField = SavedField;
       ImplicitInitializerOwner = SavedOwner;
       DefinitionFrames.resize(DefinitionDepth);
@@ -16779,7 +16844,10 @@ public:
     // Reuse only the checked written node. The actual consumed expression
     // still needs its first check in this method's context, without replaying
     // an existing expression, visiting a body or requesting Sema resolution.
-    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    const auto *Prototype =
+        (CurrentWrittenConditionalMoveSignature == Method ? Location.getType()
+                                                         : Method->getType())
+            ->getAs<FunctionProtoType>();
     auto *Expression = Prototype ? Prototype->getNoexceptExpr() : nullptr;
     if (!standardExceptionSpecification(Prototype) ||
         (Expression && (Expression->isTypeDependent() || Expression->isValueDependent() ||
@@ -16848,7 +16916,8 @@ public:
                      CallIndex = 0, ConditionalMoveIndex = 0;;) {
       while (ConditionalMoveIndex < ConsumedConditionalMoveSignatures.size())
         if (!checkConsumedOperationSignature(
-                ConsumedConditionalMoveSignatures[ConditionalMoveIndex++]))
+                ConsumedConditionalMoveSignatures[ConditionalMoveIndex++],
+                /*ConditionalMove=*/true))
           return false;
       if (!finishConsumedDestructorSignatures(DestructorIndex) ||
           !finishConsumedConstructorSignatures(ConstructorIndex) ||

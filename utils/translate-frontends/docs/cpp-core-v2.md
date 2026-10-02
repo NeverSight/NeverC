@@ -921,18 +921,29 @@ pointer/reference fields do not consume their referents' constructor graph.
 
 Object-argument queries also admit source-owned nontrivial records with an
 explicitly deleted public copy constructor taking exactly `const Record&`.
-That declaration proves the pinned copy trait false for both mutable and const
-objects, so the result is respectively `Record&&` or `const Record&&`, regardless
-of whether moving throws or is deleted. The record may have ordinary value
+The same proof admits an already-declared implicit, defaulted, deleted
+`const Record&` copy when the record has a source-owned user-declared move
+constructor and no user-declared copy constructor. The move may be ordinary,
+defaulted or deleted, and need not be accessible at the query site: declaring
+it alone deletes the implicit copy. These declarations prove the pinned copy
+trait false for both mutable and const objects, so the result is respectively
+`Record&&` or `const Record&&`, regardless of whether moving throws or is deleted.
+The record may have ordinary value
 constructors, nontrivial value members, reference fields and a nontrivial
 destructor; its storage and actual lifetimes keep their ordinary checks. All
 written copy/move and destructor signatures, including aliases and exception
 expressions, remain independent source dependencies. No hypothetical body is
 instantiated or executed, including unused members of concrete class templates.
+A const-only query can leave the move exception specification uninstantiated.
+Its concrete written signature is checked when it retains the exact
+nondependent exception expression of the source-owned member pattern; this
+does not resolve the move's exception specification. Dependent unresolved
+exception sources still require a separate proof.
 This additional proof excludes constructor templates, inherited constructors,
-copy/move constructors with extra parameters, and copies deleted only implicitly
-or through defaulting. A deleted non-const or volatile-copy overload alone does
-not supply this exact const-copy proof.
+copy/move constructors with extra parameters, user-defaulted deleted copies,
+and other causes of implicit deletion such as a move assignment alone or an
+uncopyable member. A deleted non-const or volatile-copy overload alone does not
+supply this exact const-copy proof.
 
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
