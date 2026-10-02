@@ -3070,6 +3070,8 @@ static bool utilityTrivialConditionalMoveSource(
     std::vector<const TypeSourceInfo *> *Signatures) {
   // The pinned builtin supplies the trait decision. Limit its owning graph to
   // trivial special members, and retain their written signatures separately.
+  // Normal record admission proves storage, including non-standard-layout
+  // reference carriers. Reference fields do not own a constructor graph.
   // No constructor body or hypothetical operation is instantiated here.
   std::set<const CXXRecordDecl *> Seen;
   auto Signature = [&](const FunctionDecl *Function) {
@@ -3093,8 +3095,7 @@ static bool utilityTrivialConditionalMoveSource(
     if (!Record || Depth >= 64 || Record->isInvalidDecl() ||
         Record->isDependentContext() || Record->isUnion() ||
         !A.S.owns(A.Sources, Record->getLocation()) ||
-        !Record->isStandardLayout() || !Record->isTrivial() ||
-        !Record->hasTrivialDestructor())
+        !Record->isTrivial() || !Record->hasTrivialDestructor())
       return false;
     if (!Seen.insert(Record).second)
       return true;

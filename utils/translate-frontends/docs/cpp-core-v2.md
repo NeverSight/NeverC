@@ -818,8 +818,8 @@ cleanup remain independent requirements. A cast alone does not instantiate an
 unused constructor or member-template body; actual invocation still requires
 its selected method source.
 
-`std::move_if_noexcept` queries also admit source-owned trivial standard-layout
-records whose owned base and value-member graph has only implicit, defaulted
+`std::move_if_noexcept` queries also admit source-owned trivial records whose
+owned base and value-member graph has only implicit, defaulted
 or deleted default/copy/move constructors and trivial destruction. The exact
 pinned builtin supplies its `T&&` or `const T&` decision, including throwing
 defaulted moves, deleted copies/moves and const operands. Written copy/move and
@@ -827,10 +827,17 @@ destructor signatures remain independent source dependencies throughout that
 graph, including their original exception expressions and parameter aliases.
 The query constructs no object and does not instantiate a constructor body.
 Scalar/pointer fields, owned fixed arrays, admitted empty bases and concrete
-class templates keep their ordinary layout and template-source checks.
+class templates keep their ordinary layout and template-source checks. Flat
+records with lvalue/rvalue reference fields, and nested values containing them,
+use the existing checked reference-field carriers even though their C++ layout
+is not standard-layout. The cast preserves every binding: const qualification
+of a containing record does not add const to its mutable referents, and an
+rvalue-reference field can delete copying while still permitting the `T&&`
+branch. Array, pointer-object, callback-object and record referents retain their
+original types and lifetimes; no referent copy or cleanup is introduced.
 Constructor templates, other constructor overloads, nontrivial owning graphs
 and SDK value members retain separate decision-source requirements. Non-owning
-pointer fields do not consume their referents' constructor graph.
+pointer/reference fields do not consume their referents' constructor graph.
 
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
