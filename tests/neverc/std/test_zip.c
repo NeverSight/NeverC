@@ -1171,6 +1171,19 @@ static void test_deflate_reader(void) {
                          packed, packed_len, sizeof(plain) + 1U, plain_crc);
     check_int("reject stream shorter than declared",
               read_entry(archive, n, out, sizeof(out), &got), -1);
+    {
+        /* The CRC must not be computed over destination bytes the stream
+         * never wrote: here a zeroed tail would make it match. */
+        uint8_t padded[sizeof(plain) + 1U];
+        memcpy(padded, plain, sizeof(plain));
+        padded[sizeof(plain)] = 0;
+        n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
+                             packed, packed_len, sizeof(padded),
+                             neverc_crc32_ieee(padded, sizeof(padded)));
+        memset(out, 0, sizeof(out));
+        check_int("reject short stream whose padded crc matches",
+                  read_entry(archive, n, out, sizeof(out), &got), -1);
+    }
     n = build_method_zip(archive, sizeof(archive), "body.txt", 8, 0,
                          packed, packed_len, sizeof(plain) - 1U, plain_crc);
     check_int("reject stream longer than declared",
@@ -1242,6 +1255,380 @@ static void test_deflate_reader(void) {
     neverc_zip_reader_free(&reader);
 }
 
+static void put64(uint8_t *p, uint64_t v) {
+    put32(p, (uint32_t)v);
+    put32(p + 4, (uint32_t)(v >> 32));
+}
+
+/* hello.txt via a scripting-language zip library forcing ZIP64: saturated
+ * local sizes carried by a local ZIP64 field, classic central values. */
+static const uint8_t forced_zip64_zip[] = {
+    0x50, 0x4b, 0x03, 0x04, 0x2d, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+    0x21, 0x00, 0x22, 0x2c, 0x8e, 0x67, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0x09, 0x00, 0x14, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e,
+    0x74, 0x78, 0x74, 0x01, 0x00, 0x10, 0x00, 0xf1, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xcb,
+    0x48, 0xcd, 0xc9, 0xc9, 0xd7, 0x51, 0xa8, 0xca, 0x2c, 0x50, 0x54, 0xc8,
+    0x18, 0x01, 0x6c, 0x2e, 0x00, 0x50, 0x4b, 0x01, 0x02, 0x2d, 0x03, 0x2d,
+    0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x21, 0x00, 0x22, 0x2c, 0x8e,
+    0x67, 0x12, 0x00, 0x00, 0x00, 0xf1, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74,
+    0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x37, 0x00, 0x00, 0x00, 0x4d, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+/* The same text piped through the command-line zip into a seekable file
+ * (entry "-"): local ZIP64 field, plus ZIP64 end records although no
+ * classic EOCD field is saturated, so the directory ends at the ZIP64
+ * record rather than at the EOCD. */
+static const uint8_t cli_zip64_end_zip[] = {
+    0x50, 0x4b, 0x03, 0x04, 0x2d, 0x00, 0x00, 0x00, 0x08, 0x00, 0x79, 0x0a,
+    0x42, 0x5d, 0x22, 0x2c, 0x8e, 0x67, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0x01, 0x00, 0x14, 0x00, 0x2d, 0x01, 0x00, 0x10, 0x00, 0xf1,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0xd7, 0x51, 0xa8, 0xca,
+    0x2c, 0x50, 0x54, 0xc8, 0x18, 0x01, 0x6c, 0x2e, 0x00, 0x50, 0x4b, 0x01,
+    0x02, 0x1e, 0x03, 0x2d, 0x00, 0x00, 0x00, 0x08, 0x00, 0x79, 0x0a, 0x42,
+    0x5d, 0x22, 0x2c, 0x8e, 0x67, 0x12, 0x00, 0x00, 0x00, 0xf1, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+    0x00, 0xb4, 0x81, 0x00, 0x00, 0x00, 0x00, 0x2d, 0x50, 0x4b, 0x06, 0x06,
+    0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x03, 0x2d, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x2f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x50, 0x4b, 0x06, 0x07, 0x00, 0x00, 0x00, 0x00,
+    0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x2f, 0x00, 0x00, 0x00, 0x45, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+/* The same text piped through the command-line zip to a non-seekable
+ * output: data descriptor flag, local ZIP64 field with a zero compressed
+ * size, and a signed 24-byte ZIP64 data descriptor. */
+static const uint8_t cli_zip64_stream_zip[] = {
+    0x50, 0x4b, 0x03, 0x04, 0x2d, 0x00, 0x08, 0x00, 0x08, 0x00, 0x79, 0x0a,
+    0x42, 0x5d, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0x01, 0x00, 0x14, 0x00, 0x2d, 0x01, 0x00, 0x10, 0x00, 0xf1,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0xd7, 0x51, 0xa8, 0xca,
+    0x2c, 0x50, 0x54, 0xc8, 0x18, 0x01, 0x6c, 0x2e, 0x00, 0x50, 0x4b, 0x07,
+    0x08, 0x22, 0x2c, 0x8e, 0x67, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0xf1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x4b, 0x01,
+    0x02, 0x1e, 0x03, 0x2d, 0x00, 0x08, 0x00, 0x08, 0x00, 0x79, 0x0a, 0x42,
+    0x5d, 0x22, 0x2c, 0x8e, 0x67, 0x12, 0x00, 0x00, 0x00, 0xf1, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+    0x00, 0xb4, 0x81, 0x00, 0x00, 0x00, 0x00, 0x2d, 0x50, 0x4b, 0x05, 0x06,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x2f, 0x00, 0x00, 0x00,
+    0x5d, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+typedef struct {
+    int local_zip64;    /* saturated local sizes in a local ZIP64 field */
+    int central_zip64;  /* saturated central sizes/offset in a ZIP64 field */
+    int descriptor;     /* 0, or a 24/20-byte ZIP64 data descriptor */
+    int end64;          /* ZIP64 end record and locator */
+    int saturate_end;   /* saturated classic EOCD fields */
+    int relative_end64; /* locator offset relative to the archive start */
+    size_t prefix;      /* bytes before the archive */
+} zip64_layout_t;
+
+typedef struct {
+    size_t central;
+    size_t end64;
+    size_t locator;
+    size_t eocd;
+    size_t total;
+} zip64_offsets_t;
+
+/* Single-entry ZIP64 archive builder. Archive offsets are relative to the
+ * end of the prefix, which keeps a prefixed archive self-consistent. */
+static size_t build_zip64(uint8_t *out, size_t cap,
+                          const zip64_layout_t *layout, uint16_t method,
+                          const uint8_t *payload, size_t payload_len,
+                          uint64_t uncompressed, uint32_t crc,
+                          zip64_offsets_t *at) {
+    static const char name[] = "z.bin";
+    const size_t name_len = sizeof(name) - 1U;
+    const size_t p = layout->prefix;
+    size_t need = p + 30U + name_len + 20U + payload_len + 24U +
+                  46U + name_len + 28U + 56U + 20U + 22U;
+    if (need > cap) return 0;
+    memset(out, 0, need);
+    memset(out, 'S', p);
+    int descriptor = layout->descriptor != 0;
+    uint16_t flags = descriptor ? 0x0008U : 0;
+
+    uint8_t *l = out + p;
+    put32(l, 0x04034b50U);
+    put16(l + 4, 45);
+    put16(l + 6, flags);
+    put16(l + 8, method);
+    put32(l + 14, descriptor ? 0 : crc);
+    if (layout->local_zip64) {
+        put32(l + 18, UINT32_MAX);
+        put32(l + 22, UINT32_MAX);
+    } else if (!descriptor) {
+        put32(l + 18, (uint32_t)payload_len);
+        put32(l + 22, (uint32_t)uncompressed);
+    }
+    put16(l + 26, (uint16_t)name_len);
+    put16(l + 28, layout->local_zip64 ? 20 : 0);
+    memcpy(l + 30, name, name_len);
+    size_t pos = p + 30U + name_len;
+    if (layout->local_zip64) {
+        put16(out + pos, 0x0001);
+        put16(out + pos + 2, 16);
+        put64(out + pos + 4, descriptor ? 0 : uncompressed);
+        put64(out + pos + 12, descriptor ? 0 : payload_len);
+        pos += 20U;
+    }
+    if (payload_len > 0) memcpy(out + pos, payload, payload_len);
+    pos += payload_len;
+    if (layout->descriptor == 24) {
+        put32(out + pos, 0x08074b50U);
+        put32(out + pos + 4, crc);
+        put64(out + pos + 8, payload_len);
+        put64(out + pos + 16, uncompressed);
+        pos += 24U;
+    } else if (layout->descriptor == 20) {
+        put32(out + pos, crc);
+        put64(out + pos + 4, payload_len);
+        put64(out + pos + 12, uncompressed);
+        pos += 20U;
+    }
+
+    size_t central = pos;
+    uint8_t *c = out + central;
+    put32(c, 0x02014b50U);
+    put16(c + 4, 45);
+    put16(c + 6, 45);
+    put16(c + 8, flags);
+    put16(c + 10, method);
+    put32(c + 16, crc);
+    put32(c + 20, layout->central_zip64 ? UINT32_MAX : (uint32_t)payload_len);
+    put32(c + 24, layout->central_zip64 ? UINT32_MAX : (uint32_t)uncompressed);
+    put16(c + 28, (uint16_t)name_len);
+    put16(c + 30, layout->central_zip64 ? 28 : 0);
+    put32(c + 42, layout->central_zip64 ? UINT32_MAX : 0);
+    memcpy(c + 46, name, name_len);
+    pos = central + 46U + name_len;
+    if (layout->central_zip64) {
+        put16(out + pos, 0x0001);
+        put16(out + pos + 2, 24);
+        put64(out + pos + 4, uncompressed);
+        put64(out + pos + 12, payload_len);
+        put64(out + pos + 20, 0);
+        pos += 28U;
+    }
+    size_t central_size = pos - central;
+    size_t central_offset = central - p;
+
+    size_t end64 = pos;
+    if (layout->end64) {
+        put32(out + pos, 0x06064b50U);
+        put64(out + pos + 4, 44);
+        put16(out + pos + 12, 45);
+        put16(out + pos + 14, 45);
+        put64(out + pos + 24, 1);
+        put64(out + pos + 32, 1);
+        put64(out + pos + 40, central_size);
+        put64(out + pos + 48, central_offset);
+        pos += 56U;
+        put32(out + pos, 0x07064b50U);
+        put64(out + pos + 8, layout->relative_end64 ? end64 - p : end64);
+        put32(out + pos + 16, 1);
+        pos += 20U;
+    }
+    size_t eocd = pos;
+    put32(out + pos, 0x06054b50U);
+    put16(out + pos + 8, layout->saturate_end ? UINT16_MAX : 1);
+    put16(out + pos + 10, layout->saturate_end ? UINT16_MAX : 1);
+    put32(out + pos + 12,
+          layout->saturate_end ? UINT32_MAX : (uint32_t)central_size);
+    put32(out + pos + 16,
+          layout->saturate_end ? UINT32_MAX : (uint32_t)central_offset);
+    pos += 22U;
+    if (at) {
+        at->central = central;
+        at->end64 = end64;
+        at->locator = end64 + 56U;
+        at->eocd = eocd;
+        at->total = pos;
+    }
+    return pos;
+}
+
+static int zip64_reads(const uint8_t *archive, size_t len,
+                       const char *expected, size_t expected_len) {
+    neverc_zip_reader_t reader;
+    if (neverc_zip_reader_init(&reader, archive, len) != 0) return -2;
+    uint8_t out[64];
+    size_t got = sizeof(out);
+    const neverc_zip_file_header_t *f = neverc_zip_reader_file(&reader, 0);
+    int ok = neverc_zip_reader_count(&reader) == 1 && f != NULL &&
+             f->uncompressed_size == expected_len &&
+             neverc_zip_reader_file_read(&reader, 0, out, &got) == 0 &&
+             got == expected_len && memcmp(out, expected, got) == 0;
+    neverc_zip_reader_free(&reader);
+    return ok ? 0 : -1;
+}
+
+static void test_zip64_reader(void) {
+    printf("[zip64 reader]\n");
+    uint8_t out[512];
+    size_t got = 0;
+    check_int("forced zip64 local field",
+              read_entry(forced_zip64_zip, sizeof(forced_zip64_zip), out,
+                         sizeof(out), &got), 0);
+    check_int("forced zip64 content", hello_matches(out, got, 241), 1);
+    check_int("zip64 end records with classic eocd",
+              read_entry(cli_zip64_end_zip, sizeof(cli_zip64_end_zip), out,
+                         sizeof(out), &got), 0);
+    check_int("zip64 end records content", hello_matches(out, got, 241), 1);
+    check_int("zip64 data descriptor",
+              read_entry(cli_zip64_stream_zip, sizeof(cli_zip64_stream_zip),
+                         out, sizeof(out), &got), 0);
+    check_int("zip64 data descriptor content",
+              hello_matches(out, got, 241), 1);
+
+    static const char text[] = "zip64 data";
+    const size_t text_len = sizeof(text) - 1U;
+    const uint32_t crc = neverc_crc32_ieee(text, text_len);
+    const uint8_t *body = (const uint8_t *)text;
+    uint8_t archive[512];
+    zip64_offsets_t at;
+    zip64_layout_t full = { 1, 1, 0, 1, 1, 0, 0 };
+    size_t n = build_zip64(archive, sizeof(archive), &full, 0, body,
+                           text_len, text_len, crc, &at);
+    check_int("zip64 fixture", n > 0, 1);
+    if (n == 0) return;
+    check_int("saturated zip64 archive",
+              zip64_reads(archive, n, text, text_len), 0);
+
+    zip64_layout_t layout = full;
+    layout.local_zip64 = 0;
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    check_int("central zip64 field with classic local sizes",
+              zip64_reads(archive, n, text, text_len), 0);
+    layout = full;
+    layout.descriptor = 24;
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    check_int("signed zip64 descriptor",
+              zip64_reads(archive, n, text, text_len), 0);
+    layout.descriptor = 20;
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    check_int("unsigned zip64 descriptor",
+              zip64_reads(archive, n, text, text_len), 0);
+    put32(archive + at.central - 20U, crc ^ 1U);
+    check_int("reject zip64 descriptor crc mismatch",
+              zip64_reads(archive, n, text, text_len), -2);
+
+    layout = full;
+    layout.prefix = 16;
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    check_int("prefixed zip64 with absolute locator",
+              zip64_reads(archive, n, text, text_len), 0);
+    layout.relative_end64 = 1;
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    check_int("prefixed zip64 with relative locator",
+              zip64_reads(archive, n, text, text_len), 0);
+    put64(archive + at.locator + 8U, at.end64 - 17U);
+    check_int("reject relative locator disagreeing with directory",
+              zip64_reads(archive, n, text, text_len), -2);
+
+    layout = full;
+    layout.saturate_end = 0;
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    check_int("zip64 records with unsaturated eocd",
+              zip64_reads(archive, n, text, text_len), 0);
+    put16(archive + at.eocd + 10U, 2);
+    check_int("reject eocd count disagreeing with zip64",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &layout, 0, body, text_len,
+                    text_len, crc, &at);
+    put32(archive + at.eocd + 16U, 0);
+    check_int("reject eocd offset disagreeing with zip64",
+              zip64_reads(archive, n, text, text_len), -2);
+
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put64(archive + at.end64 + 4U, 45);
+    check_int("reject zip64 record not ending at locator",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put64(archive + at.end64 + 24U, 2);
+    check_int("reject zip64 disk entry mismatch",
+              zip64_reads(archive, n, text, text_len), -2);
+    put64(archive + at.end64 + 32U, 2);
+    check_int("reject zip64 entry count beyond directory",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put32(archive + at.end64 + 16U, 1);
+    check_int("reject zip64 multi-disk record",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put64(archive + at.end64 + 48U, (uint64_t)1 << 40);
+    check_int("reject zip64 directory offset out of range",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put32(archive + at.locator + 16U, 2);
+    check_int("reject saturated eocd without single-disk locator",
+              zip64_reads(archive, n, text, text_len), -2);
+
+    /* Central ZIP64 field: fields appear only for saturated values. */
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put16(archive + at.central + 46U + 5U + 2U, 16);
+    check_int("reject zip64 field missing a saturated value",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put16(archive + at.central + 46U + 5U, 0x5555);
+    check_int("saturated sizes without zip64 field are literal",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put64(archive + at.central + 46U + 5U + 4U, text_len + 1U);
+    check_int("reject central zip64 size disagreeing with local",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put64(archive + 30U + 5U + 12U, text_len - 1U);
+    check_int("reject local zip64 size disagreeing with central",
+              zip64_reads(archive, n, text, text_len), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 0, body, text_len,
+                    text_len, crc, &at);
+    put64(archive + at.central + 46U + 5U + 20U, (uint64_t)1 << 63);
+    check_int("reject zip64 local offset past directory",
+              zip64_reads(archive, n, text, text_len), -2);
+
+    /* A huge ZIP64 compressed size must be bounded by the archive before
+     * any arithmetic, including the DEFLATE expansion bound. */
+    static const uint8_t empty_stream[] = { 0x03, 0x00 };
+    n = build_zip64(archive, sizeof(archive), &full, 8, empty_stream, 2, 0,
+                    0, &at);
+    check_int("empty deflate zip64 entry",
+              zip64_reads(archive, n, "", 0), 0);
+    put64(archive + at.central + 46U + 5U + 12U, UINT64_MAX);
+    check_int("reject zip64 compressed size past directory",
+              zip64_reads(archive, n, "", 0), -2);
+    n = build_zip64(archive, sizeof(archive), &full, 8, empty_stream, 2,
+                    (uint64_t)1 << 40, 0, &at);
+    check_int("reject impossible zip64 deflate size",
+              zip64_reads(archive, n, "", 0), -2);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
@@ -1257,6 +1644,7 @@ int main(void) {
     test_overlapping_entries();
     test_zip64_sentinels();
     test_deflate_reader();
+    test_zip64_reader();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

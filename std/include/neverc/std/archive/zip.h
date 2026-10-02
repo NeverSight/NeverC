@@ -4,13 +4,16 @@
 /*
  * NeverC archive/zip — ZIP archive format (mirrors Go archive/zip).
  *
- * Supports single-disk ZIP archives. Readers accept the Stored
- * (no-compression) and Deflate methods; writers produce Stored entries.
- * Readers validate the central directory, local headers, bounds, data
- * descriptors, and non-overlapping local records before exposing file data.
- * Stored entries are CRC-32 checked by reader_init; Deflate entries are
- * inflated and checked against their declared size and CRC-32 by
- * reader_file_read. Entry names are limited to 255 bytes.
+ * Supports single-disk ZIP archives, including ZIP64 end records and ZIP64
+ * extended-information fields. Readers accept the Stored (no-compression)
+ * and Deflate methods; writers produce Stored entries. Readers validate the
+ * central directory, local headers, bounds, data descriptors, and
+ * non-overlapping local records before exposing file data. Stored entries
+ * are CRC-32 checked by reader_init; Deflate entries are inflated and
+ * checked against their declared size and CRC-32 by reader_file_read.
+ * Entry names are limited to 255 bytes and archives to INT_MAX entries. A
+ * ZIP64 locator must reference a ZIP64 end record that ends at the locator
+ * and agrees with every unsaturated classic end-record field.
  */
 
 #include <stddef.h>

@@ -2,6 +2,7 @@
 #include "neverc/std/compress/flate.h"
 #include "neverc/std/hash/crc32.h"
 #include "neverc/std/io/fs.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -109,24 +110,189 @@ static int find_eocd(const uint8_t *data, size_t len, size_t *offset) {
     return -1;
 }
 
-static int zip64_locator_references_end(const uint8_t *data,
-                                        size_t eocd_offset) {
-    if (eocd_offset < 20U) return 0;
+typedef struct {
+    uint64_t entries;
+    uint64_t central_size;
+    uint64_t central_offset;
+    /* File offset of the central directory's first byte and of the record
+     * that must immediately follow it (the EOCD, or the ZIP64 EOCD record). */
+    size_t central_start;
+    size_t central_end;
+    size_t base;
+} zip_directory_t;
+
+/* APPNOTE 4.3.14-4.3.15 and Go archive/zip.readDirectory64End. The locator
+ * offset is used as an absolute file offset as Go does. A prefixed archive
+ * whose writer left that offset relative to its own start is also accepted
+ * when a fixed-size record sits directly before the locator and the offset
+ * agrees with the directory it describes. The record must end at the
+ * locator, and every classic EOCD field must be saturated or agree with it,
+ * so readers that ignore ZIP64 cannot see a different directory. */
+static int zip64_read_directory_end(const uint8_t *data, size_t eocd_offset,
+                                    zip_directory_t *dir) {
     size_t locator_offset = eocd_offset - 20U;
     const uint8_t *locator = data + locator_offset;
-    if (read32(locator) != 0x07064b50U || read32(locator + 4U) != 0U ||
-        read32(locator + 16U) != 1U)
-        return 0;
+    uint64_t referenced = read64(locator + 8U);
+    size_t record = 0;
+    int relative = 0;
+    if (referenced <= (uint64_t)locator_offset &&
+        locator_offset - (size_t)referenced >= 56U &&
+        read32(data + (size_t)referenced) == 0x06064b50U) {
+        record = (size_t)referenced;
+    } else if (locator_offset >= 56U &&
+               read32(data + locator_offset - 56U) == 0x06064b50U &&
+               read64(data + locator_offset - 52U) == 44U) {
+        record = locator_offset - 56U;
+        relative = 1;
+    } else {
+        return -1;
+    }
 
-    uint64_t end_offset64 = read64(locator + 8U);
-    if (end_offset64 > (uint64_t)locator_offset) return 0;
-    size_t end_offset = (size_t)end_offset64;
-    if (locator_offset - end_offset < 56U) return 0;
-    const uint8_t *zip64_end = data + end_offset;
-    if (read32(zip64_end) != 0x06064b50U) return 0;
-    uint64_t record_size = read64(zip64_end + 4U);
-    return record_size >= 44U &&
-           record_size <= (uint64_t)(locator_offset - end_offset - 12U);
+    const uint8_t *end = data + record;
+    uint64_t record_size = read64(end + 4U);
+    uint32_t disk = read32(end + 16U);
+    uint32_t central_disk = read32(end + 20U);
+    uint64_t disk_entries = read64(end + 24U);
+    uint64_t entries = read64(end + 32U);
+    uint64_t central_size = read64(end + 40U);
+    uint64_t central_offset = read64(end + 48U);
+    if (record_size < 44U ||
+        record_size != (uint64_t)(locator_offset - record - 12U) ||
+        disk != 0 || central_disk != 0 || disk_entries != entries ||
+        central_size > (uint64_t)record ||
+        central_offset > (uint64_t)record - central_size)
+        return -1;
+
+    const uint8_t *eocd = data + eocd_offset;
+    uint16_t classic_disk = read16(eocd + 4U);
+    uint16_t classic_central_disk = read16(eocd + 6U);
+    uint16_t classic_disk_entries = read16(eocd + 8U);
+    uint16_t classic_entries = read16(eocd + 10U);
+    uint32_t classic_size = read32(eocd + 12U);
+    uint32_t classic_offset = read32(eocd + 16U);
+    if ((classic_disk != 0 && classic_disk != UINT16_MAX) ||
+        (classic_central_disk != 0 && classic_central_disk != UINT16_MAX) ||
+        (classic_disk_entries != UINT16_MAX &&
+         classic_disk_entries != entries) ||
+        (classic_entries != UINT16_MAX && classic_entries != entries) ||
+        (classic_size != UINT32_MAX && classic_size != central_size) ||
+        (classic_offset != UINT32_MAX && classic_offset != central_offset))
+        return -1;
+
+    size_t base = record - (size_t)central_size - (size_t)central_offset;
+    if (relative && referenced != central_offset + central_size)
+        return -1;
+    dir->entries = entries;
+    dir->central_size = central_size;
+    dir->central_offset = central_offset;
+    dir->central_start = base + (size_t)central_offset;
+    dir->central_end = record;
+    dir->base = base;
+    return 0;
+}
+
+/* Go archive/zip.readDirectoryEnd. Without a well-formed single-disk ZIP64
+ * locator before the EOCD, saturated classic values are literal (APPNOTE
+ * 4.4.21 permits exactly 0xFFFF entries). A locator that is present must
+ * reference a consistent ZIP64 record even when no classic field is
+ * saturated: writers emit the records whenever an entry needed ZIP64, and
+ * the central directory then ends at the record rather than at the EOCD. */
+static int zip_read_directory_end(const uint8_t *data, size_t len,
+                                  zip_directory_t *dir) {
+    size_t eocd_offset = 0;
+    if (find_eocd(data, len, &eocd_offset) != 0) return -1;
+    const uint8_t *eocd = data + eocd_offset;
+    uint16_t disk = read16(eocd + 4U);
+    uint16_t central_disk = read16(eocd + 6U);
+    uint16_t disk_entries = read16(eocd + 8U);
+    uint16_t entries = read16(eocd + 10U);
+    uint32_t central_size = read32(eocd + 12U);
+    uint32_t central_offset = read32(eocd + 16U);
+    if (eocd_offset >= 20U &&
+        read32(eocd - 20U) == 0x07064b50U &&
+        read32(eocd - 16U) == 0U && read32(eocd - 4U) == 1U)
+        return zip64_read_directory_end(data, eocd_offset, dir);
+
+    if (disk != 0 || central_disk != 0 || disk_entries != entries ||
+        (uint64_t)central_offset > eocd_offset ||
+        (uint64_t)central_size > eocd_offset - central_offset)
+        return -1;
+    /* Go archive/zip.readDirectoryEnd: directoryOffset is relative to the
+     * start of the zip payload. A prefix (SFX stub, polyglot) becomes
+     * baseOffset so CD/local records still resolve. Do not "trust" an
+     * unadjusted offset that happens to look like a central header — that
+     * zeros base and then fails the size identity on every prefixed zip. */
+    size_t base = eocd_offset - (size_t)central_size - (size_t)central_offset;
+    dir->entries = entries;
+    dir->central_size = central_size;
+    dir->central_offset = central_offset;
+    dir->central_start = base + (size_t)central_offset;
+    dir->central_end = eocd_offset;
+    dir->base = base;
+    return 0;
+}
+
+/* Go archive/zip.readDirectoryHeader: the ZIP64 extended-information field
+ * holds, in order, the uncompressed size, compressed size and local header
+ * offset, each present only when its fixed-width field is saturated. Without
+ * the field a saturated value is literal. Like Go, scanning stops at a
+ * truncated extra record and a later ZIP64 field overrides an earlier one.
+ * fields[] lists the outputs in that order, NULL for unsaturated ones. */
+static int zip64_extra_values(const uint8_t *extra, size_t length,
+                              uint64_t *const *fields, size_t count) {
+    size_t pos = 0;
+    while (length - pos >= 4U) {
+        uint16_t tag = read16(extra + pos);
+        size_t size = read16(extra + pos + 2U);
+        pos += 4U;
+        if (size > length - pos) break;
+        if (tag == 0x0001U) {
+            size_t used = 0;
+            for (size_t i = 0; i < count; i++) {
+                if (!fields[i]) continue;
+                if (size - used < 8U) return -1;
+                *fields[i] = read64(extra + pos + used);
+                used += 8U;
+            }
+        }
+        pos += size;
+    }
+    return 0;
+}
+
+/* A local header records the CRC and sizes again, or zeros when bit 3 defers
+ * them to a data descriptor. */
+static int zip_local_value_matches(uint64_t local, uint64_t central,
+                                   int descriptor) {
+    return local == central || (descriptor && local == 0);
+}
+
+/* APPNOTE 4.3.9: the descriptor's optional signature, the CRC, then sizes
+ * that are 8 bytes wide for ZIP64 entries. An unsigned descriptor's CRC can
+ * itself equal the optional signature, so each layout must match all three
+ * values already known from the central directory; the shortest match
+ * claims the fewest bytes. Returns the descriptor length or 0. */
+static size_t zip_descriptor_length(const uint8_t *desc, uint64_t available,
+                                    uint32_t crc, uint64_t compressed,
+                                    uint64_t uncompressed) {
+    int has_signature = available >= 4U && read32(desc) == 0x08074b50U;
+    if (available >= 16U && has_signature && read32(desc + 4U) == crc &&
+        read32(desc + 8U) == compressed &&
+        read32(desc + 12U) == uncompressed)
+        return 16U;
+    if (available >= 12U && read32(desc) == crc &&
+        read32(desc + 4U) == compressed &&
+        read32(desc + 8U) == uncompressed)
+        return 12U;
+    if (available >= 24U && has_signature && read32(desc + 4U) == crc &&
+        read64(desc + 8U) == compressed &&
+        read64(desc + 16U) == uncompressed)
+        return 24U;
+    if (available >= 20U && read32(desc) == crc &&
+        read64(desc + 4U) == compressed &&
+        read64(desc + 12U) == uncompressed)
+        return 20U;
+    return 0;
 }
 
 int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len) {
@@ -136,58 +302,32 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
     r->len = len;
     if (!data || len < 22U) return -1;
 
-    size_t eocd_offset = 0;
-    if (find_eocd(data, len, &eocd_offset) != 0) return -1;
-    const uint8_t *eocd = data + eocd_offset;
-    uint16_t disk = read16(eocd + 4U);
-    uint16_t central_disk = read16(eocd + 6U);
-    uint16_t disk_entries = read16(eocd + 8U);
-    uint16_t total_entries = read16(eocd + 10U);
-    uint32_t central_size = read32(eocd + 12U);
-    uint32_t central_offset = read32(eocd + 16U);
-    /* APPNOTE 4.4.21 and 4.4.22 permit an exact classic count of 0xFFFF. A
-     * four-byte locator signature can occur in an arbitrary central-file
-     * comment, so only treat it as ZIP64 when the full single-disk locator
-     * references a structurally bounded ZIP64 end record. */
-    int zip64_locator = total_entries == UINT16_MAX &&
-        zip64_locator_references_end(data, eocd_offset);
-    if (disk != 0 || central_disk != 0 ||
-        disk_entries != total_entries ||
-        zip64_locator ||
-        central_size == UINT32_MAX ||
-        central_offset == UINT32_MAX ||
-        (uint64_t)central_offset > eocd_offset ||
-        (uint64_t)central_size > eocd_offset - central_offset ||
-        (uint64_t)total_entries * 46U > central_size)
+    zip_directory_t dir;
+    if (zip_read_directory_end(data, len, &dir) != 0 ||
+        dir.entries > (uint64_t)INT_MAX ||
+        dir.entries > dir.central_size / 46U ||
+        dir.entries > SIZE_MAX / sizeof(*r->files))
         return -1;
-
-    /* Go archive/zip.readDirectoryEnd: directoryOffset is relative to the
-     * start of the zip payload. A prefix (SFX stub, polyglot) becomes
-     * baseOffset so CD/local records still resolve. Do not "trust" an
-     * unadjusted offset that happens to look like a central header — that
-     * zeros base and then fails the size identity on every prefixed zip. */
-    size_t base = eocd_offset - (size_t)central_size - (size_t)central_offset;
-    if (base + (uint64_t)central_offset + central_size != eocd_offset)
-        return -1;
-    size_t cd_offset = base + (size_t)central_offset;
+    size_t total_entries = (size_t)dir.entries;
+    size_t base = dir.base;
+    size_t cd_offset = dir.central_start;
 
     zip_range_t *ranges = NULL;
     if (total_entries > 0) {
         r->files = (neverc_zip_file_header_t *)malloc(
-            (size_t)total_entries * sizeof(*r->files));
+            total_entries * sizeof(*r->files));
         r->file_data = (const uint8_t **)malloc(
-            (size_t)total_entries * sizeof(*r->file_data));
+            total_entries * sizeof(*r->file_data));
         if (!r->files || !r->file_data) return zip_reader_error(r);
     }
     if (total_entries > 1) {
-        ranges = (zip_range_t *)malloc(
-            (size_t)total_entries * sizeof(*ranges));
+        ranges = (zip_range_t *)malloc(total_entries * sizeof(*ranges));
         if (!ranges) return zip_reader_error(r);
     }
 
     size_t cursor = cd_offset;
-    size_t central_end = cursor + central_size;
-    for (uint16_t i = 0; i < total_entries; i++) {
+    size_t central_end = dir.central_end;
+    for (size_t i = 0; i < total_entries; i++) {
         if (central_end - cursor < 46U ||
             read32(data + cursor) != 0x02014b50U)
             return zip_reader_fail(r, ranges);
@@ -197,13 +337,13 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         uint16_t mod_time = read16(central + 12U);
         uint16_t mod_date = read16(central + 14U);
         uint32_t crc = read32(central + 16U);
-        uint32_t compressed_size = read32(central + 20U);
-        uint32_t uncompressed_size = read32(central + 24U);
+        uint32_t compressed32 = read32(central + 20U);
+        uint32_t uncompressed32 = read32(central + 24U);
         uint16_t name_length = read16(central + 28U);
         uint16_t extra_length = read16(central + 30U);
         uint16_t comment_length = read16(central + 32U);
         uint16_t start_disk = read16(central + 34U);
-        uint32_t local_offset = read32(central + 42U);
+        uint32_t local_offset32 = read32(central + 42U);
         uint64_t central_record_size =
             46U + (uint64_t)name_length + extra_length + comment_length;
         /* Bits 1-2 carry the DEFLATE compression-level hint, which writers
@@ -214,81 +354,83 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         if (central_record_size > central_end - cursor ||
             start_disk != 0 || (flags & ~(uint16_t)0x080EU) != 0 ||
             (method != NEVERC_ZIP_STORED && !deflated) ||
-            compressed_size == UINT32_MAX ||
-            uncompressed_size == UINT32_MAX ||
-            local_offset == UINT32_MAX ||
-            (!deflated && compressed_size != uncompressed_size) ||
-            (deflated && (uint64_t)uncompressed_size >
-                 (uint64_t)compressed_size * ZIP_DEFLATE_MAX_RATIO) ||
             name_length > 255U || name_length == 0 ||
             memchr(central + 46U, '\0', name_length) != NULL)
             return zip_reader_fail(r, ranges);
 
-        if ((uint64_t)base + local_offset + 30U > cd_offset ||
-            read32(data + base + local_offset) != 0x04034b50U)
+        uint64_t compressed_size = compressed32;
+        uint64_t uncompressed_size = uncompressed32;
+        uint64_t local_offset = local_offset32;
+        uint64_t *const central_fields[3] = {
+            uncompressed32 == UINT32_MAX ? &uncompressed_size : NULL,
+            compressed32 == UINT32_MAX ? &compressed_size : NULL,
+            local_offset32 == UINT32_MAX ? &local_offset : NULL,
+        };
+        if (zip64_extra_values(central + 46U + name_length, extra_length,
+                               central_fields, 3U) != 0)
             return zip_reader_fail(r, ranges);
-        const uint8_t *local = data + base + local_offset;
+
+        /* Every offset below is bounded by the central directory before it
+         * is added to anything, so 64-bit ZIP64 values cannot wrap. */
+        size_t locals_space = cd_offset - base;
+        if (local_offset > (uint64_t)locals_space ||
+            locals_space - (size_t)local_offset < 30U ||
+            read32(data + base + (size_t)local_offset) != 0x04034b50U)
+            return zip_reader_fail(r, ranges);
+        size_t local_start = base + (size_t)local_offset;
+        const uint8_t *local = data + local_start;
         uint16_t local_flags = read16(local + 6U);
         uint16_t local_method = read16(local + 8U);
         uint32_t local_crc = read32(local + 14U);
-        uint32_t local_compressed = read32(local + 18U);
-        uint32_t local_uncompressed = read32(local + 22U);
+        uint32_t local_compressed32 = read32(local + 18U);
+        uint32_t local_uncompressed32 = read32(local + 22U);
         uint16_t local_name_length = read16(local + 26U);
         uint16_t local_extra_length = read16(local + 28U);
-        uint64_t data_offset =
-            (uint64_t)base + local_offset + 30U +
-            local_name_length + local_extra_length;
         if (local_flags != flags || local_method != method ||
             local_name_length != name_length ||
-            data_offset > cd_offset ||
-            compressed_size > cd_offset - data_offset ||
+            cd_offset - local_start - 30U <
+                (size_t)local_name_length + local_extra_length ||
             memcmp(local + 30U, central + 46U, name_length) != 0)
             return zip_reader_fail(r, ranges);
-        if ((flags & 0x0008U) == 0) {
-            if (local_crc != crc ||
-                local_compressed != compressed_size ||
-                local_uncompressed != uncompressed_size)
-                return zip_reader_fail(r, ranges);
-        } else if ((local_crc != 0 && local_crc != crc) ||
-                   (local_compressed != 0 &&
-                    local_compressed != compressed_size) ||
-                   (local_uncompressed != 0 &&
-                    local_uncompressed != uncompressed_size)) {
+        size_t data_offset =
+            local_start + 30U + local_name_length + local_extra_length;
+        if (compressed_size > (uint64_t)(cd_offset - data_offset) ||
+            (!deflated && compressed_size != uncompressed_size) ||
+            (deflated &&
+             compressed_size <= UINT64_MAX / ZIP_DEFLATE_MAX_RATIO &&
+             uncompressed_size > compressed_size * ZIP_DEFLATE_MAX_RATIO))
             return zip_reader_fail(r, ranges);
-        }
-        const uint8_t *file_data = data + (size_t)data_offset;
+
+        /* Local sizes may be saturated and carried by the local ZIP64
+         * field, even for small entries; compare the resolved values. */
+        uint64_t local_compressed = local_compressed32;
+        uint64_t local_uncompressed = local_uncompressed32;
+        uint64_t *const local_fields[2] = {
+            local_uncompressed32 == UINT32_MAX ? &local_uncompressed : NULL,
+            local_compressed32 == UINT32_MAX ? &local_compressed : NULL,
+        };
+        int descriptor = (flags & 0x0008U) != 0;
+        if (zip64_extra_values(local + 30U + name_length,
+                               local_extra_length, local_fields, 2U) != 0 ||
+            !zip_local_value_matches(local_crc, crc, descriptor) ||
+            !zip_local_value_matches(local_compressed, compressed_size,
+                                     descriptor) ||
+            !zip_local_value_matches(local_uncompressed, uncompressed_size,
+                                     descriptor))
+            return zip_reader_fail(r, ranges);
+        const uint8_t *file_data = data + data_offset;
 
         /* Bit 3: CRC/sizes live in a data descriptor immediately after the
          * file data (APPNOTE 4.3.9). Local CRC may be zero, so the descriptor
          * is the remaining CRC field; omitting it or storing a different CRC
          * used to be accepted. Include it in the local range so the next
          * header cannot overlap a truncated descriptor. */
-        uint64_t record_end = data_offset + compressed_size;
-        if (flags & 0x0008U) {
-            if (record_end > cd_offset ||
-                cd_offset - record_end < 12U)
-                return zip_reader_fail(r, ranges);
-            size_t desc = (size_t)record_end;
-            uint64_t available = cd_offset - record_end;
-            /* An unsigned descriptor's CRC can itself equal the optional
-             * signature.  Disambiguate the two layouts using all three
-             * values already known from the central directory. */
-            int signed_ok = available >= 16U &&
-                read32(data + desc) == 0x08074b50U &&
-                read32(data + desc + 4U) == crc &&
-                read32(data + desc + 8U) == compressed_size &&
-                read32(data + desc + 12U) == uncompressed_size;
-            int unsigned_ok =
-                read32(data + desc) == crc &&
-                read32(data + desc + 4U) == compressed_size &&
-                read32(data + desc + 8U) == uncompressed_size;
-            uint64_t desc_len;
-            if (signed_ok)
-                desc_len = 16U;
-            else if (unsigned_ok)
-                desc_len = 12U;
-            else
-                return zip_reader_fail(r, ranges);
+        size_t record_end = data_offset + (size_t)compressed_size;
+        if (descriptor) {
+            size_t desc_len = zip_descriptor_length(
+                data + record_end, cd_offset - record_end, crc,
+                compressed_size, uncompressed_size);
+            if (desc_len == 0) return zip_reader_fail(r, ranges);
             record_end += desc_len;
         }
 
@@ -311,7 +453,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         file->mod_date = mod_date;
         r->file_data[i] = file_data;
         if (ranges) {
-            ranges[i].start = (uint64_t)base + local_offset;
+            ranges[i].start = local_start;
             ranges[i].end = record_end;
         }
         r->nfiles++;
@@ -320,7 +462,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
     if (cursor != central_end) return zip_reader_fail(r, ranges);
     if (ranges) {
         qsort(ranges, total_entries, sizeof(*ranges), zip_range_cmp);
-        for (uint16_t i = 1; i < total_entries; i++) {
+        for (size_t i = 1; i < total_entries; i++) {
             if (ranges[i].start < ranges[i - 1U].end)
                 return zip_reader_fail(r, ranges);
         }
@@ -329,10 +471,10 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
      * entries can otherwise alias one large stored payload and amplify the
      * same CRC work once per entry before the overlap is finally rejected.
      * Compressed entries are checked when reader_file_read inflates them. */
-    for (uint16_t i = 0; i < total_entries; i++) {
+    for (size_t i = 0; i < total_entries; i++) {
         if (r->files[i].method == NEVERC_ZIP_STORED &&
             neverc_crc32_ieee(r->file_data[i],
-                              r->files[i].compressed_size) !=
+                              (size_t)r->files[i].compressed_size) !=
             r->files[i].crc32)
             return zip_reader_fail(r, ranges);
     }
