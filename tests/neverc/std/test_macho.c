@@ -331,6 +331,44 @@ static void test_macho_invalid(void) {
           neverc_macho_open(&f, hdr31, sizeof(hdr31)) == -1);
 }
 
+static void test_dsym_stripped_segments(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_macho64(&len);
+    CHECK("build dSYM-style Mach-O", data != NULL);
+    if (!data) return;
+
+    /* dSYM companions keep the section headers of segments whose contents
+     * were dropped: the segment has no file bytes and its sections keep
+     * their original sizes with a zero file offset. */
+    uint8_t *lc = data + 32;
+    uint8_t *sec = lc + 72;
+    put32(data + 12, NEVERC_MH_DSYM);
+    put64(lc + 48, 0);
+    put64(sec + 40, 4096);
+    put32(sec + 48, 0);
+
+    neverc_macho_file_t f;
+    CHECK("open dSYM with sections of a segment without file bytes",
+          neverc_macho_open(&f, data, len) == 0);
+    const neverc_macho_section_t *text = neverc_macho_section(&f, "__text");
+    CHECK("dSYM keeps the stripped section header",
+          text != NULL && text->size == 4096 && text->offset == 0);
+    if (text) {
+        uint8_t *section_data = (uint8_t *)1;
+        size_t section_len = 99;
+        CHECK("stripped section bytes past EOF are not readable",
+              neverc_macho_section_data(
+                  &f, text, &section_data, &section_len) == -1 &&
+                  section_data == NULL && section_len == 0);
+    }
+    neverc_macho_close(&f);
+
+    put64(lc + 48, len);
+    CHECK("file-backed segment still bounds its sections",
+          neverc_macho_open(&f, data, len) == -1);
+    free(data);
+}
+
 static void test_fat_many_architectures(void) {
     const uint32_t narch = UINT32_C(131072);
     const size_t table_end = 8U + (size_t)narch * 20U;
@@ -500,6 +538,7 @@ int main(void) {
     test_metadata();
     test_header_variants();
     test_macho_invalid();
+    test_dsym_stripped_segments();
     test_fat_many_architectures();
     test_fat();
 #ifdef __APPLE__
