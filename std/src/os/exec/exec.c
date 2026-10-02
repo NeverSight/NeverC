@@ -1488,6 +1488,18 @@ static void exec_posix_child(neverc_exec_cmd_t *cmd,
     exec_posix_reset_signals();
     sigemptyset(&empty);
     sigprocmask(SIG_SETMASK, &empty, NULL);
+    /* A parent running with closed stdio can hand the exec-error pipe one of
+     * fds 0-2. Move it above them first, or the stdio dup2() calls below
+     * would replace it and a failed exec would read back as success. */
+    if (err_wr >= 0 && err_wr <= STDERR_FILENO) {
+#ifdef F_DUPFD_CLOEXEC
+        int moved = fcntl(err_wr, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+#else
+        int moved = fcntl(err_wr, F_DUPFD, STDERR_FILENO + 1);
+#endif
+        if (moved < 0) goto exec_fail;
+        err_wr = moved;
+    }
     if (cmd->dir) {
         if (chdir(cmd->dir) < 0) goto exec_fail;
     }
