@@ -1208,6 +1208,37 @@ static void test_template_url_and_script(void) {
           out && strstr(out, "</style-foo>#</style>") != NULL);
     free(out);
 
+    /* A backslash inside a JS literal does not hide the HTML end tag that
+     * follows it: the browser closes the script at `\</script>`, so later
+     * interpolations are back in HTML contexts. */
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<script>var s = '\\</script><a href=\"{{.X}}\">x</a>", &data);
+    check_str("escaped closer in js string ends script", out,
+              "<script>var s = '\\</script><a href=\"#\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<script>var s = `\\</script><a href=\"{{.X}}\">x</a>", &data);
+    check_str("escaped closer in template literal ends script", out,
+              "<script>var s = `\\</script><a href=\"#\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<script>var s = /\\</script><a href=\"{{.X}}\">x</a>", &data);
+    check_str("escaped closer in regexp ends script", out,
+              "<script>var s = /\\</script><a href=\"#\">x</a>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "1; alert(1)");
+    out = neverc_html_template_render(
+        "<script>var s = \"\\</script><script>var y = {{.X}};</script>",
+        &data);
+    check_str("escaped closer starts a fresh script", out,
+              "<script>var s = \"\\</script><script>var y = "
+              "\"1; alert(1)\";</script>");
+    free(out);
+
     neverc_html_template_data_set(&data, "X", ";alert(1)//");
     out = neverc_html_template_render(
         "<script>var x=\"ok\"{{.X}}</script>", &data);
