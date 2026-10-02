@@ -6,7 +6,8 @@
  *
  * Supports reading and writing regular files, hard links, symbolic links,
  * and directories, plus pax linkdata hard-link bodies. The writer produces
- * POSIX ustar headers.
+ * POSIX ustar headers, adding pax extended records for fields ustar cannot
+ * hold.
  *
  * Readers accept ustar, pax, GNU, star, and v7 headers as Go archive/tar
  * does: pax extended ('x') records for path, linkpath, size, uid, gid,
@@ -18,12 +19,16 @@
  * into later entries, and unlike Go they are not returned as entries (a 'g'
  * block also drops metadata pending from earlier 'x'/'L'/'K' blocks, as it
  * does in Go). Malformed pax records or numbers fail the entry like Go's
- * ErrHeader. Each pax or GNU metadata payload is limited to
- * NEVERC_TAR_SPECIAL_MAX bytes, as in Go; the reader never allocates.
- * Readers accept the POSIX unsigned header checksum and the historical
- * signed checksum, and reject a stored value that matches neither.
- * Character/block devices, FIFOs, and sparse files (GNU 'S' and the pax
- * GNU.sparse formats) are rejected.
+ * ErrHeader; so does a pax time whose floor second is below INT64_MIN.
+ * Each pax or GNU metadata payload is limited to NEVERC_TAR_SPECIAL_MAX
+ * bytes, as in Go; the reader never allocates. GNU headers never use the
+ * ustar prefix field (Go's fallback for archives written by Go before 1.8
+ * is not mirrored). Readers accept the POSIX unsigned header checksum and
+ * the historical signed checksum, and reject a stored value that matches
+ * neither. Unlike Go, entry names and hard/symbolic link targets must be
+ * relative paths that stay inside the extraction root, and character/block
+ * devices, FIFOs, and sparse files (GNU 'S' and the pax GNU.sparse formats)
+ * are rejected.
  */
 
 #include <stddef.h>
@@ -151,12 +156,21 @@ typedef struct {
  * until free; call free before reinitializing a writer that has been used. */
 void neverc_tar_writer_init(neverc_tar_writer_t *w);
 /* Starts an entry. The preceding entry must have received exactly header.size
- * bytes; a hard link may have a non-zero pax linkdata body. Names over 100
- * bytes are encoded with the ustar prefix when possible. */
+ * bytes; a hard link may have a non-zero pax linkdata body. As Go's Writer
+ * does by default, a header whose fields all fit is written as plain ustar
+ * (names over 100 bytes use the ustar prefix when they split at a slash);
+ * otherwise a pax 'x' block precedes it with a record for each field ustar
+ * cannot hold: a name, link target, or owner name that is too long or not
+ * ASCII, a negative or oversized uid/gid/size/mtime, and, for v3, a non-zero
+ * mtime_nsec and any atime or ctime (0 with 0 nanoseconds means none). Mode
+ * must fit 21 bits (07777777) and nanoseconds must be below 1000000000. hdr
+ * may point into the writer's own buffer. */
 int  neverc_tar_writer_write_header(neverc_tar_writer_t *w,
                                     const neverc_tar_header_t *hdr);
 int  neverc_tar_writer_write_header_v2(neverc_tar_writer_t *w,
                                        const neverc_tar_header_v2_t *hdr);
+int  neverc_tar_writer_write_header_v3(neverc_tar_writer_t *w,
+                                       const neverc_tar_header_v3_t *hdr);
 /* Writes entry data without implicit truncation; exceeding header.size fails. */
 int  neverc_tar_writer_write(neverc_tar_writer_t *w,
                              const uint8_t *data, size_t len);

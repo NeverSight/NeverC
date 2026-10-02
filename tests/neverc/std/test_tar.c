@@ -390,17 +390,31 @@ static void test_ustar_metadata_and_long_name(void) {
               full_decoded.gname, full_header.gname);
     neverc_tar_writer_free(&writer);
 
+    /* A name that cannot be split at a slash goes into a pax record. */
     neverc_tar_writer_init(&writer);
     memset(&header, 0, sizeof(header));
     memset(header.name, 'x', 101);
     header.name[101] = '\0';
     header.typeflag = NEVERC_TAR_REG;
-    check_int("reject unsplittable name",
-              neverc_tar_writer_write_header(&writer, &header), -1);
+    check_int("unsplittable name uses pax",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    char unsplittable[102];
+    memcpy(unsplittable, header.name, sizeof(unsplittable));
     strcpy(header.name, "oversized-mode");
     header.mode = UINT32_MAX;
     check_int("reject oversized octal",
               neverc_tar_writer_write_header(&writer, &header), -1);
+    header.mode = 07777777;
+    check_int("accept largest octal mode",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("unsplittable name close", neverc_tar_writer_close(&writer), 0);
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    check_int("unsplittable name read",
+              neverc_tar_reader_next_v2(&reader, &full_decoded), 1);
+    check_str("unsplittable name roundtrip", full_decoded.name, unsplittable);
+    check_int("largest mode read",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("largest mode roundtrip", (int)decoded.mode, 07777777);
     neverc_tar_writer_free(&writer);
 }
 
@@ -1819,7 +1833,8 @@ static void test_special_payload_limit(void) {
         test_archive_meta(&archive, 'x', payload, total);
         test_archive_header(&archive, "file", NEVERC_TAR_REG, 0, NULL);
         test_archive_end(&archive);
-        check_int(over ? "reject payload over limit" : "accept payload at limit",
+        check_int(over ? "reject payload over limit"
+                       : "accept payload at limit",
                   test_read_v3_entry(&archive, header), over ? -1 : 1);
         test_archive_free(&archive);
         free(payload);
@@ -1962,6 +1977,230 @@ static void test_v3_capacities(void) {
     free(records);
 }
 
+static void test_writer_pax_records(void) {
+    printf("[writer pax records]\n");
+    neverc_tar_header_v3_t *header = (neverc_tar_header_v3_t *)calloc(
+        1, sizeof(neverc_tar_header_v3_t));
+    if (!header) {
+        check_int("writer header allocation", 0, 1);
+        return;
+    }
+    strcpy(header->name, "dir/");
+    memset(header->name + 4, 'n', 300);
+    strcpy(header->linkname, "target/");
+    memset(header->linkname + 7, 't', 150);
+    memset(header->uname, 'u', 40);
+    strcpy(header->gname, "gr\xc3\xbcp");
+    header->typeflag = NEVERC_TAR_SYM;
+    header->mode = 0777;
+    header->uid = (int64_t)1 << 30;
+    header->gid = -2;
+    header->mtime = -2;
+    header->mtime_nsec = 750000000;
+    header->atime = 1600000000;
+    header->atime_nsec = 5;
+    header->ctime = -7;
+
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    check_int("write pax header",
+              neverc_tar_writer_write_header_v3(&writer, header), 0);
+    check_int("close pax archive", neverc_tar_writer_close(&writer), 0);
+    check_int("pax block first", writer.data[156], 'x');
+
+    /* Records are sorted by key, as Go writes them. */
+    char expected[2048] = "";
+    char name_value[400], link_value[200], user_value[64];
+    strcpy(name_value, header->name);
+    strcpy(link_value, header->linkname);
+    strcpy(user_value, header->uname);
+    test_pax_record(expected, "atime", "1600000000.000000005");
+    test_pax_record(expected, "ctime", "-7");
+    test_pax_record(expected, "gid", "-2");
+    test_pax_record(expected, "gname", "gr\xc3\xbcp");
+    test_pax_record(expected, "linkpath", link_value);
+    test_pax_record(expected, "mtime", "-1.25");
+    test_pax_record(expected, "path", name_value);
+    test_pax_record(expected, "uid", "1073741824");
+    test_pax_record(expected, "uname", user_value);
+    size_t expected_length = strlen(expected);
+    check_int("pax payload records",
+              memcmp(writer.data + NEVERC_TAR_BLOCK_SIZE, expected,
+                     expected_length) == 0, 1);
+    char size_field[12];
+    test_write_octal((uint8_t *)size_field, 12, expected_length);
+    check_int("pax payload size field",
+              memcmp(writer.data + 124, size_field, 12) == 0, 1);
+    /* Named like Go's: path.Join(dir, "PaxHeaders.0", file), 100 bytes. */
+    char block_name[100];
+    memcpy(block_name, "dir/PaxHeaders.0/", 17);
+    memset(block_name + 17, 'n', sizeof(block_name) - 17U);
+    check_int("pax block name",
+              memcmp(writer.data, block_name, sizeof(block_name)) == 0, 1);
+
+    size_t header_offset =
+        NEVERC_TAR_BLOCK_SIZE +
+        (expected_length + NEVERC_TAR_BLOCK_SIZE - 1U) /
+            NEVERC_TAR_BLOCK_SIZE * NEVERC_TAR_BLOCK_SIZE;
+    const uint8_t *main_block = writer.data + header_offset;
+    check_int("main header type", main_block[156], NEVERC_TAR_SYM);
+    check_int("main header truncated name",
+              memcmp(main_block, name_value, 100) == 0, 1);
+    check_int("main header gid field zero",
+              memcmp(main_block + 116, "0000000", 8) == 0, 1);
+    check_int("main header mtime field zero",
+              memcmp(main_block + 136, "00000000000", 12) == 0, 1);
+    check_int("main header gname is ascii only",
+              memcmp(main_block + 297, "grp", 4) == 0, 1);
+
+    neverc_tar_header_v3_t *decoded = &test_v3_header;
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    int result = neverc_tar_reader_next_v3(&reader, decoded);
+    check_int("read pax header", result, 1);
+    if (result == 1) {
+        check_str("roundtrip name", decoded->name, name_value);
+        check_str("roundtrip link", decoded->linkname, link_value);
+        check_str("roundtrip uname", decoded->uname, user_value);
+        check_str("roundtrip gname", decoded->gname, "gr\xc3\xbcp");
+        check_int("roundtrip uid", decoded->uid == header->uid, 1);
+        check_int("roundtrip gid", (int)decoded->gid, -2);
+        check_int("roundtrip mtime", (int)decoded->mtime, -2);
+        check_int("roundtrip mtime nsec", decoded->mtime_nsec, 750000000);
+        check_int("roundtrip atime", decoded->atime == 1600000000, 1);
+        check_int("roundtrip atime nsec", decoded->atime_nsec, 5);
+        check_int("roundtrip ctime", (int)decoded->ctime, -7);
+        check_int("roundtrip ctime nsec", decoded->ctime_nsec, 0);
+        check_int("roundtrip mode", (int)decoded->mode, 0777);
+    }
+    check_int("pax archive end", neverc_tar_reader_next_v3(&reader, decoded),
+              0);
+    neverc_tar_writer_free(&writer);
+    free(header);
+}
+
+static void test_writer_chooses_ustar_or_pax(void) {
+    printf("[writer chooses ustar or pax]\n");
+    neverc_tar_writer_t writer;
+    neverc_tar_header_t header;
+
+    /* Fields that fit stay plain ustar, splitting a long ASCII name. */
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    memset(header.name, 'p', 120);
+    header.name[120] = '/';
+    memcpy(header.name + 121, "file", 5);
+    header.typeflag = NEVERC_TAR_REG;
+    header.mtime = 1700000000;
+    check_int("splittable name header",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("splittable name stays ustar", writer.data[156], NEVERC_TAR_REG);
+    check_int("splittable name prefix", writer.data[345], 'p');
+    neverc_tar_writer_free(&writer);
+
+    /* A short name that is not ASCII needs a pax path. */
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "dir/./na\xc3\xafve.txt");
+    header.typeflag = NEVERC_TAR_REG;
+    check_int("non-ascii name header",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("non-ascii name uses pax", writer.data[156], 'x');
+    check_str("non-ascii pax block name", (const char *)writer.data,
+              "dir/PaxHeaders.0/nave.txt");
+    check_int("non-ascii name close", neverc_tar_writer_close(&writer), 0);
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t decoded;
+    neverc_tar_reader_init(&reader, writer.data, writer.len);
+    check_int("non-ascii name read", neverc_tar_reader_next(&reader, &decoded),
+              1);
+    check_str("non-ascii name roundtrip", decoded.name, header.name);
+    neverc_tar_writer_free(&writer);
+
+    /* Negative and beyond-octal times move to pax records. */
+    static const int64_t times[] = {-1, INT64_C(8589934592), INT64_MIN};
+    for (size_t i = 0; i < sizeof(times) / sizeof(times[0]); i++) {
+        neverc_tar_writer_init(&writer);
+        memset(&header, 0, sizeof(header));
+        strcpy(header.name, "timed");
+        header.typeflag = NEVERC_TAR_REG;
+        header.mtime = times[i];
+        check_int("wide mtime header",
+                  neverc_tar_writer_write_header(&writer, &header), 0);
+        check_int("wide mtime uses pax", writer.data[156], 'x');
+        check_int("wide mtime close", neverc_tar_writer_close(&writer), 0);
+        neverc_tar_reader_init(&reader, writer.data, writer.len);
+        check_int("wide mtime read", neverc_tar_reader_next(&reader, &decoded),
+                  1);
+        check_int("wide mtime roundtrip", decoded.mtime == times[i], 1);
+        neverc_tar_writer_free(&writer);
+    }
+
+#if SIZE_MAX > UINT32_MAX
+    /* A size beyond the 11 octal digits of ustar becomes a pax record; only
+     * the header is inspected, the 8 GiB body is never written. */
+    neverc_tar_writer_init(&writer);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "huge.bin");
+    header.typeflag = NEVERC_TAR_REG;
+    header.size = INT64_C(8589934592);
+    check_int("huge size header",
+              neverc_tar_writer_write_header(&writer, &header), 0);
+    check_int("huge size uses pax", writer.data[156], 'x');
+    check_int("huge size record",
+              memcmp(writer.data + NEVERC_TAR_BLOCK_SIZE,
+                     "19 size=8589934592\n", 19) == 0, 1);
+    check_int("huge size field zero",
+              memcmp(writer.data + NEVERC_TAR_BLOCK_SIZE * 2U + 124,
+                     "00000000000", 12) == 0, 1);
+    check_int("huge size entry stays open", neverc_tar_writer_close(&writer),
+              -1);
+    neverc_tar_writer_free(&writer);
+#endif
+
+    /* A field truncated in favor of a pax record must not end in '/'. */
+    neverc_tar_header_v3_t *v3 = &test_v3_header;
+    memset(v3, 0, sizeof(*v3));
+    memset(v3->name, 'a', 99);
+    v3->name[99] = '/';
+    memset(v3->name + 100, 'b', 50);
+    v3->name[150] = '/';
+    v3->typeflag = NEVERC_TAR_DIR;
+    v3->uid = (int64_t)1 << 30;
+    neverc_tar_writer_init(&writer);
+    check_int("truncated directory header",
+              neverc_tar_writer_write_header_v3(&writer, v3), 0);
+    size_t main_offset = NEVERC_TAR_BLOCK_SIZE * 2U;
+    check_int("truncated name drops trailing slash",
+              writer.data[main_offset + 99], 0);
+    check_int("truncated name keeps prefix",
+              writer.data[main_offset + 98], 'a');
+    neverc_tar_writer_free(&writer);
+
+    /* Invalid nanoseconds and pax-only typeflags are rejected. */
+    neverc_tar_writer_init(&writer);
+    memset(v3, 0, sizeof(*v3));
+    strcpy(v3->name, "file");
+    v3->typeflag = NEVERC_TAR_REG;
+    v3->mtime_nsec = 1000000000;
+    check_int("reject mtime nanoseconds overflow",
+              neverc_tar_writer_write_header_v3(&writer, v3), -1);
+    v3->mtime_nsec = 0;
+    v3->atime_nsec = -1;
+    check_int("reject negative atime nanoseconds",
+              neverc_tar_writer_write_header_v3(&writer, v3), -1);
+    v3->atime_nsec = 0;
+    v3->typeflag = 'x';
+    check_int("reject pax typeflag in v3",
+              neverc_tar_writer_write_header_v3(&writer, v3), -1);
+    v3->typeflag = NEVERC_TAR_REG;
+    v3->mode = 010000000;
+    check_int("reject mode beyond 21 bits",
+              neverc_tar_writer_write_header_v3(&writer, v3), -1);
+    check_size("rejected headers write nothing", writer.len, 0);
+    neverc_tar_writer_free(&writer);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1992,6 +2231,8 @@ int main(void) {
     test_base256_numbers();
     test_sparse_entries_rejected();
     test_v3_capacities();
+    test_writer_pax_records();
+    test_writer_chooses_ustar_or_pax();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

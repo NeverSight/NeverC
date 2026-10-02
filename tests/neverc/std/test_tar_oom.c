@@ -54,6 +54,29 @@ int main(void) {
     CHECK(w.len == NEVERC_TAR_BLOCK_SIZE);
     CHECK(neverc_tar_writer_close(&w) == -1);
     neverc_tar_writer_free(&w);
+
+    /* A header that needs a pax block grows once for both blocks; when that
+     * fails nothing is written and the writer stays failed. */
+    static neverc_tar_header_v3_t long_header;
+    for (size_t i = 0; i < 4000; i++)
+        long_header.name[i] = (char)(i % 50U == 49U ? '/' : 'n');
+    long_header.typeflag = NEVERC_TAR_REG;
+    fail_at = 0;
+    neverc_tar_writer_init(&w);
+    CHECK(w.data != NULL);
+    fail_at = allocation_count + 1;
+    CHECK(neverc_tar_writer_write_header_v3(&w, &long_header) == -1);
+    CHECK(allocation_count == fail_at);
+    CHECK(w.len == 0);
+    CHECK(neverc_tar_writer_close(&w) == -1);
+    neverc_tar_writer_free(&w);
+
+    fail_at = 0;
+    neverc_tar_writer_init(&w);
+    CHECK(neverc_tar_writer_write_header_v3(&w, &long_header) == 0);
+    CHECK(w.data[156] == 'x');
+    CHECK(neverc_tar_writer_close(&w) == 0);
+    neverc_tar_writer_free(&w);
     puts("passed");
     return 0;
 }

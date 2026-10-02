@@ -187,14 +187,6 @@ void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t 
     r->len = len;
 }
 
-/* The released reader has only data/len/pos, so it is kept as a cursor that
- * never revisits earlier headers: data/len cover the unconsumed archive and
- * pos counts the payload bytes of the current entry that remain at data.
- * Every accept/reject decision is made in whole blocks, so len is trimmed to
- * whole blocks at a header boundary. From then on data + len is a block
- * boundary, which makes len % 512 the distance from data to the next one and
- * yields the padding that follows a payload without the entry's size. */
-
 /* A string made of archive bytes: head, then '/' and tail when joined (a
  * ustar prefix and name). The bytes never contain NUL. */
 typedef struct {
@@ -747,7 +739,15 @@ static int tar_entry_to_v3(const tar_entry_t *entry,
     return 0;
 }
 
-/* Positions a reader at its next header boundary without changing it:
+/* The released reader has only data/len/pos, so it is kept as a cursor that
+ * never revisits earlier headers: data/len cover the unconsumed archive and
+ * pos counts the payload bytes of the current entry that remain at data.
+ * Every accept/reject decision is made in whole blocks, so len is trimmed to
+ * whole blocks at a header boundary. From then on data + len is a block
+ * boundary, which makes len % 512 the distance from data to the next one and
+ * yields the padding that follows a payload without the entry's size.
+ *
+ * Positions a reader at its next header boundary without changing it:
  * skips the unread payload of the current entry plus its padding, or trims a
  * partial trailing record when already at a boundary. */
 static int tar_reader_boundary(const neverc_tar_reader_t *r,
@@ -994,12 +994,23 @@ static int bounded_string_length(const char *string, size_t capacity,
     return -1;
 }
 
+static int tar_is_ascii(const char *text, size_t length) {
+    for (size_t i = 0; i < length; i++)
+        if ((unsigned char)text[i] >= 0x80U) return 0;
+    return 1;
+}
+
+/* Go's fitsInOctal: width-1 octal digits plus a NUL terminator. */
+static int tar_fits_octal(int64_t value, size_t width) {
+    return value >= 0 &&
+           (uint64_t)value < ((uint64_t)1 << (3U * (width - 1U)));
+}
+
+/* Splits an ASCII name of more than 100 bytes into the ustar prefix and name
+ * fields at the last slash that leaves both parts within their fields. */
 static int split_ustar_name(const char *name, size_t length,
                             uint8_t *name_field, uint8_t *prefix_field) {
-    if (length <= 100U) {
-        memcpy(name_field, name, length);
-        return 0;
-    }
+    if (length <= 100U || !tar_is_ascii(name, length)) return -1;
     for (size_t slash = length; slash > 0; slash--) {
         if (name[slash - 1U] != '/') continue;
         size_t prefix_length = slash - 1U;
@@ -1014,14 +1025,225 @@ static int split_ustar_name(const char *name, size_t length,
     return -1;
 }
 
+/* Copies the ASCII bytes of text into a fixed field the way Go's writer
+ * fills a header that defers to pax records: the field is truncated, and a
+ * truncated field ending in '/' ends at the first slash of that final run so
+ * that readers ignoring the pax path do not see a directory. */
+static void tar_put_ascii_field(uint8_t *field, size_t width,
+                                const char *text, size_t length) {
+    size_t written = 0, ascii = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char byte = (unsigned char)text[i];
+        if (byte >= 0x80U) continue;
+        if (written < width) field[written++] = byte;
+        ascii++;
+    }
+    if (ascii > width && field[width - 1U] == '/') {
+        size_t end = width - 1U;
+        while (end > 0 && field[end - 1U] == '/') end--;
+        field[end] = '\0';
+    }
+}
+
+/* Name of the 'x' block, as Go writes it: path.Join(dir, "PaxHeaders.0",
+ * file) for the entry name split at its last slash, then only its ASCII
+ * bytes, at most 100 of them, without trailing slashes. Entry names are
+ * already validated, so cleaning only drops empty and "." components. */
+static void tar_pax_header_name(const char *name, size_t length,
+                                uint8_t field[100]) {
+    size_t split = length;
+    while (split > 0 && name[split - 1U] != '/') split--;
+    size_t written = 0;
+    int first = 1;
+    for (int part = 0; part < 3; part++) {
+        const char *text = part == 0 ? name
+                         : part == 1 ? "PaxHeaders.0" : name + split;
+        size_t text_length = part == 0 ? split
+                           : part == 1 ? 12U : length - split;
+        size_t start = 0;
+        while (start < text_length) {
+            size_t end = start;
+            while (end < text_length && text[end] != '/') end++;
+            size_t component = end - start;
+            if (component > 0 && !(component == 1U && text[start] == '.')) {
+                if (!first && written < 100U) field[written++] = '/';
+                first = 0;
+                for (size_t i = start; i < end; i++) {
+                    unsigned char byte = (unsigned char)text[i];
+                    if (byte < 0x80U && written < 100U)
+                        field[written++] = byte;
+                }
+            }
+            start = end + 1U;
+        }
+    }
+    while (written > 0 && field[written - 1U] == '/') field[--written] = 0;
+}
+
+/* Pax records the writer can emit, in sorted key order. */
+enum {
+    TAR_PAX_ATIME = 1 << 0,
+    TAR_PAX_CTIME = 1 << 1,
+    TAR_PAX_GID = 1 << 2,
+    TAR_PAX_GNAME = 1 << 3,
+    TAR_PAX_LINKPATH = 1 << 4,
+    TAR_PAX_MTIME = 1 << 5,
+    TAR_PAX_PATH = 1 << 6,
+    TAR_PAX_SIZE = 1 << 7,
+    TAR_PAX_UID = 1 << 8,
+    TAR_PAX_UNAME = 1 << 9
+};
+
+/* Collects output bytes, or only counts them when out is NULL. */
+typedef struct {
+    uint8_t *out;
+    size_t length;
+} tar_sink_t;
+
+static void tar_sink_put(tar_sink_t *sink, const void *bytes, size_t length) {
+    if (sink->out && length > 0)
+        memcpy(sink->out + sink->length, bytes, length);
+    sink->length += length;
+}
+
+static size_t tar_decimal_digits(size_t value) {
+    size_t digits = 1;
+    while (value >= 10U) {
+        value /= 10U;
+        digits++;
+    }
+    return digits;
+}
+
+/* Writes value in decimal and returns the number of characters. */
+static size_t tar_format_uint(char *out, uint64_t value) {
+    char digits[20];
+    size_t count = 0, length = 0;
+    do {
+        digits[count++] = (char)('0' + (int)(value % 10U));
+        value /= 10U;
+    } while (value != 0);
+    while (count > 0) out[length++] = digits[--count];
+    return length;
+}
+
+static size_t tar_format_int(char *out, int64_t value) {
+    if (value >= 0) return tar_format_uint(out, (uint64_t)value);
+    out[0] = '-';
+    return 1U + tar_format_uint(out + 1, (uint64_t)0 - (uint64_t)value);
+}
+
+/* "%d key=value\n" where the decimal length counts the whole record. */
+static void tar_sink_pax_record(tar_sink_t *sink, const char *key,
+                                const char *value, size_t value_length) {
+    size_t base = strlen(key) + value_length + 3U;
+    size_t total = base + tar_decimal_digits(base);
+    if (base + tar_decimal_digits(total) != total)
+        total = base + tar_decimal_digits(total);
+    char digits[24];
+    size_t count = tar_format_uint(digits, total);
+    digits[count++] = ' ';
+    tar_sink_put(sink, digits, count);
+    tar_sink_put(sink, key, strlen(key));
+    tar_sink_put(sink, "=", 1);
+    tar_sink_put(sink, value, value_length);
+    tar_sink_put(sink, "\n", 1);
+}
+
+/* Go's formatPAXTime: whole seconds, or seconds and up to nine fraction
+ * digits without trailing zeros; a negative time is written as the negated
+ * magnitude, so (-2 s, 750000000 ns) is "-1.25". */
+static size_t tar_format_pax_time(char *out, int64_t seconds,
+                                  int32_t nanoseconds) {
+    if (nanoseconds == 0) return tar_format_int(out, seconds);
+    size_t length = 0;
+    uint64_t whole = (uint64_t)seconds;
+    int32_t fraction = nanoseconds;
+    if (seconds < 0) {
+        out[length++] = '-';
+        whole = (uint64_t)(-(seconds + 1));
+        fraction = 1000000000 - nanoseconds;
+    }
+    length += tar_format_uint(out + length, whole);
+    out[length++] = '.';
+    for (size_t i = 9; i > 0; i--) {
+        out[length + i - 1U] = (char)('0' + fraction % 10);
+        fraction /= 10;
+    }
+    length += 9U;
+    while (out[length - 1U] == '0') length--;
+    return length;
+}
+
+static void tar_sink_pax_records(tar_sink_t *sink,
+                                 const neverc_tar_header_v3_t *hdr,
+                                 unsigned records) {
+    char number[48];
+    size_t length = 0;
+    if (records & TAR_PAX_ATIME) {
+        length = tar_format_pax_time(number, hdr->atime, hdr->atime_nsec);
+        tar_sink_pax_record(sink, "atime", number, length);
+    }
+    if (records & TAR_PAX_CTIME) {
+        length = tar_format_pax_time(number, hdr->ctime, hdr->ctime_nsec);
+        tar_sink_pax_record(sink, "ctime", number, length);
+    }
+    if (records & TAR_PAX_GID) {
+        length = tar_format_int(number, hdr->gid);
+        tar_sink_pax_record(sink, "gid", number, length);
+    }
+    if (records & TAR_PAX_GNAME)
+        tar_sink_pax_record(sink, "gname", hdr->gname, strlen(hdr->gname));
+    if (records & TAR_PAX_LINKPATH)
+        tar_sink_pax_record(sink, "linkpath", hdr->linkname,
+                            strlen(hdr->linkname));
+    if (records & TAR_PAX_MTIME) {
+        length = tar_format_pax_time(number, hdr->mtime, hdr->mtime_nsec);
+        tar_sink_pax_record(sink, "mtime", number, length);
+    }
+    if (records & TAR_PAX_PATH)
+        tar_sink_pax_record(sink, "path", hdr->name, strlen(hdr->name));
+    if (records & TAR_PAX_SIZE) {
+        length = tar_format_int(number, hdr->size);
+        tar_sink_pax_record(sink, "size", number, length);
+    }
+    if (records & TAR_PAX_UID) {
+        length = tar_format_int(number, hdr->uid);
+        tar_sink_pax_record(sink, "uid", number, length);
+    }
+    if (records & TAR_PAX_UNAME)
+        tar_sink_pax_record(sink, "uname", hdr->uname, strlen(hdr->uname));
+}
+
+static void tar_finish_block(uint8_t *block) {
+    memcpy(block + 257, "ustar", 5);
+    block[263] = '0';
+    block[264] = '0';
+    memset(block + 148, ' ', 8);
+    (void)write_octal(block + 148, 7, tar_checksum(block));
+    block[155] = ' ';
+}
+
+/* A value that needs a pax record leaves its header field zero, as in Go. */
+static void tar_put_octal_or_zero(uint8_t *field, size_t width,
+                                  int64_t value) {
+    (void)write_octal(field, width,
+                      tar_fits_octal(value, width) ? (uint64_t)value : 0U);
+}
+
+/* hdr is a private snapshot: callers copy the caller's header first, since
+ * it may live inside the writer's allocation that writer_grow can move. */
 static int tar_writer_write_header_common(neverc_tar_writer_t *w,
-                                          const neverc_tar_header_v2_t *hdr) {
+                                          const neverc_tar_header_v3_t *hdr) {
     tar_writer_meta_t meta;
     if (!w || !hdr || !tar_writer_meta_load(w, &meta) ||
         meta.closed || meta.failed || meta.entry_open ||
-        hdr->size < 0 || hdr->mtime < 0 ||
-        !tar_size_fits((uint64_t)hdr->size) ||
-        hdr->typeflag < 0 || hdr->typeflag > UCHAR_MAX)
+        hdr->size < 0 || !tar_size_fits((uint64_t)hdr->size) ||
+        hdr->typeflag < 0 || hdr->typeflag > UCHAR_MAX ||
+        hdr->mtime_nsec < 0 || hdr->mtime_nsec >= 1000000000 ||
+        hdr->atime_nsec < 0 || hdr->atime_nsec >= 1000000000 ||
+        hdr->ctime_nsec < 0 || hdr->ctime_nsec >= 1000000000 ||
+        !tar_fits_octal((int64_t)hdr->mode, 8))
         return -1;
     size_t current_size = (size_t)hdr->size;
     if (tar_padded_size(current_size, NULL) != 0)
@@ -1050,74 +1272,169 @@ static int tar_writer_write_header_common(neverc_tar_writer_t *w,
          !tar_path_is_safe(hdr->linkname, link_length, 0)))
         return -1;
 
+    /* As Go's writer does, use plain ustar when every field fits; otherwise
+     * precede the header with a pax record for each field that does not. */
+    unsigned records = 0;
+    int name_fits = name_length <= 100U && tar_is_ascii(hdr->name, name_length);
+    if (!name_fits) records |= TAR_PAX_PATH;
+    if (link_length > 100U || !tar_is_ascii(hdr->linkname, link_length))
+        records |= TAR_PAX_LINKPATH;
+    if (uname_length > 32U || !tar_is_ascii(hdr->uname, uname_length))
+        records |= TAR_PAX_UNAME;
+    if (gname_length > 32U || !tar_is_ascii(hdr->gname, gname_length))
+        records |= TAR_PAX_GNAME;
+    if (!tar_fits_octal(hdr->uid, 8)) records |= TAR_PAX_UID;
+    if (!tar_fits_octal(hdr->gid, 8)) records |= TAR_PAX_GID;
+    if (!tar_fits_octal(hdr->size, 12)) records |= TAR_PAX_SIZE;
+    if (!tar_fits_octal(hdr->mtime, 12) || hdr->mtime_nsec != 0)
+        records |= TAR_PAX_MTIME;
+    if (hdr->atime != 0 || hdr->atime_nsec != 0) records |= TAR_PAX_ATIME;
+    if (hdr->ctime != 0 || hdr->ctime_nsec != 0) records |= TAR_PAX_CTIME;
+
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
-    if (split_ustar_name(
-            hdr->name, name_length, block, block + 345) != 0 ||
-        write_octal(block + 100, 8, hdr->mode) != 0 ||
-        write_octal(block + 108, 8, 0) != 0 ||
-        write_octal(block + 116, 8, 0) != 0 ||
-        write_octal(block + 124, 12, (uint64_t)hdr->size) != 0 ||
-        write_octal(block + 136, 12, (uint64_t)hdr->mtime) != 0)
-        return -1;
-
+    int use_pax = (records & (unsigned)~TAR_PAX_PATH) != 0 ||
+        (!name_fits &&
+         split_ustar_name(hdr->name, name_length, block, block + 345) != 0);
+    if (!use_pax && name_fits)
+        memcpy(block, hdr->name, name_length);
+    if (use_pax) {
+        memset(block, 0, sizeof(block));
+        tar_put_ascii_field(block, 100, hdr->name, name_length);
+        tar_put_ascii_field(block + 157, 100, hdr->linkname, link_length);
+        tar_put_ascii_field(block + 265, 32, hdr->uname, uname_length);
+        tar_put_ascii_field(block + 297, 32, hdr->gname, gname_length);
+    } else {
+        memcpy(block + 157, hdr->linkname, link_length);
+        memcpy(block + 265, hdr->uname, uname_length);
+        memcpy(block + 297, hdr->gname, gname_length);
+    }
+    (void)write_octal(block + 100, 8, hdr->mode);
+    tar_put_octal_or_zero(block + 108, 8, hdr->uid);
+    tar_put_octal_or_zero(block + 116, 8, hdr->gid);
+    tar_put_octal_or_zero(block + 124, 12, hdr->size);
+    tar_put_octal_or_zero(block + 136, 12, hdr->mtime);
     block[156] = (uint8_t)typeflag;
-    memcpy(block + 157, hdr->linkname, link_length);
-    memcpy(block + 257, "ustar", 5);
-    block[263] = '0';
-    block[264] = '0';
-    memcpy(block + 265, hdr->uname, uname_length);
-    memcpy(block + 297, hdr->gname, gname_length);
+    tar_finish_block(block);
 
-    memset(block + 148, ' ', 8);
-    unsigned int block_checksum = tar_checksum(block);
-    if (write_octal(block + 148, 7, block_checksum) != 0) return -1;
-    block[155] = ' ';
-
-    /* hdr may alias the writer's allocation. Snapshot every value that is
-     * still needed before writer_grow can move that allocation. */
-    if (!writer_grow(w, NEVERC_TAR_BLOCK_SIZE)) {
+    size_t pax_length = 0, pax_padded = 0;
+    if (use_pax) {
+        tar_sink_t counter = {NULL, 0};
+        tar_sink_pax_records(&counter, hdr, records);
+        pax_length = counter.length;
+        if (tar_padded_size(pax_length, &pax_padded) != 0)
+            return -1;
+    }
+    size_t total = NEVERC_TAR_BLOCK_SIZE;
+    if (use_pax) total += NEVERC_TAR_BLOCK_SIZE + pax_padded;
+    if (!writer_grow(w, total)) {
         meta.failed = 1;
         (void)tar_writer_meta_store(w, &meta);
         return -1;
     }
-    memcpy(w->data + w->len, block, sizeof(block));
-    w->len += sizeof(block);
+    uint8_t *out = w->data + w->len;
+    memset(out, 0, total);
+    if (use_pax) {
+        tar_pax_header_name(hdr->name, name_length, out);
+        (void)write_octal(out + 100, 8, 0);
+        (void)write_octal(out + 108, 8, 0);
+        (void)write_octal(out + 116, 8, 0);
+        (void)write_octal(out + 124, 12, pax_length);
+        (void)write_octal(out + 136, 12, 0);
+        out[156] = 'x';
+        tar_finish_block(out);
+        tar_sink_t sink = {out + NEVERC_TAR_BLOCK_SIZE, 0};
+        tar_sink_pax_records(&sink, hdr, records);
+        out += NEVERC_TAR_BLOCK_SIZE + pax_padded;
+    }
+    memcpy(out, block, sizeof(block));
+    w->len += total;
     meta.current_size = current_size;
     meta.current_written = 0;
     meta.entry_open = current_size > 0;
     return tar_writer_meta_store(w, &meta) ? 0 : -1;
 }
 
+/* Copies a version-specific header into a v3 snapshot; every string must be
+ * NUL-terminated within its field. */
+static int tar_writer_snapshot(neverc_tar_header_v3_t *snapshot,
+                               const char *name, size_t name_capacity,
+                               const char *linkname, size_t link_capacity,
+                               const char *uname, size_t uname_capacity,
+                               const char *gname, size_t gname_capacity) {
+    size_t name_length = 0, link_length = 0;
+    size_t uname_length = 0, gname_length = 0;
+    if (bounded_string_length(name, name_capacity, &name_length) != 0 ||
+        bounded_string_length(linkname, link_capacity, &link_length) != 0 ||
+        bounded_string_length(uname, uname_capacity, &uname_length) != 0 ||
+        bounded_string_length(gname, gname_capacity, &gname_length) != 0 ||
+        name_length >= sizeof(snapshot->name) ||
+        link_length >= sizeof(snapshot->linkname) ||
+        uname_length >= sizeof(snapshot->uname) ||
+        gname_length >= sizeof(snapshot->gname))
+        return -1;
+    memcpy(snapshot->name, name, name_length + 1U);
+    memcpy(snapshot->linkname, linkname, link_length + 1U);
+    memcpy(snapshot->uname, uname, uname_length + 1U);
+    memcpy(snapshot->gname, gname, gname_length + 1U);
+    return 0;
+}
+
+int neverc_tar_writer_write_header_v3(neverc_tar_writer_t *w,
+                                      const neverc_tar_header_v3_t *hdr) {
+    if (!hdr) return -1;
+    neverc_tar_header_v3_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (tar_writer_snapshot(&snapshot, hdr->name, sizeof(hdr->name),
+                            hdr->linkname, sizeof(hdr->linkname),
+                            hdr->uname, sizeof(hdr->uname),
+                            hdr->gname, sizeof(hdr->gname)) != 0)
+        return -1;
+    snapshot.size = hdr->size;
+    snapshot.mode = hdr->mode;
+    snapshot.mtime = hdr->mtime;
+    snapshot.typeflag = hdr->typeflag;
+    snapshot.uid = hdr->uid;
+    snapshot.gid = hdr->gid;
+    snapshot.mtime_nsec = hdr->mtime_nsec;
+    snapshot.atime = hdr->atime;
+    snapshot.atime_nsec = hdr->atime_nsec;
+    snapshot.ctime = hdr->ctime;
+    snapshot.ctime_nsec = hdr->ctime_nsec;
+    return tar_writer_write_header_common(w, &snapshot);
+}
+
 int neverc_tar_writer_write_header_v2(neverc_tar_writer_t *w,
                                       const neverc_tar_header_v2_t *hdr) {
-    return tar_writer_write_header_common(w, hdr);
+    if (!hdr) return -1;
+    neverc_tar_header_v3_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (tar_writer_snapshot(&snapshot, hdr->name, sizeof(hdr->name),
+                            hdr->linkname, sizeof(hdr->linkname),
+                            hdr->uname, sizeof(hdr->uname),
+                            hdr->gname, sizeof(hdr->gname)) != 0)
+        return -1;
+    snapshot.size = hdr->size;
+    snapshot.mode = hdr->mode;
+    snapshot.mtime = hdr->mtime;
+    snapshot.typeflag = hdr->typeflag;
+    return tar_writer_write_header_common(w, &snapshot);
 }
 
 int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
                                    const neverc_tar_header_t *hdr) {
     if (!hdr) return -1;
-    neverc_tar_header_v2_t converted;
-    memset(&converted, 0, sizeof(converted));
-    size_t name_length = 0, link_length = 0;
-    size_t uname_length = 0, gname_length = 0;
-    if (bounded_string_length(
-            hdr->name, sizeof(hdr->name), &name_length) != 0 ||
-        bounded_string_length(
-            hdr->linkname, sizeof(hdr->linkname), &link_length) != 0 ||
-        bounded_string_length(
-            hdr->uname, sizeof(hdr->uname), &uname_length) != 0 ||
-        bounded_string_length(
-            hdr->gname, sizeof(hdr->gname), &gname_length) != 0)
+    neverc_tar_header_v3_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (tar_writer_snapshot(&snapshot, hdr->name, sizeof(hdr->name),
+                            hdr->linkname, sizeof(hdr->linkname),
+                            hdr->uname, sizeof(hdr->uname),
+                            hdr->gname, sizeof(hdr->gname)) != 0)
         return -1;
-    memcpy(converted.name, hdr->name, name_length + 1U);
-    memcpy(converted.linkname, hdr->linkname, link_length + 1U);
-    memcpy(converted.uname, hdr->uname, uname_length + 1U);
-    memcpy(converted.gname, hdr->gname, gname_length + 1U);
-    converted.size = hdr->size;
-    converted.mode = hdr->mode;
-    converted.mtime = hdr->mtime;
-    converted.typeflag = hdr->typeflag;
-    return tar_writer_write_header_common(w, &converted);
+    snapshot.size = hdr->size;
+    snapshot.mode = hdr->mode;
+    snapshot.mtime = hdr->mtime;
+    snapshot.typeflag = hdr->typeflag;
+    return tar_writer_write_header_common(w, &snapshot);
 }
 
 int neverc_tar_writer_write(neverc_tar_writer_t *w,

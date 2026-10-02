@@ -119,6 +119,55 @@ int main(void) {
     neverc_tar_writer_free(&writer);
     free(retired_allocation);
     retired_allocation = NULL;
+
+    /* A v3 header that needs a pax record can also alias the allocation;
+     * its long name must be read before growth moves the buffer. */
+    neverc_tar_writer_init(&writer);
+    CHECK(writer.data != NULL);
+    memset(&header, 0, sizeof(header));
+    strcpy(header.name, "filler");
+    header.size = (int64_t)sizeof(neverc_tar_header_v3_t) + 4096;
+    header.typeflag = NEVERC_TAR_REG;
+    CHECK(neverc_tar_writer_write_header_v2(&writer, &header) == 0);
+    uint8_t filler[512];
+    memset(filler, 0, sizeof(filler));
+    for (int64_t left = header.size; left > 0;) {
+        size_t chunk = left < 512 ? (size_t)left : sizeof(filler);
+        CHECK(neverc_tar_writer_write(&writer, filler, chunk) == 0);
+        left -= (int64_t)chunk;
+    }
+    CHECK(writer.cap >= sizeof(neverc_tar_header_v3_t));
+
+    initial_cap = writer.cap;
+    neverc_tar_header_v3_t *alias_v3 =
+        (neverc_tar_header_v3_t *)(void *)writer.data;
+    memset(alias_v3, 0, sizeof(*alias_v3));
+    memcpy(alias_v3->name, "alias/", 6);
+    memset(alias_v3->name + 6, 'n', 300);
+    alias_v3->size = 1;
+    alias_v3->typeflag = NEVERC_TAR_REG;
+    char expected_name[307];
+    memcpy(expected_name, alias_v3->name, sizeof(expected_name));
+    writer.len = writer.cap;
+    force_move = 1;
+    CHECK(neverc_tar_writer_write_header_v3(&writer, alias_v3) == 0);
+    force_move = 0;
+    CHECK(retired_allocation != NULL);
+    CHECK(writer.data != retired_allocation);
+    CHECK(writer.data[initial_cap + 156] == 'x');
+    const uint8_t *records = writer.data + initial_cap + NEVERC_TAR_BLOCK_SIZE;
+    CHECK(memcmp(records, "316 path=", 9) == 0);
+    CHECK(memcmp(records + 9, expected_name, 306) == 0);
+    CHECK(records[315] == '\n');
+    const uint8_t *main_block =
+        writer.data + initial_cap + NEVERC_TAR_BLOCK_SIZE * 2U;
+    CHECK(memcmp(main_block, expected_name, 100) == 0);
+    CHECK(main_block[156] == NEVERC_TAR_REG);
+    CHECK(neverc_tar_writer_write(&writer, &body, 1) == 0);
+
+    neverc_tar_writer_free(&writer);
+    free(retired_allocation);
+    retired_allocation = NULL;
     puts("passed");
     return 0;
 }
