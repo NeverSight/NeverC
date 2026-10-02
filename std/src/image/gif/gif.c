@@ -551,7 +551,12 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 palette = lct;
                 pal_size = lct_size;
             }
-            if (pending_transparent >= pal_size) goto decode_failed;
+            /* A transparent index past the color table is out of spec but
+             * accepted by browsers; like Go image/gif, grow the table with
+             * transparent black. gct/lct are zero-filled past their size.
+             * No color table at all is still rejected below. */
+            if (pending_transparent >= pal_size && pal_size > 0)
+                pal_size = pending_transparent + 1;
             uint64_t frame_pixels = (uint64_t)fw * fh;
             if (fw == 0 || fh == 0 || pal_size < 2 ||
                 frame_pixels > GIF_MAX_PIXELS ||
