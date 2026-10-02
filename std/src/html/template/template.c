@@ -829,8 +829,39 @@ static int html_js_escape_pair(const char *buf, size_t i, size_t len,
 
 enum {
     HS_TEXT, HS_TAG, HS_ATTR_DQ, HS_ATTR_SQ, HS_ATTR_UQ,
-    HS_COMMENT, HS_SCRIPT, HS_STYLE, HS_MARKUP
+    HS_COMMENT, HS_SCRIPT, HS_STYLE, HS_MARKUP, HS_RAWTEXT
 };
+
+/* Outside svg/math, the HTML tokenizer reads title/textarea content as
+ * RCDATA and xmp/iframe/noembed/noframes content as raw text, so markup-like
+ * text there opens no tag, comment, or script; plaintext never ends.
+ * (script and style have their own states. noscript is left as markup: it
+ * is raw text only when scripting is enabled.) */
+static int html_is_raw_text_element(const char *tag, size_t tlen) {
+    static const char *const names[] = {
+        "title", "textarea", "xmp", "iframe", "noembed", "noframes",
+        "plaintext"
+    };
+    for (size_t k = 0; k < sizeof(names) / sizeof(names[0]); k++)
+        if (html_tag_is(tag, tlen, names[k])) return 1;
+    return 0;
+}
+
+/* Offset of the `</name` end tag that closes such an element whose content
+ * starts at `i`, or `len` while the buffer is still inside it. */
+static size_t html_raw_text_end(const char *buf, size_t i, size_t len,
+                                const char *tag, size_t tlen) {
+    char close[18];
+    if (tlen + 2U > sizeof(close) || html_tag_is(tag, tlen, "plaintext"))
+        return len;
+    close[0] = '<';
+    close[1] = '/';
+    memcpy(close + 2, tag, tlen);
+    for (; i < len; i++)
+        if (buf[i] == '<' && html_raw_end_tag(buf, i, len, close, tlen + 2U))
+            return i;
+    return len;
+}
 
 /*
  * Quote- and comment-aware scan of the already-emitted HTML. `<script>` /
@@ -1028,6 +1059,9 @@ static void html_scan_doc(const char *buf, size_t len,
     size_t value_start = 0;
     size_t comment_body_start = 0;
     size_t script_end = 0;
+    size_t raw_end = 0;
+    int foreign_depth = 0; /* open svg/math elements */
+    int tag_slash = 0;     /* last tag character was a self-closing '/' */
     size_t i = 0;
 
     while (i < len) {
@@ -1057,6 +1091,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 is_end = 0;
                 seen_name = 0;
                 saw_refresh = 0;
+                tag_slash = 0;
                 attr = NULL;
                 alen = 0;
                 i++;
@@ -1301,6 +1336,21 @@ static void html_scan_doc(const char *buf, size_t len,
             }
             break;
 
+        case HS_RAWTEXT:
+            if (i < raw_end) {
+                i = raw_end;
+                break;
+            }
+            /* i == raw_end < len: the element's own end tag. */
+            state = HS_TAG;
+            is_end = 1;
+            seen_name = 1;
+            tag_slash = 0;
+            attr = NULL;
+            alen = 0;
+            i += 2U + tlen;
+            break;
+
         case HS_STYLE:
             if (html_raw_end_tag(buf, i, len, "</style", 7)) {
                 state = HS_TAG;
@@ -1386,20 +1436,29 @@ static void html_scan_doc(const char *buf, size_t len,
                 seen_name = 1;
                 break;
             }
-            if (html_is_ascii_ws(c)) { i++; break; }
-            if (c == '/') { i++; break; }
+            if (html_is_ascii_ws(c)) { tag_slash = 0; i++; break; }
+            if (c == '/') { tag_slash = 1; i++; break; }
             if (c == '>') {
-                if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
-                    html_tag_is(tag, tlen, "script")) {
+                int named = tlen > 0 && tlen < sizeof(tag);
+                if (named && (html_tag_is(tag, tlen, "svg") ||
+                              html_tag_is(tag, tlen, "math"))) {
+                    if (!is_end && !tag_slash) foreign_depth++;
+                    else if (is_end && foreign_depth > 0) foreign_depth--;
+                }
+                if (!is_end && named && html_tag_is(tag, tlen, "script")) {
                     state = HS_SCRIPT;
                     js = JS_CODE;
                     js_ctx_re = 1;
                     js_code_from = i + 1;
                     script_end = html_script_data_end(buf, i + 1, len);
-                } else if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
-                         html_tag_is(tag, tlen, "style"))
+                } else if (!is_end && named &&
+                           html_tag_is(tag, tlen, "style"))
                     state = HS_STYLE;
-                else
+                else if (!is_end && named && foreign_depth == 0 &&
+                         html_is_raw_text_element(tag, tlen)) {
+                    state = HS_RAWTEXT;
+                    raw_end = html_raw_text_end(buf, i + 1, len, tag, tlen);
+                } else
                     state = HS_TEXT;
                 attr = NULL;
                 alen = 0;
@@ -1408,6 +1467,7 @@ static void html_scan_doc(const char *buf, size_t len,
             }
             if (c == '=') {
                 size_t e = i;
+                tag_slash = 0;
                 while (e > 0 && html_is_ascii_ws((unsigned char)buf[e - 1]))
                     e--;
                 size_t b = e;
@@ -1425,6 +1485,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 value_start = i;
                 break;
             }
+            tag_slash = 0;
             i++;
             break;
         }
