@@ -83,6 +83,14 @@ static void test_copy(void) {
     check_size("copy len", (size_t)n, strlen(data));
     check_bytes("copy content", mw.data, mw.len, data);
     neverc_io_mem_writer_free(&mw);
+
+    /* Go io.CopyBuffer: a nil buffer means "allocate one", like Copy. */
+    neverc_io_mem_reader_init(&mr, (const uint8_t *)data, strlen(data));
+    neverc_io_mem_writer_init(&mw);
+    n = neverc_io_copy_buffer(&w, &r, NULL, 0);
+    check_size("copy_buffer nil buffer len", (size_t)n, strlen(data));
+    check_bytes("copy_buffer nil buffer content", mw.data, mw.len, data);
+    neverc_io_mem_writer_free(&mw);
 }
 
 static void test_copy_n(void) {
