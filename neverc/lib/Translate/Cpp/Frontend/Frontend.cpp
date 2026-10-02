@@ -3195,18 +3195,34 @@ static bool utilityConditionalMoveValueConstructor(
   // Every parameter still supplies its original checked signature source.
   const auto ParameterType = Constructor->getParamDecl(0)->getType();
   const auto Type = ParameterType.getNonReferenceType();
-  return !Type->isDependentType() && !Type.isVolatileQualified() &&
-         !Type.isRestrictQualified() && !Type->isAtomicType() &&
-         Type.getAddressSpace() == LangAS::Default &&
-         ((Type->isIntegralOrEnumerationType() &&
-           A.Context.getTypeSize(Type) <= 64) ||
-          Type->isSpecificBuiltinType(BuiltinType::Float) ||
-          Type->isSpecificBuiltinType(BuiltinType::Double) ||
-          Type->isPointerType() || Type->isNullPtrType() ||
-          (ParameterType->isReferenceType() &&
-           A.Context.getAsConstantArrayType(Type)) ||
-          (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
-           Type->isRecordType()));
+  if (Type->isDependentType() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type->isAtomicType() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  if ((Type->isIntegralOrEnumerationType() &&
+       A.Context.getTypeSize(Type) <= 64) ||
+      Type->isSpecificBuiltinType(BuiltinType::Float) ||
+      Type->isSpecificBuiltinType(BuiltinType::Double) ||
+      Type->isPointerType() || Type->isNullPtrType() ||
+      (ParameterType->isReferenceType() &&
+       A.Context.getAsConstantArrayType(Type)) ||
+      (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
+       Type->isRecordType()))
+    return true;
+  // A source-owned aggregate with no declared or inherited constructors has
+  // only implicit constructors. None can convert a distinct const record
+  // without a source conversion function or a source-to-base conversion.
+  // The queried record excludes both. Require an existing definition; this
+  // proof does not complete a parameter class or instantiate a constructor.
+  const auto *ParameterRecord = Type->getAsCXXRecordDecl();
+  ParameterRecord = ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
+  if (!ParameterRecord || ParameterRecord->isInvalidDecl() ||
+      ParameterRecord->isDependentContext() || ParameterRecord->isUnion() ||
+      !A.S.owns(A.Sources, ParameterRecord->getLocation()))
+    return false;
+  A.chargeExpansion(1, ParameterRecord->getLocation());
+  return ParameterRecord->isAggregate() && ParameterRecord->getNumBases() == 0 &&
+         !ParameterRecord->hasUserDeclaredConstructor();
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
