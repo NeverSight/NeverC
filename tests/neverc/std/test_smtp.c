@@ -804,6 +804,10 @@ static void test_smtp_extensions_and_lifecycle(void) {
                    neverc_smtp_write_data(c, "Subject: x\r\n\r\n", 14) == 0);
         check_true("8-bit body requires 8BITMIME",
                    neverc_smtp_write_data(c, "\xc3\xa9", 2) == -1);
+        /* Fail closed: the already-sent part must not be terminated with
+         * "." and accepted as a complete message. */
+        check_true("DATA cannot be completed after capability failure",
+                   neverc_smtp_data_close(c) == -1);
         neverc_smtp_close(c);
     }
 
