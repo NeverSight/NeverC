@@ -5027,6 +5027,13 @@ static void test_response_header(void) {
     check_str("resp hdr tabs trimmed", v, "v");
     v = neverc_http_response_header(&resp, "X-Pad", buf, sizeof(buf));
     check_str("resp hdr spaces trimmed", v, "padded");
+
+    /* A value that does not fit is a failure, not a truncated success. */
+    char small[4];
+    v = neverc_http_response_header(&resp, "X-Pad", small, sizeof(small));
+    check_int("resp hdr too small is not truncated", v == NULL, 1);
+    v = neverc_http_response_header(&resp, "X-Tab", small, sizeof(small));
+    check_str("resp hdr fits small buffer", v, "v");
     free(resp.headers);
 }
 
