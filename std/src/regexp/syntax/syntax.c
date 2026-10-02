@@ -1025,6 +1025,16 @@ static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
     case '*': case '+': case '?':
         p->err = "unexpected repetition operator";
         return NULL;
+    case '{':
+        /* parse_repeat takes a complete {n,m} that follows an atom, so one
+         * seen here has nothing to repeat (pattern start, after `(` or `|`)
+         * and Go rejects it; any other `{` is a literal. */
+        if (complete_brace_repeat(p->src, p->pos, p->len)) {
+            p->err = "unexpected repetition operator";
+            return NULL;
+        }
+        next(p);
+        return literal_node(p, '{');
     default: {
         int r;
         if (!next_rune(p, &r)) return NULL;
@@ -1046,7 +1056,7 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
     case '?': next(p); rep = mk_node(p, NC_RE_OP_QUEST); break;
     case '{': {
         /* Go/RE2: `{` is a quantifier only when a digit follows; otherwise
-         * it is a literal (so `a{}` and `{3}` parse as ordinary text).
+         * it is a literal (so `a{}` parses as ordinary text).
          * Leading zeros (`{01}`, `{0,01}`) also make `{` a literal (Go parseInt). */
         if (p->pos + 1 >= p->len ||
             p->src[p->pos + 1] < '0' || p->src[p->pos + 1] > '9' ||
