@@ -1014,6 +1014,22 @@ uncopyable member require the owning-graph proof above. An inaccessible or
 deleted non-const or volatile-copy overload alone does not
 supply this exact const-copy proof.
 
+A separate bounded proof admits source-owned records whose only copy
+declaration takes exactly mutable `Record&`. The copy must be written, including
+ordinary, defaulted, deleted or inaccessible copies; an implicit mutable copy
+still needs its own source proof. These records have no bases or conversion
+functions, and every other constructor is either a move or a nonvariadic
+zero-parameter default constructor. Constructor templates, inherited
+constructors, extra copy/move parameters, additional copy overloads and
+converting constructors retain separate requirements. Without a constructor
+that can consume `const Record&`, the pinned copy trait is false for mutable
+and const objects, preserving `Record&&` and `const Record&&` respectively.
+No query copies from the operand, modifies it or instantiates a hypothetical
+body. Every written copy/move/destructor signature retains its original
+sources, including aliases and exception expressions. Actual mutable copies,
+moves and generated member operations retain their ordinary source checks and
+preserve any changes they make to the copied-from object.
+
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
 getter remains authenticated. Their resolved exception specifications must

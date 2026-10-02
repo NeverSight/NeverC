@@ -3253,28 +3253,49 @@ static bool utilityUnavailableCopyConditionalMoveSource(
       !Arguments->get(0).getAsType()->isObjectType() ||
       !A.Context.hasSameType(Arguments->get(0).getAsType(), Call->getType()))
     return false;
-  for (const auto *Declaration : Record->decls())
-    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
-        Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
-      return false; // Constructor-template selection keeps its own sources.
+  bool MutableCopyOnly = Record->getNumBases() == 0;
+  for (const auto *Declaration : Record->decls()) {
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
+      if (isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+        return false; // Constructor-template selection keeps its own sources.
+      if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
+        MutableCopyOnly = false;
+    } else if (isa<CXXConversionDecl>(Declaration)) {
+      MutableCopyOnly = false;
+    }
+  }
   const auto CopyParameter = A.Context.getLValueReferenceType(
       A.Context.getRecordType(Record).withConst());
+  const auto MutableCopyParameter =
+      A.Context.getLValueReferenceType(A.Context.getRecordType(Record));
   bool FoundExplicitCopy = false;
   bool FoundInaccessibleCopy = false;
+  bool FoundMutableCopy = false;
   bool FoundImplicitCopy = false;
   bool FoundDeclaredMove = false;
   for (const auto *Constructor : Record->ctors()) {
     A.chargeExpansion(1, Constructor->getLocation());
     if (Constructor->isInheritingConstructor())
       return false;
-    if (!Constructor->isCopyOrMoveConstructor())
+    if (!Constructor->isCopyOrMoveConstructor()) {
+      if (Constructor->getNumParams() != 0 || Constructor->isVariadic())
+        MutableCopyOnly = false;
       continue;
+    }
     if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
         Constructor->getNumParams() != 1 ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
     if (Constructor->isMoveConstructor() && !Constructor->isImplicit())
       FoundDeclaredMove = true;
+    if (Constructor->isCopyConstructor()) {
+      if (!Constructor->isImplicit() &&
+          A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                                 MutableCopyParameter))
+        FoundMutableCopy = true;
+      else
+        MutableCopyOnly = false;
+    }
     if (Constructor->isCopyConstructor() && !Constructor->isImplicit() &&
         (Constructor->getAccess() == AS_private ||
          Constructor->getAccess() == AS_protected) &&
@@ -3311,11 +3332,15 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // The queried record's inaccessible or explicitly deleted destructor also
   // makes construction traits false, even in a caller allowed to destroy it.
   // Defaulted deletion through a member retains its separate graph proof.
+  // A written mutable-only copy cannot bind a const source. With no other
+  // one-argument constructor, base or conversion function, the copy trait is
+  // false independently of member lifetimes and hypothetical copy bodies.
   // Besides those declarations, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
   // already-declared copy and its source-owned move; other implicit deletion
   // causes keep their own proof. No hypothetical declaration or body is made.
-  if (FoundExplicitCopy || FoundInaccessibleCopy || FoundUnavailableDestructor)
+  if (FoundExplicitCopy || FoundInaccessibleCopy || FoundUnavailableDestructor ||
+      (MutableCopyOnly && FoundMutableCopy))
     return true;
   if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
     return false;
