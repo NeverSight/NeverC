@@ -706,10 +706,17 @@ int neverc_os_mkdir_all(const char *path, uint32_t perm) {
             char saved = buf[i];
             buf[i] = '\0';
             if (neverc_os_mkdir(buf, perm) != 0) {
-                mkdir_err = errno;
-                if (neverc_os_stat(buf, &info) == 0 && !info.is_dir) {
-                    errno = ENOTDIR;
-                    return -1;
+                int err = errno;
+                if (neverc_os_stat(buf, &info) == 0) {
+                    if (!info.is_dir) {
+                        errno = ENOTDIR;
+                        return -1;
+                    }
+                    mkdir_err = 0;
+                } else if (mkdir_err == 0) {
+                    /* Go os.MkdirAll reports why the first missing component
+                     * failed; deeper ones would only add ENOENT. */
+                    mkdir_err = err;
                 }
             } else {
                 mkdir_err = 0;
