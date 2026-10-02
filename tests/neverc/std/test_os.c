@@ -997,7 +997,45 @@ static void test_environ(void) {
     for (int i = 0; i < count; i++) free(env[i]);
     free(env);
     ASSERT_TRUE(neverc_os_environ(NULL) == NULL);
+
+#if !defined(_WIN32)
+    /* Go os.Clearenv leaves no variables behind even when the inherited
+     * environment starts with an entry that has no '='. A copy of this
+     * test started with such an environment clears it and reports back. */
+    {
+        char self[4096];
+        if (neverc_os_executable(self, sizeof(self)) == 0) {
+            pid_t child = fork();
+            ASSERT_TRUE(child >= 0);
+            if (child == 0) {
+                char probe_arg[] = "--clearenv-probe";
+                char malformed[] = "NEVERC_CLEARENV_MALFORMED";
+                char var_a[] = "NEVERC_CLEARENV_A=1";
+                char var_b[] = "NEVERC_CLEARENV_B=2";
+                char *child_argv[] = {self, probe_arg, NULL};
+                char *child_envp[] = {malformed, var_a, var_b, NULL};
+                execve(self, child_argv, child_envp);
+                _exit(127);
+            }
+            if (child > 0) {
+                int status = 0;
+                ASSERT_EQ(waitpid(child, &status, 0), child);
+                ASSERT_TRUE(WIFEXITED(status) &&
+                            (WEXITSTATUS(status) == 0 ||
+                             WEXITSTATUS(status) == 127));
+            }
+        }
+    }
+#endif
 }
+
+#if !defined(_WIN32)
+static int run_clearenv_probe(void) {
+    neverc_os_clearenv();
+    return neverc_os_getenv("NEVERC_CLEARENV_A") == NULL &&
+           neverc_os_getenv("NEVERC_CLEARENV_B") == NULL ? 0 : 1;
+}
+#endif
 
 static void test_expand_env(void) {
     printf("[expand_env]\n");
@@ -1593,6 +1631,10 @@ int main(int argc, char **argv) {
 #if defined(__linux__)
     if (argc == 2 && strcmp(argv[1], "--deleted-executable-probe") == 0)
         return run_deleted_executable_probe();
+#endif
+#if !defined(_WIN32)
+    if (argc == 2 && strcmp(argv[1], "--clearenv-probe") == 0)
+        return run_clearenv_probe();
 #else
     (void)argc;
     (void)argv;
