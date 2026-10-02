@@ -342,6 +342,27 @@ static void test_parse_message(void) {
     ASSERT_EQ(neverc_mail_parse_message(fold_first, strlen(fold_first), &m), 0);
     ASSERT_STREQ(neverc_mail_header_get(&m, "Subject"), "Hello");
 
+    /* Go mail.ReadMessage trims SP/HTAB at both ends of every header line
+     * and joins folded lines with a single space. */
+    const char *trailing_ws =
+        "Subject: hello \t\r\n"
+        "X-Fold: one \r\n"
+        "\ttwo\t\r\n"
+        "X-Empty-First:\r\n"
+        " bar \r\n"
+        "X-Blank: \t\r\n"
+        "X-Inner: a  b \r\n"
+        "\r\n"
+        "body";
+    ASSERT_EQ(neverc_mail_parse_message(trailing_ws, strlen(trailing_ws), &m),
+              0);
+    ASSERT_STREQ(neverc_mail_header_get(&m, "Subject"), "hello");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "X-Fold"), "one two");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "X-Empty-First"), "bar");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "X-Blank"), "");
+    ASSERT_STREQ(neverc_mail_header_get(&m, "X-Inner"), "a  b");
+    ASSERT_TRUE(m.body_len == 4 && memcmp(m.body, "body", 4) == 0);
+
     /* Folded "Bcc:" is continuation of From, not a new field. */
     const char *fold_bcc =
         "From: user@x.com\r\n"
