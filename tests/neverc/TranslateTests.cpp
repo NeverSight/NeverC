@@ -44235,8 +44235,8 @@ int f(long double*&p){static_assert(__is_same(decltype(Reexport::forward<long do
 int f(int(&p)[2]){static_assert(__is_same(decltype(Reexport::move(p)),int(&&)[2]));return 0;}
 )cpp",
        "TR0201"},
-      {"record-reference", R"cpp(
-struct Box{int n;};int f(Box&p){static_assert(__is_same(decltype(Reexport::forward<Box&>(p)),Box&));return 0;}
+      {"union-record-reference", R"cpp(
+union Box{int n;float f;};int f(Box&p){static_assert(__is_same(decltype(Reexport::forward<Box&>(p)),Box&));return 0;}
 )cpp",
        "TR0201"},
       {"function-reference", R"cpp(
@@ -74128,6 +74128,264 @@ using G=std::plus<>;
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedRecordValueAdapterQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("owned-record-value-adapter-queries.cpp");
+  const auto Output = tmpFile("owned-record-value-adapter-queries.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+namespace Imported { using std::move; using std::forward; using std::as_const; }
+namespace Alias = Imported;
+int calls, defaults, operators, copies, moves, live, destroyed;
+using Callback = int (*)(int) noexcept;
+struct Node { int value; };
+struct Box { Node node; int fixed[2]; int *pointer; Callback callback; };
+template<class T> struct Cell { T value; };
+struct Function {
+  int value;
+  int operator()(int n) & noexcept { ++operators; return value += n; }
+  long operator()(int n) const & { ++operators; return value + n + 100; }
+  int operator()(int n) && noexcept { ++operators; return value + n + 200; }
+};
+struct Lazy {
+  template<class T> int operator()(T) const {
+    static_assert(sizeof(T) == 0); return 0;
+  }
+};
+struct Owner {
+  int value;
+  explicit Owner(int n) noexcept : value(n) { ++live; }
+  Owner(const Owner &other) noexcept : value(other.value) { ++copies; ++live; }
+  Owner(Owner &&other) noexcept : value(other.value) { ++moves; ++live; }
+  ~Owner() noexcept { --live; ++destroyed; }
+};
+struct Immovable {
+  int value;
+  explicit Immovable(int n) noexcept : value(n) {}
+  Immovable(const Immovable &) = delete;
+  Immovable(Immovable &&) = delete;
+};
+struct Ticket {
+  Ticket() noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+int increment(int n) noexcept { return n + 1; }
+Box &source(Box &b, int n = (++defaults, 1)) noexcept { ++calls; return b; }
+Box &throwing_source(Box &b) { ++calls; return b; }
+Box &with_ticket(Box &b, Ticket ticket = Ticket()) noexcept { ++calls; return b; }
+Owner temporary(int n = (++defaults, 5)) noexcept { ++calls; return Owner(n); }
+int queries_only(Box &b) {
+  static_assert(__is_same(decltype(Alias::move(b)), Box &&));
+  static_assert(__is_same(decltype((Alias::as_const)(b)), const Box &));
+  static_assert(__is_same(decltype(Alias::forward<Box &>(b)), Box &));
+  return 0;
+}
+template<class F> int invoke(F &&function, std::tuple<int> &tuple) {
+  static_assert(__is_same(decltype(Alias::forward<F>(function)), F &&));
+  static_assert(__is_same(decltype(std::apply(Alias::forward<F>(function), tuple)), int));
+  return std::apply(Alias::forward<F>(function), tuple);
+}
+int main() {
+  int target = 7;
+  Box box{{3}, {4, 5}, &target, increment};
+  const Box &constant = box;
+  Cell<int> cell{9};
+  Lazy lazy;
+  Function function{5};
+  std::tuple<int> tuple(2);
+  Immovable immovable(11);
+  if (invoke(function, tuple) != 7 || invoke(Alias::move(function), tuple) != 209 ||
+      std::apply(Alias::as_const(function), tuple) != 109) return 1;
+  operators = 0;
+  static_assert(__is_same(decltype(Alias::move(box)), Box &&));
+  static_assert(__is_same(decltype((Alias::move)(constant)), const Box &&));
+  static_assert(__is_same(decltype(Alias::move<Box &>(box)), Box &&));
+  static_assert(__is_same(decltype(Alias::forward<Box &>(box)), Box &));
+  static_assert(__is_same(decltype(Alias::forward<Box>(box)), Box &&));
+  static_assert(__is_same(decltype(Alias::forward<const Box &>(constant)), const Box &));
+  static_assert(__is_same(decltype(Alias::forward<const Box>(constant)), const Box &&));
+  static_assert(__is_same(decltype(Alias::forward<Box>(Alias::move(box))), Box &&));
+  static_assert(__is_same(decltype(Alias::as_const(box)), const Box &));
+  static_assert(__is_same(decltype(Alias::as_const(constant)), const Box &));
+  static_assert(__is_same(decltype(Alias::move(Alias::as_const(box))), const Box &&));
+  static_assert(__is_same(decltype(Alias::as_const(Alias::forward<Box &>(box))), const Box &));
+  static_assert(__is_same(decltype((Alias::move(box).node)), Node &&));
+  static_assert(__is_same(decltype((Alias::as_const(box).node)), const Node &));
+  static_assert(__is_same(decltype((Alias::forward<Box &>(box).node)), Node &));
+  static_assert(__array_extent(decltype(Alias::move(box).fixed), 0) == 2);
+  static_assert(std::is_rvalue_reference<decltype(Alias::move(cell))>::value);
+  static_assert(std::is_lvalue_reference<decltype(Alias::as_const(cell))>::value);
+  static_assert(__is_same(decltype(Alias::move(lazy)), Lazy &&));
+  static_assert(__is_same(decltype(Alias::move(immovable)), Immovable &&));
+  static_assert(__is_same(decltype(Alias::forward<Immovable>(immovable)), Immovable &&));
+  static_assert(__is_same(decltype(Alias::as_const(immovable)), const Immovable &));
+  static_assert(__is_same(decltype(std::apply(Alias::move(function), tuple)), int));
+  static_assert(__is_same(decltype(std::apply(Alias::forward<Function &>(function), tuple)), int));
+  static_assert(__is_same(decltype(std::apply(Alias::as_const(function), tuple)), long));
+  static_assert(noexcept(std::apply(Alias::move(function), tuple)));
+  static_assert(!noexcept(std::apply(Alias::as_const(function), tuple)));
+  static_assert(sizeof(Alias::move(source(box))) == sizeof(Box));
+  static_assert(sizeof(Alias::forward<Box>(with_ticket(box))) == sizeof(Box));
+  static_assert(sizeof(Alias::as_const((++calls, box))) == sizeof(Box));
+  static_assert(alignof(decltype(Alias::move(box))) == alignof(Box));
+  static_assert(noexcept(Alias::move(with_ticket(box))));
+  static_assert(noexcept(Alias::forward<Box &>(source(box))));
+  static_assert(noexcept(Alias::as_const(source(box))));
+  static_assert(!noexcept(Alias::move(throwing_source(box))));
+  static_assert(__is_same(decltype(Alias::move(temporary())), Owner &&));
+  static_assert(__is_same(decltype(Alias::forward<Owner>(temporary())), Owner &&));
+  static_assert(sizeof(Alias::move(temporary())) == sizeof(Owner));
+  static_assert(noexcept(Alias::forward<Owner>(temporary())));
+  int extent[sizeof(Alias::as_const(box)) == sizeof(Box) ? 2 : 1]{};
+  if (queries_only(box) || sizeof(extent) != 2 * sizeof(int) || function.value != 7 ||
+      calls || defaults || operators || copies || moves || live || destroyed) return 2;
+  Box &&view = Alias::move(source(box));
+  const Box &const_view = Alias::as_const(with_ticket(box));
+  Box &forwarded = Alias::forward<Box &>(box);
+  const Box &&const_rvalue = Alias::forward<const Box>(constant);
+  Alias::forward<Box &>(box).fixed[1] = 6;
+  Alias::as_const(box).pointer[0] = 10;
+  Alias::forward<Cell<int> &>(cell).value = 12;
+  Immovable &&immovable_view = Alias::move(immovable);
+  {
+    Owner owned(15);
+    Owner &&moved = Alias::move(owned);
+    Owner &same = Alias::forward<Owner &>(owned);
+    const Owner &read = Alias::as_const(owned);
+    if (&moved != &owned || &same != &owned || &read != &owned ||
+        live != 1 || copies || moves) return 3;
+  }
+  const int first = Alias::move(temporary()).value;
+  const int second = Alias::forward<Owner>(temporary()).value;
+  return &view == &box && &const_view == &box && &forwarded == &box &&
+         &const_rvalue == &box && &immovable_view == &immovable &&
+         box.fixed[1] == 6 && target == 10 && cell.value == 12 &&
+         box.callback(2) == 3 && first == 5 && second == 5 &&
+         calls == 4 && defaults == 3 && !operators && !copies && !moves &&
+         !live && destroyed == 4 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-record-value-adapter-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedRecordValueAdapterQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"field-alias", R"cpp(
+using E=decltype((sizeof(long double),int{}));struct C{E value;};int f(C&c){static_assert(sizeof(Alias::move(c))==sizeof(C));return 0;}
+)cpp"},
+      {"field-array-bound", R"cpp(
+struct C{int values[(sizeof(long double),2)];};int f(C&c){static_assert(__is_same(decltype(Alias::as_const(c)),const C&));return 0;}
+)cpp"},
+      {"written-class-argument", R"cpp(
+template<class T>struct C{T value;};using E=decltype((sizeof(long double),int{}));int f(C<E>&c){static_assert(__is_same(decltype(Alias::forward<C<E>&>(c)),C<E>&));return 0;}
+)cpp"},
+      {"written-base-alias", R"cpp(
+struct Empty{};using E=decltype((sizeof(long double),Empty{}));struct C:E{int value;};int f(C&c){static_assert(sizeof(Alias::move(c))==sizeof(C));return 0;}
+)cpp"},
+      {"move-operand", R"cpp(
+int f(Box&b){static_assert(__is_same(decltype(Alias::move((sizeof(long double),b))),Box&&));return 0;}
+)cpp"},
+      {"forward-operand", R"cpp(
+int f(Box&b){static_assert(__is_same(decltype(Alias::forward<Box&>((sizeof(long double),b))),Box&));return 0;}
+)cpp"},
+      {"as-const-operand", R"cpp(
+int f(Box&b){static_assert(__is_same(decltype(Alias::as_const((sizeof(long double),b))),const Box&));return 0;}
+)cpp"},
+      {"record-initializer", R"cpp(
+int f(){Box b{int(sizeof(long double))};static_assert(__is_same(decltype(Alias::move(b)),Box&&));return 0;}
+)cpp"},
+      {"selected-default", R"cpp(
+Box&source(Box&b,int n=sizeof(long double))noexcept{return b;}int f(Box&b){static_assert(sizeof(Alias::move(source(b)))==sizeof(Box));return 0;}
+)cpp"},
+      {"original-exception", R"cpp(
+Box&source(Box&b)noexcept(sizeof(long double)>0);Box&source(Box&b)noexcept{return b;}int f(Box&b){static_assert(noexcept(Alias::as_const(source(b))));return 0;}
+)cpp"},
+      {"adjusted-signature-bound", R"cpp(
+Box&source(Box&b,int a[(sizeof(long double),2)]=nullptr)noexcept{return b;}int f(Box&b){static_assert(sizeof(Alias::forward<Box&>(source(b)))==sizeof(Box));return 0;}
+)cpp"},
+      {"forward-template-argument", R"cpp(
+int f(Box&b){static_assert(__is_same(decltype(Alias::forward<decltype((sizeof(long double),b))>(b)),Box&));return 0;}
+)cpp"},
+      {"move-template-argument", R"cpp(
+int f(Box&b){static_assert(__is_same(decltype(Alias::move<decltype((sizeof(long double),b))>(b)),Box&&));return 0;}
+)cpp"},
+      {"as-const-template-argument", R"cpp(
+using E=decltype((sizeof(long double),Box{}));int f(Box&b){static_assert(__is_same(decltype(Alias::as_const<E>(b)),const Box&));return 0;}
+)cpp"},
+      {"temporary-destructor-body", R"cpp(
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};Box&source(Box&b,Ticket=Ticket())noexcept{return b;}int f(Box&b){static_assert(sizeof(Alias::move(source(b)))==sizeof(Box));return 0;}
+)cpp"},
+      {"temporary-destructor-exception", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};Box&source(Box&b,Ticket=Ticket())noexcept{return b;}int f(Box&b){static_assert(noexcept(Alias::forward<Box&>(source(b))));return 0;}
+)cpp"},
+      {"move-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}int f(Box&b){static_assert(__is_same(decltype(Alias::move(b)),Box&&));return 0;}
+)cpp"},
+      {"forward-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}int f(Box&b){static_assert(__is_same(decltype(Alias::forward<Box&>(b)),Box&));return 0;}
+)cpp"},
+      {"as-const-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}int f(Box&b){static_assert(__is_same(decltype(Alias::as_const(b)),const Box&));return 0;}
+)cpp"},
+      {"independent-move-address", R"cpp(
+int f(Box&b){static_assert(__is_same(decltype(Alias::move(b)),Box&&));static_assert(sizeof(&Alias::move<Box&>)>0);return 0;}
+)cpp"},
+      {"independent-forward-address", R"cpp(
+using F=Box&(*)(Box&)noexcept;int f(Box&b){static_assert(__is_same(decltype(Alias::forward<Box&>(b)),Box&));static_assert(sizeof(static_cast<F>(&Alias::forward<Box&>))>0);return 0;}
+)cpp"},
+      {"independent-as-const-address", R"cpp(
+using F=const Box&(*)(Box&)noexcept;int f(Box&b){static_assert(__is_same(decltype(Alias::as_const(b)),const Box&));static_assert(sizeof(static_cast<F>(&Alias::as_const<Box>))>0);return 0;}
+)cpp"},
+      {"cast-callee", R"cpp(
+using F=Box&&(*)(Box&)noexcept;int f(Box&b){static_assert(__is_same(decltype(static_cast<F>(&Alias::move<Box&>)(b)),Box&&));return 0;}
+)cpp"},
+      {"incomplete-record", R"cpp(
+struct Missing;int f(Missing&b){static_assert(__is_same(decltype(Alias::move(b)),Missing&&));return 0;}
+)cpp"},
+      {"volatile-record", R"cpp(
+int f(volatile Box&b){static_assert(__is_same(decltype(Alias::as_const(b)),const volatile Box&));return 0;}
+)cpp"},
+      {"conditional-move-remains-separate", R"cpp(
+struct C{int value;C()=default;C(const C&)=default;C(C&&)noexcept(false)=default;};int f(C&c){static_assert(__is_same(decltype(std::move_if_noexcept(c)),const C&));return 0;}
+)cpp"},
+      {"selected-apply-method", R"cpp(
+struct F{int operator()(int n)&&noexcept{long double hidden=0;return n;}};int f(F&c,std::tuple<int>&t){static_assert(__is_same(decltype(std::apply(Alias::move(c),t)),int));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("owned-record-adapter-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("owned-record-adapter-query-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+struct Box { int value; };
+namespace Imported { using std::move; using std::forward; using std::as_const; }
+namespace Alias = Imported;
+)cpp") + Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0201");
     expectNoArtifacts(Output);
   }
 }

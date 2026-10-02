@@ -3096,9 +3096,19 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
       Type->isRecordType() && !Type.isVolatileQualified() &&
       !Type.isRestrictQualified() && Type.getAddressSpace() == LangAS::Default &&
       functionalObjectStorageSource(A, Type->getAsCXXRecordDecl());
-  return (Scalar || TupleLike || FunctionObject ||
-          (MoveOrForward &&
-           utilityUniquePtrSource(A, Type->getAsCXXRecordDecl()))) &&
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  // These reference casts consume no constructor or call operator. Keep the
+  // source-owned record's layout, written types and operand/lifetime sources
+  // on their ordinary checks. Conditional move needs separate trait sources.
+  const bool OwnedRecord =
+      (MoveOrForward || *Operation == UtilityOperation::AsConst) && Definition &&
+      !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
+      !Definition->isUnion() && A.S.owns(A.Sources, Definition->getLocation()) &&
+      !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+      Type.getAddressSpace() == LangAS::Default;
+  return (Scalar || TupleLike || FunctionObject || OwnedRecord ||
+          (MoveOrForward && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 

@@ -808,6 +808,17 @@ SDK declaration family. It neither executes nor instantiates the call operator.
 Written adapter arguments and operands remain independent source dependencies;
 independent adapter addresses and substituted declarations gain no admission.
 
+The same pinned `std::move`, `std::forward` and `std::as_const` casts also
+supply queries for admitted source-owned records with completed non-union
+definitions, including function objects used by `apply`. They preserve the
+original object's cv/reference category and identity without copying, moving,
+calling an operator or extending a lifetime. Original aliases, template
+arguments, field/base layout sources, operands, selected defaults and temporary
+cleanup remain independent requirements. A cast alone does not instantiate an
+unused constructor or member-template body; actual invocation still requires
+its selected method source. `std::move_if_noexcept` queries on these records
+retain a separate requirement for constructor-trait decision sources.
+
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
 getter remains authenticated. Their resolved exception specifications must
