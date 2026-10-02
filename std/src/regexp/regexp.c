@@ -1086,11 +1086,27 @@ static frag_t mk_concat(frag_t a, frag_t b) {
     return frag(a.start, b.end);
 }
 
+/* x+: the split after x decides whether to repeat. */
+static frag_t mk_plus(neverc_regexp_t *re, frag_t fr) {
+    nfa_state_t *loop = new_state(re, NFA_SPLIT);
+    nfa_state_t *end = new_state(re, NFA_MATCH);
+    loop->out1 = fr.start; loop->out2 = end;
+    if (fr.end) fr.end->out1 = loop;
+    return frag(fr.start, end);
+}
+
+/* x* is built as (x+)?, the shape Go compiles a star into when x can match
+ * empty: the entry split only chooses whether to run x at all, and the split
+ * after x chooses whether to repeat. An empty pass through x then reaches the
+ * exit with x's captures recorded instead of being cut where it loops back to
+ * the entry split. */
 static frag_t mk_star(neverc_regexp_t *re, frag_t fr) {
     nfa_state_t *split = new_state(re, NFA_SPLIT);
+    nfa_state_t *loop = new_state(re, NFA_SPLIT);
     nfa_state_t *end = new_state(re, NFA_MATCH);
     split->out1 = fr.start; split->out2 = end;
-    if (fr.end) fr.end->out1 = split;
+    loop->out1 = fr.start; loop->out2 = end;
+    if (fr.end) fr.end->out1 = loop;
     return frag(split, end);
 }
 
@@ -1103,16 +1119,18 @@ static frag_t mk_opt(neverc_regexp_t *re, frag_t fr) {
 }
 
 /* Expand X{lo,hi} into lo mandatory copies of X plus the optional tail:
- * a star copy when hi is unbounded (-1), else (hi-lo) copies each made optional.
- * X is the range [range_lo,range_hi); copies share X's classes and are wired up
- * with the same split/MATCH glue used by *, +, ?. */
+ * when hi is unbounded (-1) the last mandatory copy loops (X{n,} is
+ * X^(n-1) X+, as in Go, so an extra empty pass cannot replace the captures of
+ * the last real one) and X{0,} is X*; otherwise (hi-lo) copies are each made
+ * optional. X is the range [range_lo,range_hi); copies share X's classes and
+ * are wired up with the same split/MATCH glue used by *, +, ?. */
 static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
                             int range_lo, int range_hi, int lo, int hi) {
     if (lo == 0 && hi == 0) {                /* {0}: matches empty */
         nfa_state_t *e = new_state(re, NFA_MATCH);
         return frag(e, e);
     }
-    int total = (hi == -1) ? (lo == 0 ? 1 : lo + 1) : hi;
+    int total = (hi == -1) ? (lo == 0 ? 1 : lo) : hi;
     frag_t *cp = (frag_t *)NC_REGEXP_CALLOC((size_t)total, sizeof(frag_t));
     if (!cp) { re->oom = 1; return f; }
     cp[0] = f;
@@ -1129,11 +1147,14 @@ static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
             r = mk_opt(re, cp[0]);
             for (int i = 1; i < hi; i++) r = mk_concat(r, mk_opt(re, cp[i]));
         }
+    } else if (hi == -1) {
+        r = frag(NULL, NULL);
+        for (int i = 0; i < lo - 1; i++) r = mk_concat(r, cp[i]);
+        r = mk_concat(r, mk_plus(re, cp[lo - 1]));
     } else {
         r = cp[0];
         for (int i = 1; i < lo; i++) r = mk_concat(r, cp[i]);
-        if (hi == -1) r = mk_concat(r, mk_star(re, cp[lo]));
-        else for (int i = lo; i < hi; i++) r = mk_concat(r, mk_opt(re, cp[i]));
+        for (int i = lo; i < hi; i++) r = mk_concat(r, mk_opt(re, cp[i]));
     }
     free(cp);
     return r;
@@ -1211,7 +1232,7 @@ static frag_t parse_repeat(parser_t *par) {
             }
             {
                 int unit = par->re->nstates - atom_base;
-                int copies = (hi == -1) ? (lo == 0 ? 1 : lo + 1) : hi;
+                int copies = (hi == -1) ? (lo == 0 ? 1 : lo) : hi;
                 if (unit > 0 && copies > 0 &&
                     copies > (NFA_MAX_STATES - par->re->nstates) / unit) {
                     par->err = "pattern too large";
@@ -1240,9 +1261,14 @@ static frag_t parse_repeat(parser_t *par) {
         nfa_state_t *end = new_state(par->re, NFA_MATCH);
 
         if (op == '*') {
+            /* (x+)?, as in mk_star: an empty pass through x keeps its
+             * captures instead of dying at the entry split. */
+            nfa_state_t *loop = new_state(par->re, NFA_SPLIT);
             split->out1 = f.start;
             split->out2 = end;
-            f.end->out1 = split;
+            loop->out1 = f.start;
+            loop->out2 = end;
+            f.end->out1 = loop;
             f = frag(split, end);
         } else if (op == '+') {
             split->out1 = f.start;
