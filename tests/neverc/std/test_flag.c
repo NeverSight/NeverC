@@ -478,6 +478,42 @@ static void test_name_injection(void) {
 #endif
 }
 
+static void test_print_defaults_order(void) {
+    printf("[print defaults order]\n");
+#ifndef _WIN32
+    neverc_flag_reset();
+    int zeta = 0, alpha = 0, mid = 0;
+    neverc_flag_bool("zeta", 0, "last", &zeta);
+    neverc_flag_bool("alpha", 0, "first", &alpha);
+    neverc_flag_bool("mid", 0, "middle", &mid);
+
+    FILE *tmp = tmpfile();
+    char buf[256];
+    int saved;
+    check_int("defaults capture tmpfile", tmp != NULL, 1);
+    if (!tmp) return;
+    saved = dup(fileno(stderr));
+    check_int("defaults capture dup", saved >= 0, 1);
+    if (saved >= 0 && dup2(fileno(tmp), fileno(stderr)) >= 0) {
+        neverc_flag_print_defaults();
+        fflush(stderr);
+        dup2(saved, fileno(stderr));
+        close(saved);
+        rewind(tmp);
+        buf[fread(buf, 1, sizeof(buf) - 1, tmp)] = '\0';
+        /* Go flag.PrintDefaults walks VisitAll: lexicographical order. */
+        check_str("defaults are sorted by name", buf,
+                  "  -alpha\n    \tfirst\n"
+                  "  -mid\n    \tmiddle\n"
+                  "  -zeta\n    \tlast\n");
+    } else if (saved >= 0) {
+        close(saved);
+        check_int("defaults capture dup2", 0, 1);
+    }
+    fclose(tmp);
+#endif
+}
+
 static void test_visit(void) {
     printf("[visit]\n");
     neverc_flag_reset();
@@ -763,6 +799,7 @@ int main(void) {
     test_set_lookup();
     test_bad_syntax();
     test_name_injection();
+    test_print_defaults_order();
     test_visit();
     test_parse_edge_cases();
     test_null_safety();
