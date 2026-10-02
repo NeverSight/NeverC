@@ -835,6 +835,26 @@ void neverc_x509_name_constraints_clear(
     memset(constraints, 0, sizeof(*constraints));
 }
 
+/* RFC 5280 4.2: a certificate MUST NOT include more than one instance of a
+ * particular extension, whether or not it is interpreted here. Rescan the
+ * extensions in data[0, end), which the caller has already walked. */
+static int extension_oid_repeated(const uint8_t *data, size_t end,
+                                  const uint8_t *oid, size_t oid_len) {
+    asn1_reader_t previous = {data, end, 0};
+    while (previous.pos < previous.len) {
+        asn1_reader_t extension;
+        uint8_t tag;
+        const uint8_t *seen;
+        size_t seen_len;
+        if (asn1_enter_sequence(&previous, &extension) != 0 ||
+            asn1_read_tlv(&extension, &tag, &seen, &seen_len) != 0)
+            return 1;
+        if (oid_equals(seen, seen_len, oid, oid_len))
+            return 1;
+    }
+    return 0;
+}
+
 static int parse_extensions(neverc_x509_cert_t *cert,
                             const uint8_t *data, size_t len,
                             int *san_critical) {
@@ -853,6 +873,7 @@ static int parse_extensions(neverc_x509_cert_t *cert,
     int saw_ext_key_usage = 0;
     int saw_name_constraints = 0;
     while (extensions.pos < extensions.len) {
+        size_t extension_start = extensions.pos;
         asn1_reader_t extension;
         if (asn1_enter_sequence(&extensions, &extension) < 0)
             return -1;
@@ -861,7 +882,9 @@ static int parse_extensions(neverc_x509_cert_t *cert,
         const uint8_t *oid;
         size_t oid_len;
         if (asn1_read_tlv(&extension, &tag, &oid, &oid_len) < 0 ||
-            tag != ASN1_TAG_OID)
+            tag != ASN1_TAG_OID ||
+            extension_oid_repeated(extensions.data, extension_start,
+                                   oid, oid_len))
             return -1;
 
         int critical_flag = 0;
@@ -1018,13 +1041,16 @@ static int find_name_constraints_extension(
             wrapper.pos != wrapper.len || extensions.len == 0)
             return -1;
         while (extensions.pos < extensions.len) {
+            size_t extension_start = extensions.pos;
             asn1_reader_t extension;
             if (asn1_enter_sequence(&extensions, &extension) != 0)
                 return -1;
             const uint8_t *oid;
             size_t oid_len;
             if (asn1_read_tlv(&extension, &tag, &oid, &oid_len) != 0 ||
-                tag != ASN1_TAG_OID)
+                tag != ASN1_TAG_OID ||
+                extension_oid_repeated(extensions.data, extension_start,
+                                       oid, oid_len))
                 return -1;
             if (extension.pos < extension.len &&
                 extension.data[extension.pos] == ASN1_TAG_BOOLEAN) {
