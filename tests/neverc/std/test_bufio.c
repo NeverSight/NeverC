@@ -270,6 +270,104 @@ static void test_scanner_data_with_terminal_error(void) {
     neverc_bufio_scanner_free(&sc);
 }
 
+/* Comma-separated fields; a trailing comma ends with one empty field, which
+ * the split can only deliver from the atEOF call made on exhausted data. */
+static int comma_final_sent;
+
+static int comma_final_split(const uint8_t *data, size_t data_len, int at_eof,
+                             size_t *advance, const uint8_t **token,
+                             size_t *token_len, int *err) {
+    *advance = 0;
+    *token = NULL;
+    *token_len = 0;
+    *err = 0;
+    for (size_t i = 0; i < data_len; i++) {
+        if (data[i] == ',') {
+            *advance = i + 1;
+            *token = data;
+            *token_len = i;
+            return 1;
+        }
+    }
+    if (!at_eof) return 0;
+    if (data_len > 0) {
+        *advance = data_len;
+        *token = data;
+        *token_len = data_len;
+        return 1;
+    }
+    if (comma_final_sent) return 0;
+    comma_final_sent = 1;
+    *token = data;
+    return 1;
+}
+
+static void scan_joined(neverc_bufio_scanner_t *sc, char *out, size_t cap) {
+    size_t used = 0;
+    out[0] = '\0';
+    while (neverc_bufio_scanner_scan(sc)) {
+        size_t len = 0;
+        const uint8_t *token = neverc_bufio_scanner_bytes(sc, &len);
+        if (!token || used + len + 2 > cap) break;
+        memcpy(out + used, token, len);
+        used += len;
+        out[used++] = '|';
+        out[used] = '\0';
+    }
+}
+
+/* Go bufio.Scanner calls the split function with atEOF set even when no data
+ * is left, so a final empty token survives whether the reader reports the end
+ * on a later call or together with its last bytes. */
+static void test_scanner_final_empty_token(void) {
+    printf("[scanner final empty token]\n");
+
+    static const uint8_t fields[] = "1,2,";
+    char joined[32];
+    neverc_bufio_scanner_t sc;
+
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, fields, sizeof(fields) - 1);
+    neverc_io_reader_t mem_io = { &mr, neverc_io_mem_reader_read };
+    comma_final_sent = 0;
+    neverc_bufio_scanner_init(&sc, mem_io);
+    neverc_bufio_scanner_split(&sc, comma_final_split);
+    scan_joined(&sc, joined, sizeof(joined));
+    check_bytes("later eof keeps final empty field",
+                (const uint8_t *)joined, strlen(joined), "1|2||");
+    check_int("later eof no error", neverc_bufio_scanner_err(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+
+    data_error_reader_t eof_reader = {
+        fields, sizeof(fields) - 1, NEVERC_IO_EOF, 0
+    };
+    neverc_io_reader_t eof_io = { &eof_reader, data_error_reader_read };
+    comma_final_sent = 0;
+    neverc_bufio_scanner_init(&sc, eof_io);
+    neverc_bufio_scanner_split(&sc, comma_final_split);
+    scan_joined(&sc, joined, sizeof(joined));
+    check_bytes("eof with data keeps final empty field",
+                (const uint8_t *)joined, strlen(joined), "1|2||");
+    check_int("eof with data stays stopped",
+              neverc_bufio_scanner_scan(&sc), 0);
+    check_int("eof with data no error", neverc_bufio_scanner_err(&sc), 0);
+    neverc_bufio_scanner_free(&sc);
+
+    data_error_reader_t error_reader = {
+        fields, sizeof(fields) - 1, NEVERC_IO_ERR_UNEXP, 0
+    };
+    neverc_io_reader_t error_io = { &error_reader, data_error_reader_read };
+    comma_final_sent = 0;
+    neverc_bufio_scanner_init(&sc, error_io);
+    neverc_bufio_scanner_split(&sc, comma_final_split);
+    scan_joined(&sc, joined, sizeof(joined));
+    check_bytes("error with data keeps final empty field",
+                (const uint8_t *)joined, strlen(joined), "1|2||");
+    check_int("error with data is retained", neverc_bufio_scanner_err(&sc),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_scanner_free(&sc);
+}
+
 static void test_buffered_reader(void) {
     printf("[buffered reader]\n");
     const char *data = "Hello, buffered world!";
@@ -1184,6 +1282,7 @@ int main(void) {
     test_scanner_full_buffer_with_eof();
     test_scanner_full_buffer_after_transient_empty_read();
     test_scanner_data_with_terminal_error();
+    test_scanner_final_empty_token();
     test_buffered_reader();
     test_buffered_reader_short_read();
     test_buffered_reader_preserves_terminal_error();
