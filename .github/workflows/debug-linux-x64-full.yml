@@ -1,0 +1,232 @@
+name: debug-linux-x64-full
+
+# Temporary: one uncancellable full Linux x64 build and check-neverc run on
+# demand, while dev pushes keep superseding the regular build. Remove after use.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    # Pin to 22.04 (glibc 2.35) rather than ubuntu-latest (24.04/glibc 2.39) so
+    # the neverc artifact runs in glibc>=2.35 containers (Ubuntu 22.04 / 24.04),
+    # matching the target Docker test environment. Build low, run high.
+    runs-on: ubuntu-22.04
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      # Make any parallel-codegen merge/self-verify fallback a hard CI failure
+      # rather than a silent fallback to serial codegen that would mask a merger
+      # regression (the historical offset-collapse bug only stayed hidden
+      # because the fallback kept builds green).  A correct merge is unaffected.
+      NEVERC_PCG_STRICT: "1"
+      LLVM_APT_VER: '22'
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        path: neverc
+
+    - name: Set up CPython 3.12.10 for official artifacts
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.12.10"
+
+    - name: Setup build deps
+      # openssl provides the TLS 1.3 CLI used by the bidirectional interop gate.
+      run: |
+        bash neverc/.github/scripts/configure-apt-ubuntu.sh
+        sudo apt-get update && sudo apt-get install -y ninja-build cmake p7zip-full gdb elfutils openssl patchelf
+
+    - name: Install Clang (apt.llvm.org, non-PGO)
+      run: |
+        wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+        chmod +x /tmp/llvm.sh
+        sudo /tmp/llvm.sh "$LLVM_APT_VER"
+        echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+        echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+        clang-${LLVM_APT_VER} --version
+
+    - name: Build neverc
+      run: |
+        cmake -GNinja -Bbuild \
+        -DCMAKE_C_COMPILER=$CC \
+        -DCMAKE_CXX_COMPILER=$CXX \
+        -DCMAKE_INSTALL_PREFIX=install \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+        -DNEVERC_INCLUDE_TESTS=ON \
+        -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+        -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+        -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+        -DNEVERC_STRIP_BINARY=OFF \
+        -DNEVERC_ENABLE_LTO=OFF \
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+        -C neverc/neverc/cmake/caches/NeverC.cmake \
+        neverc/llvm
+        time cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
+
+    # Package + upload neverc immediately after the compiler links, before the
+    # plugin-SDK / test / debug steps below (which may crash). Guarantees the
+    # neverc binary is always downloadable for local Docker reproduction even
+    # when a later step fails.
+    - name: Install neverc
+      run: |
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        resource_dir=$(install/bin/neverc -print-resource-dir)
+        test -f "$resource_dir/include/neverc/strhash/strhash.h"
+        test -f "$resource_dir/include/neverc/xorstr/xorstr.h"
+
+    - name: Package neverc
+      run: 7z a linux-x64-neverc.zip install
+
+    - name: Verify relocated full compiler archive
+      run: |
+        "${{ steps.python.outputs.python-path }}" \
+          neverc/utils/release/test-python-plugin-package.py \
+          --archive linux-x64-neverc.zip
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: linux-x64-neverc
+        path: linux-x64-neverc.zip
+
+    - name: Package neverc compiler (without runtime)
+      run: |
+        mv install/runtime install-runtime-stash
+        7z a linux-x64-neverc-compiler.zip install
+        mv install-runtime-stash install/runtime
+
+    - name: Verify relocated compiler-only archive
+      run: |
+        "${{ steps.python.outputs.python-path }}" \
+          neverc/utils/release/test-python-plugin-package.py \
+          --archive linux-x64-neverc-compiler.zip
+
+    - name: Upload Compiler Artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: linux-x64-neverc-compiler
+        path: linux-x64-neverc-compiler.zip
+
+    - name: Package neverc runtime
+      run: 7z a linux-x64-neverc-runtime.zip install/runtime
+
+    - name: Upload Runtime Artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: linux-x64-neverc-runtime
+        path: linux-x64-neverc-runtime.zip
+
+    - name: Build Plugin SDK
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
+
+    - name: Build network product examples
+      run: neverc/utils/ci/build-network-product-examples.sh "$PWD/build/bin/neverc" "$PWD/neverc" x86_64-linux-gnu
+
+    - name: Test Plugin SDK (build + load)
+      run: |
+        set -e
+        make -C build/pluginsdk/examples \
+          NEVERC=$PWD/build/bin/neverc \
+          INCLUDE_DIR=$PWD/build/pluginsdk/include
+        printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
+        for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
+          echo "--- Testing $plugin ---"
+          build/bin/neverc \
+            --target=x86_64-pc-windows-msvc \
+            -fplugin-pass=build/pluginsdk/examples/${plugin}.so \
+            -c /tmp/plugin_test.c -o /tmp/plugin_test.obj
+          echo "--- $plugin OK ---"
+        done
+
+    - name: Run neverc tests
+      id: tests
+      continue-on-error: true
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+    - name: Run network concurrency gates
+      if: steps.tests.outcome == 'success'
+      run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc" "$PWD/neverc" 25
+
+    - name: Run network transport soak
+      if: steps.tests.outcome == 'success'
+      run: neverc/utils/ci/run-network-transport-soak.sh "$PWD/build/bin/neverc" "$PWD/neverc" 5000
+
+    - name: Run network sanitizer gates
+      if: steps.tests.outcome == 'success'
+      run: |
+        CC="$CC" neverc/utils/ci/run-network-core-sanitizers.sh "$PWD/neverc"
+
+    - name: Run std core sanitizer gates
+      if: steps.tests.outcome == 'success'
+      run: |
+        CC="$CC" neverc/utils/ci/run-std-core-sanitizers.sh "$PWD/neverc"
+
+    - name: Diagnose crashes
+      if: steps.tests.outcome == 'failure'
+      run: |
+        set -x
+        NCC=$PWD/build/bin/neverc
+        TESTDIR=$PWD/neverc/tests/neverc
+
+        ulimit -c unlimited
+        echo "$PWD/cores/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern
+        mkdir -p cores
+
+        diagnose() {
+          local label=$1 src=$2 flags=$3
+          echo "=== [$label] step 1: compile to .o ==="
+          $NCC $flags -c "$src" -o /tmp/diag_${label}.o 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 2: link .o to exe ==="
+          $NCC $flags /tmp/diag_${label}.o -o /tmp/diag_${label} 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          echo "=== [$label] step 3: compile+link (one shot) ==="
+          $NCC $flags "$src" -o /tmp/diag_${label}_oneshot 2>&1 && echo "OK" || echo "EXIT=$?"
+
+          # Build sorted symbol table once
+          nm -n --defined-only -C $NCC 2>/dev/null | awk 'NF>=3{print $1,$3}' > /tmp/nm_syms.txt
+          echo "Symbol table: $(wc -l < /tmp/nm_syms.txt) symbols"
+
+          for core in cores/core.*; do
+            [ -f "$core" ] || continue
+
+            echo "=== eu-stack backtrace from $core ==="
+            eu-stack -e $NCC --core="$core" 2>&1 | head -25
+
+            PC=$(gdb -batch -ex "print/x \$pc" $NCC "$core" 2>&1 | grep -oP '0x[0-9a-f]+' | tail -1)
+            LOAD_BASE=$(readelf -l "$core" 2>/dev/null | awk '/LOAD/{print $3; exit}')
+            echo "PC=$PC LOAD_BASE=$LOAD_BASE"
+
+            if [ -n "$PC" ] && [ -n "$LOAD_BASE" ]; then
+              echo "=== symbolized stack ==="
+              eu-stack -e $NCC --core="$core" 2>&1 | grep '^ *#' | head -22 | while read line; do
+                ADDR=$(echo "$line" | grep -oP '0x[0-9a-f]+')
+                if [ -n "$ADDR" ]; then
+                  OFF=$(printf "%x" $(($ADDR - $LOAD_BASE)))
+                  FUNC=$(awk -v off="$OFF" 'BEGIN{target=strtonum("0x"off)} {a=strtonum("0x"$1); if(a<=target){name=$2;fa=a}} END{if(name)printf "%s+0x%x",name,target-fa; else print "??"}' /tmp/nm_syms.txt)
+                  echo "$line  =>  $FUNC"
+                fi
+              done
+            fi
+            rm -f "$core"
+          done
+        }
+
+        # Run diagnosis on any known problematic tests
+        echo "=== x86_64 Linux: running smoke diagnostics ==="
+        diagnose "string_encrypt" \
+          "$TESTDIR/string/test_neverc_string_encrypt.c" \
+          "-std=c23 -fbuiltin-string"
+        diagnose "inline_asm_gcc" \
+          "$TESTDIR/asm/test_inline_asm_gcc.c" \
+          "-std=gnu11"
+
+    - name: Fail if tests failed
+      if: steps.tests.outcome == 'failure'
+      run: exit 1
