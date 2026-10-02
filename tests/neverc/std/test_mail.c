@@ -71,6 +71,12 @@ static void test_parse_address(void) {
     ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:::ffff:127.0.0.1]", &addr),
               0);
     ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:127.0.0.1]", &addr), -1);
+    /* RFC 5321 IPv6-addr has no zone ID, and Go rejects zoned literals. */
+    ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:fe80::1%eth0]", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("x@[::1%eth0]", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("x@[IPv6:fe80::1%25]", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("J <x@[IPv6:fe80::1%a.b]>", &addr),
+              -1);
     ASSERT_EQ(neverc_mail_parse_address("Bcc:hidden@x.com", &addr), -1);
     ASSERT_EQ(neverc_mail_parse_address("Bcc: hidden <user@x.com>", &addr),
               -1);
