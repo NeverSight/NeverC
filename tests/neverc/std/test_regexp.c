@@ -105,7 +105,11 @@ static void test_character_classes(void) {
     check_bool("[\\D] letter", neverc_regexp_match_string("[\\D]", "a"), 1);
     check_bool("[\\D] digit", neverc_regexp_match_string("[\\D]", "0"), 0);
     check_bool("{ literal", neverc_regexp_match_string("{", "{"), 1);
-    check_bool("{3} literal braces", neverc_regexp_match_string("{3}", "{3}"), 1);
+    /* Only a `{` that cannot be a repeat is literal; a complete {n} with
+     * nothing before it is an error (see test_invalid_inputs). */
+    check_bool("{,3} literal braces", neverc_regexp_match_string("{,3}", "{,3}"), 1);
+    check_bool("{01} literal braces", neverc_regexp_match_string("{01}", "{01}"), 1);
+    check_bool("{3 literal brace", neverc_regexp_match_string("{3", "{3"), 1);
     check_bool("] literal", neverc_regexp_match_string("]", "]"), 1);
     check_bool("a] literal", neverc_regexp_match_string("a]", "a]"), 1);
     check_bool("\\x41 is A", neverc_regexp_match_string("\\x41", "A"), 1);
@@ -570,7 +574,10 @@ static void test_invalid_inputs(void) {
         "[abc", "[]", "[z-a]", "a)", "\\", "a**",
         "\\q", "\\1", "\\8", "(?P<>x)", "(?P<foo-bar>x)", "(?Pname>x)",
         "(?P foo>x)", "[[:foo:]]",
-        "[\\q]", "[\\1]", "[\\A]", "[a-\\q]"
+        "[\\q]", "[\\1]", "[\\A]", "[a-\\q]",
+        /* Go rejects a complete repeat that has nothing to repeat. */
+        "{3}", "{0}", "{1,2}", "{3,}", "{2,1}", "{1001}", "x|{2}", "({2})",
+        "(?:{2})", "(?P<n>{2})", "{3}?"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         err = NULL;
