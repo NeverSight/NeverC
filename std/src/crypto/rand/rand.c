@@ -112,7 +112,9 @@ int neverc_crypto_rand_prime(uint8_t *out, size_t bits) {
             val |= (uint64_t)random_bytes[i] << (8 * i);
         neverc_platform_secure_zero(random_bytes, sizeof(random_bytes));
 
-        val |= (1ULL << (bits - 1));
+        /* Set the top two bits, as Go does, so that the product of two
+         * bits-bit primes never falls one bit short of 2*bits. */
+        val |= (uint64_t)3 << (bits - 2);
         val |= 1;
         if (bits < 64) val &= (1ULL << bits) - 1;
 

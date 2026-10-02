@@ -22,7 +22,8 @@ int neverc_crypto_rand_read(uint8_t *buf, size_t len);
  * returns -1. */
 int neverc_crypto_rand_int(uint64_t *out, uint64_t max);
 /* Generates an exact-width prime encoded least-significant byte first.
- * Entropy failure wipes out. */
+ * As in Go, the top two bits are set, so the product of two such primes has
+ * exactly 2*bits bits.  Entropy failure wipes out. */
 int neverc_crypto_rand_prime(uint8_t *out, size_t bits);
 
 #ifdef __cplusplus
