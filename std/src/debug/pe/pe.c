@@ -482,13 +482,15 @@ int neverc_pe_symbols(const neverc_pe_file_t *f,
         const uint8_t *e = sym_data + (size_t)((uint64_t)i * 18U);
         neverc_pe_symbol_t *s = &(*syms)[idx];
 
-        if (e[0] || e[1] || e[2] || e[3]) {
+        uint32_t str_offset = rd32(e + 4);
+        /* Eight zero bytes are a symbol without a name, not an offset into
+         * the string table. */
+        if (e[0] || e[1] || e[2] || e[3] || str_offset == 0) {
             size_t n = 0;
             for (n = 0; n < 8 && e[n]; n++)
                 s->name[n] = (char)e[n];
             s->name[n] = '\0';
         } else {
-            uint32_t str_offset = rd32(e + 4);
             if (str_offset < 4 || str_offset >= strtab_size)
                 goto fail;
             const char *str =
