@@ -43,6 +43,13 @@ int main(void) {
     CHECK(all_zero(prime, 4));
     CHECK(prime[4] == 0x5a);
 
+    /* Sizes above 64 bits wipe exactly their (bits + 7) / 8 output bytes. */
+    uint8_t big_prime[16];
+    memset(big_prime, 0x5a, sizeof(big_prime));
+    CHECK(neverc_crypto_rand_prime(big_prime, 100) == -1);
+    CHECK(all_zero(big_prime, 13));
+    CHECK(big_prime[13] == 0x5a);
+
     puts("passed");
     return 0;
 }
