@@ -601,8 +601,11 @@ int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size) {
     uint8_t *buf = (uint8_t *)malloc(cap + 1U);
     if (!buf) { fclose(f); return -1; }
     size_t n = 0;
+    /* Reads may fill the spare byte too: an exact size hint then reaches EOF
+     * with n == cap and the spare byte left for the NUL, without growing. The
+     * buffer only grows once that byte also held data (n > cap). */
     for (;;) {
-        if (n >= cap) {
+        if (n > cap) {
             if (cap > (SIZE_MAX - 1U) / 2U) {
                 free(buf);
                 fclose(f);
@@ -618,7 +621,7 @@ int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size) {
             buf = nb;
             cap = ncap;
         }
-        size_t got = fread(buf + n, 1, cap - n, f);
+        size_t got = fread(buf + n, 1, cap + 1U - n, f);
         n += got;
         if (ferror(f)) {
             free(buf);
