@@ -951,7 +951,7 @@ or deleted. Each such node has no bases or conversion functions. Besides its
 exact move, it may have nonvariadic zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
 by value or reference, a reference to an admitted fixed array, or a mutable
-lvalue reference to an admitted record. A source-owned aggregate parameter by
+lvalue reference to an admitted record. A source-owned record parameter by
 value or reference also qualifies under the constructor restrictions below.
 Later parameters keep the ordinary type requirements, including record
 values/references and fixed-array references, and may have default arguments.
@@ -1078,24 +1078,33 @@ This form includes default reference arguments and mutable-copy nodes in the
 owning graph. Actual construction evaluates selected defaults, preserves the
 original record binding and retains mutations made through it.
 
-A completed source-owned aggregate with no bases and no user-declared
-constructors can also be the first parameter by value, by const lvalue
-reference, or by either mutable or const rvalue reference. Its implicit
-constructors cannot convert a distinct `const Record&` when the queried record
-has no bases or conversion functions. This includes empty records, records
-with reference members and aggregates with nontrivial destruction; their
-ordinary type, field and lifetime source checks still apply. SDK records,
-non-aggregates, unions, bases, and user-declared constructors on the parameter
-record (including defaulted, deleted or template constructors) retain separate
-requirements. The proof reads an existing definition and does not instantiate
-an incomplete parameter specialization, default member initializer or
-hypothetical constructor/destructor body. Definitions already completed by
+A completed source-owned record with no bases can also be the first parameter
+by value, by const lvalue reference, or by either mutable or const rvalue
+reference when its constructors are limited to nonvariadic zero-parameter
+constructors and single-parameter copy/move constructors. Zero-parameter
+constructors cannot consume an argument; copy/move constructors cannot convert
+a distinct `const Record&` when the queried record has no bases or conversion
+functions. This includes constructor-free aggregates, non-aggregates, empty
+records, private fields, reference members and nontrivial destruction. Explicitly
+defaulted, deleted, inaccessible and user-provided constructors can satisfy
+this shape. Their ordinary type, field and selected lifetime checks still apply.
+
+Each parameter-record constructor retains its original signature and every
+redeclaration, including aliases and exception sources. Unused class-template
+default/copy/move constructors can retain an exact nondependent written
+exception specification without instantiating a body or resolving a hypothetical
+exception result; dependent specifications retain their separate requirements.
+SDK records, unions, bases, constructor templates, inherited constructors, other
+ordinary constructors and extra copy/move parameters on the parameter record
+remain outside this proof. The proof reads an existing definition and does not
+instantiate an incomplete parameter specialization, default member initializer
+or hypothetical constructor/destructor body. Definitions already completed by
 Clang's ordinary overload resolution for the trait query qualify without an
 explicit type-completion expression. A constructor requiring two arguments can
 remain nonviable before its parameter specialization is completed; that
 parameter still fails the ordinary completion checks. Selected actual
-construction still checks parameter copies, moves, bindings, mutations and cleanup. This form
-also applies at mutable-copy nodes in the owning graph.
+construction still checks parameter copies, moves, bindings, mutations and
+cleanup. This form also applies at mutable-copy nodes in the owning graph.
 
 An ordinary nonvariadic constructor requiring at least two arguments also
 cannot consume a single `const Record&`. This form admits the profile's record

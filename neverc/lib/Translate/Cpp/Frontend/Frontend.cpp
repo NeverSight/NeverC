@@ -3174,7 +3174,8 @@ static bool utilityConditionalMoveSignatureSource(
 }
 
 static bool utilityConditionalMoveValueConstructor(
-    Adapter &A, const CXXConstructorDecl *Constructor) {
+    Adapter &A, const CXXConstructorDecl *Constructor,
+    std::vector<const CXXMethodDecl *> *Signatures = nullptr) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
@@ -3209,31 +3210,47 @@ static bool utilityConditionalMoveValueConstructor(
       (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
        Type->isRecordType()))
     return true;
-  // A source-owned aggregate with no declared or inherited constructors has
-  // only implicit constructors. None can convert a distinct const record
-  // without a source conversion function or a source-to-base conversion.
-  // The queried record excludes both. Require an existing definition; this
-  // proof does not complete a parameter class or instantiate a constructor.
+  // A source-owned record with only zero-parameter, copy and move constructors
+  // cannot convert a distinct const record without a source conversion function
+  // or a source-to-base conversion. The queried record excludes both. Require
+  // an existing definition; do not complete a class or instantiate a body.
   const auto *ParameterRecord = Type->getAsCXXRecordDecl();
   ParameterRecord = ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
   if (!ParameterRecord || ParameterRecord->isInvalidDecl() ||
       ParameterRecord->isDependentContext() || ParameterRecord->isUnion() ||
+      ParameterRecord->getNumBases() != 0 ||
       !A.S.owns(A.Sources, ParameterRecord->getLocation()))
     return false;
   A.chargeExpansion(1, ParameterRecord->getLocation());
-  return ParameterRecord->isAggregate() && ParameterRecord->getNumBases() == 0 &&
-         !ParameterRecord->hasUserDeclaredConstructor();
+  for (const auto *Declaration : ParameterRecord->decls())
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+        Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+      return false;
+  for (const auto *Candidate : ParameterRecord->ctors()) {
+    A.chargeExpansion(1, Candidate->getLocation());
+    if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
+        Candidate->isInheritingConstructor() ||
+        (Candidate->isCopyOrMoveConstructor() ? Candidate->getNumParams() != 1
+                                            : Candidate->getNumParams() != 0) ||
+        !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
+      return false;
+  }
+  return true;
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+  // Parameter-record proofs also retain unused zero-parameter constructors.
+  // Their exact written signatures need no hypothetical default construction.
+  const bool DefaultConstructor = Constructor && !Constructor->isVariadic() &&
+                                  Constructor->getNumParams() == 0;
   const bool ValueConstructor =
       utilityConditionalMoveValueConstructor(A, Constructor);
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||
-      !(Assignment || Destructor || ValueConstructor ||
+      !(Assignment || Destructor || DefaultConstructor || ValueConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
@@ -3256,7 +3273,7 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool MatchingOrigin =
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
-      : ValueConstructor ? OriginConstructor &&
+      : DefaultConstructor || ValueConstructor ? OriginConstructor &&
                                !OriginConstructor->isCopyOrMoveConstructor() &&
                                !OriginConstructor->isVariadic() &&
                                OriginConstructor->getNumParams() ==
@@ -3325,7 +3342,7 @@ static bool utilityMutableCopyConditionalMoveSource(
     if (Constructor->isCopyOrMoveConstructor() ||
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
-    if (!utilityConditionalMoveValueConstructor(A, Constructor) ||
+    if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
   }
