@@ -7,16 +7,16 @@
  * Supports single-disk ZIP archives, including ZIP64 end records and ZIP64
  * extended-information fields. Readers accept the Stored (no-compression)
  * and Deflate methods; writers produce Stored entries, or Deflate entries
- * through writer_add_method. Readers validate the
- * central directory, local headers, bounds, data descriptors, and
- * non-overlapping local records before exposing file data. Stored entries
- * are CRC-32 checked by reader_init; Deflate entries are inflated and
- * checked against their declared size and CRC-32 by reader_file_read.
- * Entry names are limited to 255 bytes and archives to INT_MAX entries. A
- * ZIP64 locator must reference a ZIP64 end record that ends at the locator
- * and agrees with every unsaturated classic end-record field. Writers use
- * ZIP64 fields for sizes and offsets that reach 0xFFFFFFFF, and ZIP64 end
- * records for those archives and for more than 65535 entries.
+ * through writer_add_method. Readers validate the central directory, local
+ * headers, bounds, data descriptors, and non-overlapping local records
+ * before exposing file data. Stored entries are CRC-32 checked by
+ * reader_init; Deflate entries are inflated and checked against their
+ * declared size and CRC-32 by reader_file_read. Entry names are limited to
+ * 255 bytes and archives to INT_MAX entries. A ZIP64 locator must reference
+ * a ZIP64 end record that ends at the locator and agrees with every
+ * unsaturated classic end-record field. Writers use ZIP64 fields for sizes
+ * and offsets that reach 0xFFFFFFFF, and ZIP64 end records for those
+ * archives and for more than 65535 entries.
  */
 
 #include <stddef.h>
@@ -98,8 +98,9 @@ int  neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
  * FileHeader.Method): NEVERC_ZIP_STORED or NEVERC_ZIP_DEFLATED; any other
  * method returns -1. Deflate entries are compressed at the default flate
  * level. An entry DEFLATE would not make smaller (including empty entries
- * and directories) is written as Stored instead, so the entry's recorded
- * method may differ from the requested one. */
+ * and directories), one larger than UINT32_MAX bytes, or one whose
+ * compression buffer cannot be allocated is written as Stored instead, so
+ * the entry's recorded method may differ from the requested one. */
 int  neverc_zip_writer_add_method(neverc_zip_writer_t *w, const char *name,
                                   const uint8_t *data, size_t len,
                                   uint16_t method);
