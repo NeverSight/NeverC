@@ -1086,46 +1086,104 @@ static frag_t mk_concat(frag_t a, frag_t b) {
     return frag(a.start, b.end);
 }
 
+/* Point a quantifier split at its body and its exit in priority order: the
+ * greedy form prefers another pass through the body, the lazy form (`*?`,
+ * `+?`, `??`, `{n,m}?`) prefers to leave. Only submatch positions depend on
+ * the order; the overall match is leftmost-longest either way, as with Go's
+ * Longest(). */
+static void split_to(nfa_state_t *split, nfa_state_t *body, nfa_state_t *exit,
+                     int lazy) {
+    split->out1 = lazy ? exit : body;
+    split->out2 = lazy ? body : exit;
+}
+
 /* x+: the split after x decides whether to repeat. */
-static frag_t mk_plus(neverc_regexp_t *re, frag_t fr) {
+static frag_t mk_plus(neverc_regexp_t *re, frag_t fr, int lazy) {
     nfa_state_t *loop = new_state(re, NFA_SPLIT);
     nfa_state_t *end = new_state(re, NFA_MATCH);
-    loop->out1 = fr.start; loop->out2 = end;
+    split_to(loop, fr.start, end, lazy);
     if (fr.end) fr.end->out1 = loop;
     return frag(fr.start, end);
 }
 
-/* x* is built as (x+)?, the shape Go compiles a star into when x can match
- * empty: the entry split only chooses whether to run x at all, and the split
- * after x chooses whether to repeat. An empty pass through x then reaches the
- * exit with x's captures recorded instead of being cut where it loops back to
- * the entry split. */
-static frag_t mk_star(neverc_regexp_t *re, frag_t fr) {
+static frag_t mk_opt(neverc_regexp_t *re, frag_t fr, int lazy) {
     nfa_state_t *split = new_state(re, NFA_SPLIT);
-    nfa_state_t *loop = new_state(re, NFA_SPLIT);
     nfa_state_t *end = new_state(re, NFA_MATCH);
-    split->out1 = fr.start; split->out2 = end;
-    loop->out1 = fr.start; loop->out2 = end;
-    if (fr.end) fr.end->out1 = loop;
+    split_to(split, fr.start, end, lazy);
+    if (fr.end) fr.end->out1 = end;
     return frag(split, end);
 }
 
-static frag_t mk_opt(neverc_regexp_t *re, frag_t fr) {
-    nfa_state_t *split = new_state(re, NFA_SPLIT);
+/* Whether X -- the self-contained state range [lo,hi), entered at f.start and
+ * left through the still unlinked f.end -- can match without consuming input,
+ * i.e. f.end is reachable through epsilon edges alone. Assertions count as
+ * empty, as in Go's compiler. */
+static int frag_nullable(neverc_regexp_t *re, frag_t f, int lo, int hi) {
+    if (!f.start || !f.end || f.start == f.end) return 1;
+    if (hi <= lo || f.start->id < lo || f.start->id >= hi) return 1;
+    size_t n = (size_t)(hi - lo);
+    unsigned char *seen = (unsigned char *)NC_REGEXP_CALLOC(n, 1);
+    nfa_state_t **stack = (nfa_state_t **)NC_REGEXP_MALLOC(n * sizeof(*stack));
+    if (!seen || !stack) {
+        free(seen);
+        free(stack);
+        re->oom = 1;
+        return 1;
+    }
+    int found = 0;
+    size_t sp = 0;
+    seen[f.start->id - lo] = 1;
+    stack[sp++] = f.start;
+    while (sp > 0 && !found) {
+        nfa_state_t *s = stack[--sp];
+        nfa_state_t *next[2] = { NULL, NULL };
+        if (s == f.end) {
+            found = 1;
+        } else if (s->type == NFA_SPLIT) {
+            next[0] = s->out1;
+            next[1] = s->out2;
+        } else if (s->type != NFA_CHAR && s->type != NFA_ANY &&
+                   s->type != NFA_CLASS) {
+            next[0] = s->out1;          /* MATCH link, capture, assertion */
+        }
+        for (int k = 0; k < 2; k++) {
+            nfa_state_t *t = next[k];
+            if (!t || t->id < lo || t->id >= hi || seen[t->id - lo]) continue;
+            seen[t->id - lo] = 1;
+            stack[sp++] = t;
+        }
+    }
+    free(seen);
+    free(stack);
+    return found;
+}
+
+/* x*: one split that is both the entry and the loop, as Go compiles it, so a
+ * later pass that re-enters the star at the same position is cut there. When
+ * x can match empty it is built as (x+)? instead (Go does the same): looping
+ * back to a lone entry split would cut an empty pass through x before it
+ * reaches the exit, dropping x's captures. */
+static frag_t mk_star(neverc_regexp_t *re, frag_t fr, int lazy, int nullable) {
+    if (nullable) return mk_opt(re, mk_plus(re, fr, lazy), lazy);
+    nfa_state_t *loop = new_state(re, NFA_SPLIT);
     nfa_state_t *end = new_state(re, NFA_MATCH);
-    split->out1 = fr.start; split->out2 = end;
-    if (fr.end) fr.end->out1 = end;
-    return frag(split, end);
+    split_to(loop, fr.start, end, lazy);
+    if (fr.end) fr.end->out1 = loop;
+    return frag(loop, end);
 }
 
 /* Expand X{lo,hi} into lo mandatory copies of X plus the optional tail:
  * when hi is unbounded (-1) the last mandatory copy loops (X{n,} is
  * X^(n-1) X+, as in Go, so an extra empty pass cannot replace the captures of
- * the last real one) and X{0,} is X*; otherwise (hi-lo) copies are each made
- * optional. X is the range [range_lo,range_hi); copies share X's classes and
- * are wired up with the same split/MATCH glue used by *, +, ?. */
+ * the last real one) and X{0,} is X*; otherwise the (hi-lo) optional copies
+ * nest as Go's X(X(X)?)? does, so a later copy is reachable only through the
+ * earlier ones -- with a lazy repeat the flat X?X? would let the first copy
+ * be skipped while a later one runs. X is the range [range_lo,range_hi);
+ * copies share X's classes and are wired up with the same split/MATCH glue
+ * used by *, +, ?. */
 static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
-                            int range_lo, int range_hi, int lo, int hi) {
+                            int range_lo, int range_hi, int lo, int hi,
+                            int lazy) {
     if (lo == 0 && hi == 0) {                /* {0}: matches empty */
         nfa_state_t *e = new_state(re, NFA_MATCH);
         return frag(e, e);
@@ -1139,22 +1197,18 @@ static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
         if (re->oom || !cp[i].start) { re->oom = 1; free(cp); return f; }
     }
 
-    frag_t r;
-    if (lo == 0) {
-        if (hi == -1) {
-            r = mk_star(re, cp[0]);
-        } else {
-            r = mk_opt(re, cp[0]);
-            for (int i = 1; i < hi; i++) r = mk_concat(r, mk_opt(re, cp[i]));
-        }
+    frag_t r = frag(NULL, NULL);
+    if (hi == -1 && lo == 0) {
+        r = mk_star(re, cp[0], lazy, frag_nullable(re, cp[0], range_lo, range_hi));
     } else if (hi == -1) {
-        r = frag(NULL, NULL);
         for (int i = 0; i < lo - 1; i++) r = mk_concat(r, cp[i]);
-        r = mk_concat(r, mk_plus(re, cp[lo - 1]));
+        r = mk_concat(r, mk_plus(re, cp[lo - 1], lazy));
     } else {
-        r = cp[0];
-        for (int i = 1; i < lo; i++) r = mk_concat(r, cp[i]);
-        for (int i = lo; i < hi; i++) r = mk_concat(r, mk_opt(re, cp[i]));
+        frag_t tail = frag(NULL, NULL);
+        for (int i = 0; i < lo; i++) r = mk_concat(r, cp[i]);
+        for (int i = hi - 1; i >= lo; i--)
+            tail = mk_opt(re, mk_concat(cp[i], tail), lazy);
+        r = mk_concat(r, tail);
     }
     free(cp);
     return r;
@@ -1162,6 +1216,19 @@ static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
 
 static int frag_ok(parser_t *par, frag_t f) {
     return f.start && f.start != &par->re->dummy && !par->err && !par->re->oom;
+}
+
+/* Go: a single '?' after a quantifier is the non-greedy flag. */
+static int parse_lazy(parser_t *par, int *lazy) {
+    *lazy = 0;
+    if (*par->p != '?') return 1;
+    if (par->posix) {
+        par->err = "invalid POSIX repetition";
+        return 0;
+    }
+    par->p++;
+    *lazy = 1;
+    return 1;
 }
 
 static frag_t parse_repeat(parser_t *par) {
@@ -1230,6 +1297,8 @@ static frag_t parse_repeat(parser_t *par) {
                 par->err = "invalid repeat range";
                 return f;
             }
+            int lazy = 0;
+            if (!parse_lazy(par, &lazy)) return f;
             {
                 int unit = par->re->nstates - atom_base;
                 int copies = (hi == -1) ? (lo == 0 ? 1 : lo) : hi;
@@ -1239,17 +1308,10 @@ static frag_t parse_repeat(parser_t *par) {
                     return f;
                 }
             }
-            f = expand_repeat(par->re, f, atom_base, par->re->nstates, lo, hi);
+            f = expand_repeat(par->re, f, atom_base, par->re->nstates, lo, hi,
+                              lazy);
             if (par->re->oom) { par->err = "out of memory"; return f; }
             repeated = 1;
-            /* Go: a single '?' after a quantifier is the non-greedy flag. */
-            if (*par->p == '?') {
-                if (par->posix) {
-                    par->err = "invalid POSIX repetition";
-                    return f;
-                }
-                par->p++;
-            }
             continue;
         }
         if (repeated) {
@@ -1257,38 +1319,14 @@ static frag_t parse_repeat(parser_t *par) {
             return f;
         }
         par->p++;
-        nfa_state_t *split = new_state(par->re, NFA_SPLIT);
-        nfa_state_t *end = new_state(par->re, NFA_MATCH);
-
-        if (op == '*') {
-            /* (x+)?, as in mk_star: an empty pass through x keeps its
-             * captures instead of dying at the entry split. */
-            nfa_state_t *loop = new_state(par->re, NFA_SPLIT);
-            split->out1 = f.start;
-            split->out2 = end;
-            loop->out1 = f.start;
-            loop->out2 = end;
-            f.end->out1 = loop;
-            f = frag(split, end);
-        } else if (op == '+') {
-            split->out1 = f.start;
-            split->out2 = end;
-            f.end->out1 = split;
-            f = frag(f.start, end);
-        } else { /* ? */
-            split->out1 = f.start;
-            split->out2 = end;
-            f.end->out1 = end;
-            f = frag(split, end);
-        }
+        int lazy = 0;
+        if (!parse_lazy(par, &lazy)) return f;
+        if (op == '*')
+            f = mk_star(par->re, f, lazy,
+                        frag_nullable(par->re, f, atom_base, par->re->nstates));
+        else if (op == '+') f = mk_plus(par->re, f, lazy);
+        else f = mk_opt(par->re, f, lazy);
         repeated = 1;
-        if (*par->p == '?') {
-            if (par->posix) {
-                par->err = "invalid POSIX repetition";
-                return f;
-            }
-            par->p++;
-        }
     }
     return f;
 }
