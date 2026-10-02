@@ -765,16 +765,37 @@ parameters and scalar, reference or `void` results over the admitted tuple,
 pair and array carriers, including empty carriers, const values, stored
 references and exact lvalue/rvalue forwarding. Record, fixed-array and admitted
 SDK array referents retain their independent layout sources. By-value record
-parameters/results and other callable families retain separate query-source
-requirements.
+parameters/results retain separate query-source requirements.
+
+The same result queries also accept authenticated typed and transparent
+standard scalar function objects and admitted scalar hashes. The selected
+operator must have its completed pinned SDK body, exact object storage and
+base sources, argument flow and exception specification. Typed narrowing
+conversions may materialize scalar temporaries for const-reference parameters;
+these temporaries have no destructor or cleanup effects. Transparent arithmetic
+promotions and comparison/logical boolean results retain their actual result
+types. Only the checked operation supplies the canonical scalar result behind
+its SDK-only return spelling. Written callable template arguments, tuple-like
+element types and their original expressions are still checked independently.
+Source function objects, member pointers, member adapters and reference-wrapped
+callables retain separate `apply` query-source requirements.
+
+Pinned `std::move`, `std::forward`, `std::as_const` and
+`std::move_if_noexcept` reference casts of these standard function objects also
+supply query sources, directly or as nested callable arguments. Each cast
+retains the exact unchanged object storage, cv/reference result and nonthrowing
+SDK declaration family. It neither executes nor instantiates the call operator.
+Written adapter arguments and operands remain independent source dependencies;
+independent adapter addresses and substituted declarations gain no admission.
 
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
 getter remains authenticated. Their resolved exception specifications must
 query the same completed calls returned by those bodies, and agree with the
-selected function prototype; this proof does not instantiate missing bodies.
-Only the checked call and its callee expressions replace the SDK's private
-deduced result spelling with the original callback's return-type source.
+selected function or operator prototype; this proof does not instantiate
+missing bodies. Only the checked call and its callee expressions replace the
+SDK's private deduced result spelling with the original callback's return-type
+source or the authenticated standard operation's scalar result.
 Each callable and element category needs its own completed dispatch. Clang may
 complete this chain while deducing `apply`'s `decltype(auto)` return type, so a
 pure query can qualify without a preceding runtime call when those bodies
