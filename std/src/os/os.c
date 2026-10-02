@@ -1132,6 +1132,21 @@ int neverc_os_rename(const char *oldpath, const char *newpath) {
         return 0;
     return os_win_fail();
 #else
+    /* Go os.Rename (Unix): an existing directory target is EEXIST rather
+     * than something rename(2) may replace. A bad source keeps its own
+     * error, and another spelling of the same directory (a case-only rename
+     * on a case-insensitive filesystem) is still allowed. */
+    struct stat new_st;
+    if (lstat(newpath, &new_st) == 0 && S_ISDIR(new_st.st_mode)) {
+        struct stat old_st;
+        if (lstat(oldpath, &old_st) != 0)
+            return -1;
+        if (strcmp(oldpath, newpath) == 0 ||
+            !os_same_file(&old_st, &new_st)) {
+            errno = EEXIST;
+            return -1;
+        }
+    }
     return rename(oldpath, newpath) == 0 ? 0 : -1;
 #endif
 }
