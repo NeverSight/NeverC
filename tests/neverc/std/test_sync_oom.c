@@ -84,6 +84,17 @@ static void oom_once_func(void) {
     once_runs++;
 }
 
+static int pool_releases;
+
+static void *failing_pool_new(void) {
+    return NULL;
+}
+
+static void count_pool_release(void *x) {
+    (void)x;
+    pool_releases++;
+}
+
 static int range_calls;
 
 static int count_range_call(const char *key, void *value, void *user) {
@@ -98,6 +109,7 @@ int main(void) {
     fail_sync_init = 1;
     CHECK(neverc_sync_map_new() == NULL);
     CHECK(neverc_sync_pool_new(NULL) == NULL);
+    CHECK(neverc_sync_pool_new_with_free(NULL, count_pool_release) == NULL);
     neverc_mutex_t failed_mu;
     CHECK(neverc_mutex_init(&failed_mu) == -1);
     neverc_rwmutex_t failed_rw;
@@ -186,6 +198,23 @@ int main(void) {
     CHECK(neverc_waitgroup_done_checked(&wg) == 0);
     neverc_waitgroup_wait(&wg);
     neverc_waitgroup_destroy(&wg);
+
+    /* The pool allocation itself can fail; neither constructor may then
+     * hand back a pool. */
+    fail_bucket_allocation = 1;
+    CHECK(neverc_sync_pool_new(NULL) == NULL);
+    CHECK(neverc_sync_pool_new_with_free(NULL, count_pool_release) == NULL);
+    fail_bucket_allocation = 0;
+
+    /* A New that fails under memory pressure yields NULL from Get, and the
+     * destructor never sees NULL, not even when Get's result is put back. */
+    neverc_sync_pool_t *pool =
+        neverc_sync_pool_new_with_free(failing_pool_new, count_pool_release);
+    CHECK(pool != NULL);
+    CHECK(neverc_sync_pool_get(pool) == NULL);
+    neverc_sync_pool_put(pool, neverc_sync_pool_get(pool));
+    neverc_sync_pool_free(pool);
+    CHECK(pool_releases == 0);
 
     neverc_sync_map_t *map = neverc_sync_map_new();
     CHECK(map != NULL);

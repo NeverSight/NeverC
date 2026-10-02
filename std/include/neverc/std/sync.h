@@ -130,10 +130,32 @@ void neverc_sync_cond_broadcast(neverc_cond_t *c);
 /*
  * sync.Pool — thread-safe reusable object pool.
  * Mirrors Go sync.Pool: Put returns an object; Get retrieves or creates one.
+ *
+ * Get removes and returns an idle object, or returns new_func() (NULL when
+ * new_func is NULL) if none is idle; the caller then owns the object.
+ * Put(p, x) hands x to the pool; Put with a NULL x is a no-op.
+ *
+ * A pool keeps at most 256 idle objects.  Go may drop pooled items at any
+ * time and lets its garbage collector reclaim them; without a collector this
+ * cap is what bounds idle memory, so Put on a full pool drops x.  What happens
+ * to dropped objects depends on how the pool was created:
+ *   - neverc_sync_pool_new_with_free(new_func, free_func) owns idle objects.
+ *     It calls free_func(x) for an object that a full Put drops and for each
+ *     object still idle when the pool is freed.  free_func is never passed
+ *     NULL and runs without the pool lock held; during neverc_sync_pool_free
+ *     it must not call into the pool being freed.
+ *   - neverc_sync_pool_new(new_func), or a NULL free_func, never releases
+ *     objects: one dropped by a full Put, or still idle when the pool is
+ *     freed, is forgotten and leaks unless the caller reclaims its storage by
+ *     other means (static or stack storage, an arena).
+ * Both constructors return NULL if the pool cannot be created.
+ * neverc_sync_pool_free must not run concurrently with other calls on p.
  */
 typedef struct neverc_sync_pool neverc_sync_pool_t;
 
 neverc_sync_pool_t *neverc_sync_pool_new(void *(*new_func)(void));
+neverc_sync_pool_t *neverc_sync_pool_new_with_free(void *(*new_func)(void),
+                                                   void (*free_func)(void *));
 void  neverc_sync_pool_free(neverc_sync_pool_t *p);
 void  neverc_sync_pool_put(neverc_sync_pool_t *p, void *x);
 void *neverc_sync_pool_get(neverc_sync_pool_t *p);

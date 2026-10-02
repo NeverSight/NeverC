@@ -545,39 +545,58 @@ void neverc_cond_broadcast(neverc_cond_t *c) {
 /* ================================================================
  * sync.Pool — thread-safe object pool
  * ================================================================ */
+/* Without a garbage collector to trim idle items, this cap is what bounds
+ * the memory a pool retains after a burst of Puts. */
 #define POOL_CAP 256
 
 struct neverc_sync_pool {
     void *(*new_func)(void);
+    void (*free_func)(void *);  /* NULL: the pool never releases objects */
     void *items[POOL_CAP];
     int count;
     neverc_mutex_t mu;
 };
 
-neverc_sync_pool_t *neverc_sync_pool_new(void *(*new_func)(void)) {
-    neverc_sync_pool_t *p = (neverc_sync_pool_t *)calloc(1, sizeof(*p));
+neverc_sync_pool_t *neverc_sync_pool_new_with_free(void *(*new_func)(void),
+                                                   void (*free_func)(void *)) {
+    neverc_sync_pool_t *p =
+        (neverc_sync_pool_t *)NC_SYNC_CALLOC(1, sizeof(*p));
     if (!p) return NULL;
     p->new_func = new_func;
+    p->free_func = free_func;
     p->count = 0;
     if (neverc_mutex_init(&p->mu) != 0) {
-        free(p);
+        NC_SYNC_FREE(p);
         return NULL;
     }
     return p;
 }
 
+neverc_sync_pool_t *neverc_sync_pool_new(void *(*new_func)(void)) {
+    return neverc_sync_pool_new_with_free(new_func, NULL);
+}
+
 void neverc_sync_pool_free(neverc_sync_pool_t *p) {
     if (!p) return;
+    if (p->free_func) {
+        for (int i = 0; i < p->count; i++)
+            p->free_func(p->items[i]);
+    }
     neverc_mutex_destroy(&p->mu);
-    free(p);
+    NC_SYNC_FREE(p);
 }
 
 void neverc_sync_pool_put(neverc_sync_pool_t *p, void *x) {
     if (!p || !x) return;
     neverc_mutex_lock(&p->mu);
-    if (p->count < POOL_CAP)
+    int stored = p->count < POOL_CAP;
+    if (stored)
         p->items[p->count++] = x;
     neverc_mutex_unlock(&p->mu);
+    /* Release a dropped object only after unlocking, so free_func may use
+     * this pool (or block on other locks) without deadlocking it. */
+    if (!stored && p->free_func)
+        p->free_func(x);
 }
 
 void *neverc_sync_pool_get(neverc_sync_pool_t *p) {

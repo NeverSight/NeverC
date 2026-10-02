@@ -480,6 +480,231 @@ static void test_pool_no_new_func(void) {
     neverc_sync_pool_free(pool);
 }
 
+/* The header documents that a pool keeps at most this many idle objects. */
+#define POOL_IDLE_CAP 256
+#define POOL_OBJ_LIVE 0x4c495645u
+#define POOL_OBJ_DEAD 0x44454144u
+
+typedef struct {
+    unsigned magic;
+    int owner;
+} pool_obj_t;
+
+/* Guarded by g_pool_count_mu so the concurrent test can share them. */
+static neverc_mutex_t g_pool_count_mu;
+static long g_pool_created, g_pool_released, g_pool_bad_release;
+
+static void pool_counters_init(void) {
+    ASSERT_INT_EQ(neverc_mutex_init(&g_pool_count_mu), 0);
+    g_pool_created = g_pool_released = g_pool_bad_release = 0;
+}
+
+static void *pool_obj_new(void) {
+    pool_obj_t *o = (pool_obj_t *)malloc(sizeof(*o));
+    if (!o) return NULL;
+    o->magic = POOL_OBJ_LIVE;
+    o->owner = -1;
+    neverc_mutex_lock(&g_pool_count_mu);
+    g_pool_created++;
+    neverc_mutex_unlock(&g_pool_count_mu);
+    return o;
+}
+
+static void pool_obj_free(void *x) {
+    pool_obj_t *o = (pool_obj_t *)x;
+    int live = o && o->magic == POOL_OBJ_LIVE;
+    neverc_mutex_lock(&g_pool_count_mu);
+    if (live) g_pool_released++;
+    else g_pool_bad_release++;
+    neverc_mutex_unlock(&g_pool_count_mu);
+    if (live) {
+        o->magic = POOL_OBJ_DEAD;
+        free(o);
+    }
+}
+
+static void test_pool_with_free_releases_dropped(void) {
+    printf("[pool_with_free_releases_dropped]\n");
+    pool_counters_init();
+    neverc_sync_pool_t *pool =
+        neverc_sync_pool_new_with_free(pool_obj_new, pool_obj_free);
+    ASSERT_TRUE(pool != NULL);
+    if (!pool) return;
+
+    /* Objects a full Put drops are released at once, not leaked. */
+    enum { EXTRA = 44 };
+    for (int i = 0; i < POOL_IDLE_CAP + EXTRA; i++)
+        neverc_sync_pool_put(pool, pool_obj_new());
+    ASSERT_INT_EQ(g_pool_created, POOL_IDLE_CAP + EXTRA);
+    ASSERT_INT_EQ(g_pool_released, EXTRA);
+
+    /* Get hands an idle object back without releasing it. */
+    void *obj = neverc_sync_pool_get(pool);
+    ASSERT_TRUE(obj != NULL);
+    ASSERT_INT_EQ(g_pool_created, POOL_IDLE_CAP + EXTRA);
+    neverc_sync_pool_put(pool, NULL);
+    ASSERT_INT_EQ(g_pool_released, EXTRA);
+    neverc_sync_pool_put(pool, obj);
+
+    /* Free releases every object still idle, each exactly once. */
+    neverc_sync_pool_free(pool);
+    ASSERT_INT_EQ(g_pool_released, POOL_IDLE_CAP + EXTRA);
+    ASSERT_INT_EQ(g_pool_bad_release, 0);
+    neverc_mutex_destroy(&g_pool_count_mu);
+}
+
+static void test_pool_without_free_keeps_caller_storage(void) {
+    printf("[pool_without_free_keeps_caller_storage]\n");
+    static int slots[POOL_IDLE_CAP + 8];
+    neverc_sync_pool_t *pool = neverc_sync_pool_new_with_free(NULL, NULL);
+    ASSERT_TRUE(pool != NULL);
+    if (!pool) return;
+    for (int i = 0; i < POOL_IDLE_CAP + 8; i++)
+        neverc_sync_pool_put(pool, &slots[i]);
+
+    /* Exactly the documented cap stays idle; the rest were dropped. */
+    int idle = 0, foreign = 0;
+    void *x;
+    while ((x = neverc_sync_pool_get(pool)) != NULL) {
+        if ((int *)x < slots || (int *)x >= slots + POOL_IDLE_CAP + 8)
+            foreign++;
+        idle++;
+    }
+    ASSERT_INT_EQ(idle, POOL_IDLE_CAP);
+    ASSERT_INT_EQ(foreign, 0);
+
+    /* Without free_func the pool must never free what it holds: these are
+     * static objects. */
+    for (int i = 0; i < 16; i++)
+        neverc_sync_pool_put(pool, &slots[i]);
+    neverc_sync_pool_free(pool);
+}
+
+static neverc_sync_pool_t *g_reentrant_pool;
+static int g_reentrant_calls, g_reentrant_reused;
+
+static void pool_reentrant_free(void *x) {
+    (void)x;
+    g_reentrant_calls++;
+    if (!g_reentrant_pool)
+        return; /* the pool is being freed and must not be used */
+    /* A full Put calls this.  Using the same pool here deadlocks if the
+     * pool lock is still held. */
+    void *idle = neverc_sync_pool_get(g_reentrant_pool);
+    if (idle) {
+        g_reentrant_reused++;
+        neverc_sync_pool_put(g_reentrant_pool, idle);
+    }
+}
+
+static void test_pool_free_func_runs_unlocked(void) {
+    printf("[pool_free_func_runs_unlocked]\n");
+    static int slots[POOL_IDLE_CAP + 1];
+    g_reentrant_calls = g_reentrant_reused = 0;
+    neverc_sync_pool_t *pool =
+        neverc_sync_pool_new_with_free(NULL, pool_reentrant_free);
+    ASSERT_TRUE(pool != NULL);
+    if (!pool) return;
+    g_reentrant_pool = pool;
+    for (int i = 0; i <= POOL_IDLE_CAP; i++)
+        neverc_sync_pool_put(pool, &slots[i]);
+    ASSERT_INT_EQ(g_reentrant_calls, 1);
+    ASSERT_INT_EQ(g_reentrant_reused, 1);
+
+    g_reentrant_pool = NULL;
+    neverc_sync_pool_free(pool);
+    ASSERT_INT_EQ(g_reentrant_calls, 1 + POOL_IDLE_CAP);
+}
+
+#define POOL_THREADS 4
+#define POOL_ITERS 3000
+#define POOL_BURST (POOL_IDLE_CAP + 44)
+
+static neverc_sync_pool_t *g_conc_pool;
+static long g_pool_errors; /* guarded by g_pool_count_mu */
+
+static void pool_conc_error(void) {
+    neverc_mutex_lock(&g_pool_count_mu);
+    g_pool_errors++;
+    neverc_mutex_unlock(&g_pool_count_mu);
+}
+
+/* Each object is exclusively owned between Get and Put; a pooled object
+ * handed to two threads at once shows up as a foreign owner (and as a race
+ * under a thread sanitizer). */
+static void pool_conc_run(int id) {
+    pool_obj_t *held[POOL_BURST];
+    for (int i = 0; i < POOL_ITERS; i++) {
+        /* A burst holds more objects than the pool can keep idle, so its
+         * Puts overflow and release objects even without contention. */
+        int n = (i % 16 == 0) ? POOL_BURST : 1;
+        int got = 0;
+        for (int k = 0; k < n; k++) {
+            pool_obj_t *o = (pool_obj_t *)neverc_sync_pool_get(g_conc_pool);
+            if (!o || o->magic != POOL_OBJ_LIVE || o->owner != -1) {
+                pool_conc_error();
+                continue;
+            }
+            o->owner = id;
+            held[got++] = o;
+        }
+        for (int k = 0; k < got; k++) {
+            if (held[k]->owner != id)
+                pool_conc_error();
+            held[k]->owner = -1;
+            neverc_sync_pool_put(g_conc_pool, held[k]);
+        }
+    }
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI pool_conc_worker(LPVOID arg) {
+    pool_conc_run((int)(intptr_t)arg);
+    return 0;
+}
+#else
+static void *pool_conc_worker(void *arg) {
+    pool_conc_run((int)(intptr_t)arg);
+    return NULL;
+}
+#endif
+
+static void test_pool_concurrent_with_free(void) {
+    printf("[pool_concurrent_with_free]\n");
+    pool_counters_init();
+    g_pool_errors = 0;
+    g_conc_pool = neverc_sync_pool_new_with_free(pool_obj_new, pool_obj_free);
+    ASSERT_TRUE(g_conc_pool != NULL);
+    if (!g_conc_pool) return;
+
+#if defined(_WIN32)
+    HANDLE threads[POOL_THREADS];
+    for (int i = 0; i < POOL_THREADS; i++)
+        threads[i] = CreateThread(NULL, 0, pool_conc_worker,
+                                  (LPVOID)(intptr_t)i, 0, NULL);
+    WaitForMultipleObjects(POOL_THREADS, threads, TRUE, INFINITE);
+    for (int i = 0; i < POOL_THREADS; i++)
+        CloseHandle(threads[i]);
+#else
+    pthread_t threads[POOL_THREADS];
+    for (int i = 0; i < POOL_THREADS; i++)
+        pthread_create(&threads[i], NULL, pool_conc_worker,
+                       (void *)(intptr_t)i);
+    for (int i = 0; i < POOL_THREADS; i++)
+        pthread_join(threads[i], NULL);
+#endif
+
+    ASSERT_INT_EQ(g_pool_errors, 0);
+    /* Every object a burst could not return was released by Put. */
+    ASSERT_TRUE(g_pool_released > 0);
+    ASSERT_TRUE(g_pool_created - g_pool_released <= POOL_IDLE_CAP);
+    neverc_sync_pool_free(g_conc_pool);
+    g_conc_pool = NULL;
+    ASSERT_TRUE(g_pool_created == g_pool_released);
+    ASSERT_INT_EQ(g_pool_bad_release, 0);
+    neverc_mutex_destroy(&g_pool_count_mu);
+}
+
 static void test_sync_map_basic(void) {
     printf("[sync_map_basic]\n");
     neverc_sync_map_t *m = neverc_sync_map_new();
@@ -975,6 +1200,10 @@ int main(void) {
     test_cond();
     test_pool_basic();
     test_pool_no_new_func();
+    test_pool_with_free_releases_dropped();
+    test_pool_without_free_keeps_caller_storage();
+    test_pool_free_func_runs_unlocked();
+    test_pool_concurrent_with_free();
     test_sync_map_basic();
     test_sync_map_load_invalid_inputs();
     test_sync_map_overwrite();
