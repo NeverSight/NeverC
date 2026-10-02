@@ -1678,14 +1678,14 @@ static int parse_ip_literal(const char *text, size_t len,
     return -1;
 }
 
+/* Go crypto/x509's hostname rules: non-empty labels of letters, digits and
+ * '_', with '-' allowed anywhere but a label's first character. */
 static int valid_dns_labels(const char *name, size_t len) {
-    if (len == 0 || len > X509_MAX_DNS_NAME_LEN) return 0;
+    if (len == 0) return 0;
     size_t label_start = 0;
     for (size_t i = 0; i <= len; ++i) {
         if (i == len || name[i] == '.') {
-            size_t label_len = i - label_start;
-            if (label_len == 0 || label_len > 63 ||
-                name[label_start] == '-' || name[i - 1] == '-')
+            if (i == label_start)
                 return 0;
             label_start = i + 1;
             continue;
@@ -1693,10 +1693,23 @@ static int valid_dns_labels(const char *name, size_t len) {
         int ch = (unsigned char)name[i];
         if (!((ch >= 'a' && ch <= 'z') ||
               (ch >= 'A' && ch <= 'Z') ||
-              (ch >= '0' && ch <= '9') || ch == '-'))
+              (ch >= '0' && ch <= '9') || ch == '_' ||
+              (ch == '-' && i != label_start)))
             return 0;
     }
     return 1;
+}
+
+/* Names outside the hostname rules still match a SAN entry that is
+ * identical up to ASCII case, as in Go; "" and "." never match. */
+static int dns_names_identical(const char *pattern, const char *hostname) {
+    size_t pattern_len = strlen(pattern);
+    size_t hostname_len = strlen(hostname);
+    if (pattern_len == 0 || hostname_len == 0 ||
+        strcmp(pattern, ".") == 0 || strcmp(hostname, ".") == 0)
+        return 0;
+    return pattern_len == hostname_len &&
+           ascii_equal(pattern, hostname, pattern_len);
 }
 
 static int dns_pattern_matches(const char *pattern, const char *hostname) {
@@ -1715,7 +1728,7 @@ static int dns_pattern_matches(const char *pattern, const char *hostname) {
     size_t validated_len = wildcard ? pattern_len - 2 : pattern_len;
     if (!valid_dns_labels(validated_pattern, validated_len) ||
         !valid_dns_labels(hostname, hostname_len))
-        return 0;
+        return dns_names_identical(pattern, hostname);
     if (wildcard) {
         if (validated_len == 0 ||
             !memchr(validated_pattern, '.', validated_len))
