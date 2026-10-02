@@ -389,6 +389,10 @@ typedef struct posix_signal_state {
     enum posix_signal_disposition disposition;
     struct sigaction saved_action;
     int saved_action_valid;
+    /* Go os/signal: SIGHUP/SIGINT that were ignored before this library
+     * first took them over are ignored again after stop/reset. */
+    int startup_checked;
+    int startup_ignored;
     pthread_t worker;
     int worker_started;
     unsigned int callback_queue_count;
@@ -540,7 +544,23 @@ static int posix_apply_disposition_locked(int native_signum) {
         state->saved_action_valid = 0;
         return 0;
     }
+    if (state->startup_ignored)
+        return sigaction(native_signum, &g_signal_ignore_action, NULL);
     return sigaction(native_signum, &g_signal_default_action, NULL);
+}
+
+/* Called before the first change to a signal's disposition (nohup case). */
+static void posix_note_startup_disposition_locked(int native_signum) {
+    posix_signal_state_t *state = &g_signal_states[native_signum];
+    struct sigaction current;
+    if (state->startup_checked)
+        return;
+    state->startup_checked = 1;
+    if ((native_signum == SIGHUP || native_signum == SIGINT) &&
+        sigaction(native_signum, NULL, &current) == 0 &&
+        !(current.sa_flags & SA_SIGINFO) &&
+        current.sa_handler == SIG_IGN)
+        state->startup_ignored = 1;
 }
 
 static void posix_wake_dispatcher_locked(void) {
@@ -847,7 +867,9 @@ static void posix_signal_atfork_child(void) {
     for (int i = 0; i < NEVERC_SIGNAL_NSIG; ++i) {
         posix_signal_state_t *state = &g_signal_states[i];
         if (i > 0 && state->disposition == POSIX_SIGNAL_NOTIFY) {
-            (void)sigaction(i, &g_signal_default_action, NULL);
+            (void)sigaction(i, state->startup_ignored
+                                   ? &g_signal_ignore_action
+                                   : &g_signal_default_action, NULL);
         } else if (i > 0 && state->waiter_count > 0) {
             if (state->disposition == POSIX_SIGNAL_IGNORE)
                 (void)sigaction(i, &g_signal_ignore_action, NULL);
@@ -1006,6 +1028,7 @@ void neverc_signal_notify(int signum, neverc_signal_handler_t handler) {
 
     pthread_mutex_lock(&g_signal_lock);
     posix_signal_state_t *state = &g_signal_states[native_signum];
+    posix_note_startup_disposition_locked(native_signum);
     if (posix_ensure_signal_pipe_locked(native_signum) != 0 ||
         posix_start_signal_worker_locked(native_signum) != 0) {
         pthread_mutex_unlock(&g_signal_lock);
@@ -1039,6 +1062,7 @@ void neverc_signal_stop(int signum) {
 
     pthread_mutex_lock(&g_signal_lock);
     posix_signal_state_t *state = &g_signal_states[native_signum];
+    posix_note_startup_disposition_locked(native_signum);
     posix_signal_generation_t callback_generation =
         state->inflight_generation;
     state->handler = NULL;
@@ -1062,6 +1086,7 @@ void neverc_signal_ignore(int signum) {
 
     pthread_mutex_lock(&g_signal_lock);
     posix_signal_state_t *state = &g_signal_states[native_signum];
+    posix_note_startup_disposition_locked(native_signum);
     posix_signal_generation_t callback_generation =
         state->inflight_generation;
     state->handler = NULL;
@@ -1106,6 +1131,7 @@ int neverc_signal_wait(const int *sigs, int nsigs) {
     for (; installed < unique_count; ++installed) {
         int native_signum = unique_signums[installed];
         posix_signal_state_t *state = &g_signal_states[native_signum];
+        posix_note_startup_disposition_locked(native_signum);
         int transport_was_needed = posix_transport_needed(state);
         if (posix_ensure_signal_pipe_locked(native_signum) != 0) {
             break;
