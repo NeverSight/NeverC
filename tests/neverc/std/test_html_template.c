@@ -1289,6 +1289,56 @@ static void test_template_url_and_script(void) {
               "<script.x>hi</script.x><a href=\"#\">x</a>");
     free(out);
 
+    /* title/textarea content is RCDATA and xmp/iframe/noembed/noframes
+     * content is raw text: markup-like static text there opens no script or
+     * attribute, so later actions keep their real contexts. */
+    out = neverc_html_template_render(
+        "<title>Using <script> tags</title><a href=\"{{.X}}\">x</a>", &data);
+    check_str("script text in title is rcdata", out,
+              "<title>Using <script> tags</title><a href=\"#\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<textarea><a title=\"</textarea><a href={{.X}}>x</a>", &data);
+    check_str("attribute text in textarea is rcdata", out,
+              "<textarea><a title=\"</textarea><a href=#>x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<xmp><script></xmp><a href=\"{{.X}}\">x</a>", &data);
+    check_str("script text in xmp is raw text", out,
+              "<xmp><script></xmp><a href=\"#\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<iframe><script></iframe><a href=\"{{.X}}\">x</a>", &data);
+    check_str("script text in iframe is raw text", out,
+              "<iframe><script></iframe><a href=\"#\">x</a>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X",
+                                  "</title><script>alert(1)</script>");
+    out = neverc_html_template_render("<title>{{.X}}</title>", &data);
+    check_str("value in title is html-escaped", out,
+              "<title>&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
+              "</title>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<title.x>hi</title.x><a href=\"{{.X}}\">x</a>", &data);
+    check_str("title prefix tag is not rcdata", out,
+              "<title.x>hi</title.x><a href=\"#\">x</a>");
+    free(out);
+
+    /* Inside svg/math those names are ordinary elements parsed as markup. */
+    neverc_html_template_data_set(&data, "X", "alert(1)");
+    out = neverc_html_template_render(
+        "<svg><title><img src=x onerror={{.X}}></title></svg>", &data);
+    check_str("svg title content stays markup", out,
+              "<svg><title><img src=x onerror=&#39;alert(1)&#39;></title></svg>");
+    free(out);
+
     neverc_html_template_data_set(&data, "X", ";alert(1)//");
     out = neverc_html_template_render(
         "<script>var x=\"ok\"{{.X}}</script>", &data);
