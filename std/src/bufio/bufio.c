@@ -16,6 +16,7 @@ typedef struct {
     uint32_t magic;
     uint8_t text_saved_byte;
     uint8_t text_saved;
+    uint8_t failed;
     unsigned consecutive_empty_tokens;
 } nci_bufio_scanner_meta_t;
 
@@ -146,7 +147,12 @@ static void bufio_scanner_restore_text(neverc_bufio_scanner_t *s) {
 }
 
 static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
+    nci_bufio_scanner_meta_t meta;
     bufio_scanner_restore_text(s);
+    if (bufio_scanner_meta_load(s, &meta)) {
+        meta.failed = 1;
+        (void)bufio_scanner_meta_store(s, &meta);
+    }
     s->err = err;
     s->done = 1;
     s->start = s->buf_len;
@@ -386,7 +392,14 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
      * just restored, so the stale pointer is no longer terminated either. */
     s->token = NULL;
     s->token_len = 0;
-    if (s->done && s->start >= s->buf_len) return 0;
+    if (s->done && s->start >= s->buf_len) {
+        /* Go still calls the split function with atEOF on exhausted data, so
+         * a final (possibly empty) token does not depend on whether the
+         * reader reported the end together with its last bytes. Only a
+         * failed scanner stops without asking. */
+        nci_bufio_scanner_meta_t meta;
+        if (!bufio_scanner_meta_load(s, &meta) || meta.failed) return 0;
+    }
     if (!s->buf || s->buf_cap == 0 || !s->reader.read ||
         s->start > s->buf_len || s->buf_len >= s->buf_cap) {
         bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
