@@ -2091,12 +2091,24 @@ static void host_trailer_handler(neverc_http_request_t *req,
     neverc_http_end_chunked(w);
 }
 
+static void chunked_reopen_handler(neverc_http_request_t *req,
+                                   neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_enable_chunked(w);
+    neverc_http_write_string(w, "streamed");
+    neverc_http_end_chunked(w);
+    /* Too late to matter: the response has already been delimited. */
+    neverc_http_set_header(w, "Connection", "keep-alive");
+}
+
 static pid_t start_chunked_server(int port) {
     pid_t pid = fork();
     if (pid == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "/chunked", chunked_handler);
         neverc_http_mux_handle(mux, "/trailer-host", host_trailer_handler);
+        neverc_http_mux_handle(mux, "/chunked-reopen",
+                               chunked_reopen_handler);
 
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
@@ -2185,6 +2197,37 @@ static void test_chunked_encoding(void) {
                   n > 0 && strstr(buf, "Trailer:") == NULL, 1);
         check_int("http10 trailer response body",
                   body && strcmp(body + 4, "ok") == 0, 1);
+    }
+
+    /* The identity body ends at connection close, so a Connection change
+     * after the stream ended must not keep the socket open. */
+    {
+        char addr[64];
+        snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+        const char *err = NULL;
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        check_not_null("http10 reopen dial", conn);
+        if (conn) {
+            const char *req =
+                "GET /chunked-reopen HTTP/1.0\r\nHost: localhost\r\n"
+                "Connection: keep-alive\r\n\r\n";
+            neverc_tcp_set_timeout(conn, 1500);
+            neverc_tcp_write(conn, req, strlen(req));
+            int total = 0;
+            int last = 0;
+            while (total < (int)sizeof(buf) - 1) {
+                last = neverc_tcp_read(conn, buf + total,
+                                       sizeof(buf) - 1 - (size_t)total);
+                if (last <= 0) break;
+                total += last;
+            }
+            buf[total] = '\0';
+            neverc_tcp_close(conn);
+            const char *body = strstr(buf, "\r\n\r\n");
+            check_int("http10 identity stream ends with close", last, 0);
+            check_int("http10 identity stream body",
+                      body && strcmp(body + 4, "streamed") == 0, 1);
+        }
     }
 
     stop_test_server(server_pid);
