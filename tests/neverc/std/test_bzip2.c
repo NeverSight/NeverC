@@ -32,6 +32,21 @@ static const uint8_t bz2_hello[] = {
     0x90, 0xe6, 0xd8, 0xfe, 0xdf
 };
 
+/* "AAAA" compressed with block size 1 ("BZh1"). */
+static const uint8_t bz2_aaaa[] = {
+    0x42, 0x5a, 0x68, 0x31, 0x31, 0x41, 0x59, 0x26,
+    0x53, 0x59, 0xe1, 0x6e, 0x65, 0x71, 0x00, 0x00,
+    0x02, 0x44, 0x00, 0x40, 0x00, 0x20, 0x00, 0x20,
+    0x00, 0x21, 0x00, 0x82, 0x0b, 0x17, 0x72, 0x45,
+    0x38, 0x50, 0x90, 0xe1, 0x6e, 0x65, 0x71
+};
+
+/* A stream without blocks: header, end-of-stream magic, combined CRC 0. */
+static const uint8_t bz2_empty[] = {
+    0x42, 0x5a, 0x68, 0x39, 0x17, 0x72, 0x45, 0x38,
+    0x50, 0x90, 0x00, 0x00, 0x00, 0x00
+};
+
 static void test_hello_decompress(void) {
     printf("[hello_decompress]\n");
     uint8_t out[256];
@@ -141,13 +156,6 @@ static void test_rle_run_requires_count_byte(void) {
     printf("[rle_run_requires_count_byte]\n");
     /* Four repeated bytes are followed by a mandatory count byte, even when
      * the count is zero. Both streams carry the correct CRC for "AAAA". */
-    static const uint8_t valid[] = {
-        0x42, 0x5a, 0x68, 0x31, 0x31, 0x41, 0x59, 0x26,
-        0x53, 0x59, 0xe1, 0x6e, 0x65, 0x71, 0x00, 0x00,
-        0x02, 0x44, 0x00, 0x40, 0x00, 0x20, 0x00, 0x20,
-        0x00, 0x21, 0x00, 0x82, 0x0b, 0x17, 0x72, 0x45,
-        0x38, 0x50, 0x90, 0xe1, 0x6e, 0x65, 0x71
-    };
     static const uint8_t missing_count[] = {
         0x42, 0x5a, 0x68, 0x31, 0x31, 0x41, 0x59, 0x26,
         0x53, 0x59, 0xe1, 0x6e, 0x65, 0x71, 0x00, 0x00,
@@ -158,7 +166,7 @@ static void test_rle_run_requires_count_byte(void) {
     uint8_t out[8];
     size_t out_len = sizeof(out);
 
-    int rc = neverc_bzip2_decompress(valid, sizeof(valid), out, &out_len);
+    int rc = neverc_bzip2_decompress(bz2_aaaa, sizeof(bz2_aaaa), out, &out_len);
     ASSERT_INT_EQ(rc, 0);
     if (rc == 0) {
         ASSERT_INT_EQ((int)out_len, 4);
@@ -263,6 +271,96 @@ static void test_surplus_selectors(void) {
     ASSERT_INT_EQ(neverc_bzip2_decompress(stream, len, out, &out_len), -1);
 }
 
+static size_t bz2_cat(uint8_t *buf, size_t len, const void *p, size_t n) {
+    memcpy(buf + len, p, n);
+    return len + n;
+}
+
+/* Decodes `in` with the multi-stream API and checks the result against the
+ * expected text, or expects -1 (leaving *dst_len alone) when want is NULL. */
+static void bz2_check_multi(const uint8_t *in, size_t in_len,
+                            const char *want) {
+    uint8_t out[64];
+    size_t out_len = sizeof(out);
+    int rc = neverc_bzip2_decompress_multistream(in, in_len, out, &out_len);
+    if (!want) {
+        ASSERT_INT_EQ(rc, -1);
+        ASSERT_INT_EQ((int)out_len, (int)sizeof(out));
+        return;
+    }
+    ASSERT_INT_EQ(rc, 0);
+    if (rc == 0) {
+        ASSERT_INT_EQ((int)out_len, (int)strlen(want));
+        ASSERT_TRUE(memcmp(out, want, strlen(want)) == 0);
+    }
+}
+
+static void test_multistream(void) {
+    printf("[multistream]\n");
+    uint8_t in[256];
+    size_t n;
+
+    /* A single stream decodes as with neverc_bzip2_decompress. */
+    bz2_check_multi(bz2_hello, sizeof(bz2_hello), "Hello, World!");
+    bz2_check_multi(bz2_empty, sizeof(bz2_empty), "");
+
+    /* Streams with different block sizes, in both orders (the second order
+     * grows the block buffer), with an empty stream between, and repeated. */
+    n = bz2_cat(in, 0, bz2_hello, sizeof(bz2_hello));
+    n = bz2_cat(in, n, bz2_aaaa, sizeof(bz2_aaaa));
+    bz2_check_multi(in, n, "Hello, World!AAAA");
+    uint8_t out[64];
+    size_t out_len = sizeof(out);
+    ASSERT_INT_EQ(neverc_bzip2_decompress(in, n, out, &out_len), -1);
+
+    n = bz2_cat(in, 0, bz2_aaaa, sizeof(bz2_aaaa));
+    n = bz2_cat(in, n, bz2_hello, sizeof(bz2_hello));
+    bz2_check_multi(in, n, "AAAAHello, World!");
+
+    n = bz2_cat(in, 0, bz2_hello, sizeof(bz2_hello));
+    n = bz2_cat(in, n, bz2_empty, sizeof(bz2_empty));
+    n = bz2_cat(in, n, bz2_aaaa, sizeof(bz2_aaaa));
+    n = bz2_cat(in, n, bz2_aaaa, sizeof(bz2_aaaa));
+    bz2_check_multi(in, n, "Hello, World!AAAAAAAA");
+
+    /* The output buffer bounds all streams together. */
+    n = bz2_cat(in, 0, bz2_hello, sizeof(bz2_hello));
+    n = bz2_cat(in, n, bz2_aaaa, sizeof(bz2_aaaa));
+    out_len = 17;
+    ASSERT_INT_EQ(neverc_bzip2_decompress_multistream(in, n, out, &out_len), 0);
+    ASSERT_INT_EQ((int)out_len, 17);
+    out_len = 16;
+    ASSERT_INT_EQ(neverc_bzip2_decompress_multistream(in, n, out, &out_len), -1);
+    ASSERT_INT_EQ((int)out_len, 16);
+
+    /* Anything after a stream must be a complete stream. */
+    static const struct { const char *bytes; size_t len; } junk[] = {
+        {"\0", 1}, {"B", 1}, {"\0\0", 2}, {"BZ", 2}, {"BZh", 3},
+        {"BZh0", 4}, {"BZh9", 4}, {"BZh9junkjunk", 12}
+    };
+    for (size_t i = 0; i < sizeof(junk) / sizeof(junk[0]); i++) {
+        n = bz2_cat(in, 0, bz2_hello, sizeof(bz2_hello));
+        n = bz2_cat(in, n, junk[i].bytes, junk[i].len);
+        bz2_check_multi(in, n, NULL);
+    }
+    n = bz2_cat(in, 0, bz2_hello, sizeof(bz2_hello));
+    n = bz2_cat(in, n, bz2_aaaa, sizeof(bz2_aaaa) - 1);
+    bz2_check_multi(in, n, NULL);
+
+    /* Every stream's block CRC and combined CRC are verified. */
+    n = bz2_cat(in, 0, bz2_hello, sizeof(bz2_hello));
+    n = bz2_cat(in, n, bz2_aaaa, sizeof(bz2_aaaa));
+    in[n - 1] ^= 1;
+    bz2_check_multi(in, n, NULL);
+    in[n - 1] ^= 1;
+    in[sizeof(bz2_hello) + 10] ^= 1;
+    bz2_check_multi(in, n, NULL);
+
+    bz2_check_multi(in, 0, NULL);
+    ASSERT_TRUE(neverc_bzip2_decompress_multistream(
+                    bz2_hello, sizeof(bz2_hello), out, NULL) != 0);
+}
+
 int main(void) {
     printf("=== NeverC bzip2 Tests ===\n");
     test_hello_decompress();
@@ -276,6 +374,7 @@ int main(void) {
     test_leftover_bytes();
     test_rle_run_requires_count_byte();
     test_surplus_selectors();
+    test_multistream();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

@@ -1550,10 +1550,12 @@
       "header": "include/neverc/std/compress/bzip2.h",
       "description": "Bzip2 decompression (mirrors Go compress/bzip2 package, decompress only)",
       "symbols": {
-        "neverc_bzip2_decompress": "src/compress/bzip2/bzip2.c"
+        "neverc_bzip2_decompress": "src/compress/bzip2/bzip2.c",
+        "neverc_bzip2_decompress_multistream": "src/compress/bzip2/bzip2.c"
       },
       "dot_methods": {
-        "decompress": "neverc_bzip2_decompress"
+        "decompress": "neverc_bzip2_decompress",
+        "decompress_multistream": "neverc_bzip2_decompress_multistream"
       }
     },
     "encoding/json": {

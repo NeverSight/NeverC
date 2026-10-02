@@ -215,11 +215,14 @@ static inline int huff_decode(bz_br_t *br, const huff_table_t *ht) {
     return -1;
 }
 
-int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
-                            uint8_t *dst, size_t *dst_len) {
-    if (!dst_len || (!src && src_len != 0) ||
-        (!dst && *dst_len != 0))
-        return -1;
+/* Decodes the bzip2 stream at the start of src into dst. On success stores
+ * the output length in *dst_len and, in *src_used, how many input bytes the
+ * stream occupies, through the padding that completes its last byte. The
+ * multi-stream loop stays in the caller: folding it into this function
+ * measurably slowed the memory-bound IBWT walk below. */
+static int bz_decompress_stream(const uint8_t *src, size_t src_len,
+                                uint8_t *dst, size_t *dst_len,
+                                size_t *src_used) {
     bz_br_t br;
     bz_br_init(&br, src, src_len);
 
@@ -485,10 +488,9 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
     }
 
     /* Rewind unused prefetched whole bytes. Leftover bits in the last
-     * used byte are padding; extra whole bytes after the footer are junk. */
-    size_t unused_bytes = (size_t)(br.nbits / 8);
-    if (unused_bytes > br.pos) goto err;
-    if (br.pos - unused_bytes != br.len) goto err;
+     * used byte are padding; whole bytes after it belong to whatever
+     * follows the stream. */
+    *src_used = br.pos - (size_t)(br.nbits / 8);
 
     free(tt);
     free(fast_pool);
@@ -499,4 +501,40 @@ err:
     free(tt);
     free(fast_pool);
     return -1;
+}
+
+/* Decodes one bzip2 stream, or with `multistream` set every stream of a
+ * back-to-back concatenation, each starting at the byte after the previous
+ * stream's padding. */
+static int bz_decompress(const uint8_t *src, size_t src_len,
+                         uint8_t *dst, size_t *dst_len, int multistream) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0) || src_len == 0)
+        return -1;
+
+    size_t in = 0, out = 0;
+    for (;;) {
+        size_t produced = *dst_len - out, used = 0;
+        if (bz_decompress_stream(src + in, src_len - in,
+                                 dst ? dst + out : NULL, &produced,
+                                 &used) < 0)
+            return -1;
+        in += used;
+        out += produced;
+        if (in == src_len) break;
+        /* Anything after a stream must be another complete stream. */
+        if (!multistream) return -1;
+    }
+    *dst_len = out;
+    return 0;
+}
+
+int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
+                            uint8_t *dst, size_t *dst_len) {
+    return bz_decompress(src, src_len, dst, dst_len, 0);
+}
+
+int neverc_bzip2_decompress_multistream(const uint8_t *src, size_t src_len,
+                                        uint8_t *dst, size_t *dst_len) {
+    return bz_decompress(src, src_len, dst, dst_len, 1);
 }
