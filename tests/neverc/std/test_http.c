@@ -3864,6 +3864,14 @@ static void test_canonical_header_key(void) {
 
     neverc_http_canonical_header_key("already-Canonical", buf, sizeof(buf));
     check_str("mixed case", buf, "Already-Canonical");
+
+    /* Go returns keys with non-token bytes unchanged. */
+    neverc_http_canonical_header_key("foo bar", buf, sizeof(buf));
+    check_str("key with space unchanged", buf, "foo bar");
+    neverc_http_canonical_header_key("x-foo@bar", buf, sizeof(buf));
+    check_str("key with separator unchanged", buf, "x-foo@bar");
+    neverc_http_canonical_header_key("x-\xc3\xb1", buf, sizeof(buf));
+    check_str("non-ASCII key unchanged", buf, "x-\xc3\xb1");
 }
 
 /* ===== NotFound handler ===== */
