@@ -195,6 +195,56 @@ static void test_msg_prefix(void) {
     finish_section();
 }
 
+/* Go log.Logger.output appends '\n' only when the whole record (header plus
+ * message) does not already end in one, so an empty message after a
+ * newline-terminated prefix stays a single line. */
+static void capture_record(const char *prefix, int flags, int kind,
+                           char *buf, size_t cap) {
+    buf[0] = '\0';
+    FILE *tmp = open_capture_file();
+    if (!tmp) return;
+    neverc_log_logger_t l;
+    neverc_log_init(&l, tmp, prefix, flags);
+    if (kind == 0) neverc_log_print(&l, "");
+    else if (kind == 1) neverc_log_printf(&l, "%s", "");
+    else neverc_log_println(&l, "");
+    fflush(tmp);
+    rewind(tmp);
+    size_t n = fread(buf, 1, cap - 1, tmp);
+    buf[n] = '\0';
+    fclose(tmp);
+}
+
+static void check_equals(const char *name, const char *got,
+                         const char *expected) {
+    tests_run++;
+    if (strcmp(got, expected) == 0) tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: %s: got \"%s\", expected \"%s\"\n",
+               name, got, expected);
+    }
+}
+
+static void test_empty_message_newline(void) {
+    printf("[empty message newline]\n");
+    char buf[128];
+
+    capture_record("p\n", 0, 0, buf, sizeof(buf));
+    check_equals("print after newline prefix", buf, "p\n");
+    capture_record("p\n", 0, 1, buf, sizeof(buf));
+    check_equals("printf after newline prefix", buf, "p\n");
+    capture_record("\n", NEVERC_LOG_LMSGPREFIX, 0, buf, sizeof(buf));
+    check_equals("print after newline msgprefix", buf, "\n");
+    capture_record("p\n", 0, 2, buf, sizeof(buf));
+    check_equals("println still appends", buf, "p\n\n");
+    capture_record("p: ", 0, 0, buf, sizeof(buf));
+    check_equals("print after plain prefix", buf, "p: \n");
+    capture_record("", 0, 0, buf, sizeof(buf));
+    check_equals("empty record", buf, "\n");
+    finish_section();
+}
+
 static void test_microseconds_and_accessors(void) {
     printf("[microseconds/accessors]\n");
     char buf[512];
@@ -383,6 +433,7 @@ int main(void) {
     test_printf();
     test_print_does_not_format();
     test_msg_prefix();
+    test_empty_message_newline();
     test_microseconds_and_accessors();
     test_concurrent_entries();
     test_null_safety();
