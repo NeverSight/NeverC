@@ -277,6 +277,30 @@ int main(void) {
     CHECK(range_calls == 12);
 
     neverc_sync_map_free(map);
+
+    /* Store/delete churn of distinct keys turns EMPTY buckets into
+     * tombstones. Probes stop only at EMPTY, so the load limit must count
+     * tombstones; otherwise every miss degrades into a full-table scan. */
+    neverc_sync_map_t *churn = neverc_sync_map_new();
+    CHECK(churn != NULL);
+    for (int i = 0; i < 1000; i++) {
+        char key[32];
+        snprintf(key, sizeof(key), "churn-%d", i);
+        CHECK(neverc_sync_map_store(churn, key, &original) == 0);
+        neverc_sync_map_delete(churn, key);
+    }
+    size_t empty_buckets = 0;
+    for (size_t i = 0; i < churn->cap; i++) {
+        if (churn->buckets[i].occupied == SMAP_EMPTY)
+            empty_buckets++;
+    }
+    CHECK(empty_buckets >= churn->cap / 4);
+    CHECK(neverc_sync_map_load(churn, "churn-999", &ok) == NULL);
+    CHECK(ok == 0);
+    CHECK(neverc_sync_map_store(churn, "live", &replacement) == 0);
+    CHECK(neverc_sync_map_load(churn, "live", &ok) == &replacement);
+    CHECK(ok == 1);
+    neverc_sync_map_free(churn);
     puts("passed");
     return 0;
 }
