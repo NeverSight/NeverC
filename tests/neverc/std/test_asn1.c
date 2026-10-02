@@ -513,6 +513,29 @@ static void test_oid_bit_string_and_text(void) {
               neverc_asn1_encode_printable_string(
                   buf, sizeof(buf), (const uint8_t *)"*", 1),
               -1);
+    {
+        /* Go's parser accepts '*' (wildcard names) and '&' in a received
+         * PrintableString because deployed certificates use them. */
+        uint8_t wildcard_tlv[] = {0x13, 0x0b, '*', '.', 'e', 'x', 'a', 'm',
+                                  'p', 'l', 'e', '.', 'c'};
+        neverc_asn1_decode_element(wildcard_tlv, sizeof(wildcard_tlv),
+                                   &elem);
+        check_int("decode wildcard printable",
+                  neverc_asn1_decode_printable_string(&elem, &text, &tlen),
+                  0);
+        check_int("wildcard printable len", (int)tlen, 11);
+        uint8_t ampersand_tlv[] = {0x13, 0x03, 'a', '&', 'b'};
+        neverc_asn1_decode_element(ampersand_tlv, sizeof(ampersand_tlv),
+                                   &elem);
+        check_int("decode ampersand printable",
+                  neverc_asn1_decode_printable_string(&elem, &text, &tlen),
+                  0);
+        uint8_t at_tlv[] = {0x13, 0x03, 'a', '@', 'b'};
+        neverc_asn1_decode_element(at_tlv, sizeof(at_tlv), &elem);
+        check_int("reject at-sign printable",
+                  neverc_asn1_decode_printable_string(&elem, &text, &tlen),
+                  -1);
+    }
 
     n = neverc_asn1_encode_ia5_string(buf, sizeof(buf),
                                       (const uint8_t *)"user@host", 9);
