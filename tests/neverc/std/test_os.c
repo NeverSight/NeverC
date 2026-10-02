@@ -212,8 +212,16 @@ static void test_read_write_file(void) {
         ASSERT_EQ(neverc_os_mkdir(dirbuf, 0755), 0);
         unsigned char *dir_out = (unsigned char *)1;
         size_t dir_len = 99;
+        /* Go os.ReadFile on a directory fails with EISDIR; errno must not
+         * be left over from an earlier call. */
+        errno = ENOENT;
         ASSERT_EQ(neverc_os_read_file(dirbuf, &dir_out, &dir_len), -1);
         ASSERT_TRUE(dir_out == NULL && dir_len == 0);
+#if !defined(_WIN32)
+        ASSERT_EQ(errno, EISDIR);
+#else
+        ASSERT_TRUE(errno != ENOENT);
+#endif
         neverc_os_remove_all(dirbuf);
     }
 
