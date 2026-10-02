@@ -60,6 +60,23 @@ static void check_rel_tol(const char *name, double got, double expected,
     }
 }
 
+/* Bit-level distance check for finite results of the same sign. */
+static void check_ulps(const char *name, double got, double expected,
+                       uint64_t max_ulps) {
+    tests_run++;
+    uint64_t g = neverc_math_float64bits(got);
+    uint64_t e = neverc_math_float64bits(expected);
+    uint64_t d = g > e ? g - e : e - g;
+    if ((g >> 63) == (e >> 63) && d <= max_ulps) {
+        tests_passed++;
+    } else {
+        tests_failed++;
+        printf("  FAIL: %s: got %.17g (0x%016llx), expected %.17g (0x%016llx)\n",
+               name, got, (unsigned long long)g, expected,
+               (unsigned long long)e);
+    }
+}
+
 static void check_int(const char *name, int got, int expected) {
     tests_run++;
     if (got == expected) { tests_passed++; }
@@ -366,6 +383,35 @@ static void test_inv_trig_vectors(void) {
         snprintf(buf, sizeof(buf), "atan(vf[%d])", i);
         check_double(buf, neverc_math_atan(vf[i]), expected_atan[i]);
     }
+}
+
+/* Acos is Pi/2 - Asin, so for x near 1 any rounding in Asin is magnified
+ * relative to the much smaller result. Go's Asin evaluates x > 0.7 as
+ * Pi/2 - atan(sqrt(1-x*x)/x); the subtraction in Acos then cancels exactly.
+ * Expected values are Go math.Asin/Acos results (correctly rounded here). */
+static void test_asin_acos_near_one(void) {
+    printf("[asin/acos near one]\n");
+    static const struct {
+        const char *name;
+        uint64_t x;
+        uint64_t expected;
+    } acos_cases[] = {
+        {"acos(0x3fef2498c34285a8)", 0x3fef2498c34285a8ULL, 0x3fcdb0e900e89fa8ULL},
+        {"acos(0x3fecccccccccccce)", 0x3fecccccccccccceULL, 0x3fdcdd9f8f922e94ULL},
+        {"acos(0x3fed31d9b0948d8e)", 0x3fed31d9b0948d8eULL, 0x3fdaff8055a0ba64ULL},
+    }, asin_cases[] = {
+        {"asin(0x3fe6666666666668)", 0x3fe6666666666668ULL, 0x3fe8d00e692afd98ULL},
+        {"asin(0xbfe6666666666668)", 0xbfe6666666666668ULL, 0xbfe8d00e692afd98ULL},
+        {"asin(0x3fe95c9f4abda588)", 0x3fe95c9f4abda588ULL, 0x3fed4798e38d46afULL},
+    };
+    for (size_t i = 0; i < sizeof(acos_cases) / sizeof(acos_cases[0]); i++)
+        check_ulps(acos_cases[i].name,
+                   neverc_math_acos(neverc_math_float64frombits(acos_cases[i].x)),
+                   neverc_math_float64frombits(acos_cases[i].expected), 1);
+    for (size_t i = 0; i < sizeof(asin_cases) / sizeof(asin_cases[0]); i++)
+        check_ulps(asin_cases[i].name,
+                   neverc_math_asin(neverc_math_float64frombits(asin_cases[i].x)),
+                   neverc_math_float64frombits(asin_cases[i].expected), 0);
 }
 
 static void test_hyp_vectors(void) {
@@ -2521,6 +2567,7 @@ int main(void) {
     /* Go test vector accuracy validation */
     test_trig_vectors();
     test_inv_trig_vectors();
+    test_asin_acos_near_one();
     test_hyp_vectors();
     test_tanh_small_arguments();
     test_inv_hyp_vectors();
