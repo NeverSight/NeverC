@@ -1357,6 +1357,10 @@ static void test_error_classification_and_ownership(void) {
     ASSERT_TRUE(neverc_os_is_permission(EACCES));
     ASSERT_TRUE(neverc_os_is_permission(EPERM));
     ASSERT_TRUE(neverc_os_is_exist(EEXIST));
+    /* Go os.IsExist also matches ENOTEMPTY (rmdir/rename onto a populated
+     * directory reports that the target already exists). */
+    ASSERT_TRUE(neverc_os_is_exist(ENOTEMPTY));
+    ASSERT_TRUE(!neverc_os_is_exist(ENOENT));
     ASSERT_TRUE(neverc_os_is_not_exist(ENOENT));
     ASSERT_EQ(neverc_os_remove_all(""), -1);
     ASSERT_EQ(neverc_os_chown(NULL, 0, 0), -1);
