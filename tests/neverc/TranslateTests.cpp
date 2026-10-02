@@ -42851,8 +42851,8 @@ using T=std::tuple<int(*)()>;int f(T&t){static_assert(__is_same(decltype(Reexpor
 int f(volatile Tuple&t){static_assert(__is_same(decltype(Reexport::as_const(t)),const volatile Tuple&));return 0;}
 )cpp",
        "TR0201"},
-      {"source-record-reference", R"cpp(
-struct Element{int value;};int f(Element&e){static_assert(__is_same(decltype(Reexport::as_const(e)),const Element&));return 0;}
+      {"source-record-field-bound", R"cpp(
+struct Element{int value[sizeof(long double)];};int f(Element&e){static_assert(__is_same(decltype(Reexport::as_const(e)),const Element&));return 0;}
 )cpp",
        "TR0201"},
       {"raw-array-reference", R"cpp(
@@ -42990,8 +42990,8 @@ int f(long double*&p){static_assert(__is_same(decltype(std::as_const(p)),long do
 int f(int(&p)[2]){static_assert(__is_same(decltype(std::as_const(p)),const int(&)[2]));return 0;}
 )cpp",
        "TR0201"},
-      {"record-reference", R"cpp(
-struct Box{int n;};int f(Box&p){static_assert(__is_same(decltype(std::as_const(p)),const Box&));return 0;}
+      {"record-field-bound", R"cpp(
+struct Box{int n[sizeof(long double)];};int f(Box&p){static_assert(__is_same(decltype(std::as_const(p)),const Box&));return 0;}
 )cpp",
        "TR0201"},
       {"function-reference", R"cpp(
@@ -44265,6 +44265,264 @@ namespace Reexport{using Imported::move,Imported::forward;}
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrAsConstQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unique-ptr-as-const-queries.cpp");
+  const auto Output = tmpFile("unique-ptr-as-const-queries.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+namespace Imported { using std::as_const; }
+namespace Reexport { using Imported::as_const; }
+namespace Alias = Reexport;
+namespace Directed { using namespace Alias; }
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocated, released, calls, defaults, effects, callbacks, live, destroyed;
+void *operator new(Size n) { ++allocated; return malloc(n); }
+void *operator new[](Size n) { ++allocated; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++released; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++released; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++released; free(p); }
+struct Box {
+  int n;
+  explicit Box(int v) noexcept : n(v) { ++live; }
+  ~Box() noexcept { --live; ++destroyed; }
+};
+struct Count {
+  void operator()(int *p) const noexcept { ++callbacks; delete p; }
+};
+struct CountArray {
+  void operator()(int *p) const noexcept { ++callbacks; delete[] p; }
+};
+using P = std::unique_ptr<int>;
+P &select(P &p, int n = (++defaults, 9)) noexcept {
+  ++calls;
+  effects = effects * 10 + n;
+  return p;
+}
+const P &constant(const P &p) noexcept { ++calls; return p; }
+P &throwing(P &p) { ++calls; return p; }
+int mark(int n = (++defaults, 7)) noexcept { ++calls; return n; }
+P &with_temporary(P &p, P temporary = std::make_unique<int>(mark())) noexcept {
+  ++calls;
+  return p;
+}
+template <class Owner> bool queries(Owner &p) {
+  const Owner &cp = p;
+  static_assert(__is_same(decltype(std::as_const(p)), const Owner &));
+  static_assert(__is_same(decltype(Alias::as_const(cp)), const Owner &));
+  static_assert(__is_same(decltype((Imported::as_const)(p)), const Owner &));
+  static_assert(__is_same(decltype(Directed::as_const<Owner>(p)), const Owner &));
+  static_assert(__is_same(decltype(Alias::as_const<const Owner>(cp)), const Owner &));
+  static_assert(__is_same(decltype(std::as_const(std::as_const(p))), const Owner &));
+  static_assert(__is_same(decltype(std::as_const(std::forward<Owner &>(p))), const Owner &));
+  static_assert(__is_same(decltype(std::forward<const Owner &>(std::as_const(p))), const Owner &));
+  static_assert(__is_same(decltype(std::move(std::as_const(p))), const Owner &&));
+  static_assert(__is_same(decltype(std::move_if_noexcept(std::as_const(p))), const Owner &&));
+  static_assert(__is_lvalue_reference(decltype(std::as_const(p))));
+  static_assert(!__is_rvalue_reference(decltype(std::as_const(cp))));
+  static_assert(sizeof(Alias::as_const(p)) == sizeof(Owner));
+  static_assert(alignof(decltype(Alias::as_const(cp))) == alignof(Owner));
+  static_assert(noexcept(Alias::as_const(p)) && noexcept(Alias::as_const(cp)));
+  auto pointer = p.get();
+  const Owner &reference = Alias::as_const(p);
+  const Owner &const_reference = Directed::as_const(cp);
+  const auto &deleter = cp.get_deleter();
+  if (&reference != &p || &const_reference != &p || reference.get() != pointer ||
+      const_reference.get() != pointer || p.get() != pointer)
+    return false;
+  if (!(p == cp) || (p == nullptr) != (pointer == nullptr))
+    return false;
+  static_assert(__is_same(decltype(Alias::as_const(p).get()), decltype(pointer)));
+  static_assert(__is_same(decltype(Alias::as_const(cp).get()), decltype(pointer)));
+  static_assert(__is_same(decltype(Alias::as_const(p).get_deleter()), decltype(deleter)));
+  static_assert(__is_same(decltype(Alias::as_const(p) == cp), bool));
+  static_assert(__is_same(decltype(Alias::as_const(cp) == nullptr), bool));
+  return true;
+}
+int check() {
+  P p(new int(3));
+  std::unique_ptr<const int> qualified(new int(4));
+  std::unique_ptr<int[]> array(new int[2]{5, 6});
+  std::unique_ptr<const int[]> const_array(new int[2]{7, 8});
+  std::unique_ptr<int[][2]> matrix(new int[1][2]{{9, 10}});
+  std::unique_ptr<int, Count> custom(new int(11));
+  std::unique_ptr<int[], CountArray> custom_array(new int[2]{12, 13});
+  auto box = std::make_unique<Box>(14);
+  P empty;
+  if (!queries(p) || !queries(qualified) || !queries(array) ||
+      !queries(const_array) || !queries(matrix) || !queries(custom) ||
+      !queries(custom_array) || !queries(box) || !queries(empty))
+    return 1;
+  auto address = p.get();
+  {
+    using Alias::as_const;
+    const P &reference = as_const(select(p, 1));
+    if (&reference != &p || reference.get() != address || calls != 1 || effects != 1)
+      return 2;
+    p.reset(new int(15));
+    if (*reference != 15 || reference.get() == address || reference.get() != p.get())
+      return 3;
+    static_assert(__is_same(decltype(as_const(select(p))), const P &));
+    static_assert(__is_same(decltype(as_const(constant(p))), const P &));
+    static_assert(__is_same(decltype(as_const(throwing(p))), const P &));
+    static_assert(noexcept(as_const(select(p))) && !noexcept(as_const(throwing(p))));
+  }
+  // Const applies to the owner; admitted mutable pointees remain writable.
+  *Alias::as_const(p) = 16;
+  Alias::as_const(array)[Size(0)] = 17;
+  Alias::as_const(matrix)[Size(0)][1] = 18;
+  Alias::as_const(box)->n = 19;
+  if (*qualified != 4 || const_array[Size(0)] != 7 || box->n != 19)
+    return 4;
+  static_assert(__is_same(decltype(*Alias::as_const(p)), int &));
+  static_assert(__is_same(decltype(*Alias::as_const(qualified)), const int &));
+  static_assert(__is_same(decltype(Alias::as_const(array)[Size(0)]), int &));
+  static_assert(__is_same(decltype(Alias::as_const(const_array)[Size(0)]), const int &));
+  static_assert(__is_same(decltype(Alias::as_const(matrix)[Size(0)]), int (&)[2]));
+  static_assert(__is_same(decltype(Alias::as_const(box).operator->()), Box *));
+  const P &from_temporary = Alias::as_const(
+      with_temporary(p, std::make_unique<int>(mark(4))));
+  if (&from_temporary != &p || calls != 3 || effects != 1 || defaults)
+    return 5;
+  int before_allocated = allocated, before_released = released,
+      before_callbacks = callbacks, before_calls = calls,
+      before_live = live, before_destroyed = destroyed;
+  address = p.get();
+  P *pointer = &p;
+  static_assert(__is_same(decltype(Alias::as_const(*pointer)), const P &));
+  static_assert(__is_same(decltype(Alias::as_const((mark(), p))), const P &));
+  static_assert(__is_same(decltype(Alias::as_const(true ? p : constant(p))), const P &));
+  static_assert(__is_same(decltype(Alias::as_const(with_temporary(p))), const P &));
+  static_assert(sizeof(Alias::as_const(with_temporary(p))) == sizeof(P));
+  static_assert(!noexcept(Alias::as_const(with_temporary(p))));
+  static_assert(alignof(decltype(Alias::as_const(with_temporary(p)))) == alignof(P));
+  static_assert(__is_same(decltype(Alias::as_const(with_temporary(p, std::make_unique<int>(mark())))), const P &));
+  if (allocated != before_allocated || released != before_released ||
+      callbacks != before_callbacks || calls != before_calls ||
+      live != before_live || destroyed != before_destroyed || effects != 1 ||
+      defaults || p.get() != address || *p != 16 || array[Size(0)] != 17 ||
+      matrix[Size(0)][1] != 18 || box->n != 19)
+    return 6;
+  return 0;
+}
+int main() {
+  int result = check();
+  if (result) return result;
+  return allocated == released && callbacks == 2 && !live && destroyed == 1 && !defaults ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unique-ptr-as-const-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUniquePtrAsConstQueriesRequireExactSource) {
+  const struct {
+    const char *Name, *Source;
+  } Cases[] = {
+      {"operand-expression", R"cpp(
+int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const((sizeof(long double),p))),const P&));return 0;}
+)cpp"},
+      {"selected-default", R"cpp(
+P&source(P&p,int n=sizeof(long double))noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(source(p))),const P&));return 0;}
+)cpp"},
+      {"original-exception", R"cpp(
+P&source(P&p)noexcept(sizeof(long double)>0);P&source(P&p)noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(source(p))),const P&));return 0;}
+)cpp"},
+      {"original-signature", R"cpp(
+P&source(P&p,long double n=0)noexcept{return p;}int f(P&p){p.get();static_assert(sizeof(Reexport::as_const(source(p)))==sizeof(P));return 0;}
+)cpp"},
+      {"adjusted-parameter-bound", R"cpp(
+P&source(P&p,int a[sizeof(long double)])noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(source(p,nullptr))),const P&));return 0;}
+)cpp"},
+      {"written-template-argument", R"cpp(
+int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const<decltype((sizeof(long double),P()))>(p)),const P&));return 0;}
+)cpp"},
+      {"erased-owner-alias", R"cpp(
+using Erased=decltype((sizeof(long double),P()));int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const<Erased>(p)),const P&));return 0;}
+)cpp"},
+      {"owned-element-source", R"cpp(
+struct Box{int values[sizeof(long double)];};using Owner=std::unique_ptr<Box>;int f(Owner&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p)),const Owner&));return 0;}void materialize_box_deleter(){std::default_delete<Box>{}(nullptr);}
+)cpp"},
+      {"custom-deleter-exception", R"cpp(
+struct D{void operator()(int*p)const noexcept(sizeof(long double)>0){delete p;}};using Owner=std::unique_ptr<int,D>;int f(Owner&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p)),const Owner&));return 0;}
+)cpp"},
+      {"temporary-cleanup", R"cpp(
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};P&source(P&p,Ticket t=Ticket())noexcept{return p;}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(source(p))),const P&));return 0;}
+)cpp"},
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p)),const P&));return 0;}
+)cpp"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const P&as_const<P>(P&p)noexcept{return p;}}}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p)),const P&));return 0;}
+)cpp"},
+      {"const-source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const P&as_const<const P>(const P&p)noexcept{return p;}}}int f(const P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p)),const P&));return 0;}
+)cpp"},
+      {"selected-getter-specialization", R"cpp(
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p).get()),int*));return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+using F=const P&(*)(P&)noexcept;int f(P&p){p.get();static_assert(__is_same(decltype(Reexport::as_const(p)),const P&));static_assert(sizeof(static_cast<F>(&Reexport::as_const<P>))>0);return 0;}
+)cpp"},
+      {"function-reference-call", R"cpp(
+const P&(&target)(P&)noexcept=Reexport::as_const<P>;int f(P&p){p.get();static_assert(__is_same(decltype(target(p)),const P&));return 0;}
+)cpp"},
+      {"cast-postfix", R"cpp(
+using F=const P&(*)(P&)noexcept;int f(P&p){p.get();static_assert(__is_same(decltype(static_cast<F>(&Reexport::as_const<P>)(p)),const P&));return 0;}
+)cpp"},
+      {"erased-noexcept", R"cpp(
+using F=const P&(*)(P&);int f(P&p){p.get();static_assert(!noexcept(static_cast<F>(&Reexport::as_const<P>)(p)));return 0;}
+)cpp"},
+      {"volatile-owner", R"cpp(
+int f(volatile P&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const volatile P&));return 0;}
+)cpp"},
+      {"stateful-deleter", R"cpp(
+struct D{int n;void operator()(int*p)const noexcept{delete p;}};using Owner=std::unique_ptr<int,D>;int f(Owner&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const Owner&));return 0;}
+)cpp"},
+      {"unadmitted-owner", R"cpp(
+using Owner=std::shared_ptr<int>;int f(Owner&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const Owner&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("unique-ptr-as-const-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("unique-ptr-as-const-reject-") + Case.Name + ".nc");
+    writeFile(Source, std::string(R"cpp(#include <memory>
+#include <utility>
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void*p)noexcept{free(p);}
+void operator delete(void*p,Size)noexcept{free(p);}
+namespace Imported{using std::as_const;}
+namespace Reexport{using Imported::as_const;}
+using P=std::unique_ptr<int>;
+void materialize_default_deleter(){std::default_delete<int>{}(nullptr);}
+)cpp") + Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
     expectNoArtifacts(Output);
   }
 }

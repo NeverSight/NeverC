@@ -320,8 +320,9 @@ and parenthesized names, imports and reexports, query-only specializations,
 nested `as_const`/`move`/`forward` calls and checked `get` projections use the
 same proof. Queries perform no argument effects or object lifecycle actions;
 evaluated calls alias the original object. Volatile containers, unsupported
-elements, nontrivial owned values, owner references, source replacements,
-independent addresses and indirect/cast callees retain rejection.
+elements, nontrivial owned values, source replacements, independent addresses
+and indirect/cast callees retain rejection. Owner queries use the separate
+smart-pointer source proof below.
 
 When a queried receiver is initialized with a directly constructed or trivially
 copied `reference_wrapper`, its pinned constructor and pointer-only implicit
@@ -1926,6 +1927,23 @@ them, allocating, moving ownership, invoking deleters or changing the borrowed
 owner. Volatile owners, rvalue arguments forwarded as lvalue results and
 unadmitted owner families remain outside this boundary. Scalar reference-cast
 queries use the separate bounded utility source proof described above.
+
+Exact pinned `std::as_const` queries accept the same admitted scalar and array
+`unique_ptr` owners, including bounded inner arrays and empty custom deleters.
+The selected nondeleted overload adds const to the owner and returns its
+unchanged lvalue reference; it does not add const to the pointee or perform
+ownership operations. Already const owners retain `const T&`. Direct and
+parenthesized names, imports/reexports, explicit object template arguments and
+checked nesting with other reference adapters retain the same proof. The
+selected declaration family remains in `__utility/as_const.h`, with the exact
+implicit builtin or already materialized parameter-return body. Original
+owner/pointee/deleter types, operands, aliases, signatures, defaults and temporary
+cleanup still complete independently. Getter, dereference, subscript and
+comparison queries need their own checked SDK sources. Queries execute no
+effects or cleanup; evaluated calls alias the same owner and observe later
+changes to its pointer. Volatile owners, unadmitted owner/deleter layouts,
+source replacements and indirect/cast callees remain rejected, and the deleted
+rvalue overload remains unavailable.
 
 Exact pinned `std::move_if_noexcept` queries also accept these admitted
 `unique_ptr` owners. The storage/deleter descriptor and the already declared

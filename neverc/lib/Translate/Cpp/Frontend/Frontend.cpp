@@ -3196,8 +3196,9 @@ static bool utilityValueAdapterSource(
   // The tuple-like descriptor supplies only authenticated storage. The exact
   // reference cast, element layouts and every original operand/type source
   // still close separately; this proof does not perform container lifecycle.
-  const bool MoveOrForward = *Operation == UtilityOperation::Move ||
-                             *Operation == UtilityOperation::Forward;
+  const bool OwnerReferenceCast = *Operation == UtilityOperation::Move ||
+                                  *Operation == UtilityOperation::Forward ||
+                                  *Operation == UtilityOperation::AsConst;
   const bool TupleLike =
       Type->isRecordType() &&
       approvedUtilityTupleLikeSource(A.S, A.Sources, Type, A.Context);
@@ -3226,7 +3227,7 @@ static bool utilityValueAdapterSource(
       utilityUniquePtrConditionalMoveSource(A, Call, Record);
   return (Scalar || TupleLike || FunctionObject || OwnedRecord ||
           ConditionalOwner ||
-          (MoveOrForward && utilityUniquePtrSource(A, Record))) &&
+          (OwnerReferenceCast && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
