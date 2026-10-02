@@ -1239,6 +1239,41 @@ static void test_template_url_and_script(void) {
               "\"1; alert(1)\";</script>");
     free(out);
 
+    /* After `<!--` and `<script` inside a script element the HTML tokenizer
+     * is double-escaped: `</script>` there does not close the element, so
+     * later actions are still JavaScript. */
+    neverc_html_template_data_set(&data, "X", "1;alert(1)");
+    out = neverc_html_template_render(
+        "<script><!--\ndocument.write(\"<script src='x.js'></script>\");\n"
+        "var x = {{.X}};\n//--></script>", &data);
+    check_str("double-escaped script closer keeps js context", out,
+              "<script><!--\ndocument.write(\"<script src='x.js'></script>\");\n"
+              "var x = \"1;alert(1)\";\n//--></script>");
+    free(out);
+
+    neverc_html_template_data_set(&data, "X", "\nalert(1)//");
+    out = neverc_html_template_render(
+        "<script><!--<script></script>{{.X}}--></script>", &data);
+    check_str("double-escaped script comment stays a comment", out,
+              "<script><!--<script></script>ZgotmplZ--></script>");
+    free(out);
+
+    /* `-->` leaves the escaped states and a second closer from the
+     * escaped state ends the element as usual. */
+    neverc_html_template_data_set(&data, "X", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<script><!--<script>--></script><a href=\"{{.X}}\">x</a>", &data);
+    check_str("script closer after escape end ends script", out,
+              "<script><!--<script>--></script><a href=\"#\">x</a>");
+    free(out);
+
+    out = neverc_html_template_render(
+        "<script><!--<script></script></script><a href=\"{{.X}}\">x</a>",
+        &data);
+    check_str("second script closer ends double-escaped script", out,
+              "<script><!--<script></script></script><a href=\"#\">x</a>");
+    free(out);
+
     neverc_html_template_data_set(&data, "X", ";alert(1)//");
     out = neverc_html_template_render(
         "<script>var x=\"ok\"{{.X}}</script>", &data);
