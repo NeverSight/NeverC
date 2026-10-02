@@ -527,6 +527,16 @@ static void test_x509_subject_alt_name(void) {
           neverc_x509_verify_hostname(&cert, "::1%lo0") == 0);
     CHECK("hostname_ipv6_zone_brackets",
           neverc_x509_verify_hostname(&cert, "[::1%lo0]") == 0);
+    /* Go compares with net.IP.Equal: an IPv4-mapped literal is the same
+     * address as a 4-byte SAN entry; an IPv4-compatible one is not. */
+    CHECK("hostname_ipv4_mapped_literal",
+          neverc_x509_verify_hostname(&cert, "::ffff:127.0.0.1") == 0);
+    CHECK("hostname_ipv4_mapped_literal_brackets",
+          neverc_x509_verify_hostname(&cert, "[::ffff:7f00:1]") == 0);
+    CHECK("hostname_ipv4_mapped_literal_mismatch",
+          neverc_x509_verify_hostname(&cert, "::ffff:127.0.0.2") != 0);
+    CHECK("hostname_ipv4_compatible_literal_mismatch",
+          neverc_x509_verify_hostname(&cert, "::127.0.0.1") != 0);
     neverc_x509_cert_free(&cert);
 
     /* RFC 5280 4.2.1.6: subjectAltName MUST contain at least one name. */
