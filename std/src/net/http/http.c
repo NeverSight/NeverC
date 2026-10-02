@@ -4993,18 +4993,21 @@ void neverc_http_error(neverc_http_response_writer_t *w,
 }
 
 /* Go url.QueryUnescape / ParseQuery: reject interior NUL, malformed %,
- * and encoded NUL. The span is not necessarily C-string terminated. */
+ * and encoded NUL. The span is not necessarily C-string terminated.
+ * Returns -1 for an undecodable span and -2 when a decodable span cannot
+ * be produced in out (too small or out of memory). */
 static int http_form_unescape_span(const char *s, size_t n,
                                    char *out, size_t out_cap) {
     if (!out || out_cap == 0 || (!s && n > 0) || n == SIZE_MAX) return -1;
     if (s && n > 0 && memchr(s, '\0', n)) return -1;
     char *tmp = (char *)malloc(n + 1);
-    if (!tmp) return -1;
+    if (!tmp) return -2;
     if (n) memcpy(tmp, s, n);
     tmp[n] = '\0';
     int decoded = neverc_url_query_unescape(tmp, out, out_cap);
     free(tmp);
-    if (decoded < 0 || (size_t)decoded >= out_cap) return -1;
+    if (decoded < 0) return -1;
+    if ((size_t)decoded >= out_cap) return -2;
     return decoded;
 }
 
@@ -5039,8 +5042,12 @@ const char *neverc_http_form_value(const char *body, size_t body_len,
             p = amp ? amp + 1 : end;
             continue;
         }
-        if (http_form_unescape_span(val, (size_t)(pair_end - val),
-                                    buf, buflen) < 0) {
+        int decoded = http_form_unescape_span(
+            val, (size_t)(pair_end - val), buf, buflen);
+        /* The first decodable value is FormValue's answer; a later
+         * duplicate must not stand in for one that does not fit. */
+        if (decoded == -2) return NULL;
+        if (decoded < 0) {
             p = amp ? amp + 1 : end;
             continue;
         }
