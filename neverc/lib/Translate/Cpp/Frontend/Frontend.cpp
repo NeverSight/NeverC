@@ -3187,21 +3187,19 @@ static bool utilityConditionalMoveValueConstructor(
   A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
   if (Latest->getMinRequiredArguments() > 1)
     return true;
-  for (const auto *Parameter : Constructor->parameters()) {
-    const auto Type = Parameter->getType().getNonReferenceType();
-    const bool Scalar =
-        !Type->isDependentType() && !Type.isVolatileQualified() &&
-        !Type.isRestrictQualified() && !Type->isAtomicType() &&
-        Type.getAddressSpace() == LangAS::Default &&
-        ((Type->isIntegralOrEnumerationType() &&
-          A.Context.getTypeSize(Type) <= 64) ||
-         Type->isSpecificBuiltinType(BuiltinType::Float) ||
-         Type->isSpecificBuiltinType(BuiltinType::Double) ||
-         Type->isPointerType() || Type->isNullPtrType());
-    if (!Scalar)
-      return false;
-  }
-  return true;
+  // With no conversion function on the queried record, a scalar first
+  // parameter excludes a const-record argument regardless of later defaults.
+  // Every parameter still supplies its original checked signature source.
+  const auto Type =
+      Constructor->getParamDecl(0)->getType().getNonReferenceType();
+  return !Type->isDependentType() && !Type.isVolatileQualified() &&
+         !Type.isRestrictQualified() && !Type->isAtomicType() &&
+         Type.getAddressSpace() == LangAS::Default &&
+         ((Type->isIntegralOrEnumerationType() &&
+           A.Context.getTypeSize(Type) <= 64) ||
+          Type->isSpecificBuiltinType(BuiltinType::Float) ||
+          Type->isSpecificBuiltinType(BuiltinType::Double) ||
+          Type->isPointerType() || Type->isNullPtrType());
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
@@ -3286,7 +3284,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths. An ordinary constructor requiring two arguments cannot
   // consume this record alone, even through a converting temporary. Otherwise
-  // require scalar parameters: the first cannot consume this record without
+  // require a scalar first parameter: it cannot consume this record without
   // a conversion function, even if later parameters have defaults. Retain
   // every written signature, including each nonviable constructor's parameter
   // types; callers separately check copy/move overloads and sources.

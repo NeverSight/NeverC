@@ -949,8 +949,10 @@ The owning graph also admits a single public copy taking exactly mutable
 `Record&` at a nontrivial node. That copy may be implicit, defaulted, ordinary
 or deleted. Each such node has no bases or conversion functions. Besides its
 exact move, it may have nonvariadic zero-parameter default constructors or
-ordinary constructors taking one or more admitted scalars by value or reference,
-optionally with default arguments. Ordinary nonvariadic constructors requiring
+ordinary nonvariadic constructors whose first parameter is an admitted scalar
+by value or reference. Later parameters keep the ordinary type requirements,
+including record values/references and fixed-array references, and may have
+default arguments. Ordinary nonvariadic constructors requiring
 at least two arguments are also included, with the profile's normal parameter
 type checks. The graph retains the original declarations
 behind implicit mutable copies through nested value members and fixed arrays,
@@ -1037,13 +1039,16 @@ declaration takes exactly mutable `Record&`. The copy must be written, including
 ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases or conversion
 functions. Other constructors may be a move, a nonvariadic zero-parameter
-default constructor, or an ordinary nonvariadic constructor whose parameters
-are all admitted scalars, by value or by lvalue/rvalue reference. The scalar
+default constructor, or an ordinary nonvariadic constructor whose first parameter
+is an admitted scalar, by value or by lvalue/rvalue reference. The scalar
 type includes integers and enums up to 64 bits, `float`, `double`, pointers and
 `decltype(nullptr)`. References may bind a const scalar; volatile, restricted,
 atomic and nondefault-address-space referents remain outside this proof.
 Every parameter keeps the profile's ordinary type-source checks, including
-aliases and qualifiers on later parameters. Multiple such overloads, private
+aliases and qualifiers on later parameters. Later parameters can be admitted
+record values, record references or fixed-array references, including defaults
+such as `C(int, Argument = {})` and `C(int&, const Argument& = Argument{})`.
+Multiple such overloads, private
 or deleted constructors, required arguments and default arguments are included.
 All parameters may have defaults. The first scalar parameter cannot consume
 `const Record&` without a conversion function, regardless of later defaults.
@@ -1059,15 +1064,16 @@ argument removes this arity proof. No default expression is instantiated to
 determine the count. Every parameter's original type source is still checked;
 this does not admit unsupported parameter types such as function references.
 Record parameter types must already satisfy the ordinary completion checks;
-the arity proof does not instantiate an otherwise incomplete template record.
+these constructor proofs do not instantiate an otherwise incomplete template
+record.
 
 Constructor templates, inherited constructors, extra copy/move parameters,
 additional copy overloads, and other value constructors retain separate
-requirements. In particular, record value or reference parameters can introduce
-their own conversion from `const Record&`, including a temporary bound to a
+requirements. In particular, a first record value or reference parameter can
+introduce its own conversion from `const Record&`, including a temporary bound to a
 const or rvalue reference, when a single argument suffices. Such constructors,
-including a record or array reference in a later defaulted parameter, remain
-outside the scalar-parameter proof. Without a constructor
+and a first array or function reference, remain outside the proof based on a
+scalar first parameter. Without a constructor
 that can consume `const Record&`, the pinned copy trait is false for mutable
 and const objects, preserving `Record&&` and `const Record&&` respectively.
 No query copies from the operand, modifies it or instantiates a hypothetical
@@ -1082,7 +1088,9 @@ construction, selected defaults, mutable copies, moves and generated member
 operations retain their ordinary source checks and preserve any changes they
 make to the copied-from object. Reference arguments retain their original
 bindings and value categories during actual construction; a query alone neither
-evaluates a reference default nor modifies its referent.
+evaluates a reference default nor modifies its referent. Default record
+temporaries, parameter copies and their cleanup run only for selected actual
+construction, with the profile's normal lifetime checks.
 
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
