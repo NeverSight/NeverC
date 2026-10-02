@@ -3174,14 +3174,19 @@ static bool utilityConditionalMoveSignatureSource(
 }
 
 static bool utilityConditionalMoveDefaultsSource(
-    Adapter &A, const CXXConstructorDecl *Constructor) {
+    Adapter &A, const CXXConstructorDecl *Constructor, bool UnrelatedAccess) {
   if (Constructor->getNumParams() == 1)
     return true;
   // With an available const-copy, extra defaults can change nothrow
-  // constructibility and hence the adapter's reference category. Require
-  // already-resolved initializers on the exact prototype parameters: ordinary
+  // constructibility and hence the adapter's reference category. Normally
+  // require already-resolved initializers on the exact prototype parameters:
   // signature traversal checks their original expressions and dependencies.
   // Do not instantiate a template default to make this proof succeed.
+  const bool UnavailableMove =
+      Constructor->isMoveConstructor() &&
+      (Constructor->isDeleted() ||
+       (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
+                            Constructor->getAccess() == AS_protected)));
   for (const auto *Declaration : Constructor->redecls()) {
     const auto *Info = Declaration->getTypeSourceInfo();
     const auto Prototype =
@@ -3192,8 +3197,20 @@ static bool utilityConditionalMoveDefaultsSource(
     for (unsigned I = 1; I < Declaration->getNumParams(); ++I) {
       const auto *Parameter = Declaration->getParamDecl(I);
       A.chargeExpansion(1, Parameter->getLocation());
-      if (Prototype.getParam(I) != Parameter ||
-          !operationDefaultInitializer(A, Parameter))
+      if (Prototype.getParam(I) != Parameter)
+        return false;
+      if (operationDefaultInitializer(A, Parameter))
+        continue;
+      // A deleted or inaccessible exact move cannot provide construction to
+      // the SDK traits. If Sema left its template default uninstantiated, keep
+      // that original source lazy; parameter types and every written signature
+      // still pass ordinary traversal. Resolved defaults keep the checks above.
+      if (!UnavailableMove || !lazyTemplateDefault(Parameter) ||
+          Parameter->isInvalidDecl() || Parameter->isImplicit() ||
+          !A.S.owns(A.Sources, Parameter->getLocation()))
+        return false;
+      const auto *Default = Parameter->getUninstantiatedDefaultArg();
+      if (!Default || !A.S.owns(A.Sources, Default->getBeginLoc()))
         return false;
     }
   }
@@ -3575,15 +3592,16 @@ static bool utilityRecordConditionalMoveSource(
   // The pinned builtin retains overload selection and inferred exceptions.
   // Supply their original sources through a bounded graph of owned records,
   // without generating hypothetical copies, moves or destructor bodies.
-  std::set<const CXXRecordDecl *> Seen;
+  std::set<std::pair<const CXXRecordDecl *, const CXXRecordDecl *>> Seen;
   auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
-                   unsigned Depth, bool RootConstCopyUnavailable) -> bool {
+                   unsigned Depth, bool RootConstCopyUnavailable,
+                   const CXXRecordDecl *Owner) -> bool {
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Depth >= 64 || Record->isInvalidDecl() ||
         Record->isDependentContext() || Record->isUnion() ||
         !A.S.owns(A.Sources, Record->getLocation()))
       return false;
-    if (!Seen.insert(Record).second)
+    if (!Seen.insert({Record, Owner}).second)
       return true;
     A.chargeExpansion(1, Record->getLocation());
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
@@ -3600,6 +3618,12 @@ static bool utilityRecordConditionalMoveSource(
         return false;
     const auto Object = A.Context.getRecordType(Record);
     const auto MutableCopyParameter = A.Context.getLValueReferenceType(Object);
+    // The root SDK trait has unrelated access. An owning operation can have
+    // friendship, enclosing-class or derived-class access to its member's
+    // move, so retain a conservative unrelated-access proof for each edge.
+    const bool UnrelatedAccess =
+        !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
+                   Owner->getDeclContext()->isFileContext());
     const CXXConstructorDecl *Copy = nullptr, *Move = nullptr;
     for (const auto *Constructor : Record->ctors()) {
       A.chargeExpansion(1, Constructor->getLocation());
@@ -3610,7 +3634,8 @@ static bool utilityRecordConditionalMoveSource(
       const bool IsCopy = Constructor->isCopyConstructor();
       if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
           (!RootConstCopyUnavailable &&
-           !utilityConditionalMoveDefaultsSource(A, Constructor)))
+           !utilityConditionalMoveDefaultsSource(A, Constructor,
+                                                 UnrelatedAccess)))
         return false;
       if ((!A.Context.hasSameType(
               Constructor->getParamDecl(0)->getType(),
@@ -3658,16 +3683,18 @@ static bool utilityRecordConditionalMoveSource(
     // their written types and bindings without owning a referent graph.
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
-                RootConstCopyUnavailable))
+                RootConstCopyUnavailable, Record))
         return false;
     for (const auto *Field : Record->fields())
       if (const auto *Member =
               A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
-          Member && !Self(Self, Member, Depth + 1, RootConstCopyUnavailable))
+          Member && !Self(Self, Member, Depth + 1, RootConstCopyUnavailable,
+                          Record))
         return false;
     return true;
   };
-  return Check(Check, Root, 0, /*RootConstCopyUnavailable=*/false);
+  return Check(Check, Root, 0, /*RootConstCopyUnavailable=*/false,
+               /*Owner=*/nullptr);
 }
 
 static bool utilityValueAdapterSource(

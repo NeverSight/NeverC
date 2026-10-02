@@ -1005,6 +1005,23 @@ their dependencies along with the parameter types, aliases, bounds and
 exception sources. Defaults still awaiting template instantiation require a
 separate proof; the translator does not instantiate them to admit a query.
 
+An exact deleted, private or protected move has a narrower exception: any
+extra template default that Sema has left uninstantiated may stay lazy. The
+parameter and original default expression must be source-owned, with the
+parameter retained in every original prototype. Such a move cannot provide
+construction to the SDK traits. Its parameter types, aliases, bounds,
+exception specifications and redeclarations remain checked. Already-resolved
+defaults use the ordinary source checks above. This covers deleted moves,
+const queries on inaccessible moves, and inaccessible member moves that
+delete an enclosing defaulted move. For an owned member's inaccessible move,
+the member must have no friends and its immediate owner must be declared at
+namespace scope with no bases. Friend, nested or derived owners require their
+own access proof. Each member/owner pair is checked independently, including
+when the same member type appears in several ownership contexts.
+Sema can still instantiate defaults during
+other queries, including a direct mutable query on an inaccessible move;
+this proof does not suppress those diagnostics.
+
 These defaults can affect the pinned reference result: a `noexcept` move
 constructor with a potentially throwing default argument, or with a default
 argument temporary whose destructor may throw, can cause copy fallback.
@@ -1161,8 +1178,8 @@ selected defaults and body, including reference mutations and temporary
 destruction. Parameter records use this constructor-shape proof; queried
 records use the copy-unavailability or resolved-default source proof above.
 Owned subobjects use the owning-graph proof: the root's exact mutable-only or
-already-deleted copy establishes const-copy unavailability, or every extra
-copy/move default retains its already-resolved initializer source.
+already-deleted copy establishes const-copy unavailability, or extra defaults
+satisfy the resolved-source or unavailable-move proof above.
 
 The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
@@ -1212,7 +1229,7 @@ these constructor proofs do not instantiate an otherwise incomplete template
 record.
 
 Constructor templates, inherited constructors, unresolved extra copy/move
-defaults when a const copy remains available, additional copy overloads, and
+defaults outside the unavailable-move proof above, additional copy overloads, and
 other value constructors retain separate
 requirements. In particular, a first record parameter passed by value, by
 const lvalue reference or by rvalue reference can introduce its own conversion
