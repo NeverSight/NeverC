@@ -4951,6 +4951,21 @@ static void test_cookie_lookup(void) {
               lookup_cookie("c=d; a=b\t", "a", buf, sizeof(buf)), "b");
     check_str("cookie value keeps inner space",
               lookup_cookie("a=b c ; d=e", "a", buf, sizeof(buf)), "b c");
+
+    /* Request.Cookie returns the first valid match; a buffer too small for
+     * it must fail rather than return a later cookie with the same name. */
+    char small[4];
+    check_int("small buffer does not fall through to later cookie",
+              lookup_cookie("a=12345; a=xy", "a", small, sizeof(small)) ==
+                  NULL,
+              1);
+    check_int("small buffer does not fall through after quoted cookie",
+              lookup_cookie("a=\"12345\"; a=xy", "a", small, sizeof(small)) ==
+                  NULL,
+              1);
+    check_str("invalid first cookie is still skipped",
+              lookup_cookie("a=\"x\\y\"; a=ok", "a", small, sizeof(small)),
+              "ok");
 }
 
 /* ===== ResponseHeader test ===== */
