@@ -3173,39 +3173,57 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
-static bool utilityUninstantiatedMoveSignatureSource(
+static bool utilityLazyMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
-  if (!Constructor || !Constructor->isMoveConstructor() ||
-      Constructor->isImplicit() || Constructor->isDefaulted() ||
-      Constructor->isDeleted() || Constructor->isInvalidDecl() ||
-      Constructor->isUsed(/*CheckUsedAttr=*/false) || Constructor->hasBody() ||
-      !concreteClassFunction(Constructor))
+  const bool Assignment = Method && Method->isMoveAssignmentOperator();
+  if (!Method || !(Assignment || (Constructor && Constructor->isMoveConstructor())) ||
+      Method->isImplicit() || Method->isInvalidDecl() ||
+      (!Assignment && (Method->isDefaulted() || Method->isDeleted())) ||
+      Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
+      !concreteClassFunction(Method))
     return false;
-  const auto *Prototype = Constructor->getType()->getAs<FunctionProtoType>();
-  const auto *Origin = dyn_cast_or_null<CXXConstructorDecl>(
-      Constructor->getInstantiatedFromMemberFunction());
-  const auto *Info = Constructor->getTypeSourceInfo();
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  const auto *Origin = dyn_cast_or_null<CXXMethodDecl>(
+      Method->getInstantiatedFromMemberFunction());
+  const auto *Info = Method->getTypeSourceInfo();
   const auto *OriginInfo = Origin ? Origin->getTypeSourceInfo() : nullptr;
-  if (!Prototype || Prototype->getExceptionSpecType() != EST_Uninstantiated ||
-      Prototype->getExceptionSpecDecl() != Constructor || !Origin ||
-      Prototype->getExceptionSpecTemplate() != Origin || !Info || !OriginInfo ||
-      !A.S.owns(A.Sources, Constructor->getLocation()) ||
+  if (!Prototype || Prototype->getExceptionSpecDecl() != Method || !Origin ||
+      !Info || !OriginInfo || !A.S.owns(A.Sources, Method->getLocation()) ||
       !A.S.owns(A.Sources, Origin->getLocation()) ||
       Info->getType()->isInstantiationDependentType())
     return false;
   const auto *Written = Info->getType()->getAs<FunctionProtoType>();
   const auto *Pattern = Origin->getType()->getAs<FunctionProtoType>();
   const auto *PatternWritten = OriginInfo->getType()->getAs<FunctionProtoType>();
-  if (!standardExceptionSpecification(Written) ||
-      !standardExceptionSpecification(Pattern) || !PatternWritten ||
+  if (!standardExceptionSpecification(Written) || !PatternWritten)
+    return false;
+  // Declaring a defaulted move assignment deletes the implicit copy even
+  // while its inferred exception result and assignment body remain lazy.
+  // Only the original absence of a written exception source is consumed.
+  if (Prototype->getExceptionSpecType() == EST_Unevaluated) {
+    const auto Location =
+        Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
+    const auto OriginLocation =
+        OriginInfo->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
+    return Assignment && Origin->isMoveAssignmentOperator() &&
+           Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted() &&
+           Written->getExceptionSpecType() == EST_None &&
+           PatternWritten->getExceptionSpecType() == EST_None &&
+           Location && OriginLocation &&
+           !Location.getExceptionSpecRange().isValid() &&
+           !OriginLocation.getExceptionSpecRange().isValid();
+  }
+  if (Prototype->getExceptionSpecType() != EST_Uninstantiated ||
+      Prototype->getExceptionSpecTemplate() != Origin ||
+      !standardExceptionSpecification(Pattern) ||
       Written->getExceptionSpecType() != Pattern->getExceptionSpecType() ||
       PatternWritten->getExceptionSpecType() != Pattern->getExceptionSpecType() ||
       Written->getNoexceptExpr() != Pattern->getNoexceptExpr() ||
       PatternWritten->getNoexceptExpr() != Pattern->getNoexceptExpr())
     return false;
   const auto *Expression = Written->getNoexceptExpr();
-  // A const-only adapter can leave this move's exception spec uninstantiated.
+  // An adapter can leave an unused move's exception spec uninstantiated.
   // Its concrete written signature still retains the exact nondependent
   // pattern expression. Check that source without resolving or calling it.
   return !Expression ||
@@ -3264,14 +3282,33 @@ static bool utilityDeletedCopyConditionalMoveSource(
       !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
     return false;
   // An exact deleted const-copy makes the copy trait false for T and const T.
-  // Besides an explicit deletion, a user-declared move constructor deletes
+  // Besides an explicit deletion, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
   // already-declared copy and its source-owned move; other implicit deletion
   // causes keep their own proof. No hypothetical declaration or body is made.
-  return FoundExplicitCopy ||
-         (FoundImplicitCopy && FoundDeclaredMove &&
-          Record->hasUserDeclaredMoveConstructor() &&
-          !Record->hasUserDeclaredCopyConstructor());
+  if (FoundExplicitCopy)
+    return true;
+  if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
+    return false;
+  if (FoundDeclaredMove && Record->hasUserDeclaredMoveConstructor())
+    return true;
+  const auto &Language = A.Context.getLangOpts();
+  if (!Record->hasUserDeclaredMoveAssignment() ||
+      (Language.MSVCCompat &&
+       !Language.isCompatibleWithMSVC(LangOptions::MSVC2015)))
+    return false; // Old MSVC mode deletes only the matching copy operation.
+  bool FoundAssignment = false;
+  for (const auto *Method : Record->methods()) {
+    if (Method->isImplicit() || !Method->isMoveAssignmentOperator())
+      continue;
+    A.chargeExpansion(1, Method->getLocation());
+    if (Method->isInvalidDecl() || Method->isVariadic() ||
+        Method->getNumParams() != 1 ||
+        !utilityConditionalMoveSignatureSource(A, Method, Signatures))
+      return false;
+    FoundAssignment = true;
+  }
+  return FoundAssignment;
 }
 
 static bool utilityTrivialConditionalMoveSource(
@@ -12031,12 +12068,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   // The exact adapter proof consumes its written signature,
                   // so check an already resolved signature or its exact
                   // retained nondependent move signature without resolution.
-                  // Defaulted members retain their existing generated proof.
+                  // A defaulted move assignment is consumed only as a
+                  // declaration here. Its body keeps its generated proof.
                   if (concreteClassFunction(Signature) &&
-                      !Signature->isDefaulted() &&
+                      (!Signature->isDefaulted() ||
+                       Signature->isMoveAssignmentOperator()) &&
                       (standardExceptionSpecification(
                            Signature->getType()->getAs<FunctionProtoType>()) ||
-                       utilityUninstantiatedMoveSignatureSource(A, Signature)) &&
+                       utilityLazyMoveSignatureSource(A, Signature)) &&
                       QueuedConditionalMoveSignatures.insert(Signature).second) {
                     A.chargeExpansion(1, Call->getExprLoc());
                     ConsumedConditionalMoveSignatures.push_back(Signature);
@@ -16809,7 +16848,7 @@ public:
     CurrentMethod = Method;
     CurrentDeclarator = Method;
     CurrentWrittenConditionalMoveSignature =
-        ConditionalMove && utilityUninstantiatedMoveSignatureSource(A, Method)
+        ConditionalMove && utilityLazyMoveSignatureSource(A, Method)
             ? Method : nullptr;
     CurrentDefaultField = nullptr;
     ImplicitInitializerOwner = Method->getLocation();
