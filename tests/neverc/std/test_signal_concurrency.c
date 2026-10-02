@@ -645,6 +645,33 @@ static int test_fork_restarts_dispatcher(void) {
     }
     return 0;
 }
+
+/* Go os/signal: a SIGHUP or SIGINT that was ignored when the program started
+ * (nohup) is ignored again once Stop or Reset ends its notification. */
+static int test_stop_restores_inherited_ignore(void) {
+    pid_t child = fork();
+    if (child < 0)
+        return 1;
+    if (child == 0) {
+        alarm(5);
+        signal(SIGHUP, SIG_IGN);
+        neverc_signal_notify(NEVERC_SIGHUP, noop_handler);
+        neverc_signal_stop(NEVERC_SIGHUP);
+        raise(SIGHUP);
+        neverc_signal_notify(NEVERC_SIGHUP, noop_handler);
+        neverc_signal_reset(NEVERC_SIGHUP);
+        raise(SIGHUP);
+        _exit(0);
+    }
+    int status = 0;
+    if (waitpid(child, &status, 0) != child)
+        return 1;
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fputs("inherited SIGHUP ignore was lost after stop/reset\n", stderr);
+        return 1;
+    }
+    return 0;
+}
 #endif
 #else
 #include <signal.h>
@@ -807,6 +834,8 @@ int main(void) {
         return 1;
 #if !defined(NEVERC_SIGNAL_SKIP_FORK)
     if (test_fork_restarts_dispatcher() != 0)
+        return 1;
+    if (test_stop_restores_inherited_ignore() != 0)
         return 1;
 #endif
     alarm(0);
