@@ -582,27 +582,83 @@ static int parse_float_span(const char *s, size_t n, double *out) {
     return rc;
 }
 
-/* Longest prefix of [s, s+n) that parse_float accepts. Matches Go
- * parseFloatPrefix: leftover after the prefix is the caller's problem. */
+static char ascii_lower(char c) {
+    return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+}
+
+/* Length of the float literal that Go parseFloatPrefix reads at the start of
+ * [s, s+n), or 0 when that literal is malformed (ErrSyntax). Mirrors the
+ * consumption rules of strconv special() and readFloat(); parse_float then
+ * validates underscores and computes the value of exactly that span. One
+ * scan per part keeps ParseComplex linear in the input length. */
+static size_t float_prefix_len(const char *s, size_t n) {
+    static const char infinity[] = "infinity";
+    size_t sign, i, k;
+    int hex = 0, sawdot = 0, sawdigits = 0;
+    if (n == 0) return 0;
+
+    /* special(): optionally signed "inf"/"infinity", or unsigned "nan". A
+     * partial "infinity" counts only as "inf". */
+    sign = (s[0] == '+' || s[0] == '-') ? 1 : 0;
+    if (sign || ascii_lower(s[0]) == 'i') {
+        for (k = 0; k < 8 && sign + k < n &&
+                    ascii_lower(s[sign + k]) == infinity[k]; k++)
+            ;
+        if (k > 3 && k < 8) k = 3;
+        if (k == 3 || k == 8) return sign + k;
+    } else if (ascii_lower(s[0]) == 'n') {
+        if (n >= 3 && ascii_lower(s[1]) == 'a' && ascii_lower(s[2]) == 'n')
+            return 3;
+    }
+
+    /* readFloat(): sign, 0x prefix (only with a byte after it), mantissa
+     * digits/underscores/one dot, then a mandatory-for-hex exponent. */
+    i = sign;
+    if (i + 2 < n && s[i] == '0' && ascii_lower(s[i + 1]) == 'x') {
+        hex = 1;
+        i += 2;
+    }
+    for (; i < n; i++) {
+        char c = s[i];
+        if (c == '_') continue;
+        if (c == '.') {
+            if (sawdot) break;
+            sawdot = 1;
+            continue;
+        }
+        if ((c >= '0' && c <= '9') ||
+            (hex && ascii_lower(c) >= 'a' && ascii_lower(c) <= 'f')) {
+            sawdigits = 1;
+            continue;
+        }
+        break;
+    }
+    if (!sawdigits) return 0;
+    if (i < n && ascii_lower(s[i]) == (hex ? 'p' : 'e')) {
+        i++;
+        if (i < n && (s[i] == '+' || s[i] == '-')) i++;
+        if (i >= n || s[i] < '0' || s[i] > '9') return 0;
+        while (i < n && ((s[i] >= '0' && s[i] <= '9') || s[i] == '_')) i++;
+    } else if (hex) {
+        return 0;
+    }
+    return i;
+}
+
+/* Go parseFloatPrefix: parse the literal at the start of [s, s+n); the
+ * leftover after it is the caller's problem. */
 static int parse_float_prefix(const char *s, size_t n, double *out,
                               size_t *consumed) {
-    int best = NEVERC_STRCONV_ERR_SYNTAX;
-    size_t best_n = 0;
-    double best_v = 0.0;
-    for (size_t i = 1; i <= n; i++) {
-        double v;
-        int rc = parse_float_span(s, i, &v);
-        if (rc == NEVERC_STRCONV_OK || rc == NEVERC_STRCONV_ERR_RANGE) {
-            best = rc;
-            best_n = i;
-            best_v = v;
-        }
-    }
-    if (best_n == 0)
+    size_t len = float_prefix_len(s, n);
+    double v;
+    int rc;
+    if (len == 0) return NEVERC_STRCONV_ERR_SYNTAX;
+    rc = parse_float_span(s, len, &v);
+    if (rc != NEVERC_STRCONV_OK && rc != NEVERC_STRCONV_ERR_RANGE)
         return NEVERC_STRCONV_ERR_SYNTAX;
-    *out = best_v;
-    *consumed = best_n;
-    return best;
+    *out = v;
+    *consumed = len;
+    return rc;
 }
 
 /* Go ParseComplex: syntax errors return 0, not a partially parsed real part
