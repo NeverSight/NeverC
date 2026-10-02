@@ -4952,6 +4952,19 @@ static void test_json_helpers(void) {
     req.body = json_body;
     req.body_len = strlen(json_body);
 
+    /* A value that does not fit is a failure, not a truncated prefix. */
+    {
+        char small[4];
+        check_int("json string too small",
+                  neverc_http_json_get(&req, "name", small, sizeof(small)) ==
+                      NULL,
+                  1);
+        check_int("json number too small",
+                  neverc_http_json_get(&req, "age", small, 2) == NULL, 1);
+        check_str("json value fits small buffer",
+                  neverc_http_json_get(&req, "age", small, sizeof(small)), "30");
+    }
+
     /* Null safety */
     check_int("json get null req",
                neverc_http_json_get(NULL, "x", vbuf, sizeof(vbuf)) == NULL, 1);
