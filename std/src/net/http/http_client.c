@@ -3439,9 +3439,14 @@ const char *neverc_http_response_header(const neverc_http_response_t *resp,
         if (colon && colon < line_end) {
             size_t klen = (size_t)(colon - p);
             if (klen == nlen && strncasecmp(p, name, nlen) == 0) {
+                /* Go Header.Get: field values exclude surrounding OWS. */
                 const char *val = colon + 1;
-                while (val < line_end && *val == ' ') val++;
+                while (val < line_end && (*val == ' ' || *val == '\t'))
+                    val++;
                 size_t vlen = (size_t)(line_end - val);
+                while (vlen > 0 &&
+                       (val[vlen - 1] == ' ' || val[vlen - 1] == '\t'))
+                    vlen--;
                 if (vlen >= buflen) vlen = buflen - 1;
                 memcpy(buf, val, vlen);
                 buf[vlen] = '\0';
