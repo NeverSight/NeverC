@@ -285,9 +285,13 @@ int neverc_mail_parse_address_list(const char *s,
     int count = 0;
     const char *p = s;
 
-    while (*p && count < max_out) {
-        while (*p == ' ' || *p == '\t') p++;
+    for (;;) {
+        /* RFC 5322 4.4 obs-addr-list, as in Go ParseAddressList: empty
+         * entries (leading, doubled or trailing commas) are skipped. */
+        while (*p == ' ' || *p == '\t' || *p == ',') p++;
         if (!*p) break;
+        /* A max_out cap must not silently drop remaining recipients. */
+        if (count >= max_out) return -1;
 
         /* Find the end of this address (comma or end) */
         int depth = 0;
@@ -320,17 +324,8 @@ int neverc_mail_parse_address_list(const char *s,
         if (neverc_mail_parse_address(buf, &out[count]) != 0)
             return -1;
         count++;
-
-        if (*p == ',') {
-            p++;
-            while (*p == ' ' || *p == '\t') p++;
-            /* Trailing comma is an empty mailbox (Go ParseAddressList). */
-            if (!*p) return -1;
-        }
     }
-    while (*p == ' ' || *p == '\t') p++;
-    /* A max_out cap must not silently drop remaining recipients. */
-    if (*p) return -1;
+    /* At least one mailbox is required ("" and "," are errors in Go). */
     if (count == 0) return -1;
     return count;
 }
