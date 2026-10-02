@@ -875,6 +875,89 @@ static void quic_test_key_discard_keeps_no_final_packet(void) {
     neverc_udp_close(sink);
 }
 
+/* RFC 9000 §9.3: the validated path keeps carrying traffic while a migration
+ * candidate is checked. A PATH_CHALLENGE that the candidate's own
+ * anti-amplification budget cannot pay for has to wait without stopping
+ * every other packet the connection sends. */
+static void quic_test_blocked_path_challenge_keeps_old_path(void) {
+    neverc_network_test_files_t files;
+    CHECK(neverc_network_test_write_certs("quic-amp-stall", &files) == 0);
+    int port = quic_test_free_udp_port();
+    CHECK(port > 0);
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *alpn[] = {"neverc-quic-stall/1", NULL};
+    neverc_quic_config_t server_config = neverc_quic_config_default();
+    server_config.cert_file = files.server_cert;
+    server_config.key_file = files.server_key;
+    server_config.alpn = alpn;
+    const char *error = NULL;
+    neverc_quic_endpoint_t *endpoint = neverc_quic_listen(
+        address, &server_config, &error);
+    CHECK(endpoint != NULL);
+    if (!endpoint) {
+        neverc_network_test_remove_certs(&files);
+        return;
+    }
+
+    neverc_quic_config_t client_config = neverc_quic_config_default();
+    client_config.alpn = alpn;
+    client_config.server_name = "localhost";
+    client_config.root_cert_file = files.ca;
+    neverc_quic_conn_t *client = neverc_quic_dial(address, &client_config,
+                                                    &error);
+    CHECK(client != NULL);
+    struct neverc_quic_conn *server =
+        client ? neverc_quic_accept(endpoint, &error) : NULL;
+    CHECK(server != NULL);
+    neverc_quic_stream_t *stream =
+        server ? neverc_quic_open_stream(client, &error) : NULL;
+    CHECK(stream != NULL);
+    neverc_quic_stream_t *accepted = NULL;
+    char buffer[8];
+    if (stream) {
+        CHECK(neverc_quic_stream_write(stream, "ping", 4U) == 4);
+        accepted = neverc_quic_accept_stream(server, &error);
+        CHECK(accepted != NULL);
+        if (accepted)
+            CHECK(quic_test_stream_read_exact(accepted, buffer, 4U) == 0);
+    }
+
+    neverc_udp_conn_t *victim = neverc_udp_listen("127.0.0.1:0", &error);
+    neverc_udp_addr_t victim_address;
+    CHECK(victim != NULL &&
+          neverc_udp_local_addr(victim, &victim_address) == 0);
+    if (accepted && victim) {
+        (void)neverc_udp_set_read_timeout(victim, 100);
+        /* A candidate path with no budget cannot get its challenge yet. */
+        (void)quic_amp_flush_candidate_path(endpoint, server,
+                                             &victim_address, 0, 0);
+        CHECK(neverc_quic_stream_write(accepted, "pong", 4U) == 4);
+        int count = -2;
+        for (int attempt = 0; attempt < 2000 && count == -2; attempt++) {
+            count = neverc_quic_stream_try_read(stream, buffer,
+                                                sizeof(buffer));
+            if (count == -2)
+                neverc_time_sleep(1 * NEVERC_TIME_MILLISECOND);
+        }
+        CHECK(count == 4 && memcmp(buffer, "pong", 4U) == 0);
+        size_t largest = 0;
+        CHECK(quic_amp_drain(victim, &largest) == 0);
+        quic_amp_clear_candidate_path(endpoint, server);
+    }
+    if (victim) neverc_udp_close(victim);
+
+    neverc_quic_stream_free(accepted);
+    neverc_quic_conn_free(server);
+    neverc_quic_stream_free(stream);
+    if (client) {
+        neverc_quic_conn_close(client, 0U, "path stall test done");
+        neverc_quic_conn_free(client);
+    }
+    neverc_quic_endpoint_close(endpoint);
+    neverc_network_test_remove_certs(&files);
+}
+
 static void quic_test_clienthello_legacy_session_id_empty(void) {
     neverc_quic_config_t config = neverc_quic_config_default();
     config.insecure_skip_verify = 1;
@@ -938,6 +1021,7 @@ int main(void) {
     quic_test_handshake_send_records_released();
     quic_test_key_discard_keeps_no_final_packet();
     quic_test_migration_respects_anti_amplification();
+    quic_test_blocked_path_challenge_keeps_old_path();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");
     return tests_failed == 0 ? 0 : 1;
