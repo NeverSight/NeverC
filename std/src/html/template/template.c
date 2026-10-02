@@ -1375,7 +1375,9 @@ static void html_scan_doc(const char *buf, size_t len,
             if (!seen_name) {
                 if (tlen == 0 && html_is_ascii_ws(c)) { i++; break; }
                 if (tlen == 0 && c == '/') { is_end = 1; i++; break; }
-                if (html_is_tag_name_char(c)) {
+                /* An HTML tag name runs to whitespace, '/', or '>', so
+                 * `<script_x>` or `<title.x>` is not a special element. */
+                if (!html_is_ascii_ws(c) && c != '/' && c != '>') {
                     if (tlen < sizeof(tag) - 1U) tag[tlen++] = (char)c;
                     else tlen = sizeof(tag);
                     i++;
