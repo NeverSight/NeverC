@@ -1004,7 +1004,7 @@ static quic_enc_level_t qt_close_level(struct neverc_quic_conn *conn) {
 
 static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
                             size_t capacity, quic_send_meta_t *meta,
-                            size_t *written) {
+                            size_t *written, int defer_path_probes) {
     size_t position = 0;
     if (conn->close_pending) {
         quic_frame_connection_close_t close_frame;
@@ -1030,7 +1030,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
             return -1;
         meta->control_type = QUIC_FRAME_CONNECTION_CLOSE;
         meta->level = qt_close_level(conn);
-    } else if (conn->path_response_pending) {
+    } else if (conn->path_response_pending && !defer_path_probes) {
         if (capacity >= 9) {
             output[position++] = QUIC_FRAME_PATH_RESPONSE;
             memcpy(output + position, conn->path_response, 8);
@@ -1038,7 +1038,7 @@ static int qt_build_control(struct neverc_quic_conn *conn, uint8_t *output,
             meta->destination = &conn->path_response_addr;
             meta->control_type = QUIC_FRAME_PATH_RESPONSE;
         }
-    } else if (conn->path_challenge_pending) {
+    } else if (conn->path_challenge_pending && !defer_path_probes) {
         if (capacity >= 9) {
             output[position++] = QUIC_FRAME_PATH_CHALLENGE;
             memcpy(output + position, conn->path_challenge, 8);
@@ -1296,13 +1296,14 @@ static int qt_build_pto_probe(struct neverc_quic_conn *conn,
 
 static int qt_build_item(struct neverc_quic_conn *conn, uint8_t *output,
                          size_t capacity, quic_send_meta_t *meta,
-                         size_t *written) {
+                         size_t *written, int defer_path_probes) {
     memset(meta, 0, sizeof(*meta));
     meta->destination = &conn->peer_addr;
     if (conn->state == QUIC_CONN_DRAINING && !conn->close_pending)
         return 0;
     if (conn->close_pending)
-        return qt_build_control(conn, output, capacity, meta, written);
+        return qt_build_control(conn, output, capacity, meta, written,
+                                defer_path_probes);
     int result = qt_build_pto_probe(conn, output, capacity, meta, written);
     if (result != 0) return result;
     result = qt_build_crypto(conn, QUIC_ENC_INITIAL, output, capacity,
@@ -1312,7 +1313,8 @@ static int qt_build_item(struct neverc_quic_conn *conn, uint8_t *output,
                              meta, written);
     if (result != 0) return result;
     if (neverc_quic_tls_get_write_keys(conn->tls, QUIC_ENC_APPLICATION)) {
-        result = qt_build_control(conn, output, capacity, meta, written);
+        result = qt_build_control(conn, output, capacity, meta, written,
+                                  defer_path_probes);
         if (result != 0) return result;
         result = qt_build_datagram(conn, output, capacity, meta, written);
         if (result != 0) return result;
@@ -1770,6 +1772,7 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
         return -1;
     }
     int result = 0;
+    int defer_path_probes = 0;
     for (int attempts = 0; attempts < 32; attempts++) {
         size_t maximum = qt_packet_maximum(conn);
         size_t budget = qt_payload_budget(conn, QUIC_ENC_HANDSHAKE);
@@ -1794,7 +1797,8 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
         if (conn->close_pending) {
             memset(&meta, 0, sizeof(meta));
             meta.destination = &conn->peer_addr;
-            built = qt_build_control(conn, payload, budget, &meta, &payload_len);
+            built = qt_build_control(conn, payload, budget, &meta,
+                                     &payload_len, defer_path_probes);
         } else if (congestion_blocked && conn->pto_probe_pending > 0) {
             memset(&meta, 0, sizeof(meta));
             meta.destination = &conn->peer_addr;
@@ -1820,7 +1824,8 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
                 }
             }
         } else {
-            built = qt_build_item(conn, payload, budget, &meta, &payload_len);
+            built = qt_build_item(conn, payload, budget, &meta,
+                                  &payload_len, defer_path_probes);
         }
         if (built <= 0) {
             free(payload);
@@ -1828,6 +1833,16 @@ int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
         }
         int sent = qt_send_item(conn, payload, payload_len, &meta);
         free(payload);
+        /* RFC 9000 §9.3: a path probe its path's anti-amplification budget
+         * cannot pay for waits for more budget; the validated path keeps
+         * sending meanwhile instead of stalling behind it. */
+        if (sent > 0 && !defer_path_probes &&
+            meta.kind == QUIC_TX_CONTROL &&
+            (meta.control_type == QUIC_FRAME_PATH_CHALLENGE ||
+             meta.control_type == QUIC_FRAME_PATH_RESPONSE)) {
+            defer_path_probes = 1;
+            continue;
+        }
         if (sent != 0)
             break;
     }
