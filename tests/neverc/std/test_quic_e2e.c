@@ -816,6 +816,65 @@ static void quic_test_handshake_send_records_released(void) {
     neverc_network_test_remove_certs(&files);
 }
 
+/* A deferred key discard completes when the last ACK at that level is sent.
+ * If that packet is also ack-eliciting it must not be recorded in the space
+ * that was just dropped: nothing can acknowledge it there, so its probe
+ * timer stays armed forever and the sender keeps probing. */
+static void quic_test_key_discard_keeps_no_final_packet(void) {
+    const char *error = NULL;
+    neverc_udp_conn_t *sink = neverc_udp_listen("127.0.0.1:0", &error);
+    neverc_udp_addr_t sink_address;
+    CHECK(sink != NULL && neverc_udp_local_addr(sink, &sink_address) == 0);
+    if (!sink) return;
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%u",
+                   (unsigned)sink_address.port);
+    neverc_udp_conn_t *udp = neverc_udp_dial(address, &error);
+    neverc_udp_addr_t peer;
+    CHECK(udp != NULL && neverc_udp_resolve_addr(address, &peer) == 0);
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    CHECK(conn != NULL);
+    neverc_quic_config_t config = neverc_quic_config_default();
+    config.insecure_skip_verify = 1;
+    config.server_name = "localhost";
+    quic_conn_id_t dcid;
+    memset(&dcid, 0, sizeof(dcid));
+    dcid.len = 8U;
+    for (uint8_t i = 0; i < dcid.len; i++) dcid.data[i] = (uint8_t)(i + 1U);
+    int configured = conn && udp &&
+        neverc_quic_conn_configure(conn, &config, udp, 1, &peer, NULL,
+                                   &dcid, &dcid, "localhost") == 0;
+    CHECK(configured);
+    if (configured) {
+        udp = NULL; /* owned by the connection now */
+        nc_mutex_lock(&conn->lock);
+        CHECK(neverc_quic_pn_mark_received(&conn->pn[QUIC_PNS_INITIAL],
+                                           0U, 1) >= 0);
+        conn->pn[QUIC_PNS_INITIAL].ack_pending = 1;
+        conn->pending_key_discard |= 1u << QUIC_ENC_INITIAL;
+        nc_mutex_unlock(&conn->lock);
+        /* The ClientHello goes out with the pending Initial ACK. */
+        CHECK(neverc_quic_conn_start_client(conn) == 0);
+        nc_mutex_lock(&conn->lock);
+        CHECK(neverc_quic_tls_get_write_keys(conn->tls,
+                                             QUIC_ENC_INITIAL) == NULL);
+        CHECK(conn->loss.spaces[QUIC_PNS_INITIAL].sent_packets == NULL);
+        CHECK(conn->loss.cc.bytes_in_flight == 0U);
+        int initial_records = 0;
+        for (size_t i = 0; i < QUIC_TX_RECORD_CAPACITY; i++) {
+            if (conn->tx_records[i].used &&
+                conn->tx_records[i].space == QUIC_PNS_INITIAL)
+                initial_records++;
+        }
+        CHECK(initial_records == 0);
+        nc_mutex_unlock(&conn->lock);
+    }
+    neverc_quic_conn_destroy(conn);
+    if (udp) neverc_udp_close(udp);
+    neverc_udp_close(sink);
+}
+
 static void quic_test_clienthello_legacy_session_id_empty(void) {
     neverc_quic_config_t config = neverc_quic_config_default();
     config.insecure_skip_verify = 1;
@@ -877,6 +936,7 @@ int main(void) {
     quic_test_endpoint_close_finishes_accepted(0);
     quic_test_endpoint_close_finishes_accepted(1);
     quic_test_handshake_send_records_released();
+    quic_test_key_discard_keeps_no_final_packet();
     quic_test_migration_respects_anti_amplification();
     printf("quic-e2e: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");
