@@ -719,8 +719,27 @@ static int zip_writer_data_offset(
     return 1;
 }
 
-int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
-                          const uint8_t *data, size_t len) {
+/* Compresses data for a Deflate entry into a new buffer. Returns NULL when
+ * DEFLATE would not make the entry smaller (or cannot run), in which case the
+ * entry is stored instead, as mainstream archivers do. */
+static uint8_t *zip_writer_deflate(const uint8_t *data, size_t len,
+                                   size_t *packed_len) {
+    /* Compressed DEFLATE levels accept at most UINT32_MAX input bytes. */
+    if (len < 2U || len > UINT32_MAX) return NULL;
+    uint8_t *packed = (uint8_t *)malloc(len - 1U);
+    if (!packed) return NULL;
+    *packed_len = len - 1U;
+    if (neverc_flate_compress(data, len, packed, packed_len,
+                              NEVERC_FLATE_DEFAULT) != 0) {
+        free(packed);
+        return NULL;
+    }
+    return packed;
+}
+
+static int zip_writer_add_entry(neverc_zip_writer_t *w, const char *name,
+                                const uint8_t *data, size_t len,
+                                uint16_t method) {
     if (!w || !name || zip_writer_is_closed(w) ||
         zip_writer_has_failed(w) ||
         (!data && len != 0) || len > UINT32_MAX ||
@@ -745,21 +764,38 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
     int data_aliases_output =
         zip_writer_data_offset(w, data, len, &data_offset);
     uint32_t crc = neverc_crc32_ieee(data, len);
-    if (!wgrow(w, record_len)) return -1;
+
+    /* Compress before growing the output: data may be a view into it. A
+     * directory never carries data, so it is always Stored (as in Go). */
+    size_t packed_len = 0;
+    uint8_t *packed = method == NEVERC_ZIP_DEFLATED
+        ? zip_writer_deflate(data, len, &packed_len) : NULL;
+    size_t payload_len = packed ? packed_len : len;
+    if (packed) record_len = 30U + name_size + packed_len;
+    if (!wgrow(w, record_len)) {
+        free(packed);
+        return -1;
+    }
     if (data_aliases_output) data = w->data + data_offset;
 
     /* Copy data before writing its header so even an overlapping view into the
      * writer allocation observes the bytes supplied at call entry. */
     uint8_t *p = w->data + w->len;
-    if (len > 0) memmove(p + 30 + name_len, data, len);
+    if (packed) {
+        memcpy(p + 30 + name_len, packed, packed_len);
+        free(packed);
+    } else if (len > 0) {
+        memmove(p + 30 + name_len, data, len);
+    }
+    uint16_t entry_method = packed ? NEVERC_ZIP_DEFLATED : NEVERC_ZIP_STORED;
     write32(p, 0x04034b50);
     write16(p + 4, 20);
     write16(p + 6, zip_name_flags(name_copy, name_size));
-    write16(p + 8, NEVERC_ZIP_STORED);
+    write16(p + 8, entry_method);
     write16(p + 10, 0);
     write16(p + 12, 0);
     write32(p + 14, crc);
-    write32(p + 18, (uint32_t)len);
+    write32(p + 18, (uint32_t)payload_len);
     write32(p + 22, (uint32_t)len);
     write16(p + 26, name_len);
     write16(p + 28, 0);
@@ -772,14 +808,27 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
     neverc_zip_file_header_t *e = &w->entries[w->nentries];
     memset(e, 0, sizeof(*e));
     memcpy(e->name, name_copy, name_len < 255 ? name_len : 255);
-    e->method = NEVERC_ZIP_STORED;
+    e->method = entry_method;
     e->crc32 = crc;
-    e->compressed_size = len;
+    e->compressed_size = payload_len;
     e->uncompressed_size = len;
     w->nentries++;
-    w->len += 30 + name_len + len;
+    w->len += 30 + name_len + payload_len;
 
     return 0;
+}
+
+int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
+                          const uint8_t *data, size_t len) {
+    return zip_writer_add_entry(w, name, data, len, NEVERC_ZIP_STORED);
+}
+
+int neverc_zip_writer_add_method(neverc_zip_writer_t *w, const char *name,
+                                 const uint8_t *data, size_t len,
+                                 uint16_t method) {
+    if (method != NEVERC_ZIP_STORED && method != NEVERC_ZIP_DEFLATED)
+        return -1;
+    return zip_writer_add_entry(w, name, data, len, method);
 }
 
 int neverc_zip_writer_close(neverc_zip_writer_t *w) {

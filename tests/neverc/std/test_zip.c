@@ -1629,6 +1629,109 @@ static void test_zip64_reader(void) {
               zip64_reads(archive, n, "", 0), -2);
 }
 
+static void test_deflate_writer(void) {
+    printf("[deflate writer]\n");
+    enum { text_len = 300000 };
+    uint8_t *text = (uint8_t *)malloc(text_len);
+    uint8_t *noise = (uint8_t *)malloc(4096);
+    uint8_t *out = (uint8_t *)malloc(text_len);
+    if (!text || !noise || !out) {
+        check_int("deflate writer allocation", 0, 1);
+        free(text);
+        free(noise);
+        free(out);
+        return;
+    }
+    for (size_t i = 0; i < text_len; i++)
+        text[i] = (uint8_t)"line of compressible text\n"[i % 26U];
+    uint32_t state = 0x12345678U;
+    for (size_t i = 0; i < 4096; i++) {
+        state = state * 1103515245U + 12345U;
+        noise[i] = (uint8_t)(state >> 24);
+    }
+
+    neverc_zip_writer_t w;
+    neverc_zip_writer_init(&w);
+    check_int("reject unknown method",
+              neverc_zip_writer_add_method(&w, "x", text, 10, 12), -1);
+    int ok =
+        neverc_zip_writer_add_method(&w, "text.txt", text, text_len,
+                                     NEVERC_ZIP_DEFLATED) == 0 &&
+        neverc_zip_writer_add_method(&w, "noise.bin", noise, 4096,
+                                     NEVERC_ZIP_DEFLATED) == 0 &&
+        neverc_zip_writer_add_method(&w, "empty.txt", NULL, 0,
+                                     NEVERC_ZIP_DEFLATED) == 0 &&
+        neverc_zip_writer_add_method(&w, "dir/", NULL, 0,
+                                     NEVERC_ZIP_DEFLATED) == 0 &&
+        neverc_zip_writer_add_method(&w, "stored.txt", text, 100,
+                                     NEVERC_ZIP_STORED) == 0;
+    check_int("deflate writer adds", ok, 1);
+    /* Data may alias the writer's own output, as with writer_add: here the
+     * stored.txt payload that was just written. */
+    uint8_t alias_copy[100];
+    if (ok) {
+        const uint8_t *view = w.data + w.len - sizeof(alias_copy);
+        memcpy(alias_copy, view, sizeof(alias_copy));
+        ok = neverc_zip_writer_add_method(&w, "alias.bin", view,
+                                          sizeof(alias_copy),
+                                          NEVERC_ZIP_DEFLATED) == 0;
+    }
+    check_int("deflate writer aliased add", ok, 1);
+    ok = ok && neverc_zip_writer_close(&w) == 0;
+    check_int("deflate writer close", ok, 1);
+    if (!ok) {
+        neverc_zip_writer_free(&w);
+        free(text);
+        free(noise);
+        free(out);
+        return;
+    }
+    check_int("deflate writer shrinks archive", w.len < text_len / 10U, 1);
+
+    neverc_zip_reader_t r;
+    check_int("deflate writer output reads",
+              neverc_zip_reader_init(&r, w.data, w.len), 0);
+    check_int("deflate writer entry count", neverc_zip_reader_count(&r), 6);
+    static const uint16_t methods[6] = {
+        NEVERC_ZIP_DEFLATED, NEVERC_ZIP_STORED, NEVERC_ZIP_STORED,
+        NEVERC_ZIP_STORED, NEVERC_ZIP_STORED, NEVERC_ZIP_DEFLATED
+    };
+    static const char *const names[6] = {
+        "text.txt", "noise.bin", "empty.txt", "dir/", "stored.txt",
+        "alias.bin"
+    };
+    for (int i = 0; i < neverc_zip_reader_count(&r) && i < 6; i++) {
+        const neverc_zip_file_header_t *f = neverc_zip_reader_file(&r, i);
+        check_str("deflate writer name", f ? f->name : NULL, names[i]);
+        check_int("deflate writer method", f ? f->method : -1, methods[i]);
+    }
+    const neverc_zip_file_header_t *f = neverc_zip_reader_file(&r, 0);
+    check_int("deflate writer compressed smaller",
+              f && f->compressed_size < f->uncompressed_size / 10U, 1);
+    size_t got = text_len;
+    check_int("deflate writer text read",
+              neverc_zip_reader_file_read(&r, 0, out, &got), 0);
+    check_int("deflate writer text content",
+              got == text_len && memcmp(out, text, text_len) == 0, 1);
+    got = 4096;
+    check_int("incompressible entry read",
+              neverc_zip_reader_file_read(&r, 1, out, &got), 0);
+    check_int("incompressible entry content",
+              got == 4096 && memcmp(out, noise, 4096) == 0, 1);
+    got = sizeof(alias_copy);
+    check_int("aliased deflate entry read",
+              neverc_zip_reader_file_read(&r, 5, out, &got), 0);
+    check_int("aliased deflate entry content",
+              got == sizeof(alias_copy) &&
+                  memcmp(out, alias_copy, sizeof(alias_copy)) == 0,
+              1);
+    neverc_zip_reader_free(&r);
+    neverc_zip_writer_free(&w);
+    free(text);
+    free(noise);
+    free(out);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
@@ -1645,6 +1748,7 @@ int main(void) {
     test_zip64_sentinels();
     test_deflate_reader();
     test_zip64_reader();
+    test_deflate_writer();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;

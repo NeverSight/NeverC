@@ -6,7 +6,8 @@
  *
  * Supports single-disk ZIP archives, including ZIP64 end records and ZIP64
  * extended-information fields. Readers accept the Stored (no-compression)
- * and Deflate methods; writers produce Stored entries. Readers validate the
+ * and Deflate methods; writers produce Stored entries, or Deflate entries
+ * through writer_add_method. Readers validate the
  * central directory, local headers, bounds, data descriptors, and
  * non-overlapping local records before exposing file data. Stored entries
  * are CRC-32 checked by reader_init; Deflate entries are inflated and
@@ -87,8 +88,18 @@ typedef struct {
  * reinitializing a writer that has been used. Input name/data passed to add are
  * copied and need only remain valid for the duration of that call. */
 void neverc_zip_writer_init(neverc_zip_writer_t *w);
+/* Adds a Stored entry. Returns 0 on success or -1 on error. */
 int  neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
                            const uint8_t *data, size_t len);
+/* Like writer_add with an explicit compression method (mirrors Go's
+ * FileHeader.Method): NEVERC_ZIP_STORED or NEVERC_ZIP_DEFLATED; any other
+ * method returns -1. Deflate entries are compressed at the default flate
+ * level. An entry DEFLATE would not make smaller (including empty entries
+ * and directories) is written as Stored instead, so the entry's recorded
+ * method may differ from the requested one. */
+int  neverc_zip_writer_add_method(neverc_zip_writer_t *w, const char *name,
+                                  const uint8_t *data, size_t len,
+                                  uint16_t method);
 int  neverc_zip_writer_close(neverc_zip_writer_t *w);
 void neverc_zip_writer_free(neverc_zip_writer_t *w);
 
