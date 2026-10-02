@@ -936,7 +936,12 @@ static int os_remove_dir_contents(int dir_fd) {
 #endif
         int child_fd = openat(dir_fd, entry->d_name, open_flags);
         if (child_fd < 0) {
-            if (errno != ENOENT) result = -1;
+            /* Go os.RemoveAll: a directory that cannot be opened (no read
+             * permission) is still removed when it is empty. */
+            if (errno != ENOENT &&
+                unlinkat(dir_fd, entry->d_name, AT_REMOVEDIR) != 0 &&
+                errno != ENOENT)
+                result = -1;
             continue;
         }
 
@@ -1115,8 +1120,15 @@ int neverc_os_remove_all(const char *path) {
 #endif
     int root_fd = open(clean_path, open_flags);
     if (root_fd < 0) {
+        /* As for children: an unreadable but empty directory still goes. */
+        int open_err = errno;
+        int result = 0;
+        if (open_err != ENOENT && rmdir(clean_path) != 0 && errno != ENOENT) {
+            errno = open_err;
+            result = -1;
+        }
         free(clean_path);
-        return -1;
+        return result;
     }
     struct stat opened;
     int result =
