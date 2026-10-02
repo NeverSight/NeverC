@@ -1204,13 +1204,15 @@ static int h2_client_reader_frame(neverc_h2_client_t *client,
             nc_cond_broadcast(&stream->changed);
             client->conn_recv_window -= (int32_t)header->length;
             client->conn_recv_window += (int32_t)header->length;
+            /* The waiter may destroy the finished stream as soon as the
+             * lock is released, so the reset code must be read first. */
+            uint32_t reset_code = stream->error_code;
             nc_mutex_unlock(&client->state_lock);
             if (header->length > 0)
                 (void)h2_client_write_u32(
                     client, NC_H2_FRAME_WINDOW_UPDATE, 0, header->length);
             (void)h2_client_write_u32(client, NC_H2_FRAME_RST_STREAM,
-                                      header->stream_id,
-                                      stream->error_code);
+                                      header->stream_id, reset_code);
             return 0;
         }
         client->conn_recv_window -= (int32_t)header->length;
