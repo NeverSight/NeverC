@@ -949,8 +949,8 @@ The owning graph also admits a single public copy taking exactly mutable
 `Record&` at a nontrivial node. That copy may be implicit, defaulted, ordinary
 or deleted. Each such node has no bases or conversion functions. Besides its
 exact move, it may have nonvariadic zero-parameter default constructors or
-ordinary constructors taking exactly one admitted scalar by value or reference,
-optionally with a default argument. The graph retains the original declarations
+ordinary constructors taking one or more admitted scalars by value or reference,
+optionally with default arguments. The graph retains the original declarations
 behind implicit mutable copies through nested value members and fixed arrays,
 including copies deleted after declaring a move constructor or move assignment.
 Mutable and const queries on these owners preserve `Record&&` and
@@ -1035,19 +1035,22 @@ declaration takes exactly mutable `Record&`. The copy must be written, including
 ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases or conversion
 functions. Other constructors may be a move, a nonvariadic zero-parameter
-default constructor, or an ordinary nonvariadic constructor with exactly one
-admitted scalar parameter, by value or by lvalue/rvalue reference. The scalar
+default constructor, or an ordinary nonvariadic constructor whose parameters
+are all admitted scalars, by value or by lvalue/rvalue reference. The scalar
 type includes integers and enums up to 64 bits, `float`, `double`, pointers and
 `decltype(nullptr)`. References may bind a const scalar; volatile, restricted,
 atomic and nondefault-address-space referents remain outside this proof.
-Every parameter keeps the profile's ordinary type-source checks. Multiple such
-overloads, private or deleted constructors, and default arguments are included.
+Every parameter keeps the profile's ordinary type-source checks, including
+aliases and qualifiers on later parameters. Multiple such overloads, private
+or deleted constructors, required arguments and default arguments are included.
+All parameters may have defaults. The first scalar parameter cannot consume
+`const Record&` without a conversion function, regardless of later defaults.
 Constructor templates, inherited constructors, extra copy/move parameters,
 additional copy overloads, and other value constructors retain separate
 requirements. In particular, record value or reference parameters can introduce
 their own conversion from `const Record&`, including a temporary bound to a
-const or rvalue reference. Array/function references and multiple-parameter
-constructors also remain outside this bounded proof. Without a constructor
+const or rvalue reference. A record or array/function reference in any parameter
+position remains outside this bounded proof. Without a constructor
 that can consume `const Record&`, the pinned copy trait is false for mutable
 and const objects, preserving `Record&&` and `const Record&&` respectively.
 No query copies from the operand, modifies it or instantiates a hypothetical
@@ -1056,7 +1059,8 @@ signature, including every redeclaration, retains its original sources such
 as parameter aliases and exception expressions. An unused concrete template
 scalar constructor may retain its exact nondependent written exception source
 without instantiating its body; unresolved dependent exception sources still
-require a separate proof. Unused template defaults remain lazy. Actual value
+require a separate proof. Unused template defaults remain lazy, including
+multiple dependent defaults that the query does not select. Actual value
 construction, selected defaults, mutable copies, moves and generated member
 operations retain their ordinary source checks and preserve any changes they
 make to the copied-from object. Scalar reference arguments retain their original

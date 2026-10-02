@@ -3177,18 +3177,24 @@ static bool utilityScalarParameterConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
-      Constructor->getNumParams() != 1)
+      Constructor->getNumParams() == 0)
     return false;
-  const auto Type =
-      Constructor->getParamDecl(0)->getType().getNonReferenceType();
-  return !Type->isDependentType() && !Type.isVolatileQualified() &&
-         !Type.isRestrictQualified() && !Type->isAtomicType() &&
-         Type.getAddressSpace() == LangAS::Default &&
-         ((Type->isIntegralOrEnumerationType() &&
-           A.Context.getTypeSize(Type) <= 64) ||
-          Type->isSpecificBuiltinType(BuiltinType::Float) ||
-          Type->isSpecificBuiltinType(BuiltinType::Double) ||
-          Type->isPointerType() || Type->isNullPtrType());
+  for (const auto *Parameter : Constructor->parameters()) {
+    A.chargeExpansion(1, Parameter->getLocation());
+    const auto Type = Parameter->getType().getNonReferenceType();
+    const bool Scalar =
+        !Type->isDependentType() && !Type.isVolatileQualified() &&
+        !Type.isRestrictQualified() && !Type->isAtomicType() &&
+        Type.getAddressSpace() == LangAS::Default &&
+        ((Type->isIntegralOrEnumerationType() &&
+          A.Context.getTypeSize(Type) <= 64) ||
+         Type->isSpecificBuiltinType(BuiltinType::Float) ||
+         Type->isSpecificBuiltinType(BuiltinType::Double) ||
+         Type->isPointerType() || Type->isNullPtrType());
+    if (!Scalar)
+      return false;
+  }
+  return true;
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
@@ -3225,7 +3231,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
       : ScalarConstructor ? OriginConstructor &&
                                 !OriginConstructor->isCopyOrMoveConstructor() &&
                                 !OriginConstructor->isVariadic() &&
-                                OriginConstructor->getNumParams() == 1
+                                OriginConstructor->getNumParams() ==
+                                    Constructor->getNumParams()
                    : OriginConstructor &&
                          OriginConstructor->isCopyConstructor() ==
                              Constructor->isCopyConstructor() &&
@@ -3271,10 +3278,11 @@ static bool utilityMutableCopyConditionalMoveSource(
     std::vector<const CXXMethodDecl *> *Signatures) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths, including record value/reference parameters that can
-  // consume a converting temporary. A scalar value or reference parameter
-  // cannot consume this record without a conversion function. Retain each
-  // such constructor's written signatures; callers separately check copy/move
-  // overloads and sources.
+  // consume a converting temporary. A scalar first parameter cannot consume
+  // this record without a conversion function, even if later parameters have
+  // defaults. Keep all parameters within the admitted scalar shape and retain
+  // every written signature; callers separately check copy/move overloads
+  // and sources.
   if (Record->getNumBases() != 0)
     return false;
   for (const auto *Declaration : Record->decls()) {
