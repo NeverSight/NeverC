@@ -70039,6 +70039,241 @@ struct C{int value;int other;int run(int n)noexcept{return value+n;}};
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedMemberPointerUsesRunAtBothOptimizations) {
+  const auto Source = tmpFile("nested-member-pointer-uses.cpp");
+  const auto Output = tmpFile("nested-member-pointer-uses.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <tuple>
+#include <array>
+namespace Imported { using std::move, std::forward, std::as_const, std::move_if_noexcept; }
+namespace Reexport { using Imported::move, Imported::forward, Imported::as_const, Imported::move_if_noexcept; }
+int receivers, arguments, calls, live, destroyed;
+using Callback = int (*)(int) noexcept;
+int one(int n) noexcept { return n + 1; }
+struct Box { int value; };
+struct C {
+  int value;
+  const int fixed;
+  int *pointer;
+  Callback callback;
+  int run(short n) & noexcept { ++calls; return value + n; }
+  long read(short n) const { ++calls; return value + n; }
+  int &slot() & noexcept { ++calls; return value; }
+  int &&moved() && noexcept { ++calls; return static_cast<int &&>(value); }
+  void set(int n) noexcept { ++calls; value = n; }
+  Box copy(Box n) const noexcept { ++calls; return Box{value + n.value}; }
+};
+struct Ticket { Ticket() noexcept { ++live; } ~Ticket() noexcept { --live; ++destroyed; } };
+int argument(Ticket t = Ticket()) noexcept { ++arguments; return 4; }
+C &receiver(C &c) noexcept { ++receivers; return c; }
+int drops;
+struct Lifetime { int value; ~Lifetime() noexcept { ++drops; } int take(int n) && { return value+n; } };
+int main() {
+  int number = 1;
+  C c{10, 20, &number, one};
+  const C constant{30, 40, &number, one};
+  auto original = &C::run;
+  const auto copied = original;
+  auto run = Reexport::move(copied);
+  auto wrapped = std::ref(c);
+  auto readonly = std::cref(constant);
+  if (std::invoke(Reexport::move(Reexport::as_const(run)), c, 1) != 11 ||
+      std::invoke(Reexport::forward<decltype(run)>(Reexport::move(run)), &c, 2) != 12 ||
+      std::invoke(Reexport::move_if_noexcept(Reexport::as_const(run)), wrapped, 3) != 13 ||
+      std::invoke(Reexport::as_const(Reexport::forward<decltype(run)&>(run)), c, 4) != 14 ||
+      std::invoke(Reexport::forward<const decltype(run)&&>(Reexport::move(
+          Reexport::as_const(Reexport::forward<decltype(run)&>(run)))), c, 5) != 15 ||
+      std::invoke(Reexport::move(Reexport::move(&C::run)), c, 6) != 16)
+    return 1;
+  if ((c.*Reexport::move(Reexport::as_const(run)))(1) != 11 ||
+      ((&c)->*Reexport::forward<decltype(run)>(Reexport::move(run)))(2) != 12 ||
+      (c.*Reexport::as_const(Reexport::forward<decltype(run)&>(run)))(3) != 13 ||
+      ((&c)->*Reexport::move_if_noexcept(Reexport::as_const(run)))(4) != 14 ||
+      (c.*Reexport::move(Reexport::move(&C::run)))(5) != 15)
+    return 2;
+  auto field = &C::value;
+  std::invoke(Reexport::move(Reexport::as_const(field)), c) = 11;
+  c.*Reexport::forward<decltype(field)>(Reexport::move(field)) = 12;
+  (&c)->*Reexport::move_if_noexcept(Reexport::as_const(field)) = 13;
+  int &alias = std::invoke(Reexport::as_const(Reexport::forward<decltype(field)&>(field)), wrapped);
+  alias = 14;
+  if (&alias != &c.value || c.value != 14 ||
+      std::invoke(Reexport::move(Reexport::as_const(field)), readonly) != 30 ||
+      constant.*Reexport::move(Reexport::as_const(field)) != 30 ||
+      std::invoke(Reexport::move(Reexport::move(&C::fixed)), constant) != 40 ||
+      C{50,60,nullptr,one}.*Reexport::move(Reexport::move(&C::value)) != 50)
+    return 3;
+  auto read = &C::read;
+  auto slot = &C::slot;
+  auto moved = &C::moved;
+  auto set = &C::set;
+  auto copy = &C::copy;
+  std::invoke(Reexport::move(Reexport::as_const(slot)), c) = 15;
+  (c.*Reexport::move(Reexport::as_const(set)))(16);
+  Box result = std::invoke(Reexport::move_if_noexcept(Reexport::as_const(copy)), constant, Box{2});
+  if (std::invoke(Reexport::as_const(Reexport::forward<decltype(read)&>(read)), readonly, 1) != 31 ||
+      std::invoke(Reexport::move(Reexport::move(moved)), C{50,60,nullptr,one}) != 50 ||
+      (C{51,60,nullptr,one}.*Reexport::move(Reexport::move(moved)))() != 51 ||
+      result.value != 32) return 4;
+  auto pointer = &C::pointer;
+  auto callback = &C::callback;
+  if (std::invoke(Reexport::move(Reexport::as_const(pointer)), constant) != &number ||
+      std::invoke(Reexport::move_if_noexcept(Reexport::as_const(callback)), readonly)(2) != 3 ||
+      (constant.*Reexport::move(Reexport::as_const(callback)))(3) != 4) return 5;
+  // The factory authenticates the same terminal member through every adapter.
+  auto method = std::mem_fn(Reexport::move(Reexport::as_const(run)));
+  auto get = std::mem_fn(Reexport::forward<decltype(field)>(Reexport::move(field)));
+  auto method_copy = Reexport::move(Reexport::as_const(method));
+  auto temporary_factory = Reexport::move(std::mem_fn(Reexport::move(Reexport::as_const(run))));
+  if (method(c, 1) != 17 || std::invoke(method_copy, &c, 2) != 18 ||
+      temporary_factory(wrapped, 3) != 19 ||
+      std::mem_fn(Reexport::move_if_noexcept(Reexport::as_const(read)))(readonly, 1) != 31 ||
+      std::mem_fn(Reexport::move(Reexport::move(&C::run)))(c, 4) != 20)
+    return 6;
+  get(c) = 17;
+  std::mem_fn(Reexport::move(Reexport::as_const(field)))(wrapped) = 18;
+  if (c.value != 18 || get(constant) != 30) return 7;
+  std::tuple<C*, int> args(&c, 1);
+  std::pair<C*, int> pair(&c, 2);
+  std::array<C*, 1> pointers{&c};
+  std::tuple<std::reference_wrapper<C>, int> wrapped_args(wrapped, 3);
+  if (std::apply(Reexport::move(Reexport::as_const(run)), args) != 19 ||
+      std::apply(Reexport::forward<decltype(run)>(Reexport::move(run)), pair) != 20 ||
+      std::apply(Reexport::move_if_noexcept(Reexport::as_const(run)), wrapped_args) != 21 ||
+      std::apply(Reexport::move(Reexport::move(&C::run)), args) != 19 ||
+      std::apply(temporary_factory, args) != 19)
+    return 8;
+  std::apply(Reexport::as_const(Reexport::forward<decltype(field)&>(field)), pointers) = 19;
+  std::apply(Reexport::move(Reexport::as_const(field)), std::make_tuple(&c)) = 20;
+  if (c.value != 20) return 9;
+  receivers = arguments = calls = live = destroyed = 0;
+  const int invoked = std::invoke(Reexport::move(Reexport::as_const(run)), receiver(c), argument());
+  if (invoked != 24 || receivers != 1 || arguments != 1 || calls != 1 || live || destroyed != 1)
+    return 10;
+  const int native = (receiver(c).*Reexport::move(Reexport::as_const(run)))(argument());
+  if (native != 24 || receivers != 2 || arguments != 2 || calls != 2 || live || destroyed != 2)
+    return 11;
+  const int factory = temporary_factory(receiver(c), argument());
+  if (factory != 24 || receivers != 3 || arguments != 3 || calls != 3 || live || destroyed != 3)
+    return 12;
+  auto take = &Lifetime::take;
+  auto life_field = &Lifetime::value;
+  const int first = (Lifetime{50}.*Reexport::move(Reexport::as_const(take)))(1);
+  if (first != 51 || drops != 1) return 13;
+  const int second = std::invoke(Reexport::move(Reexport::as_const(take)), Lifetime{60}, 2);
+  if (second != 62 || drops != 2) return 14;
+  const int third = std::mem_fn(Reexport::move(Reexport::as_const(take)))(Lifetime{70}, 3);
+  if (third != 73 || drops != 3) return 15;
+  {
+    const int &extended = Lifetime{80}.*Reexport::move(Reexport::as_const(life_field));
+    if (extended != 80 || drops != 3) return 16;
+  }
+  return drops == 4 ? 0 : 17;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Generated.find("__apply_tuple_impl"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-member-pointer-uses" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedMemberPointerUsesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"invoke-inner-move-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}int f(C&c){auto p=&C::run;return std::invoke(std::forward<decltype(p)>(std::move(p)),c,1);}
+)cpp", "TR0201"},
+      {"native-inner-forward-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>T&&forward(typename remove_reference<T>::type&)noexcept;}}int f(C&c){auto p=&C::run;return (c.*std::move(std::forward<decltype(p)&>(p)))(1);}
+)cpp", "TR0201"},
+      {"mem-fn-inner-as-const-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}int f(C&c){auto p=&C::value;auto m=std::mem_fn(std::move(std::as_const(p)));return m(c);}
+)cpp", "TR0201"},
+      {"apply-inner-move-if-noexcept-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr __move_if_noexcept_result_t<T>move_if_noexcept(T&)noexcept;}}int f(C&c){auto p=&C::value;std::tuple<C*>args(&c);return std::apply(std::move(std::move_if_noexcept(p)),args);}
+)cpp", "TR0201"},
+      {"outer-move-specialization", R"cpp(
+namespace std{inline namespace __1{template<>auto move<int C::*&>(int C::*&p)noexcept->int C::*&&{return static_cast<int C::*&&>(p);}}}int f(C&c){auto p=&C::value;return std::invoke(std::move(std::forward<decltype(p)&>(p)),c);}
+)cpp", "TR0201"},
+      {"inner-forward-specialization", R"cpp(
+namespace std{inline namespace __1{template<>auto forward<int C::*&>(int C::*&p)noexcept->int C::*&{return p;}}}int f(C&c){auto p=&C::value;return c.*std::move(std::forward<decltype(p)&>(p));}
+)cpp", "TR0201"},
+      {"invoke-inner-written-type", R"cpp(
+int f(C&c){auto p=&C::value;return std::invoke(std::move(std::forward<decltype((sizeof(long double),p))>(p)),c);}
+)cpp", "TR0201"},
+      {"native-outer-written-type", R"cpp(
+int f(C&c){auto p=&C::value;return c.*std::move<decltype((sizeof(long double),std::as_const(p)))>(std::as_const(p));}
+)cpp", "TR0201"},
+      {"unused-mem-fn-inner-written-type", R"cpp(
+int f(C&c){auto p=&C::value;auto m=std::mem_fn(std::move(std::forward<decltype((sizeof(long double),p))>(p)));return 0;}
+)cpp", "TR0201"},
+      {"apply-inner-written-type", R"cpp(
+int f(C&c){auto p=&C::value;std::tuple<C*>args(&c);return std::apply(std::move(std::forward<decltype((sizeof(long double),p))>(p)),args);}
+)cpp", "TR0201"},
+      {"unrelated-member-written-type", R"cpp(
+int f(C&c){auto p=&C::value;auto other=&C::other;return std::invoke(std::move(std::forward<decltype(other)&>(p)),c);}
+)cpp", "TR0201"},
+      {"independent-member-pointer-type", R"cpp(
+int f(C&c){auto p=&C::value;int n=std::invoke(std::move(std::forward<decltype(p)&>(p)),c);using P=decltype(p);return n;}
+)cpp", "TR0201"},
+      {"terminal-side-effect", R"cpp(
+int effects;int f(C&c){auto p=&C::value;return std::invoke(std::move(std::as_const((++effects,p))),c);}
+)cpp", "TR0201"},
+      {"parameter-source", R"cpp(
+int f(int C::*p,C&c){return c.*std::move(std::as_const(p));}
+)cpp", "TR0201"},
+      {"reassigned-source", R"cpp(
+int f(C&c){auto p=&C::value;p=&C::other;auto m=std::mem_fn(std::move(std::as_const(p)));return m(c);}
+)cpp", "TR0201"},
+      {"null-source", R"cpp(
+int f(C&c){int C::*p=nullptr;std::tuple<C*>args(&c);return std::apply(std::move(std::as_const(p)),args);}
+)cpp", "TR0201"},
+      {"volatile-receiver", R"cpp(
+int f(volatile C&c){auto p=&C::value;return c.*std::move(std::as_const(p));}
+)cpp", "TR0201"},
+      {"missing-method", R"cpp(
+struct Missing{int run(int);};int f(Missing&c){auto p=&Missing::run;return (c.*std::move(std::as_const(p)))(1);}
+)cpp", "TR0203"},
+      {"nested-member-pointer-initializer", R"cpp(
+int f(C&c){auto p=&C::value;auto q=std::move(std::as_const(p));return std::invoke(q,c);}
+)cpp", "TR0201"},
+      {"invoke-query-remains-separate", R"cpp(
+int f(C&c){auto p=&C::run;int n=std::invoke(std::move(std::as_const(p)),c,1);static_assert(__is_same(decltype(std::invoke(std::move(std::as_const(p)),c,1)),int));return n;}
+)cpp", "TR0201"},
+      {"mem-fn-factory-query-remains-separate", R"cpp(
+int f(C&c){auto p=&C::run;auto m=std::mem_fn(std::move(std::as_const(p)));int n=m(c,1);static_assert(__is_same(decltype(m(c,1)),int));return n;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("nested-member-use-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("nested-member-use-reject-") + Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <tuple>
+struct C{int value;int other;int run(int n)noexcept{return value+n;}};
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NestedMemFnAdaptersRunAtBothOptimizations) {
   const auto Source = tmpFile("nested-mem-fn-adapters.cpp");
   const auto Output = tmpFile("nested-mem-fn-adapters.nc");
@@ -70245,9 +70480,6 @@ int arg(int n=sizeof(long double))noexcept{return n;}int f(C&c){auto m=std::mem_
       {"missing-temporary-destructor", R"cpp(
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(C&c){auto m=std::mem_fn(&C::run);int n=std::invoke(std::move(std::as_const(m)),c,1);static_assert(__is_same(decltype(std::invoke(std::move(std::as_const(m)),c,arg())),int));return n;}
 )cpp", "TR0203"},
-      {"apply-raw-member-adapter-chain", R"cpp(
-int f(C&c){auto p=&C::value;std::tuple<C*>args(&c);return std::apply(std::move(std::as_const(p)),args);}
-)cpp", "TR0201"},
       {"apply-inner-written-template-argument", R"cpp(
 int f(C&c){auto m=std::mem_fn(&C::value);std::tuple<C*>args(&c);return std::apply(std::move(std::forward<decltype((sizeof(long double),m))>(m)),args);}
 )cpp", "TR0201"},

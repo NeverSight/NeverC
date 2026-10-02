@@ -10877,27 +10877,36 @@ approvedFunctionalStoredMemberPointer(
   return std::nullopt;
 }
 
-static std::pair<const UnaryOperator *, const ValueDecl *>
-functionalStoredMemberExpression(const State &S, const SourceManager &SM,
-                                 const Expr *Expression,
-                                 const ASTContext &Context) {
-  if (auto Direct = functionalMemberAddress(S, SM, Expression, Context);
-      Direct.first)
-    return Direct;
+static const Expr *functionalAdaptedCallable(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ASTContext &Context, std::vector<const CallExpr *> &Adapters) {
   Expression = functionalInvokeStrippedExpression(Expression);
-  if (const auto *Adapter = dyn_cast_or_null<CallExpr>(Expression)) {
-    const auto Operation = approvedUtilityOperation(S, SM, Adapter, Context);
-    if (!Operation || Adapter->getNumArgs() != 1 ||
+  // Retain each actual adapter rather than only the outermost reference cast.
+  // Callers still authenticate the terminal factory/member and forwarding path.
+  for (unsigned Depth = 0; Depth < 64; ++Depth) {
+    const auto *Candidate = dyn_cast_or_null<CallExpr>(Expression);
+    const auto Operation = approvedUtilityOperation(S, SM, Candidate, Context);
+    if (!Operation || Candidate->getNumArgs() != 1 ||
         (*Operation != UtilityOperation::Move &&
          *Operation != UtilityOperation::Forward &&
          *Operation != UtilityOperation::MoveIfNoexcept &&
          *Operation != UtilityOperation::AsConst))
-      return {};
-    Expression = functionalInvokeStrippedExpression(Adapter->getArg(0));
-    if (auto Direct = functionalMemberAddress(S, SM, Expression, Context);
-        Direct.first)
-      return Direct;
+      return Expression;
+    Adapters.push_back(Candidate);
+    Expression = functionalInvokeStrippedExpression(Candidate->getArg(0));
   }
+  return nullptr;
+}
+
+static std::pair<const UnaryOperator *, const ValueDecl *>
+functionalStoredMemberExpression(const State &S, const SourceManager &SM,
+                                 const Expr *Expression,
+                                 const ASTContext &Context) {
+  std::vector<const CallExpr *> Adapters;
+  Expression = functionalAdaptedCallable(S, SM, Expression, Context, Adapters);
+  if (auto Direct = functionalMemberAddress(S, SM, Expression, Context);
+      Direct.first)
+    return Direct;
   const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Expression);
   const auto *Variable =
       Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
@@ -10938,27 +10947,6 @@ approvedNativeDataMemberPointerAccess(
                                        ObjectIsPointer};
 }
 
-static const Expr *functionalMemFnAdaptedUse(
-    const State &S, const SourceManager &SM, const Expr *Expression,
-    const ASTContext &Context, std::vector<const CallExpr *> &Adapters) {
-  Expression = functionalInvokeStrippedExpression(Expression);
-  // Retain each actual adapter rather than only the outermost reference cast.
-  // Callers still authenticate the terminal factory/member and forwarding path.
-  for (unsigned Depth = 0; Depth < 64; ++Depth) {
-    const auto *Candidate = dyn_cast_or_null<CallExpr>(Expression);
-    const auto Operation = approvedUtilityOperation(S, SM, Candidate, Context);
-    if (!Operation || Candidate->getNumArgs() != 1 ||
-        (*Operation != UtilityOperation::Move &&
-         *Operation != UtilityOperation::Forward &&
-         *Operation != UtilityOperation::MoveIfNoexcept &&
-         *Operation != UtilityOperation::AsConst))
-      return Expression;
-    Adapters.push_back(Candidate);
-    Expression = functionalInvokeStrippedExpression(Candidate->getArg(0));
-  }
-  return nullptr;
-}
-
 std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     const State &S, const SourceManager &SM, const VarDecl *Variable,
     const ASTContext &Context) {
@@ -10985,7 +10973,7 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
             ? functionalInvokeStrippedExpression(Construction->getArg(0))
             : nullptr;
     std::vector<const CallExpr *> Adapters;
-    Argument = functionalMemFnAdaptedUse(S, SM, Argument, Context, Adapters);
+    Argument = functionalAdaptedCallable(S, SM, Argument, Context, Adapters);
     if (Variable == Requested)
       RequestedAdapters = std::move(Adapters);
     if (!Construction || !Constructor || !Argument ||
@@ -11605,7 +11593,7 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
   }
 
   std::vector<const CallExpr *> UseAdapters;
-  const auto *Object = functionalMemFnAdaptedUse(
+  const auto *Object = functionalAdaptedCallable(
       S, SM, Call->getArg(0), Context, UseAdapters);
   const auto *StoredReference = dyn_cast_or_null<DeclRefExpr>(Object);
   const auto *StoredVariable =
@@ -11718,7 +11706,7 @@ approvedFunctionalInvokeMemFnDispatch(const State &S,
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
   std::vector<const CallExpr *> UseAdapters;
-  const auto *FactoryExpression = functionalMemFnAdaptedUse(
+  const auto *FactoryExpression = functionalAdaptedCallable(
       S, SM, Call->getArg(0), Context, UseAdapters);
   const auto *StoredReference =
       dyn_cast_or_null<DeclRefExpr>(FactoryExpression);
@@ -12760,7 +12748,7 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
   if (!Apply)
     return std::nullopt;
   std::vector<const CallExpr *> UseAdapters;
-  const auto *FactoryExpression = functionalMemFnAdaptedUse(
+  const auto *FactoryExpression = functionalAdaptedCallable(
       S, SM, Call->getArg(0), Context, UseAdapters);
   const auto *StoredReference =
       dyn_cast_or_null<DeclRefExpr>(FactoryExpression);

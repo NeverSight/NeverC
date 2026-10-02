@@ -8186,6 +8186,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::set<const CallExpr *> ApprovedErasedUtilityCalls;
+  std::map<const DeclRefExpr *, const ValueDecl *> MemberPointerAdapterSources;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
   const DecompositionDecl *CurrentDecomposition = nullptr;
@@ -11125,6 +11126,67 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                /*ForDefinition=*/true)))
       return nullptr;
     return Method;
+  }
+  void retainMemberPointerAdapterArguments(const CallExpr *Call,
+                                           const ValueDecl *Member) {
+    const auto Operation =
+        approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+    if (!Member || !Operation ||
+        !utilitySDKValueAdapterSource(A, Call, *Operation))
+      return;
+    const auto *Reference =
+        dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+    if (!Reference || !Reference->hasExplicitTemplateArgs())
+      return;
+    auto [Source, New] = MemberPointerAdapterSources.emplace(Reference, Member);
+    if (New)
+      A.chargeExpansion(1, Reference->getExprLoc());
+    else if (Source->second != Member)
+      A.reject(Reference->getExprLoc(), "member-pointer adapter source",
+               "An erased adapter requires one original member source.");
+  }
+  const TypeSourceInfo *memberPointerAdapterArgument(
+      const TemplateArgumentLoc &Argument, const ValueDecl *Member) {
+    const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
+        ? Argument.getTypeSourceInfo() : nullptr;
+    TypeLoc Location = Info ? Info->getTypeLoc() : TypeLoc();
+    const Expr *Expression = nullptr;
+    for (unsigned Depth = 0; Location && Depth < 64; ++Depth) {
+      Location = Location.getUnqualifiedLoc();
+      A.chargeExpansion(1, Location.getBeginLoc());
+      if (const auto Reference = Location.getAs<ReferenceTypeLoc>())
+        Location = Reference.getPointeeLoc();
+      else if (const auto Parentheses = Location.getAs<ParenTypeLoc>())
+        Location = Parentheses.getInnerLoc();
+      else {
+        if (const auto Deduced = Location.getAs<DecltypeTypeLoc>())
+          Expression = Deduced.getUnderlyingExpr();
+        break;
+      }
+    }
+    const auto *Reference = Expression
+        ? dyn_cast<DeclRefExpr>(Expression->IgnoreParens()) : nullptr;
+    const auto *Variable = Reference
+        ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    const auto *Written = Variable ? Variable->getTypeSourceInfo() : nullptr;
+    const auto Stored = approvedFunctionalStoredMemberPointer(
+        A.S, A.Sources, Variable, A.Context);
+    const auto Type = Info ? Info->getType().getNonReferenceType() : QualType();
+    if (!Reference || !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+        !Written || !Written->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() ||
+        !Stored || Stored->Member != Member || Type.isNull() ||
+        Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        !A.Context.hasSameUnqualifiedType(Type, Variable->getType()))
+      return nullptr;
+    // Only this adapter's written decltype of an exact auto carrier is erased.
+    // Keep ordinary TypeLoc/expression traversal; compound expressions, aliases
+    // and other members still require their independent type sources.
+    while (Expression) {
+      ApprovedMemberPointerExpressions.insert(Expression);
+      const auto *Parentheses = dyn_cast<ParenExpr>(Expression);
+      Expression = Parentheses ? Parentheses->getSubExpr() : nullptr;
+    }
+    return Info;
   }
   void retainMemFnCarriers(const FunctionalMemFnSource &MemFn) {
     for (const auto *Carrier : MemFn.Carriers) {
@@ -14816,9 +14878,17 @@ public:
     // bypass checkFunctionTemplateUse, so retain their ordinary source checks.
     if (ApprovedUtilityCallees.count(Reference) ||
         ApprovedCstddefCallees.count(Reference))
-      for (const auto &Argument : Reference->template_arguments())
+      for (const auto &Argument : Reference->template_arguments()) {
+        if (const auto Source = MemberPointerAdapterSources.find(Reference);
+            Source != MemberPointerAdapterSources.end())
+          if (const auto *Info = memberPointerAdapterArgument(Argument, Source->second)) {
+            if (!TraverseTypeLoc(Info->getTypeLoc()))
+              return false;
+            continue;
+          }
         if (!TraverseTemplateArgumentLoc(Argument))
           return false;
+      }
     // Each source event owns argument traversal before the callee's frame.
     // RAV's normal argument traversal would visit nested template uses again
     // at every level, making a linear source chain expand exponentially.
@@ -17288,12 +17358,17 @@ public:
           else if (const auto *Cleanup =
                        dyn_cast<ExprWithCleanups>(FactoryArgument))
             FactoryArgument = Cleanup->getSubExpr();
+          else if (const auto *Temporary =
+                       dyn_cast<MaterializeTemporaryExpr>(FactoryArgument))
+            FactoryArgument = Temporary->getSubExpr();
           else if (const auto *Cast =
                        dyn_cast<ImplicitCastExpr>(FactoryArgument))
             FactoryArgument = Cast->getSubExpr();
           else if (const auto *Adapter = dyn_cast<CallExpr>(FactoryArgument);
-                   Adapter && Adapter->getNumArgs() == 1)
+                   Adapter && Adapter->getNumArgs() == 1) {
+            retainMemberPointerAdapterArguments(Adapter, Stored->Member);
             FactoryArgument = Adapter->getArg(0);
+          }
           else
             break;
         }
@@ -17688,6 +17763,8 @@ public:
       if (const auto *Operation = dyn_cast<BinaryOperator>(S))
         if (Operation->getOpcode() == BO_PtrMemD ||
             Operation->getOpcode() == BO_PtrMemI) {
+          const auto Member = approvedNativeDataMemberPointerAccess(
+              A.S, A.Sources, Operation, A.Context);
           ApprovedMemberPointerExpressions.insert(Operation);
           const Expr *Expression = Operation->getRHS();
           while (Expression) {
@@ -17697,12 +17774,18 @@ public:
             else if (const auto *Cleanup =
                          dyn_cast<ExprWithCleanups>(Expression))
               Expression = Cleanup->getSubExpr();
+            else if (const auto *Temporary =
+                         dyn_cast<MaterializeTemporaryExpr>(Expression))
+              Expression = Temporary->getSubExpr();
             else if (const auto *Cast =
                          dyn_cast<ImplicitCastExpr>(Expression))
               Expression = Cast->getSubExpr();
             else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
-                     Adapter && Adapter->getNumArgs() == 1)
+                     Adapter && Adapter->getNumArgs() == 1) {
+              if (Member)
+                retainMemberPointerAdapterArguments(Adapter, Member->Field);
               Expression = Adapter->getArg(0);
+            }
             else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
                      Address && Address->getOpcode() == UO_AddrOf)
               Expression = Address->getSubExpr();
@@ -17712,8 +17795,8 @@ public:
         }
     if (A.S.coreV2())
       if (const auto *Call = dyn_cast<CallExpr>(S))
-        if (approvedNativeMemberPointerCall(A.S, A.Sources, Call,
-                                            A.Context)) {
+        if (const auto Member = approvedNativeMemberPointerCall(
+                A.S, A.Sources, Call, A.Context)) {
           const Expr *Expression = Call->getCallee();
           while (Expression) {
             ApprovedMemberPointerExpressions.insert(Expression);
@@ -17722,12 +17805,17 @@ public:
             else if (const auto *Cleanup =
                          dyn_cast<ExprWithCleanups>(Expression))
               Expression = Cleanup->getSubExpr();
+            else if (const auto *Temporary =
+                         dyn_cast<MaterializeTemporaryExpr>(Expression))
+              Expression = Temporary->getSubExpr();
             else if (const auto *Cast =
                          dyn_cast<ImplicitCastExpr>(Expression))
               Expression = Cast->getSubExpr();
             else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
-                     Adapter && Adapter->getNumArgs() == 1)
+                     Adapter && Adapter->getNumArgs() == 1) {
+              retainMemberPointerAdapterArguments(Adapter, Member->Method);
               Expression = Adapter->getArg(0);
+            }
             else if (const auto *Operation =
                          dyn_cast<BinaryOperator>(Expression);
                      Operation &&
@@ -17790,8 +17878,13 @@ public:
                          dyn_cast<ImplicitCastExpr>(Expression))
               Expression = Cast->getSubExpr();
             else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
-                     Adapter && Adapter->getNumArgs() == 1)
+                     Adapter && Adapter->getNumArgs() == 1) {
+              retainMemberPointerAdapterArguments(
+                  Adapter, Member->Method
+                               ? cast<ValueDecl>(Member->Method)
+                               : cast<ValueDecl>(Member->Field));
               Expression = Adapter->getArg(0);
+            }
             else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
                      Address && Address->getOpcode() == UO_AddrOf)
               Expression = Address->getSubExpr();

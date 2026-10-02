@@ -2498,8 +2498,21 @@ field projection. It may be copied or moved through further exact same-type
 local automatic variables, including through authenticated `std::move`,
 `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; every
 carrier in that initializer chain is authenticated and erased. The same
-adapters may wrap that authenticated pointer at its final `std::invoke`, native
-member operation or `std::mem_fn` factory use. Reassigning,
+adapters may form bounded mixed chains around that authenticated pointer or a
+direct member address at its final runtime `std::invoke`, native member
+operation, `std::mem_fn` factory or `std::apply` use. Every layer must be an
+authenticated reference adapter; written template arguments and the terminal
+member source remain independently checked. A written cv/ref-qualified
+`decltype` of an exact local `auto` member-pointer carrier can retain that same
+original member for the adapter's type argument. Compound expressions, aliases
+and unrelated member sources gain no such exemption. This includes `tuple`,
+`pair` and `array` application, field assignment and method reference results, and preserves
+receiver/argument effects and temporary lifetimes. Each raw member-pointer
+initializer still permits only one adapter per copy declaration. Result-source
+queries for `std::invoke` with adapted raw pointers and for `mem_fn` factories
+containing adapted pointers require separate source proof and remain outside
+this boundary.
+Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
 direct address or stored data-member pointer may also be applied with native
 `.*` or `->*` to an exact-class lvalue, pointer or full-expression temporary,
