@@ -37,6 +37,9 @@ struct neverc_os_file {
     FILE *fp;
     int   fd;
     int   is_std;
+    /* Non-regular descriptor (pipe, FIFO, terminal): read it directly so a
+     * read returns the bytes that are available, as Go os.File.Read does. */
+    int   direct_read;
 };
 
 static neverc_os_file_t *file_from_descriptor(int fd, const char *mode);
@@ -310,9 +313,9 @@ static int64_t os_filetime_unix(FILETIME ft) {
 }
 #endif
 
-static neverc_os_file_t g_stdin  = { NULL, 0, 1 };
-static neverc_os_file_t g_stdout = { NULL, 1, 1 };
-static neverc_os_file_t g_stderr = { NULL, 2, 1 };
+static neverc_os_file_t g_stdin  = { NULL, 0, 1, 0 };
+static neverc_os_file_t g_stdout = { NULL, 1, 1, 0 };
+static neverc_os_file_t g_stderr = { NULL, 2, 1, 0 };
 /* 0 = uninitialized, 1 = initializing, 2 = safely published. */
 static volatile int32_t g_std_init = 0;
 
@@ -495,6 +498,20 @@ void neverc_os_close(neverc_os_file_t *f) {
 
 int neverc_os_read(neverc_os_file_t *f, void *buf, size_t count) {
     if (!f || !f->fp || (!buf && count != 0) || count > INT_MAX) return -1;
+    if (f->direct_read) {
+        /* fread() keeps waiting until the whole request is filled. */
+        if (count == 0) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+        int got = _read(f->fd, buf, (unsigned int)count);
+        return got < 0 ? -1 : got;
+#else
+        ssize_t got;
+        do {
+            got = read(f->fd, buf, count);
+        } while (got < 0 && errno == EINTR);
+        return got < 0 ? -1 : (int)got;
+#endif
+    }
     size_t n = fread(buf, 1, count, f->fp);
     if (ferror(f->fp)) return -1;
     return (int)n;
@@ -2169,7 +2186,20 @@ static void close_file_descriptor(int fd) {
 #endif
 }
 
+/* Regular files stay on the stdio path so its cached offset agrees with
+ * seek and write; mixing in read(2) there would desynchronise it. */
+static int os_fd_reads_directly(int fd) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    struct _stat64 st;
+    return _fstat64(fd, &st) == 0 && (st.st_mode & _S_IFMT) != _S_IFREG;
+#else
+    struct stat st;
+    return fstat(fd, &st) == 0 && !S_ISREG(st.st_mode);
+#endif
+}
+
 static neverc_os_file_t *file_from_descriptor(int fd, const char *mode) {
+    int direct_read = os_fd_reads_directly(fd);
 #if defined(NEVERC_PLATFORM_WINDOWS)
     FILE *fp = _fdopen(fd, mode);
 #else
@@ -2187,6 +2217,7 @@ static neverc_os_file_t *file_from_descriptor(int fd, const char *mode) {
     }
     file->fp = fp;
     file->fd = fd;
+    file->direct_read = direct_read;
     if (setvbuf(fp, NULL, _IONBF, 0) != 0) {
         neverc_os_close(file);
         return NULL;
