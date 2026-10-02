@@ -146,7 +146,8 @@ static int next_ch(neverc_scanner_t *s) {
     int ch = peek_rune(s, &width);
     if (ch == NEVERC_SCANNER_EOF) return ch;
     s->pos += width;
-    if (ch == NEVERC_UTF8_RUNE_ERROR && width == 1)
+    /* Go text/scanner reports invalid UTF-8 and every NUL it reads. */
+    if ((ch == NEVERC_UTF8_RUNE_ERROR && width == 1) || ch == 0)
         scanner_add_error(s);
     if (ch == '\n') {
         if (s->line < INT_MAX) s->line++;
@@ -476,7 +477,7 @@ static int scan_comment(neverc_scanner_t *s, int second) {
             size_t i = start;
             while (i < s->src_len &&
                    (unsigned char)s->src[i] < NEVERC_UTF8_RUNE_SELF &&
-                   s->src[i] != '\n')
+                   s->src[i] != '\n' && s->src[i] != '\0')
                 i++;
             if (i > start) {
                 emit_bytes(s, s->src + start, i - start);
