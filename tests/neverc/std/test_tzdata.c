@@ -158,6 +158,13 @@ static void test_lookup(void) {
     check_int("Sydney offset", z ? z->utc_offset : 0, 36000);
     check_int("Sydney has dst", z ? z->has_dst : 0, 1);
 
+    /* Hawaii's IANA zone is Pacific/Honolulu. */
+    z = neverc_tzdata_lookup("Pacific/Honolulu");
+    check_not_null("Honolulu", z);
+    check_str("Honolulu abbrev", z ? z->abbrev : NULL, "HST");
+    check_int("Honolulu offset", z ? z->utc_offset : 0, -36000);
+    check_int("Honolulu no dst", z ? z->has_dst : 1, 0);
+
     z = neverc_tzdata_lookup("Nonexistent/Zone");
     check_null("nonexistent", z);
 
@@ -698,6 +705,12 @@ static void test_local_tz(void) {
     z = neverc_tzdata_local();
     check_not_null("zoneinfo path TZ", z);
     check_str("zoneinfo path name", z ? z->name : NULL, "Asia/Tokyo");
+
+    tzdata_set_tz("/usr/share/zoneinfo/Pacific/Honolulu");
+    z = neverc_tzdata_local();
+    check_str("Honolulu TZ name", z ? z->name : NULL, "Pacific/Honolulu");
+    check_int("Honolulu TZ offset",
+              neverc_tzdata_offset_at(z, JUL_2024), -36000);
 
     tzdata_set_tz("");
     z = neverc_tzdata_local();
