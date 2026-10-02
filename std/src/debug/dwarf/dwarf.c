@@ -868,6 +868,15 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
     if (d->debug_info_len == 0) return 0;
     if (!d->debug_info) return -1;
 
+    /* Consecutive units often name the same abbreviation table; keep the
+     * parsed table and its index until a unit names another offset. */
+    neverc_dwarf_data_t local = *d;
+    local.abbrevs = NULL;
+    local.abbrev_count = 0;
+    uint32_t *by_code = NULL;
+    int have_table = 0;
+    uint64_t table_offset = 0;
+
     size_t cu_offset = 0;
     while (cu_offset < d->debug_info_len) {
         size_t remaining = d->debug_info_len - cu_offset;
@@ -875,8 +884,10 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
             /* Trailing bytes shorter than a unit length are padding only if
              * they are zero; anything else is a truncated header. */
             for (size_t i = 0; i < remaining; i++) {
-                if (d->debug_info[cu_offset + i] != 0)
+                if (d->debug_info[cu_offset + i] != 0) {
+                    release_abbrevs(&local, by_code);
                     return -1;
+                }
             }
             break;
         }
@@ -888,19 +899,22 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
         }
 
         neverc_dwarf_comp_unit_header_ex_t hdr;
-        if (neverc_dwarf_parse_comp_unit_ex(d, cu_offset, &hdr) < 0)
-            return -1;
-
-        /* Parse abbreviation table for this CU */
-        neverc_dwarf_data_t local = *d;
-        local.abbrevs = NULL;
-        local.abbrev_count = 0;
-        uint32_t *by_code = NULL;
-        if (parse_abbrevs(&local, hdr.abbrev_offset) < 0)
-            return -1;
-        if (index_abbrevs(&local, &by_code) < 0) {
+        if (neverc_dwarf_parse_comp_unit_ex(d, cu_offset, &hdr) < 0) {
             release_abbrevs(&local, by_code);
             return -1;
+        }
+
+        if (!have_table || hdr.abbrev_offset != table_offset) {
+            free(by_code);
+            by_code = NULL;
+            have_table = 0;
+            if (parse_abbrevs(&local, hdr.abbrev_offset) < 0 ||
+                index_abbrevs(&local, &by_code) < 0) {
+                release_abbrevs(&local, by_code);
+                return -1;
+            }
+            have_table = 1;
+            table_offset = hdr.abbrev_offset;
         }
 
         size_t initial_size = hdr.is_64bit ? 12U : 4U;
@@ -1032,10 +1046,10 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
             release_abbrevs(&local, by_code);
             return -1;
         }
-        release_abbrevs(&local, by_code);
 
         cu_offset = cu_end;
     }
+    release_abbrevs(&local, by_code);
     return 0;
 }
 
