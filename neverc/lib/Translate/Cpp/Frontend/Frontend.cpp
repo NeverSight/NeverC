@@ -3550,7 +3550,7 @@ static bool utilityRecordConditionalMoveSource(
   // without generating hypothetical copies, moves or destructor bodies.
   std::set<const CXXRecordDecl *> Seen;
   auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
-                   unsigned Depth) -> bool {
+                   unsigned Depth, bool RootConstCopyUnavailable) -> bool {
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Depth >= 64 || Record->isInvalidDecl() ||
         Record->isDependentContext() || Record->isUnion() ||
@@ -3582,7 +3582,7 @@ static bool utilityRecordConditionalMoveSource(
         continue;
       const bool IsCopy = Constructor->isCopyConstructor();
       if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
-          Constructor->getNumParams() != 1)
+          (!RootConstCopyUnavailable && Constructor->getNumParams() != 1))
         return false;
       if ((!A.Context.hasSameType(
               Constructor->getParamDecl(0)->getType(),
@@ -3601,10 +3601,18 @@ static bool utilityRecordConditionalMoveSource(
     }
     if (!Copy)
       return false;
-    if (A.Context.hasSameType(Copy->getParamDecl(0)->getType(),
-                             MutableCopyParameter) &&
+    const bool MutableCopy = A.Context.hasSameType(
+        Copy->getParamDecl(0)->getType(), MutableCopyParameter);
+    if (MutableCopy &&
         !utilityMutableCopyConditionalMoveSource(A, Record, Signatures))
       return false;
+    // Once the root's mutable-only copy and other constructor signatures
+    // exclude const copying, extra defaults in owned copy/move constructors
+    // cannot change that result. Keep every signature as a source dependency;
+    // selected operations still check their defaults and bodies. Roots with a
+    // const copy retain the separate one-parameter owning-graph proof.
+    if (Depth == 0 && MutableCopy)
+      RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {
       if (Destructor->isInvalidDecl() || Destructor->isDeleted() ||
@@ -3619,16 +3627,17 @@ static bool utilityRecordConditionalMoveSource(
     // elements and nontrivial value members. Reference/pointer fields retain
     // their written types and bindings without owning a referent graph.
     for (const auto &Base : Record->bases())
-      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
+                RootConstCopyUnavailable))
         return false;
     for (const auto *Field : Record->fields())
       if (const auto *Member =
               A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
-          Member && !Self(Self, Member, Depth + 1))
+          Member && !Self(Self, Member, Depth + 1, RootConstCopyUnavailable))
         return false;
     return true;
   };
-  return Check(Check, Root, 0);
+  return Check(Check, Root, 0, /*RootConstCopyUnavailable=*/false);
 }
 
 static bool utilityValueAdapterSource(

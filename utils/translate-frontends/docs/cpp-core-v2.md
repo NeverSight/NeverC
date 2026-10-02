@@ -968,9 +968,25 @@ its written copy/move/destructor and admitted value-constructor sources.
 Every actual generated copy, move, assignment or cleanup checks its selected member
 operations. Queries alone leave hypothetical member bodies uninstantiated.
 
+When the queried root has only that exact mutable copy and satisfies the
+no-base, no-conversion and other-constructor restrictions above, its owned
+copy/move constructors may have extra defaulted parameters. The root cannot
+be copied from a const object regardless of those defaults, so nested members
+and fixed arrays retain the pinned rvalue-reference result. This includes
+const-copy or deleted-const-copy members alongside the mutable-copy member,
+and members whose move is deleted or inaccessible. Every nontrivial node still
+has one public exact const or mutable copy, at most one exact move, and an
+accessible nondeleted destructor. All parameter types, aliases, array bounds,
+exception specifications and redeclarations remain source dependencies.
+Unused template defaults and bodies stay lazy. Actual generated copies and
+moves check and evaluate the selected member defaults and bodies, preserving
+reference mutations and parameter-temporary destruction. A root declaring a
+const copy, including one defaulted to deleted, retains the separate
+one-parameter owning-graph proof.
+
 Non-owning pointer/reference fields keep their original bindings. Constructor
-templates, inherited constructors, additional copy overloads, extra copy/move
-parameters and nontrivial members with inaccessible copies/destructors
+templates, inherited constructors, additional copy overloads and nontrivial
+members with inaccessible copies/destructors
 retain separate requirements. SDK members and
 nontrivial bases retain their existing source and layout requirements. Mutable
 and const operands preserve the pinned `T&&` or `const T&` result, including
@@ -1041,8 +1057,9 @@ retains its original type, alias, bound and exception sources. Unselected
 class-template defaults and bodies stay lazy. Actual construction checks and
 evaluates selected defaults, retaining mutations, reference bindings and
 temporary destruction. This extension also applies when the queried record's
-destructor makes construction unavailable. It does not expand the owning-graph
-proof or the copy-fallback proof for records with an available const copy.
+destructor makes construction unavailable. Owned subobjects use the bounded
+owning-graph proof above; records with an available const copy retain their
+separate copy-fallback proof.
 This copy-unavailability proof excludes constructor templates, inherited and
 variadic constructors. Public
 user-defaulted deleted copies and other causes of implicit deletion such as an
@@ -1113,7 +1130,8 @@ defaults stay uninstantiated; an actual copy or move checks and evaluates its
 selected defaults and body, including reference mutations and temporary
 destruction. Parameter records use this constructor-shape proof; queried
 records use the copy-unavailability proof above. Extra copy/move parameters
-on owned subobjects retain their separate requirements.
+on owned subobjects use the owning-graph proof above when the queried root's
+exact mutable-only copy establishes const-copy unavailability.
 
 The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
@@ -1163,8 +1181,8 @@ these constructor proofs do not instantiate an otherwise incomplete template
 record.
 
 Constructor templates, inherited constructors, extra copy/move parameters in
-the owning-graph and copy-fallback proofs,
-additional copy overloads, and other value constructors retain separate
+owning graphs whose queried root declares a const copy, additional copy
+overloads, and other value constructors retain separate
 requirements. In particular, a first record parameter passed by value, by
 const lvalue reference or by rvalue reference can introduce its own conversion
 from `const Record&` when it has a converting constructor and a single argument
