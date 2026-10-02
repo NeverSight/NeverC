@@ -1126,6 +1126,50 @@ static void test_star_prefix_width(void) {
         check_str("star prefix stops before atime", header.name, expected);
 }
 
+static void test_v7_header_has_no_owner_names(void) {
+    printf("[v7 header has no owner names]\n");
+    /* Without the ustar ("ustar\0") or GNU ("ustar " + " \0") magic, a
+     * header is pre-POSIX v7 and offsets 265/297 are not owner names. */
+    uint8_t archive[NEVERC_TAR_BLOCK_SIZE * 3U];
+    memset(archive, 0, sizeof(archive));
+    test_fill_header(archive, "file.txt", NEVERC_TAR_REG, 0, NULL);
+    memset(archive + 257, 0, 8);
+    memcpy(archive + 265, "someuser", 8);
+    memcpy(archive + 297, "somegroup", 9);
+    test_finish_header(archive);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_header_t header;
+    memset(&header, 0xA5, sizeof(header));
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    int result = neverc_tar_reader_next(&reader, &header);
+    check_int("v7 header", result, 1);
+    if (result == 1) {
+        check_str("v7 header has no uname", header.uname, "");
+        check_str("v7 header has no gname", header.gname, "");
+    }
+
+    memcpy(archive + 257, "ustar \0\0", 8);
+    test_finish_header(archive);
+    memset(&header, 0xA5, sizeof(header));
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("gnu magic with bad version", result, 1);
+    if (result == 1)
+        check_str("bad gnu version is v7", header.uname, "");
+
+    memcpy(archive + 257, "ustar  \0", 8);
+    test_finish_header(archive);
+    memset(&header, 0xA5, sizeof(header));
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    result = neverc_tar_reader_next(&reader, &header);
+    check_int("gnu header", result, 1);
+    if (result == 1) {
+        check_str("gnu header uname", header.uname, "someuser");
+        check_str("gnu header gname", header.gname, "somegroup");
+    }
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -1143,6 +1187,7 @@ int main(void) {
     test_header_only_and_typeflags();
     test_octal_bytes_after_nul();
     test_star_prefix_width();
+    test_v7_header_has_no_owner_names();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
