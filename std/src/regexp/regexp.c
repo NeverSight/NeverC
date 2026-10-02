@@ -1857,7 +1857,9 @@ static void cap_closure(cap_env_t *e, nfa_state_t *start, const size_t *init,
     }
 }
 
-/* Longest match from a fixed start, recording capturing groups (Go FindSubmatch). */
+/* Longest match from a fixed start, recording capturing groups (Go FindSubmatch).
+ * Returns 1 on a match, 0 on no match, and -1 when the working buffers cannot
+ * be allocated, so callers never mistake a failed pass for unset groups. */
 static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
                          size_t start, size_t *match_end,
                          size_t *out_caps, int nslots) {
@@ -1865,7 +1867,7 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
     int nstates = re->nstates > 0 ? re->nstates : 1;
     if ((size_t)nslots > SIZE_MAX / sizeof(size_t) ||
         (size_t)nstates > SIZE_MAX / sizeof(size_t) / (size_t)nslots)
-        return 0;
+        return -1;
     nfa_state_t **cur_st = (nfa_state_t **)NC_REGEXP_MALLOC(
         (size_t)nstates * sizeof(*cur_st));
     nfa_state_t **next_st = (nfa_state_t **)NC_REGEXP_MALLOC(
@@ -1885,7 +1887,7 @@ static int nfa_exec_caps(neverc_regexp_t *re, const char *s, size_t slen,
         !wst || !wcap || !scratch) {
         free(cur_st); free(next_st); free(cur_cap); free(next_cap);
         free(visited); free(init); free(wst); free(wcap); free(scratch);
-        return 0;
+        return -1;
     }
     for (int i = 0; i < nslots; i++) init[i] = (size_t)-1;
     init[0] = start;
@@ -1999,11 +2001,12 @@ int neverc_regexp_find_submatch(neverc_regexp_t *re, const char *s,
         int nslots = 0;
         if (re->ngroups > 0 && nfill > 1 && cap_slot_count(re->ngroups, &nslots)) {
             size_t *caps = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
+            int rc = -1;
             if (caps) {
                 size_t slen = strlen(s);
                 size_t ms = (size_t)(found - s), end = 0;
-                if (nfa_exec_caps(re, s, slen, ms, &end, caps, nslots) &&
-                    end == ms + match_len) {
+                rc = nfa_exec_caps(re, s, slen, ms, &end, caps, nslots);
+                if (rc > 0 && end == ms + match_len) {
                     for (int g = 1; g < nfill && g < nslots / 2; g++) {
                         if (caps[2 * g] != (size_t)-1 &&
                             caps[2 * g + 1] != (size_t)-1 &&
@@ -2014,6 +2017,11 @@ int neverc_regexp_find_submatch(neverc_regexp_t *re, const char *s,
                     }
                 }
                 free(caps);
+            }
+            if (rc < 0) {                    /* out of memory: no result */
+                matches[0].start = NULL;
+                matches[0].len = 0;
+                return 0;
             }
         }
     }
@@ -2195,7 +2203,12 @@ static int fill_replace_caps(neverc_regexp_t *re, const char *src, size_t slen,
     size_t *caps = (size_t *)NC_REGEXP_MALLOC((size_t)nslots * sizeof(size_t));
     if (!caps) return -1;
     size_t end = 0;
-    if (nfa_exec_caps(re, src, slen, ms, &end, caps, nslots) && end == me) {
+    int rc = nfa_exec_caps(re, src, slen, ms, &end, caps, nslots);
+    if (rc < 0) {
+        free(caps);
+        return -1;
+    }
+    if (rc > 0 && end == me) {
         int nfill = nm < re->ngroups + 1 ? nm : re->ngroups + 1;
         for (int g = 1; g < nfill && g < nslots / 2; g++) {
             if (caps[2 * g] != (size_t)-1 &&
