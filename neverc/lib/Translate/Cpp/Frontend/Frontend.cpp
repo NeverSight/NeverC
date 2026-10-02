@@ -3606,12 +3606,14 @@ static bool utilityRecordConditionalMoveSource(
     if (MutableCopy &&
         !utilityMutableCopyConditionalMoveSource(A, Record, Signatures))
       return false;
-    // Once the root's mutable-only copy and other constructor signatures
-    // exclude const copying, extra defaults in owned copy/move constructors
-    // cannot change that result. Keep every signature as a source dependency;
-    // selected operations still check their defaults and bodies. Roots with a
-    // const copy retain the separate one-parameter owning-graph proof.
-    if (Depth == 0 && MutableCopy)
+    // A deleted exact const-copy, or a mutable-only copy with the other
+    // constructor checks above, excludes const copying at the root. Extra
+    // defaults in owned copy/move constructors cannot restore it. The graph
+    // still supplies the sources behind defaulted deletion, and every
+    // signature remains a dependency; selected operations check defaults and
+    // bodies. Do not declare or resolve a hypothetical copy to learn deletion.
+    // Roots with an available const-copy retain the one-parameter proof.
+    if (Depth == 0 && (MutableCopy || Copy->isDeleted()))
       RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {

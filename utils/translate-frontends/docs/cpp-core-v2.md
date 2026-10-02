@@ -980,9 +980,21 @@ accessible nondeleted destructor. All parameter types, aliases, array bounds,
 exception specifications and redeclarations remain source dependencies.
 Unused template defaults and bodies stay lazy. Actual generated copies and
 moves check and evaluate the selected member defaults and bodies, preserving
-reference mutations and parameter-temporary destruction. A root declaring a
-const copy, including one defaulted to deleted, retains the separate
-one-parameter owning-graph proof.
+reference mutations and parameter-temporary destruction. A root with an
+available const copy retains the separate one-parameter owning-graph proof.
+
+The same owned extra-parameter support applies when the root's exact public
+const-copy is already marked deleted. This includes implicit and explicitly
+defaulted copies deleted by nested members, fixed-array elements or an rvalue
+reference field. The graph still checks the original declarations behind that
+deletion, including each member's copy access and destructor. It does not
+declare or instantiate a hypothetical copy to discover whether it is deleted.
+An exact deleted const-copy prevents const copying regardless of member
+defaults, including defaults on another member with an available const-copy.
+Actual movement can therefore move one member and copy another; both selected
+operations check their defaults and bodies. Query-only owners with deleted or
+inaccessible member moves still preserve the reference result, without making
+those moves available for construction.
 
 Non-owning pointer/reference fields keep their original bindings. Constructor
 templates, inherited constructors, additional copy overloads and nontrivial
@@ -1131,7 +1143,7 @@ selected defaults and body, including reference mutations and temporary
 destruction. Parameter records use this constructor-shape proof; queried
 records use the copy-unavailability proof above. Extra copy/move parameters
 on owned subobjects use the owning-graph proof above when the queried root's
-exact mutable-only copy establishes const-copy unavailability.
+exact mutable-only or already-deleted copy establishes const-copy unavailability.
 
 The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
@@ -1181,7 +1193,7 @@ these constructor proofs do not instantiate an otherwise incomplete template
 record.
 
 Constructor templates, inherited constructors, extra copy/move parameters in
-owning graphs whose queried root declares a const copy, additional copy
+owning graphs whose queried root has an available const copy, additional copy
 overloads, and other value constructors retain separate
 requirements. In particular, a first record parameter passed by value, by
 const lvalue reference or by rvalue reference can introduce its own conversion
