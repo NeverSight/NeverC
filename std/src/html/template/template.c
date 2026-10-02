@@ -781,6 +781,14 @@ static int html_raw_end_tag(const char *buf, size_t i, size_t len,
            n == '/' || n == '>';
 }
 
+/* A JS backslash escape inside a string, template literal, or regexp covers
+ * the next byte. The HTML tokenizer runs first, though: `\</script>` still
+ * closes the element, so the escape must not swallow that `<`. */
+static int html_js_escape_pair(const char *buf, size_t i, size_t len) {
+    return buf[i] == '\\' && i + 1 < len &&
+           !html_raw_end_tag(buf, i + 1, len, "</script", 8);
+}
+
 enum {
     HS_TEXT, HS_TAG, HS_ATTR_DQ, HS_ATTR_SQ, HS_ATTR_UQ,
     HS_COMMENT, HS_SCRIPT, HS_STYLE, HS_MARKUP
@@ -1170,7 +1178,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 break;
             case JS_SQ:
             case JS_DQ:
-                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
                 if ((js == JS_SQ && c == '\'') ||
                     (js == JS_DQ && c == '"')) {
                     js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
@@ -1180,7 +1188,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_TPL:
-                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
                 if (c == '`') {
                     if (interp_sp > 0) {
                         interp_depth = interp_stack[--interp_sp];
@@ -1223,7 +1231,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_RE:
-                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
                 if (c == '[') { js = JS_RE_CLASS; i++; break; }
                 if (c == '/') {
                     js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
@@ -1235,7 +1243,7 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_RE_CLASS:
-                if (c == '\\' && i + 1 < len) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
                 if (c == ']') { js = JS_RE; i++; break; }
                 i++;
                 break;
