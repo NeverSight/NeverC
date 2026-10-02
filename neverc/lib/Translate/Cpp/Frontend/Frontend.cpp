@@ -3177,9 +3177,9 @@ static bool utilityLazyMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
-  if (!Method || !(Assignment || (Constructor && Constructor->isMoveConstructor())) ||
+  if (!Method ||
+      !(Assignment || (Constructor && Constructor->isMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
-      (!Assignment && (Method->isDefaulted() || Method->isDeleted())) ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
       !concreteClassFunction(Method))
     return false;
@@ -3196,18 +3196,21 @@ static bool utilityLazyMoveSignatureSource(
   const auto *Written = Info->getType()->getAs<FunctionProtoType>();
   const auto *Pattern = Origin->getType()->getAs<FunctionProtoType>();
   const auto *PatternWritten = OriginInfo->getType()->getAs<FunctionProtoType>();
-  if (!standardExceptionSpecification(Written) || !PatternWritten)
+  const auto *OriginConstructor = dyn_cast<CXXConstructorDecl>(Origin);
+  if (!(Assignment
+            ? Origin->isMoveAssignmentOperator()
+            : OriginConstructor && OriginConstructor->isMoveConstructor()) ||
+      !standardExceptionSpecification(Written) || !PatternWritten)
     return false;
-  // Declaring a defaulted move assignment deletes the implicit copy even
-  // while its inferred exception result and assignment body remain lazy.
+  // Declaring a defaulted move operation deletes the implicit copy even
+  // while its inferred exception result and generated body remain lazy.
   // Only the original absence of a written exception source is consumed.
   if (Prototype->getExceptionSpecType() == EST_Unevaluated) {
     const auto Location =
         Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
     const auto OriginLocation =
         OriginInfo->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
-    return Assignment && Origin->isMoveAssignmentOperator() &&
-           Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted() &&
+    return Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted() &&
            Written->getExceptionSpecType() == EST_None &&
            PatternWritten->getExceptionSpecType() == EST_None &&
            Location && OriginLocation &&
@@ -12064,15 +12067,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               if (ValueAdapter)
                 for (const auto *Signature : ConditionalMoveSignatures) {
                   operationTypeDependency(Signature->getTypeSourceInfo());
+                  const auto *Constructor =
+                      dyn_cast<CXXConstructorDecl>(Signature);
                   // A class instance may still have lazy copy/move bodies.
                   // The exact adapter proof consumes its written signature,
                   // so check an already resolved signature or its exact
                   // retained nondependent move signature without resolution.
-                  // A defaulted move assignment is consumed only as a
+                  // A defaulted move operation is consumed only as a
                   // declaration here. Its body keeps its generated proof.
                   if (concreteClassFunction(Signature) &&
                       (!Signature->isDefaulted() ||
-                       Signature->isMoveAssignmentOperator()) &&
+                       Signature->isMoveAssignmentOperator() ||
+                       (Constructor && Constructor->isMoveConstructor())) &&
                       (standardExceptionSpecification(
                            Signature->getType()->getAs<FunctionProtoType>()) ||
                        utilityLazyMoveSignatureSource(A, Signature)) &&

@@ -938,15 +938,17 @@ destructor; its storage and actual lifetimes keep their ordinary checks. All
 written copy/move and destructor signatures, including aliases and exception
 expressions, remain independent source dependencies. No hypothetical body is
 instantiated or executed, including unused members of concrete class templates.
-A query can leave the move operation's exception specification uninstantiated.
+A const-only query can leave an ordinary, defaulted or deleted move operation's
+exception specification uninstantiated.
 Its concrete written signature is checked when it retains the exact
 nondependent exception expression of the source-owned member pattern; this
 does not resolve the move's exception specification. Dependent unresolved
 exception sources still require a separate proof. A defaulted template move
-assignment with no written exception specification retains that exact absence
-of source; its inferred exception result and assignment body remain lazy.
-Actual assignments still require their ordinary body or generated-operation
-proof. No query performs an assignment.
+constructor or assignment with no written exception specification retains that
+exact absence of source; its inferred exception result and generated body
+remain lazy. This includes a defaulted move constructor deleted by an unmovable
+value member. Actual construction and assignment still require their ordinary
+body or generated-operation proof. No query performs either operation.
 This additional proof excludes constructor templates, inherited constructors,
 copy/move constructors with extra parameters, user-defaulted deleted copies,
 and other causes of implicit deletion such as an uncopyable member. A deleted
