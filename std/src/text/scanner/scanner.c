@@ -383,11 +383,17 @@ static int scan_number(neverc_scanner_t *s, int first) {
 }
 
 /* Returns the byte after '\\'. A source newline is not part of the literal
- * (Go: "literal not terminated") and must not be emitted into tok_buf. */
-static int scan_escape(neverc_scanner_t *s, int quote) {
+ * (Go: "literal not terminated") and must not be emitted into tok_buf.
+ * Like Go, a newline or end of input after '\\' is an invalid escape, and
+ * the character of any other invalid escape is re-read as one more literal
+ * element (*extra_element), which matters for char literals. */
+static int scan_escape(neverc_scanner_t *s, int quote, size_t *extra_element) {
     size_t start = s->pos;
     int ch = next_ch(s);
-    if (ch == NEVERC_SCANNER_EOF || ch == '\n') return ch;
+    if (ch == NEVERC_SCANNER_EOF || ch == '\n') {
+        scanner_add_error(s);
+        return ch;
+    }
     emit_consumed(s, start);
     if (ch == 'x') {
         int digits = 0;
@@ -415,7 +421,10 @@ static int scan_escape(neverc_scanner_t *s, int quote) {
         case 'r': case 't': case 'v': case '\\':
             break;
         default:
-            if (ch != quote) scanner_add_error(s);
+            if (ch != quote) {
+                scanner_add_error(s);
+                *extra_element = 1;
+            }
             break;
         }
     }
@@ -436,9 +445,11 @@ static int scan_string(neverc_scanner_t *s, int quote,
             break;
         }
         if (ch == '\\') {
+            size_t extra = 0;
             emit_consumed(s, start);
-            if (scan_escape(s, quote) == '\n') break;
-            elements++;
+            int escaped = scan_escape(s, quote, &extra);
+            elements += 1 + extra;
+            if (escaped == '\n') break;
             continue;
         }
         if (ch == '\n') break;
