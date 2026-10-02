@@ -66,6 +66,47 @@ static void test_parse_multiple_headers(void) {
     free(reader);
 }
 
+static void test_header_value_whitespace(void) {
+    printf("[header value whitespace]\n");
+    neverc_multipart_reader_t *reader =
+        (neverc_multipart_reader_t *)calloc(1, sizeof(*reader));
+    ASSERT_TRUE(reader != NULL);
+    if (!reader) return;
+
+    /* Go's multipart.Reader reads part headers with textproto: each header
+     * line is trimmed of SP/HTAB and folded lines join with one space. */
+    const char *data =
+        "--b\r\n"
+        "Content-Type: text/plain \t\r\n"
+        "X-Fold: one \r\n"
+        "\ttwo\t\r\n"
+        "X-Empty-First:\r\n"
+        " bar\r\n"
+        "X-Blank: \t\r\n"
+        "X-Inner: a  b \r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse((const unsigned char *)data,
+                                     strlen(data), "b", reader),
+              0);
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0],
+                                              "Content-Type"),
+                 "text/plain");
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "X-Fold"),
+                 "one two");
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0],
+                                              "X-Empty-First"),
+                 "bar");
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "X-Blank"),
+                 "");
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "X-Inner"),
+                 "a  b");
+    ASSERT_EQ((int)reader->parts[0].body_len, 2);
+    free(reader);
+}
+
 static void test_header_get_rejects_invalid_public_state(void) {
     printf("[header getter invalid public state]\n");
     neverc_multipart_part_t part;
@@ -800,6 +841,7 @@ int main(void) {
     printf("=== NeverC mime/multipart Tests ===\n");
     test_parse_basic();
     test_parse_multiple_headers();
+    test_header_value_whitespace();
     test_header_get_rejects_invalid_public_state();
     test_parse_empty_parts_and_preamble();
     test_delimiter_requires_line_end();
