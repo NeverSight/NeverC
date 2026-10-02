@@ -5018,6 +5018,16 @@ static void test_response_header(void) {
     check_int("resp hdr null name", v == NULL, 1);
 
     free(resp.headers);
+
+    /* Go Header.Get returns field values without surrounding OWS. */
+    resp.headers = strdup("HTTP/1.1 200 OK\r\n"
+                          "X-Tab:\tv\t\r\n"
+                          "X-Pad:  padded  \r\n");
+    v = neverc_http_response_header(&resp, "X-Tab", buf, sizeof(buf));
+    check_str("resp hdr tabs trimmed", v, "v");
+    v = neverc_http_response_header(&resp, "X-Pad", buf, sizeof(buf));
+    check_str("resp hdr spaces trimmed", v, "padded");
+    free(resp.headers);
 }
 
 int main(void) {
