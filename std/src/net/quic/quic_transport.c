@@ -513,6 +513,12 @@ static void qt_discard_encryption_level_now(struct neverc_quic_conn *conn,
     space = qt_pn_space_for_level(level);
     conn->pn[space].ack_pending = 0;
     neverc_quic_loss_discard_space(&conn->loss, space);
+    /* RFC 9002 §6.4: nothing sent with these keys can be acknowledged or
+     * declared lost any more, so its send records go too. */
+    for (size_t i = 0; i < QUIC_TX_RECORD_CAPACITY; i++) {
+        if (conn->tx_records[i].used && conn->tx_records[i].space == space)
+            conn->tx_records[i].used = 0;
+    }
     conn->pending_key_discard &= ~(1u << level);
 }
 
