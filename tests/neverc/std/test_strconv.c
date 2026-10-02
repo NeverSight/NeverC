@@ -959,6 +959,33 @@ static void test_complex(void) {
     check_int("parse_complex bad", neverc_strconv_parse_complex("abc", &re, &im),
               NEVERC_STRCONV_ERR_SYNTAX);
 
+    /* Go ParseComplex returns 0 on syntax errors, not a partially parsed
+     * real part or the caller's previous imaginary value. */
+    re = 7.0; im = 9.0;
+    check_int("parse_complex bad imag",
+              neverc_strconv_parse_complex("1+x", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_true("parse_complex bad imag zeroes re", re == 0.0);
+    check_true("parse_complex bad imag zeroes im", im == 0.0);
+    re = 7.0; im = 9.0;
+    check_int("parse_complex missing i",
+              neverc_strconv_parse_complex("1+2", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_true("parse_complex missing i zeroes re", re == 0.0);
+    check_true("parse_complex missing i zeroes im", im == 0.0);
+    re = 7.0; im = 9.0;
+    check_int("parse_complex bad leading",
+              neverc_strconv_parse_complex("abc", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_true("parse_complex bad leading zeroes re", re == 0.0);
+    check_true("parse_complex bad leading zeroes im", im == 0.0);
+    re = 7.0; im = 9.0;
+    check_int("parse_complex range then syntax",
+              neverc_strconv_parse_complex("1e500+2ix", &re, &im),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_true("parse_complex range then syntax zeroes re", re == 0.0);
+    check_true("parse_complex range then syntax zeroes im", im == 0.0);
+
     check_int("parse_complex pure imag 1i",
               neverc_strconv_parse_complex("1i", &re, &im), 0);
     check_double_approx("1i re", re, 0.0, 1e-15);
