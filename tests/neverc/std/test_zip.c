@@ -246,6 +246,14 @@ static void test_invalid_args(void) {
     check_int("oversized data rejected",
               neverc_zip_writer_add(&w, "huge", &byte, SIZE_MAX), -1);
     neverc_zip_writer_free(&w);
+
+    /* The writer state is public. An entry count beyond the metadata
+     * capacity must be rejected before the arrays are regrown from it. */
+    neverc_zip_writer_init(&w);
+    w.nentries = w.entries_cap + 1;
+    check_int("entry count beyond capacity rejected",
+              neverc_zip_writer_add(&w, "x", (const uint8_t *)"x", 1), -1);
+    neverc_zip_writer_free(&w);
 }
 
 static void test_reject_unsafe_paths(void) {
