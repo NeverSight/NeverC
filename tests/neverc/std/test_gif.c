@@ -570,6 +570,36 @@ static void test_rejects_truncated_and_oversize_lzw(void) {
     free(frame.indices);
 }
 
+/* Like Go image/gif (golang.org/issue/9856), a frame whose LZW data stops
+ * after the last pixel without an End-Of-Information code decodes; a code
+ * past the frame is still too much image data. */
+static void test_accepts_missing_end_code(void) {
+    printf("[accepts_missing_end_code]\n");
+    static const uint8_t no_end_code[] = {
+        'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x80, 0, 0,
+        0, 0, 0, 255, 255, 255,
+        0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0,
+        2, 1, 0x0c, 0,            /* clear, pixel 1 */
+        0x3b
+    };
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(no_end_code, sizeof(no_end_code), &img), 0);
+    ASSERT_EQ(img.num_frames, 1);
+    if (img.num_frames == 1)
+        ASSERT_EQ(img.frames[0].indices[0], 1);
+    neverc_gif_free(&img);
+
+    static const uint8_t too_much[] = {
+        'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0x80, 0, 0,
+        0, 0, 0, 255, 255, 255,
+        0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0,
+        2, 2, 0x4c, 0x00, 0,      /* clear, pixel 1, extra pixel 1 */
+        0x3b
+    };
+    ASSERT_EQ(neverc_gif_decode(too_much, sizeof(too_much), &img), -1);
+    ASSERT_TRUE(img.frames == NULL);
+}
+
 static void test_failed_decode_clears_geometry(void) {
     printf("[failed_decode_clears_geometry]\n");
     /* GCT flag set (2 entries) but only 3 of 6 color bytes are present. */
@@ -747,6 +777,7 @@ int main(void) {
     test_netscape_loop_count();
     test_plain_text_consumes_gce();
     test_rejects_truncated_and_oversize_lzw();
+    test_accepts_missing_end_code();
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();
     test_from_rgba_full_palette_transparency();
