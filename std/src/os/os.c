@@ -2146,9 +2146,16 @@ int neverc_os_executable(char *buf, size_t cap) {
     uint32_t size = (uint32_t)cap;
     return _NSGetExecutablePath(buf, &size) == 0 ? 0 : -1;
 #elif defined(NEVERC_PLATFORM_LINUX) || defined(NEVERC_PLATFORM_ANDROID)
+    static const char deleted[] = " (deleted)";
+    const size_t deleted_len = sizeof(deleted) - 1;
     ssize_t n = readlink("/proc/self/exe", buf, cap);
     if (n < 0 || (size_t)n >= cap) return -1;
     buf[n] = '\0';
+    /* Go os.Executable: the kernel appends " (deleted)" once the running
+     * binary is unlinked; report the path it was started from. */
+    if ((size_t)n > deleted_len &&
+        memcmp(buf + (size_t)n - deleted_len, deleted, deleted_len) == 0)
+        buf[(size_t)n - deleted_len] = '\0';
     return 0;
 #else
     return -1;
