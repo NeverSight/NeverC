@@ -368,6 +368,53 @@ static void test_scanner_final_empty_token(void) {
     neverc_bufio_scanner_free(&sc);
 }
 
+#define TEST_READ_FAILURE (-40)
+#define TEST_BAD_RECORD (-41)
+
+static int reject_tail_split(const uint8_t *data, size_t data_len, int at_eof,
+                             size_t *advance, const uint8_t **token,
+                             size_t *token_len, int *err) {
+    (void)data;
+    *advance = 0;
+    *token = NULL;
+    *token_len = 0;
+    *err = 0;
+    if (at_eof && data_len > 0) {
+        *err = TEST_BAD_RECORD;
+        return -1;
+    }
+    return 0;
+}
+
+/* Go bufio.Scanner keeps the first non-EOF error: a split that rejects the
+ * tail left by a failed read must not replace the read error. */
+static void test_scanner_keeps_first_error(void) {
+    printf("[scanner keeps first error]\n");
+
+    static const uint8_t tail[] = "abc";
+    data_error_reader_t reader = {
+        tail, sizeof(tail) - 1, TEST_READ_FAILURE, 0
+    };
+    neverc_io_reader_t io = { &reader, data_error_reader_read };
+    neverc_bufio_scanner_t sc;
+    neverc_bufio_scanner_init(&sc, io);
+    neverc_bufio_scanner_split(&sc, reject_tail_split);
+    check_int("rejected tail stops", neverc_bufio_scanner_scan(&sc), 0);
+    check_int("read error outlives split error",
+              neverc_bufio_scanner_err(&sc), TEST_READ_FAILURE);
+    neverc_bufio_scanner_free(&sc);
+
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, tail, sizeof(tail) - 1);
+    neverc_io_reader_t mem_io = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_scanner_init(&sc, mem_io);
+    neverc_bufio_scanner_split(&sc, reject_tail_split);
+    check_int("rejected tail at eof stops", neverc_bufio_scanner_scan(&sc), 0);
+    check_int("split error replaces eof", neverc_bufio_scanner_err(&sc),
+              TEST_BAD_RECORD);
+    neverc_bufio_scanner_free(&sc);
+}
+
 static void test_buffered_reader(void) {
     printf("[buffered reader]\n");
     const char *data = "Hello, buffered world!";
@@ -1283,6 +1330,7 @@ int main(void) {
     test_scanner_full_buffer_after_transient_empty_read();
     test_scanner_data_with_terminal_error();
     test_scanner_final_empty_token();
+    test_scanner_keeps_first_error();
     test_buffered_reader();
     test_buffered_reader_short_read();
     test_buffered_reader_preserves_terminal_error();
