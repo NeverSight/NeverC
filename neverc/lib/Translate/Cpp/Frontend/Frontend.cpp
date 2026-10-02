@@ -3065,7 +3065,75 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   return true;
 }
 
-static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
+static bool utilityTrivialConditionalMoveSource(
+    Adapter &A, const CXXRecordDecl *Root,
+    std::vector<const TypeSourceInfo *> *Signatures) {
+  // The pinned builtin supplies the trait decision. Limit its owning graph to
+  // trivial special members, and retain their written signatures separately.
+  // No constructor body or hypothetical operation is instantiated here.
+  std::set<const CXXRecordDecl *> Seen;
+  auto Signature = [&](const FunctionDecl *Function) {
+    for (const auto *Declaration : Function->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!A.S.owns(A.Sources, Declaration->getLocation()))
+        return false;
+      if (Declaration->isImplicit())
+        continue;
+      const auto *Info = Declaration->getTypeSourceInfo();
+      if (!Info)
+        return false;
+      if (Signatures)
+        Signatures->push_back(Info);
+    }
+    return true;
+  };
+  auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
+                   unsigned Depth) -> bool {
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Depth >= 64 || Record->isInvalidDecl() ||
+        Record->isDependentContext() || Record->isUnion() ||
+        !A.S.owns(A.Sources, Record->getLocation()) ||
+        !Record->isStandardLayout() || !Record->isTrivial() ||
+        !Record->hasTrivialDestructor())
+      return false;
+    if (!Seen.insert(Record).second)
+      return true;
+    A.chargeExpansion(1, Record->getLocation());
+    for (const auto *Declaration : Record->decls())
+      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+          Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+        return false; // Constructor-template selection needs its own sources.
+    for (const auto *Constructor : Record->ctors()) {
+      A.chargeExpansion(1, Constructor->getLocation());
+      if (Constructor->isInheritingConstructor() ||
+          Constructor->isDelegatingConstructor() ||
+          (!Constructor->isDefaultConstructor() &&
+           !Constructor->isCopyOrMoveConstructor()) ||
+          (!Constructor->isDefaulted() && !Constructor->isDeleted()) ||
+          (!Constructor->isTrivial() && !Constructor->isDeleted()))
+        return false;
+      if (Constructor->isCopyOrMoveConstructor() && !Signature(Constructor))
+        return false;
+    }
+    if (const auto *Destructor = Record->getDestructor();
+        Destructor && !Signature(Destructor))
+      return false;
+    for (const auto &Base : Record->bases())
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+        return false;
+    for (const auto *Field : Record->fields())
+      if (const auto *Member =
+              A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
+          Member && !Self(Self, Member, Depth + 1))
+        return false;
+    return true;
+  };
+  return Check(Check, Root, 0);
+}
+
+static bool utilityValueAdapterSource(
+    Adapter &A, const CallExpr *Call,
+    std::vector<const TypeSourceInfo *> *ConditionalSignatures = nullptr) {
   const auto Operation =
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
   if (!Operation || (*Operation != UtilityOperation::Move &&
@@ -3100,13 +3168,16 @@ static bool utilityValueAdapterSource(Adapter &A, const CallExpr *Call) {
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
-  // on their ordinary checks. Conditional move needs separate trait sources.
+  // on their ordinary checks. Conditional move additionally retains the
+  // signatures of its admitted trivial owning constructor/destructor graph.
   const bool OwnedRecord =
-      (MoveOrForward || *Operation == UtilityOperation::AsConst) && Definition &&
+      Definition &&
       !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
       !Definition->isUnion() && A.S.owns(A.Sources, Definition->getLocation()) &&
       !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
-      Type.getAddressSpace() == LangAS::Default;
+      Type.getAddressSpace() == LangAS::Default &&
+      (*Operation != UtilityOperation::MoveIfNoexcept ||
+       utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures));
   return (Scalar || TupleLike || FunctionObject || OwnedRecord ||
           (MoveOrForward && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
@@ -11716,11 +11787,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 }
             }
           }
+        std::vector<const TypeSourceInfo *> ConditionalMoveSignatures;
+        const bool ValueAdapter =
+            utilityValueAdapterSource(A, Call, &ConditionalMoveSignatures);
         if (utilityUniquePtrSwapSource(A, Call) ||
             utilityUniquePtrNullComparisonSource(A, Call) ||
             utilityUniquePtrNullOrderingSource(A, Call) ||
             utilityUniquePtrOwnerComparisonSource(A, Call) ||
-            utilityValueAdapterSource(A, Call) ||
+            ValueAdapter ||
             functionalReferenceFactorySource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
                   directFunctionReference(Call))) {
@@ -11728,8 +11802,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
             if (Inserted)
               A.chargeExpansion(1, Call->getExprLoc());
-            if (Entry->second == Call)
+            if (Entry->second == Call) {
               AuthenticatedUtilityCall = Call;
+              if (ValueAdapter)
+                for (const auto *Signature : ConditionalMoveSignatures)
+                  operationTypeDependency(Signature);
+            }
           }
         // The public algorithm has no written exception specification. Its
         // exact descriptor supplies the SDK signature/body, not a blanket

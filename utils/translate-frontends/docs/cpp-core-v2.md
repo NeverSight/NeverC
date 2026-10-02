@@ -816,8 +816,21 @@ calling an operator or extending a lifetime. Original aliases, template
 arguments, field/base layout sources, operands, selected defaults and temporary
 cleanup remain independent requirements. A cast alone does not instantiate an
 unused constructor or member-template body; actual invocation still requires
-its selected method source. `std::move_if_noexcept` queries on these records
-retain a separate requirement for constructor-trait decision sources.
+its selected method source.
+
+`std::move_if_noexcept` queries also admit source-owned trivial standard-layout
+records whose owned base and value-member graph has only implicit, defaulted
+or deleted default/copy/move constructors and trivial destruction. The exact
+pinned builtin supplies its `T&&` or `const T&` decision, including throwing
+defaulted moves, deleted copies/moves and const operands. Written copy/move and
+destructor signatures remain independent source dependencies throughout that
+graph, including their original exception expressions and parameter aliases.
+The query constructs no object and does not instantiate a constructor body.
+Scalar/pointer fields, owned fixed arrays, admitted empty bases and concrete
+class templates keep their ordinary layout and template-source checks.
+Constructor templates, other constructor overloads, nontrivial owning graphs
+and SDK value members retain separate decision-source requirements. Non-owning
+pointer fields do not consume their referents' constructor graph.
 
 The exact public `apply`, index helper and internal invocation must have
 completed pinned SDK bodies. Each forwarding declaration family and selected
