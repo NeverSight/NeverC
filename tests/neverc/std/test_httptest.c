@@ -357,6 +357,22 @@ static void test_httptest_strict_parser(void) {
     check_int("ipv6 comma host 400",
               n > 0 && strstr(buf, "400 Bad Request") != NULL, 1);
 
+    /* RFC 3986 allows an empty port; the production server accepts it. */
+    n = httptest_raw(addr,
+        "GET / HTTP/1.1\r\nHost: localhost:\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("empty host port accepted",
+              n > 0 && strstr(buf, "400 Bad Request") == NULL &&
+              strstr(buf, "X-Method: GET") != NULL, 1);
+    n = httptest_raw(addr,
+        "GET / HTTP/1.1\r\nHost: [::1]:\r\n"
+        "Connection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("empty ipv6 host port accepted",
+              n > 0 && strstr(buf, "400 Bad Request") == NULL &&
+              strstr(buf, "X-Method: GET") != NULL, 1);
+
     n = httptest_raw(addr,
         "POST / HTTP/1.1\r\nHost: localhost\r\n"
         "Connection: close\r\n\r\n",
