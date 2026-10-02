@@ -429,6 +429,19 @@ void neverc_quic_endpoint_close(neverc_quic_endpoint_t *endpoint) {
         conn->endpoint = NULL;
         conn->udp = NULL;
         int application_owned = conn->application_owned;
+        /* The endpoint loop that would end the drain period is gone, so
+         * finish the connection here or its blocked readers never wake.
+         * This must stay under the lock that detached it: a concurrent
+         * free may destroy the connection as soon as the lock drops. */
+        if (conn->state != QUIC_CONN_CLOSED) {
+            conn->state = QUIC_CONN_CLOSED;
+            conn->io_running = 0;
+            conn->close_pending = 0;
+            quic_conn_finalize_streams(conn);
+            nc_cond_broadcast(&conn->state_cond);
+            nc_cond_broadcast(&conn->stream_avail_cond);
+            nc_cond_broadcast(&conn->datagram_cond);
+        }
         nc_mutex_unlock(&conn->lock);
         endpoint->connections[i] = NULL;
         if (!application_owned) {
