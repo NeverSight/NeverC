@@ -463,6 +463,7 @@ struct FunctionalStoredMemFn {
   const clang::Expr *Initializer;
   std::vector<const clang::CallExpr *> Adapters;
   const clang::CallExpr *Factory;
+  const clang::VarDecl *FactoryOwner;
   const clang::Expr *Address;
   const clang::ValueDecl *Member;
 };

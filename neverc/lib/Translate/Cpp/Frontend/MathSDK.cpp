@@ -10965,14 +10965,17 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
   const auto *Requested = Variable;
   const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
   std::vector<const CallExpr *> RequestedAdapters;
+  const CallExpr *Factory = nullptr;
   std::set<const VarDecl *> Seen;
   while (functionalErasedLocalVariable(S, SM, Variable)) {
     if (!Seen.insert(Variable->getCanonicalDecl()).second)
       return std::nullopt;
     const auto *Initializer = functionalInvokeStrippedExpression(
         Variable->getInit());
-    if (isa_and_nonnull<CallExpr>(Initializer))
+    if (const auto *Call = dyn_cast_or_null<CallExpr>(Initializer)) {
+      Factory = Call;
       break;
+    }
     const auto *Construction =
         dyn_cast_or_null<CXXConstructExpr>(Initializer);
     const auto *Constructor =
@@ -10985,18 +10988,28 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     Argument = functionalMemFnAdaptedUse(S, SM, Argument, Context, Adapters);
     if (Variable == Requested)
       RequestedAdapters = std::move(Adapters);
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Argument);
-    const auto *Source =
-        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
-    if (!Construction || !Constructor || !Reference || !Source ||
+    if (!Construction || !Constructor || !Argument ||
         !Constructor->isImplicit() || !Constructor->isTrivial() ||
         !Constructor->isCopyOrMoveConstructor() ||
         Constructor->getNumParams() != 1 ||
         !approvedStandardSDKDeclaration(S, SM, Constructor) ||
         !S.owns(SM, Construction->getExprLoc()) ||
-        !S.owns(SM, Reference->getExprLoc()) ||
+        !S.owns(SM, Argument->getExprLoc()) ||
         !Context.hasSameUnqualifiedType(Variable->getType(),
                                         Construction->getType()) ||
+        !Context.hasSameUnqualifiedType(Variable->getType(),
+                                        Argument->getType()))
+      return std::nullopt;
+    // A reference adapter may materialize a factory result before the trivial
+    // copy/move. Authenticate that exact factory below and retain its owner.
+    if (const auto *Call = dyn_cast<CallExpr>(Argument)) {
+      Factory = Call;
+      break;
+    }
+    const auto *Reference = dyn_cast<DeclRefExpr>(Argument);
+    const auto *Source =
+        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    if (!Reference || !Source ||
         !Context.hasSameUnqualifiedType(Variable->getType(),
                                         Source->getType()))
       return std::nullopt;
@@ -11004,8 +11017,6 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
   }
   if (!functionalErasedLocalVariable(S, SM, Variable))
     return std::nullopt;
-  const auto *Factory = dyn_cast_or_null<CallExpr>(
-      functionalInvokeStrippedExpression(Variable->getInit()));
   const auto *Function = Factory ? Factory->getDirectCallee() : nullptr;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -11065,8 +11076,8 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
   if (!supportedFunctionalStoredMember(S, SM, Context, Member))
     return std::nullopt;
   return FunctionalStoredMemFn{Requested, RequestedInitializer,
-                               std::move(RequestedAdapters), Factory, Address,
-                               Member};
+                               std::move(RequestedAdapters), Factory, Variable,
+                               Address, Member};
 }
 
 static bool functionalInvokeParameterReference(

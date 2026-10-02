@@ -11982,7 +11982,11 @@ public:
                 return false;
           }
         }
-        return true;
+        // An adapted temporary factory still owns written template and member
+        // arguments. Visit that actual factory once at its declaration; later
+        // local copies retain its completed sources without replaying them.
+        return Stored->FactoryOwner != D ||
+               TraverseStmt(const_cast<CallExpr *>(Stored->Factory));
       }
     }
     return RecursiveASTVisitor<Allowlist>::TraverseVarDecl(D);

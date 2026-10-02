@@ -2568,9 +2568,11 @@ local automatic variable, then called directly or through `std::invoke`. The pin
 `__mem_fn` specialization, stored member field, factory, call operator, both
 `__invoke` layers and every forwarding edge are authenticated before the
 wrapper and every local carrier are erased. Exact same-type local copy/move
-initializer chains are admitted, including bounded compositions of authenticated `std::move`,
-`std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; copies or
+initializer chains are admitted, including bounded compositions of authenticated
+`std::move`, `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; copies or
 moves from parameters and reassignment remain outside the runtime boundary.
+An exact factory temporary may initialize a local wrapper through `std::move`
+or a bounded adapter chain followed by the SDK's trivial copy/move constructor.
 The same adapters may wrap an authenticated local wrapper at its final direct
 call or `std::invoke` use.
 
@@ -2617,19 +2619,24 @@ pair and array carriers. They do not supply `apply` result-source queries or
 broaden the raw member-pointer callable boundary.
 The same four adapters may be nested within each initializer of an exact local
 `auto` copy/move chain used by these queries. Each initializer's bounded adapter
-chain ends in another authenticated local wrapper, and each copied wrapper
-must trace to the same original factory. Every actual initializer adapter
+chain ends in another authenticated local wrapper or a materialized factory
+temporary consumed by an exact trivial copy/move constructor. Each copied
+wrapper must trace to the same original factory. Every actual initializer adapter
 independently supplies its pinned declaration family, exact reference flow and
 nonthrowing signature.
 Ordinary copies, const copies and these adapted copies may be combined, then
 called directly, through `std::invoke` or through a final call-site adapter chain.
 Written adapter type arguments retain the same `decltype` boundary above.
 Every layer's written arguments are traversed at their owning copy declaration,
-including for an unused copy. Queries retain those actual completed type
-sources as well as the original member. Erasing a copy
+including for an unused copy. The declaration containing the original factory
+also traverses that factory's actual written template and member arguments,
+even when the temporary is wrapped in adapters. Subsequent copies retain the
+factory owner and do not replay that traversal. Queries retain the actual
+completed type sources as well as the original member. Erasing a copy
 does not skip its written arguments or replay their traversal at a later query.
-Adapted temporary factory initializers and explicitly written wrapper types retain separate source
-requirements.
+Explicitly written wrapper types and independent factory-result type expressions
+retain separate source requirements, including when used as an adapter's type
+argument for a fresh factory temporary.
 
 Other cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
