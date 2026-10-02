@@ -184,6 +184,38 @@ int main(void) {
     free(duplicate);
     neverc_zip_writer_free(&w);
 
+    /* The DEFLATE output buffer is optional: without it the entry is stored.
+     * Any other failed allocation fails the add without recording it. */
+    static uint8_t text[8192];
+    memset(text, 'a', sizeof(text));
+    for (size_t relative_failure = 1; relative_failure <= 4;
+         relative_failure++) {
+        reset_allocator(0);
+        neverc_zip_writer_init(&w);
+        CHECK(w.data != NULL);
+        fail_at = allocation_count + relative_failure;
+        int result = neverc_zip_writer_add_method(
+            &w, "t", text, sizeof(text), NEVERC_ZIP_DEFLATED);
+        fail_at = 0;
+        CHECK(result == -1 || result == 0);
+        CHECK(w.nentries == (result == 0 ? 1 : 0));
+        if (relative_failure == 1) {
+            CHECK(result == 0);
+            CHECK(w.entries[0].method == NEVERC_ZIP_STORED);
+        }
+        if (result == 0) {
+            CHECK(neverc_zip_writer_close(&w) == 0);
+            neverc_zip_reader_t r;
+            CHECK(neverc_zip_reader_init(&r, w.data, w.len) == 0);
+            uint8_t out[sizeof(text)];
+            size_t got = sizeof(out);
+            CHECK(neverc_zip_reader_file_read(&r, 0, out, &got) == 0);
+            CHECK(got == sizeof(text) && memcmp(out, text, got) == 0);
+            neverc_zip_reader_free(&r);
+        }
+        neverc_zip_writer_free(&w);
+    }
+
     puts("passed");
     return 0;
 }
