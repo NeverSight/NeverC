@@ -171,6 +171,98 @@ static void test_rle_run_requires_count_byte(void) {
                   -1);
 }
 
+static unsigned bz2_get_bit(const uint8_t *buf, size_t bit) {
+    return (buf[bit >> 3] >> (7u - (bit & 7u))) & 1u;
+}
+
+static void bz2_put_bit(uint8_t *buf, size_t *bit, unsigned value) {
+    if (value) buf[*bit >> 3] |= (uint8_t)(0x80u >> (*bit & 7u));
+    (*bit)++;
+}
+
+static uint32_t bz2_copy_bits(uint8_t *out, size_t *wr, size_t *rd,
+                              unsigned count) {
+    uint32_t value = 0;
+    for (unsigned i = 0; i < count; i++) {
+        unsigned bit = bz2_get_bit(bz2_hello, (*rd)++);
+        value = (value << 1) | bit;
+        bz2_put_bit(out, wr, bit);
+    }
+    return value;
+}
+
+/* Re-encode bz2_hello with its block declaring `selectors` selectors. The
+ * surplus entries are MTF index 0 and lie past the last symbol group, so
+ * they are never referenced. Returns the new length, 0 on failure. */
+static size_t bz2_hello_with_selectors(uint8_t *out, size_t cap,
+                                       unsigned selectors) {
+    size_t end = 0;
+    /* Payload ends with the 48-bit end-of-stream magic and the 32-bit
+     * combined CRC; at most 7 padding bits follow. */
+    for (unsigned pad = 0; pad < 8 && end == 0; pad++) {
+        size_t at = sizeof(bz2_hello) * 8u - pad - 80u;
+        uint64_t magic = 0;
+        for (unsigned i = 0; i < 48u; i++)
+            magic = (magic << 1) | bz2_get_bit(bz2_hello, at + i);
+        if (magic == UINT64_C(0x177245385090)) end = at + 80u;
+    }
+    if (end == 0 || sizeof(bz2_hello) + selectors / 8u + 2u > cap) return 0;
+
+    size_t rd = 0, wr = 0;
+    memset(out, 0, cap);
+    /* Stream header, block magic, block CRC, randomized bit, origPtr. */
+    bz2_copy_bits(out, &wr, &rd, 32u + 48u + 32u + 1u + 24u);
+    uint32_t ranges = bz2_copy_bits(out, &wr, &rd, 16u);
+    for (unsigned i = 0; i < 16u; i++)
+        if (ranges & (1u << i)) bz2_copy_bits(out, &wr, &rd, 16u);
+    bz2_copy_bits(out, &wr, &rd, 3u); /* number of Huffman groups */
+
+    uint32_t declared = 0;
+    for (unsigned i = 0; i < 15u; i++)
+        declared = (declared << 1) | bz2_get_bit(bz2_hello, rd++);
+    for (unsigned i = 15u; i > 0; i--)
+        bz2_put_bit(out, &wr, (selectors >> (i - 1u)) & 1u);
+    for (uint32_t s = 0; s < declared; s++) {
+        unsigned bit;
+        do {
+            bit = bz2_get_bit(bz2_hello, rd++);
+            if (s < selectors) bz2_put_bit(out, &wr, bit);
+        } while (bit);
+    }
+    for (uint32_t s = declared; s < selectors; s++)
+        bz2_put_bit(out, &wr, 0);
+    while (rd < end) bz2_put_bit(out, &wr, bz2_get_bit(bz2_hello, rd++));
+    return (wr + 7u) / 8u;
+}
+
+static void test_surplus_selectors(void) {
+    printf("[surplus_selectors]\n");
+    /* The 15-bit selector count may exceed the 18002 groups a 900k block
+     * can use; Go compress/bzip2 reads and ignores the surplus. */
+    static uint8_t stream[sizeof(bz2_hello) + 32768u / 8u + 8u];
+    static const unsigned counts[] = {18002u, 18003u, 20000u, 32767u};
+    for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); i++) {
+        size_t len = bz2_hello_with_selectors(stream, sizeof(stream),
+                                              counts[i]);
+        ASSERT_TRUE(len > 0);
+        uint8_t out[64];
+        size_t out_len = sizeof(out);
+        int rc = neverc_bzip2_decompress(stream, len, out, &out_len);
+        ASSERT_INT_EQ(rc, 0);
+        if (rc == 0) {
+            ASSERT_INT_EQ((int)out_len, 13);
+            ASSERT_TRUE(memcmp(out, "Hello, World!", 13) == 0);
+        }
+    }
+
+    /* A block still needs at least one selector. */
+    size_t len = bz2_hello_with_selectors(stream, sizeof(stream), 0);
+    ASSERT_TRUE(len > 0);
+    uint8_t out[64];
+    size_t out_len = sizeof(out);
+    ASSERT_INT_EQ(neverc_bzip2_decompress(stream, len, out, &out_len), -1);
+}
+
 int main(void) {
     printf("=== NeverC bzip2 Tests ===\n");
     test_hello_decompress();
@@ -183,6 +275,7 @@ int main(void) {
     test_invalid_spans();
     test_leftover_bytes();
     test_rle_run_requires_count_byte();
+    test_surplus_selectors();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
