@@ -262,14 +262,16 @@ static DWORD WINAPI retain_during_recycle_thread(LPVOID arg) {
     retain_recycle_arg_t *a = (retain_recycle_arg_t *)arg;
     neverc_weak_ref_t *r = neverc_weak_ref_retain(a->w);
     if (r) {
-        void *v = neverc_weak_value(r);
-        if (v && *(int *)v != 1)
-            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
+        /* value() is an unpinned snapshot and main may drop the last strong
+         * at any moment, so only dereference it while the upgrade pins the
+         * payload. */
         neverc_weak_strong_t u = neverc_weak_upgrade(r);
-        if (u.ptr && *(int *)u.ptr != 1)
-            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
-        if (u.ptr)
+        if (u.ptr) {
+            void *v = neverc_weak_value(r);
+            if (*(int *)u.ptr != 1 || !v || *(int *)v != 1)
+                __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
             neverc_weak_strong_release(&u);
+        }
         neverc_weak_ref_release(r);
     }
     return 0;
@@ -284,14 +286,16 @@ static void *retain_during_recycle_thread(void *arg) {
     retain_recycle_arg_t *a = (retain_recycle_arg_t *)arg;
     neverc_weak_ref_t *r = neverc_weak_ref_retain(a->w);
     if (r) {
-        void *v = neverc_weak_value(r);
-        if (v && *(int *)v != 1)
-            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
+        /* value() is an unpinned snapshot and main may drop the last strong
+         * at any moment, so only dereference it while the upgrade pins the
+         * payload. */
         neverc_weak_strong_t u = neverc_weak_upgrade(r);
-        if (u.ptr && *(int *)u.ptr != 1)
-            __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
-        if (u.ptr)
+        if (u.ptr) {
+            void *v = neverc_weak_value(r);
+            if (*(int *)u.ptr != 1 || !v || *(int *)v != 1)
+                __atomic_store_n(a->ok, 0, __ATOMIC_SEQ_CST);
             neverc_weak_strong_release(&u);
+        }
         neverc_weak_ref_release(r);
     }
     return NULL;
