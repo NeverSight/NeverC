@@ -99,6 +99,47 @@ static void test_compact(void) {
     ASSERT_INT_EQ(unique[2], 3);
 }
 
+static int g_near_calls;
+static int near_int(const void *a, const void *b) {
+    int d = *(const int *)a - *(const int *)b;
+    g_near_calls++;
+    return d >= -1 && d <= 1;
+}
+static int succ_int(const void *a, const void *b) {
+    return *(const int *)a == *(const int *)b + 1;
+}
+
+/* Go slices.CompactFunc compares each element with its original predecessor,
+ * calling eq(current, previous) once per adjacent pair, so a run is a chain
+ * of adjacent equal pairs even when eq is not transitive. */
+static void test_compact_func_adjacent_pairs(void) {
+    printf("[compact_func_adjacent_pairs]\n");
+    int chain[] = {1, 2, 3};
+    ASSERT_INT_EQ((int)neverc_slices_compact(chain, 3, sizeof(int), near_int), 1);
+    ASSERT_INT_EQ(chain[0], 1);
+    ASSERT_INT_EQ(chain[1], 0);
+
+    int bursts[] = {10, 11, 12, 13, 20, 21, 30};
+    g_near_calls = 0;
+    ASSERT_INT_EQ((int)neverc_slices_compact(bursts, 7, sizeof(int), near_int), 3);
+    ASSERT_INT_EQ(g_near_calls, 6);
+    ASSERT_INT_EQ(bursts[0], 10);
+    ASSERT_INT_EQ(bursts[1], 20);
+    ASSERT_INT_EQ(bursts[2], 30);
+    ASSERT_INT_EQ(bursts[3], 0);
+
+    int back[] = {5, 6, 7, 5, 4, 3};
+    ASSERT_INT_EQ((int)neverc_slices_compact(back, 6, sizeof(int), near_int), 2);
+    ASSERT_INT_EQ(back[0], 5);
+    ASSERT_INT_EQ(back[1], 5);
+
+    int steps[] = {1, 2, 3, 5, 4};
+    ASSERT_INT_EQ((int)neverc_slices_compact(steps, 5, sizeof(int), succ_int), 3);
+    ASSERT_INT_EQ(steps[0], 1);
+    ASSERT_INT_EQ(steps[1], 5);
+    ASSERT_INT_EQ(steps[2], 4);
+}
+
 static void test_clone(void) {
     printf("[clone]\n");
     int arr[] = {10, 20, 30};
@@ -387,6 +428,7 @@ int main(void) {
     test_is_sorted();
     test_binary_search();
     test_compact();
+    test_compact_func_adjacent_pairs();
     test_clone();
     test_size_overflow_rejected();
     test_min_max();
