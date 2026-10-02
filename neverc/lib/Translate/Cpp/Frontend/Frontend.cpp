@@ -3173,14 +3173,21 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
-static bool utilityScalarParameterConstructor(
+static bool utilityConditionalMoveValueConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
     return false;
+  // A constructor requiring two arguments cannot take part in construction
+  // from a single const record. Use the latest declaration: a redeclaration
+  // may add a default and make an earlier two-argument signature viable.
+  // Reading the minimum arity does not instantiate any default expression.
+  const auto *Latest = Constructor->getMostRecentDecl();
+  A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
+  if (Latest->getMinRequiredArguments() > 1)
+    return true;
   for (const auto *Parameter : Constructor->parameters()) {
-    A.chargeExpansion(1, Parameter->getLocation());
     const auto Type = Parameter->getType().getNonReferenceType();
     const bool Scalar =
         !Type->isDependentType() && !Type.isVolatileQualified() &&
@@ -3200,12 +3207,12 @@ static bool utilityScalarParameterConstructor(
 static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
-  const bool ScalarConstructor =
-      utilityScalarParameterConstructor(A, Constructor);
+  const bool ValueConstructor =
+      utilityConditionalMoveValueConstructor(A, Constructor);
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||
-      !(Assignment || Destructor || ScalarConstructor ||
+      !(Assignment || Destructor || ValueConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
@@ -3228,11 +3235,11 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool MatchingOrigin =
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
-      : ScalarConstructor ? OriginConstructor &&
-                                !OriginConstructor->isCopyOrMoveConstructor() &&
-                                !OriginConstructor->isVariadic() &&
-                                OriginConstructor->getNumParams() ==
-                                    Constructor->getNumParams()
+      : ValueConstructor ? OriginConstructor &&
+                               !OriginConstructor->isCopyOrMoveConstructor() &&
+                               !OriginConstructor->isVariadic() &&
+                               OriginConstructor->getNumParams() ==
+                                   Constructor->getNumParams()
                    : OriginConstructor &&
                          OriginConstructor->isCopyConstructor() ==
                              Constructor->isCopyConstructor() &&
@@ -3277,12 +3284,12 @@ static bool utilityMutableCopyConditionalMoveSource(
     Adapter &A, const CXXRecordDecl *Record,
     std::vector<const CXXMethodDecl *> *Signatures) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
-  // conversion paths, including record value/reference parameters that can
-  // consume a converting temporary. A scalar first parameter cannot consume
-  // this record without a conversion function, even if later parameters have
-  // defaults. Keep all parameters within the admitted scalar shape and retain
-  // every written signature; callers separately check copy/move overloads
-  // and sources.
+  // conversion paths. An ordinary constructor requiring two arguments cannot
+  // consume this record alone, even through a converting temporary. Otherwise
+  // require scalar parameters: the first cannot consume this record without
+  // a conversion function, even if later parameters have defaults. Retain
+  // every written signature, including each nonviable constructor's parameter
+  // types; callers separately check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
   for (const auto *Declaration : Record->decls()) {
@@ -3297,7 +3304,7 @@ static bool utilityMutableCopyConditionalMoveSource(
     if (Constructor->isCopyOrMoveConstructor() ||
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
-    if (!utilityScalarParameterConstructor(A, Constructor) ||
+    if (!utilityConditionalMoveValueConstructor(A, Constructor) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
   }
