@@ -3324,7 +3324,7 @@ static bool utilityDeletedCopyConditionalMoveSource(
 
 static bool utilityTrivialConditionalMoveSource(
     Adapter &A, const CXXRecordDecl *Root,
-    std::vector<const CXXMethodDecl *> *Signatures) {
+    std::vector<const CXXMethodDecl *> *Signatures, unsigned InitialDepth) {
   // The pinned builtin supplies the trait decision. Limit its owning graph to
   // trivial special members, and retain their written signatures separately.
   // Normal record admission proves storage, including non-standard-layout
@@ -3373,70 +3373,85 @@ static bool utilityTrivialConditionalMoveSource(
         return false;
     return true;
   };
-  return Check(Check, Root, 0);
+  return Check(Check, Root, InitialDepth);
 }
 
 static bool utilityRecordConditionalMoveSource(
-    Adapter &A, const CXXRecordDecl *Record,
+    Adapter &A, const CXXRecordDecl *Root,
     std::vector<const CXXMethodDecl *> *Signatures) {
-  // Keep one exact public const-copy and at most one exact rvalue move. Their
-  // ordinary declarations or the bounded owning graph below supply viability,
-  // defaulted deletion and inferred exceptions. The pinned builtin retains
-  // overload selection, including ignored deleted defaulted moves; do not
-  // synthesize an operation or instantiate a hypothetical body here.
-  for (const auto *Declaration : Record->decls())
-    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
-        Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+  // The pinned builtin retains overload selection and inferred exceptions.
+  // Supply their original sources through a bounded graph of owned records,
+  // without generating hypothetical copies, moves or destructor bodies.
+  std::set<const CXXRecordDecl *> Seen;
+  auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
+                   unsigned Depth) -> bool {
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Depth >= 64 || Record->isInvalidDecl() ||
+        Record->isDependentContext() || Record->isUnion() ||
+        !A.S.owns(A.Sources, Record->getLocation()))
       return false;
-  const auto Object = A.Context.getRecordType(Record);
-  const CXXConstructorDecl *Copy = nullptr, *Move = nullptr;
-  for (const auto *Constructor : Record->ctors()) {
-    A.chargeExpansion(1, Constructor->getLocation());
-    if (Constructor->isInheritingConstructor())
+    if (!Seen.insert(Record).second)
+      return true;
+    A.chargeExpansion(1, Record->getLocation());
+    if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
+      return true;
+    // Each nontrivial node keeps one exact public const-copy and at most one
+    // exact rvalue move. Defaulted copies may be deleted, and defaulted moves
+    // may be ignored in favor of copying; preserve the SDK's selected result.
+    for (const auto *Declaration : Record->decls())
+      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+          Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+        return false;
+    const auto Object = A.Context.getRecordType(Record);
+    const CXXConstructorDecl *Copy = nullptr, *Move = nullptr;
+    for (const auto *Constructor : Record->ctors()) {
+      A.chargeExpansion(1, Constructor->getLocation());
+      if (Constructor->isInheritingConstructor())
+        return false;
+      if (!Constructor->isCopyOrMoveConstructor())
+        continue;
+      const bool IsCopy = Constructor->isCopyConstructor();
+      if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+          Constructor->getNumParams() != 1 ||
+          !A.Context.hasSameType(
+              Constructor->getParamDecl(0)->getType(),
+              IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
+                     : A.Context.getRValueReferenceType(Object)) ||
+          (IsCopy && ((Constructor->isDeleted() && !Constructor->isDefaulted()) ||
+                      Constructor->getAccess() != AS_public)) ||
+          !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
+        return false;
+      auto *&Selected = IsCopy ? Copy : Move;
+      if (Selected && Selected != Constructor->getCanonicalDecl())
+        return false;
+      Selected = Constructor->getCanonicalDecl();
+    }
+    if (!Copy)
       return false;
-    if (!Constructor->isCopyOrMoveConstructor())
-      continue;
-    const bool IsCopy = Constructor->isCopyConstructor();
-    if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
-        Constructor->getNumParams() != 1 ||
-        !A.Context.hasSameType(
-            Constructor->getParamDecl(0)->getType(),
-            IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
-                   : A.Context.getRValueReferenceType(Object)) ||
-        (IsCopy && ((Constructor->isDeleted() && !Constructor->isDefaulted()) ||
-                    Constructor->getAccess() != AS_public)) ||
-        !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
+    const auto *Destructor = Record->getDestructor();
+    if (Destructor) {
+      if (Destructor->isInvalidDecl() || Destructor->isDeleted() ||
+          Destructor->getAccess() != AS_public ||
+          !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
+        return false;
+    } else if (Record->hasUserDeclaredDestructor() ||
+               !Record->hasTrivialDestructor()) {
       return false;
-    auto *&Selected = IsCopy ? Copy : Move;
-    if (Selected && Selected != Constructor->getCanonicalDecl())
-      return false;
-    Selected = Constructor->getCanonicalDecl();
-  }
-  if (!Copy)
-    return false;
-  const auto *Destructor = Record->getDestructor();
-  if (Destructor) {
-    if (Destructor->isInvalidDecl() || Destructor->isDeleted() ||
-        Destructor->getAccess() != AS_public ||
-        !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
-      return false;
-  } else if (Record->hasUserDeclaredDestructor() ||
-             !Record->hasTrivialDestructor()) {
-    return false;
-  }
-  // Inferred copy/move and destruction depend on owned subobjects. This
-  // proof keeps the existing trivial owning graph and all its written special
-  // member sources; pointer/reference fields do not own their referent graph.
-  for (const auto &Base : Record->bases())
-    if (!utilityTrivialConditionalMoveSource(
-            A, Base.getType()->getAsCXXRecordDecl(), Signatures))
-      return false;
-  for (const auto *Field : Record->fields())
-    if (const auto *Member =
-            A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
-        Member && !utilityTrivialConditionalMoveSource(A, Member, Signatures))
-      return false;
-  return true;
+    }
+    // Copy/move viability and inferred exceptions include bases, array
+    // elements and nontrivial value members. Reference/pointer fields retain
+    // their written types and bindings without owning a referent graph.
+    for (const auto &Base : Record->bases())
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+        return false;
+    for (const auto *Field : Record->fields())
+      if (const auto *Member =
+              A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
+          Member && !Self(Self, Member, Depth + 1))
+        return false;
+    return true;
+  };
+  return Check(Check, Root, 0);
 }
 
 static bool utilityValueAdapterSource(
@@ -3501,7 +3516,6 @@ static bool utilityValueAdapterSource(
       (ReferenceCast ||
        utilityDeletedCopyConditionalMoveSource(A, Call, Definition,
                                               ConditionalSignatures) ||
-       utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures) ||
        utilityRecordConditionalMoveSource(A, Definition,
                                           ConditionalSignatures));
   const bool ConditionalOwner =

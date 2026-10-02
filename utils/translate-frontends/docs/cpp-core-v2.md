@@ -915,8 +915,8 @@ of a containing record does not add const to its mutable referents, and an
 rvalue-reference field can delete copying while still permitting the `T&&`
 branch. Array, pointer-object, callback-object and record referents retain their
 original types and lifetimes; no referent copy or cleanup is introduced.
-Constructor templates, other constructor overloads, nontrivial owning graphs
-and SDK value members retain separate decision-source requirements. Non-owning
+Constructor templates, other constructor overloads and SDK value members
+retain separate decision-source requirements. Non-owning
 pointer/reference fields do not consume their referents' constructor graph.
 
 Records with ordinary value constructors also supply conditional-move query
@@ -930,20 +930,30 @@ including a deleted defaulted move that is ignored in favor of copying.
 Every written copy/move declaration retains its parameter and exception sources.
 
 This record proof accepts implicit, defaulted or ordinary public, non-deleted
-destruction. Owned bases and value members must satisfy the trivial
-constructor/destructor graph above; non-owning pointer/reference fields keep
-their original bindings. That graph supplies the sources of inferred exception
-specifications and defaulted deletion. Constructor templates, inherited
-constructors, additional copy overloads and extra copy/move parameters retain
-separate requirements. Mutable and const operands preserve the pinned `T&&`
-or `const T&` result, including copy fallback and throwing destruction.
+destruction. Its bounded owning graph also includes nontrivial source-owned
+value members, nested records and fixed-array elements. Every nontrivial node
+must satisfy the same exact copy/move/destructor declaration requirements;
+trivial nodes keep the proof above. Every consumed signature retains its own
+written parameter and exception sources. The graph supplies inferred exception
+and defaulted-deletion sources, including an inaccessible member move that
+deletes an enclosing defaulted move and permits a copy instead.
+
+Non-owning pointer/reference fields keep their original bindings. Constructor
+templates, inherited constructors, additional copy overloads, extra copy/move
+parameters and nontrivial members with inaccessible copies/destructors or
+explicitly deleted copies retain separate requirements. SDK members and
+nontrivial bases retain their existing source and layout requirements. Mutable
+and const operands preserve the pinned `T&&` or `const T&` result, including
+copy fallback and throwing destruction.
 
 Concrete template special-member signatures may retain their exact
 nondependent written exception source, or the exact absence of a specification
 for a defaulted member, while their inferred result and generated body remain
 lazy. Unresolved dependent exception sources remain outside this proof.
 The query performs no copy, move or cleanup; actual construction and destruction
-retain their ordinary body or generated-operation source checks.
+retain their ordinary body or generated-operation source checks. This includes
+every nested member operation selected by an actual generated copy, move or
+destructor; a query alone does not instantiate those hypothetical bodies.
 
 Object-argument queries also admit source-owned nontrivial records with an
 explicitly deleted public copy constructor taking exactly `const Record&`.
