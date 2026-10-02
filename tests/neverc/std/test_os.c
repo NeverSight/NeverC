@@ -514,6 +514,23 @@ static void test_remove_all_unreadable_empty_dir(void) {
     ASSERT_TRUE(!neverc_os_exists(root));
     if (neverc_os_exists(root)) chmod(root, 0700);
     neverc_os_remove_all(root);
+
+    /* A populated unreadable directory cannot be emptied. Go reports the
+     * first error (EACCES); errno must not be left cleared by the walk. */
+    if (neverc_os_geteuid() != 0) {
+        char inner[1200];
+        snprintf(inner, sizeof(inner), "%s/inner", sub);
+        ASSERT_EQ(neverc_os_mkdir(root, 0700), 0);
+        ASSERT_EQ(neverc_os_mkdir(sub, 0700), 0);
+        ASSERT_EQ(neverc_os_write_file(inner, (const unsigned char *)"x", 1,
+                                       0600), 0);
+        ASSERT_EQ(chmod(sub, 0), 0);
+        errno = 0;
+        ASSERT_EQ(neverc_os_remove_all(root), -1);
+        ASSERT_TRUE(neverc_os_is_permission(errno));
+        chmod(sub, 0700);
+        ASSERT_EQ(neverc_os_remove_all(root), 0);
+    }
 }
 #endif
 
