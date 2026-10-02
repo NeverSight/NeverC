@@ -426,6 +426,16 @@ static void test_parse_layout(void) {
     ok = neverc_time_parse("2006-01-02  15:04:05", "2024-06-15 12:00:00", &t);
     check_int("parse extra layout spaces", ok, 0);
     check_int("parse extra layout spaces hour", neverc_time_hour(t), 12);
+    /* Go skip: a layout space needs a value space only while value text
+     * remains, so trailing layout spaces also match the end of the value. */
+    ok = neverc_time_parse("2006-01-02 ", "2024-01-02", &t);
+    check_int("parse trailing layout space", ok, 0);
+    check_int64("parse trailing layout space instant", t.sec, 1704153600LL);
+    ok = neverc_time_parse("2006-01-02 15:04:05  ", "2024-01-02 03:04:05", &t);
+    check_int("parse trailing layout spaces after time", ok, 0);
+    check_int64("parse trailing layout spaces instant", t.sec, 1704164645LL);
+    check_int("parse layout space still needs value space",
+              neverc_time_parse("2006 01", "202401", &t), -1);
 
     ok = neverc_time_parse("3:04PM", "2:30PM", &t);
     check_int("parse 12h pm", ok, 0);
