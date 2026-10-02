@@ -2973,7 +2973,9 @@ const char *neverc_http_detect_content_type(const void *data, size_t len) {
         if (ct) return ct;
     }
 
-    /* Font types */
+    /* Font types. Embedded OpenType: 34 bytes of any value, then "LP". */
+    if (dlen >= 36 && d[34] == 'L' && d[35] == 'P')
+        return "application/vnd.ms-fontobject";
     if (dlen >= 4 && d[0]==0 && d[1]==1 && d[2]==0 && d[3]==0) return "font/ttf";
     ct = sniff_exact(d, dlen, (const unsigned char *)"OTTO", 4, "font/otf");
     if (ct) return ct;
