@@ -156,9 +156,26 @@ static void test_parse_address_list(void) {
     ASSERT_EQ(neverc_mail_parse_address_list("a@x.com", one, 1), 1);
     ASSERT_EQ(neverc_mail_parse_address_list("", one, 1), -1);
     ASSERT_EQ(neverc_mail_parse_address_list("   ", one, 1), -1);
-    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com,", one, 1), -1);
     ASSERT_EQ(neverc_mail_parse_address_list("Doe, John <j@x.com>", addrs, 8),
               -1);
+
+    /* RFC 5322 4.4 obs-addr-list: Go ParseAddressList skips empty entries
+     * (leading, doubled and trailing commas) but still needs one mailbox. */
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com,", one, 1), 1);
+    ASSERT_STREQ(one[0].address, "a@x.com");
+    ASSERT_EQ(neverc_mail_parse_address_list(",a@x.com", one, 1), 1);
+    ASSERT_STREQ(one[0].address, "a@x.com");
+    ASSERT_EQ(neverc_mail_parse_address_list(" , a@x.com , , ", one, 1), 1);
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com,,b@y.com", addrs, 8),
+              2);
+    ASSERT_STREQ(addrs[0].address, "a@x.com");
+    ASSERT_STREQ(addrs[1].address, "b@y.com");
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com, ,b@y.com", addrs, 8),
+              2);
+    ASSERT_STREQ(addrs[1].address, "b@y.com");
+    ASSERT_EQ(neverc_mail_parse_address_list("a@x.com,,b@y.com", one, 1), -1);
+    ASSERT_EQ(neverc_mail_parse_address_list(",", one, 1), -1);
+    ASSERT_EQ(neverc_mail_parse_address_list(" ,, ", one, 1), -1);
 }
 
 static void test_format_address(void) {
