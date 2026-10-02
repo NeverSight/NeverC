@@ -705,10 +705,23 @@ fail:
     return -1;
 }
 
+/* Memory writers (httptest recorder, buffered protocol adapters) have no
+ * transport: like rw_flush, they keep the whole body buffered instead of
+ * framing chunks. */
+static int rw_is_memory_writer(const neverc_http_response_writer_t *w) {
+    return w->fd == NC_INVALID_SOCK && !w->transport_write &&
+           !w->protocol_flush && !w->hijacked && !w->owner;
+}
+
 int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
     if (!w || !w->chunked || w->chunked_ended) return -1;
     if (w->protocol_flush)
         return w->protocol_flush(w->protocol_context, w, 0);
+    if (rw_is_memory_writer(w)) {
+        if (w->aborted) return -1;
+        w->headers_sent = 1;
+        return 0;
+    }
     if (w->head_request || w->status < 200 ||
         w->status == 204 || w->status == 304) {
         if (rw_flush(w) != 0) return -1;
@@ -737,6 +750,12 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
         int result = w->protocol_flush(w->protocol_context, w, 1);
         if (result == 0) w->chunked_ended = 1;
         return result;
+    }
+    if (rw_is_memory_writer(w)) {
+        if (w->aborted) return -1;
+        w->headers_sent = 1;
+        w->chunked_ended = 1;
+        return 0;
     }
     if (w->head_request || w->status < 200 ||
         w->status == 204 || w->status == 304) {
