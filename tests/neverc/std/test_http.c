@@ -3718,6 +3718,18 @@ static void test_detect_content_type(void) {
               neverc_http_detect_content_type("wOF2\x00", 5), "font/woff2");
     check_str("otf",
               neverc_http_detect_content_type("OTTO\x00", 5), "font/otf");
+    {
+        /* WHATWG / Go: 34 arbitrary bytes followed by "LP" (EOT). */
+        unsigned char eot[40];
+        memset(eot, 0, sizeof(eot));
+        eot[0] = 0x9c;
+        eot[8] = 0x01;
+        eot[34] = 'L';
+        eot[35] = 'P';
+        check_str("embedded opentype",
+                  neverc_http_detect_content_type(eot, sizeof(eot)),
+                  "application/vnd.ms-fontobject");
+    }
 
     /* WebAssembly */
     {
