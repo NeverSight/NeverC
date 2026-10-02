@@ -1199,6 +1199,13 @@ static int parse_num_zone(const char *value, size_t vlen, size_t *vi,
 
 static int parse_frac_sec(const char *value, size_t vlen, size_t *vi,
                           int digits, int required, int *ns) {
+    /* Go stdFracSecond9: without a separator followed by a digit the
+     * fraction is omitted. Nothing is consumed, so the separator can still
+     * match a later literal, and a fraction parsed earlier stays in effect. */
+    if (!required &&
+        (*vi + 1 >= vlen || (value[*vi] != '.' && value[*vi] != ',') ||
+         value[*vi + 1] < '0' || value[*vi + 1] > '9'))
+        return 0;
     /* Go parseNanoseconds: either '.' or ',' regardless of the layout separator. */
     if (*vi < vlen && (value[*vi] == '.' || value[*vi] == ',')) {
         (*vi)++;
@@ -1223,9 +1230,7 @@ static int parse_frac_sec(const char *value, size_t vlen, size_t *vi,
         *ns = val;
         return 0;
     }
-    if (required) return -1;
-    *ns = 0;
-    return 0;
+    return -1;
 }
 
 static int layout_at_frac(const char *layout, size_t llen, size_t li) {
