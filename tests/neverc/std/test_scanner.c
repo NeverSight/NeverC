@@ -441,6 +441,37 @@ static void test_number_separators_and_prefixes(void) {
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 2);
 }
 
+/* Error counts from Go text/scanner for malformed number literals. */
+static void test_malformed_numbers_report_errors(void) {
+    printf("[malformed_numbers_report_errors]\n");
+    static const struct { const char *src; int errors; } cases[] = {
+        {"0x", 1}, {"0b", 1}, {"0x.p1", 1}, {"0x_", 2}, {"1__0", 1},
+        {"1_", 1}, {"0b1.0", 1}, {"0o1.2", 1}, {"0x1.8", 1}, {"1p3", 1},
+        {"0p0", 1}, {"0b1e1", 1}, {"1e", 1}, {"1E-x", 1}, {"0x1p", 1},
+        {"1._5", 1}, {"1e5_", 1}, {"0_x1", 1},
+        {"1_000", 0}, {"0x_f00d", 0}, {"0x1.8p3", 0}, {"0x.8p1", 0},
+        {"0_17", 0}, {"08.5", 0}, {"09e1", 0}, {".5", 0}, {"1.", 0},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        neverc_scanner_t s;
+        neverc_scanner_init(&s, cases[i].src, strlen(cases[i].src));
+        while (neverc_scanner_scan(&s) != NEVERC_SCANNER_EOF) {
+        }
+        if (neverc_scanner_error_count(&s) != cases[i].errors)
+            printf("  input: %s\n", cases[i].src);
+        ASSERT_INT_EQ(neverc_scanner_error_count(&s), cases[i].errors);
+    }
+
+    /* Without ScanFloats the '.' and exponent are separate tokens. */
+    neverc_scanner_t s;
+    const char *ints = "0b1.0 1e5";
+    neverc_scanner_init(&s, ints, strlen(ints));
+    neverc_scanner_set_mode(&s, NEVERC_SCAN_INTS);
+    while (neverc_scanner_scan(&s) != NEVERC_SCANNER_EOF) {
+    }
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
+}
+
 static void test_prefix_floats(void) {
     printf("[prefix_floats]\n");
     neverc_scanner_t s;
@@ -783,6 +814,7 @@ int main(void) {
     test_ints_do_not_consume_hex_float();
     test_block_comments_are_not_nested();
     test_number_separators_and_prefixes();
+    test_malformed_numbers_report_errors();
     test_prefix_floats();
     test_null_source();
     test_mode_zero_digits_are_chars();
