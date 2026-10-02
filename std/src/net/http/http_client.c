@@ -3694,8 +3694,10 @@ static int http_json_copy_string(const char *value, const char *end,
                 return 0;
             }
         }
-        for (size_t i = 0; i < count; i++)
-            if (length < buflen - 1) buf[length++] = bytes[i];
+        /* A truncated prefix is not the value: fail instead. */
+        if (count >= buflen - length) return 0;
+        memcpy(buf + length, bytes, count);
+        length += count;
     }
     if (p >= end) return 0;
     buf[length] = '\0';
@@ -3714,8 +3716,7 @@ static int http_json_copy_scalar(const char *value, const char *end,
            *vend != ' ' && *vend != '\t' && *vend != '\n' && *vend != '\r')
         vend++;
     size_t vlen = (size_t)(vend - value);
-    if (vlen == 0) return 0;
-    if (vlen >= buflen) vlen = buflen - 1;
+    if (vlen == 0 || vlen >= buflen) return 0;
     memcpy(buf, value, vlen);
     buf[vlen] = '\0';
     return 1;
