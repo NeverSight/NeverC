@@ -3571,8 +3571,7 @@ static const TypeSourceInfo *functionalMemberPointerAdapterTypeSource(
       A.S, A.Sources, Variable, A.Context);
   const auto Type = Info ? Info->getType().getNonReferenceType() : QualType();
   if (!Reference || !A.S.owns(A.Sources, Reference->getExprLoc()) ||
-      !Written || !Written->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() ||
-      !Stored || Stored->Member != Member || Type.isNull() ||
+      !Written || !Stored || Stored->Member != Member || Type.isNull() ||
       Type.isVolatileQualified() || Type.isRestrictQualified() ||
       !A.Context.hasSameUnqualifiedType(Type, Variable->getType()))
     return nullptr;
@@ -3583,7 +3582,7 @@ struct FunctionalMemberPointerSource {
   const ValueDecl *Member;
   const DeclRefExpr *Reference;
   llvm::SmallVector<std::pair<const Expr *, const DeclRefExpr *>, 16> Carriers;
-  llvm::SmallVector<const TypeSourceInfo *, 8> TemplateSources;
+  llvm::SmallVector<const TypeSourceInfo *, 8> TypeSources;
 };
 
 static std::optional<FunctionalMemberPointerSource>
@@ -3647,9 +3646,15 @@ functionalMemberPointerCarrierSource(Adapter &A, const Expr *Expression,
       const auto *Info = Variable ? Variable->getTypeSourceInfo() : nullptr;
       const auto Stored = approvedFunctionalStoredMemberPointer(
           A.S, A.Sources, Variable, A.Context);
-      if (Info && Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
-          Stored && Stored->Member == Member)
+      if (Info && Stored && Stored->Member == Member) {
         Source = Self(Self, Stored->Initializer, Depth + 1);
+        // Only deduced auto storage has an erased type source. An explicit
+        // member-pointer declaration retains its complete written TypeLoc,
+        // including class qualifiers, pointee types and exception expressions.
+        if (Source &&
+            !Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>())
+          Result.TypeSources.push_back(Info);
+      }
     }
     if (Source)
       Result.Carriers.emplace_back(E, Source);
@@ -3658,8 +3663,8 @@ functionalMemberPointerCarrierSource(Adapter &A, const Expr *Expression,
   Result.Reference = Retain(Retain, Expression, 0);
   if (!Result.Reference)
     return std::nullopt;
-  // Written decltype(auto-local) references keep their own completed TypeLoc
-  // source and can expose further copy adapters. Authenticate each only once.
+  // Written decltype(local) references keep their own completed TypeLoc source
+  // and can expose further copy adapters. Authenticate each only once.
   for (unsigned I = 0; I < Adapters.size(); ++I) {
     const auto *Reference =
         cast<DeclRefExpr>(directFunctionReference(Adapters[I]));
@@ -3669,7 +3674,7 @@ functionalMemberPointerCarrierSource(Adapter &A, const Expr *Expression,
           A, Argument, Member, Source);
       if (!Info || !Retain(Retain, Source, 0))
         return std::nullopt;
-      Result.TemplateSources.push_back(Info);
+      Result.TypeSources.push_back(Info);
     }
   }
   return Result;
@@ -3717,7 +3722,7 @@ static std::optional<FunctionalMemFnSource> functionalMemFnCarrierSource(
   // Compose the erased wrapper with the exact raw pointer's source proof.
   // Keep the original reference at the end of that chain, so a wrapper query
   // never consumes a skipped auto TypeLoc or an adapter's member-pointer type.
-  // Ordinary explicitly typed pointers retain their existing declaration source.
+  // Explicitly typed pointers additionally retain their written declarations.
   const Expr *CallableSource = Pointer
       ? Pointer->Reference : Factory->getArg(0)->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(CallableSource);
@@ -11295,9 +11300,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         A, Argument, Member, Expression);
     if (!Info)
       return nullptr;
-    // Only this adapter's written decltype of an exact auto carrier is erased.
-    // Keep ordinary TypeLoc/expression traversal; compound expressions, aliases
-    // and other members still require their independent type sources.
+    // Only this adapter's written decltype of an exact local carrier is erased.
+    // Keep ordinary TypeLoc/expression traversal and explicit declarations;
+    // compound expressions, aliases and other members need independent sources.
     while (Expression) {
       ApprovedMemberPointerExpressions.insert(Expression);
       const auto *Parentheses = dyn_cast<ParenExpr>(Expression);
@@ -11314,7 +11319,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         A.reject(Carrier->getExprLoc(), "member-pointer carrier source",
                  "An erased pointer requires one original member source.");
     }
-    for (const auto *Source : Pointer.TemplateSources)
+    for (const auto *Source : Pointer.TypeSources)
       operationTypeDependency(Source);
   }
   void retainMemFnCarriers(const FunctionalMemFnSource &MemFn) {
@@ -12158,6 +12163,12 @@ public:
         if (const auto Source = functionalMemberPointerCarrierSource(
                 A, Stored->Initializer, Stored->Member))
           retainMemberPointerCarriers(*Source);
+        // Erasing pointer storage must not erase an explicitly written type.
+        // Its pointee, class and noexcept sources are checked even if unused.
+        if (const auto *Info = D->getTypeSourceInfo();
+            Info && !Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
+            !TraverseTypeLoc(Info->getTypeLoc()))
+          return false;
         return TraverseStmt(D->getInit());
       }
       if (auto Stored =

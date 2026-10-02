@@ -2504,14 +2504,17 @@ authenticated pointer or address at its final runtime `std::invoke`, native memb
 operation, `std::mem_fn` factory or `std::apply` use. Every layer must be an
 authenticated reference adapter; written template arguments and the terminal
 member source remain independently checked. A written cv/ref-qualified
-`decltype` of an exact local `auto` member-pointer carrier can retain that same
+`decltype` of an exact local member-pointer carrier can retain that same
 original member for the adapter's type argument. Compound expressions, aliases
 and unrelated member sources gain no such exemption. This includes `tuple`,
 `pair` and `array` application, field assignment and method reference results, and preserves
 receiver/argument effects and temporary lifetimes. Each adapted member-pointer
 initializer is traversed once at its declaration, including every adapter's
 written template arguments and the terminal member address's written qualifiers,
-even for an unused local. Erasing its storage does not hide unsupported source
+even for an unused local. An explicitly typed declaration also traverses its
+complete written type, including the member class, pointee/parameter types and
+exception expressions; adapter initialization never skips that declaration.
+Erasing its storage does not hide unsupported source
 inside an initializer. Materialized `std::invoke` and `mem_fn` result queries
 retain these adapted pointers through the exact source proofs described below.
 Reassigning,
@@ -2540,15 +2543,17 @@ projection is emitted.
 
 Materialized `std::invoke` adapters for admitted source-owned member functions
 also support result-source queries. Direct named addresses and exact local
-`auto` member-pointer copy initializer chains retain the selected method,
+member-pointer copy initializer chains retain the selected method,
 including bounded mixed `move`, `forward`, `move_if_noexcept` and `as_const`
 chains at the final invoke operand and inside each copy initializer. Every
 reference adapter requires its own pinned SDK source and exact reference flow.
 The query retains each erased expression's original member source, including
-initializers checked before the query. Written cv/ref-qualified `decltype` of
-an exact local `auto` carrier still requires its own completed type source;
-compound expressions, unrelated members and independent pointer-type uses
-receive no exemption.
+initializers checked before the query. Deduced `auto` and explicitly typed
+pointer declarations may mix within a chain. Every explicit declaration retains
+its own completed TypeLoc, including written class qualifiers, parameter bounds
+and exception expressions. Written cv/ref-qualified `decltype` of an exact
+local carrier also requires its own completed type source; compound expressions,
+unrelated members and independent pointer-type uses receive no exemption.
 Exact object, pointer and `reference_wrapper` receivers, const methods and
 lvalue/rvalue-qualified methods keep their runtime receiver rules. The public
 adapter, internal member dispatcher and exact invocability variable require
@@ -2568,9 +2573,9 @@ unresolved or reassigned member pointers remain rejected.
 
 Materialized `std::invoke` adapters for admitted source-owned data fields also
 support these result queries, including direct named addresses and exact local
-`auto` member-pointer copy chains with the same authenticated nested reference
-adapters. Scalar, object-pointer and function-pointer fields
-retain lvalue/rvalue reference results and the const qualification contributed
+member-pointer copy chains with the same authenticated nested reference
+adapters and explicit-declaration source requirements. Scalar, object-pointer and
+function-pointer fields retain lvalue/rvalue reference results and the const qualification contributed
 by the field and receiver. Object, pointer and `reference_wrapper` receivers
 use their exact runtime forwarding rules. The public adapter, internal field
 projection, invocability variable and any wrapper `get()` require pinned SDK
@@ -2607,18 +2612,19 @@ factories and locally stored `auto` wrappers, including const wrappers and
 ordinary exact copy-initializer chains, retain their original member address.
 The factory's raw member-pointer operand may itself contain bounded mixed
 `move`, `forward`, `move_if_noexcept` and `as_const` adapters, including exact
-local `auto` pointer copies whose initializers contain those adapters. Every
+local pointer copies whose initializers contain those adapters. Every
 raw adapter supplies its own pinned SDK family and exact reference flow, and
 every copied pointer resolves to the selected original member. The wrapper
 source proof retains that original reference together with the raw operand's
 actual carrier and written type sources. A written cv/ref-qualified `decltype`
-of an exact local `auto` pointer retains the same-member restriction above;
+of an exact local pointer retains the same-member restriction above;
 independent pointer types, unrelated members and compound expressions gain no
 exemption. The factory owner retains these sources before its first traversal,
 including for an adapted factory temporary, so later wrapper copies and queries
 reuse completed source dependencies. The actual factory arguments and each raw
-initializer remain checked even for an unused wrapper. Ordinary explicitly
-typed pointers keep their existing declaration-source requirements.
+initializer remain checked even for an unused wrapper. Explicitly typed pointers
+retain each declaration's completed written type source alongside the original
+member, including through mixed deduced/explicit copies and final adapters.
 The factory, selected member-storing constructor, call operator, private
 invocability variable, internal member dispatcher and any receiver `get()` must
 have their exact pinned SDK sources. An outer `std::invoke` additionally pins
