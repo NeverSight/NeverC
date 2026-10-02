@@ -612,6 +612,7 @@ struct neverc_sync_map {
     smap_entry_t *buckets;
     size_t cap;
     size_t count;
+    size_t tombstones;
     neverc_rwmutex_t rw;
 };
 
@@ -671,10 +672,33 @@ static smap_entry_t *smap_find_slot(smap_entry_t *buckets, size_t cap, const cha
     return first_tomb;
 }
 
-static int smap_grow(neverc_sync_map_t *m) {
-    if (m->cap > SIZE_MAX / 2)
-        return -1;
-    size_t new_cap = m->cap * 2;
+static size_t smap_max_load(size_t cap) {
+    return cap - cap / 4;
+}
+
+/* Probes stop only at EMPTY buckets, so tombstones count toward the load
+ * limit whenever an insertion would consume an EMPTY bucket.  Counting live
+ * entries alone let store/delete churn of distinct keys exhaust every EMPTY
+ * bucket, after which each miss scanned the whole table. */
+static int smap_needs_rehash(const neverc_sync_map_t *m,
+                             const smap_entry_t *slot) {
+    size_t max_load = smap_max_load(m->cap);
+    if (!slot || m->count >= max_load)
+        return 1;
+    return slot->occupied == SMAP_EMPTY &&
+           m->tombstones >= max_load - m->count;
+}
+
+/* Rebuild without tombstones.  Doubling once live entries reach half the
+ * load limit leaves room for a proportional number of insertions before the
+ * next rebuild; below that, the current capacity already does. */
+static int smap_rehash(neverc_sync_map_t *m) {
+    size_t new_cap = m->cap;
+    if (m->count >= smap_max_load(m->cap) / 2) {
+        if (m->cap > SIZE_MAX / 2)
+            return -1;
+        new_cap = m->cap * 2;
+    }
     if (new_cap > SIZE_MAX / sizeof(smap_entry_t))
         return -1;
     smap_entry_t *new_buckets =
@@ -693,10 +717,12 @@ static int smap_grow(neverc_sync_map_t *m) {
     free(m->buckets);
     m->buckets = new_buckets;
     m->cap = new_cap;
+    m->tombstones = 0;
     return 0;
 }
 
-static int smap_insert(smap_entry_t *slot, const char *key, void *value) {
+static int smap_insert(neverc_sync_map_t *m, smap_entry_t *slot,
+                       const char *key, void *value) {
     size_t klen = strlen(key);
     if (klen == SIZE_MAX)
         return -1;
@@ -706,10 +732,22 @@ static int smap_insert(smap_entry_t *slot, const char *key, void *value) {
         return -1;
     memcpy(key_copy, key, klen + 1);
 
+    if (slot->occupied == SMAP_TOMBSTONE)
+        m->tombstones--;
     slot->key = key_copy;
     slot->value = value;
     slot->occupied = SMAP_OCCUPIED;
+    m->count++;
     return 0;
+}
+
+static void smap_remove(neverc_sync_map_t *m, smap_entry_t *slot) {
+    free(slot->key);
+    slot->key = NULL;
+    slot->value = NULL;
+    slot->occupied = SMAP_TOMBSTONE;
+    m->count--;
+    m->tombstones++;
 }
 
 int neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
@@ -723,8 +761,8 @@ int neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
         return 0;
     }
 
-    if (!slot || m->count >= m->cap - m->cap / 4) {
-        if (smap_grow(m) < 0) {
+    if (smap_needs_rehash(m, slot)) {
+        if (smap_rehash(m) < 0) {
             neverc_rwmutex_unlock(&m->rw);
             return -1;
         }
@@ -735,11 +773,7 @@ int neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
             return 0;
         }
     }
-    int stored = 0;
-    if (slot && smap_insert(slot, key, value) == 0) {
-        m->count++;
-        stored = 1;
-    }
+    int stored = slot && smap_insert(m, slot, key, value) == 0;
     neverc_rwmutex_unlock(&m->rw);
     return stored ? 0 : -1;
 }
@@ -773,8 +807,8 @@ void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void
         actual = slot->value;
         was_loaded = 1;
     } else {
-        if (!slot || m->count >= m->cap - m->cap / 4) {
-            if (smap_grow(m) != 0) {
+        if (smap_needs_rehash(m, slot)) {
+            if (smap_rehash(m) != 0) {
                 neverc_rwmutex_unlock(&m->rw);
                 if (loaded) *loaded = -1;
                 return NULL;
@@ -788,12 +822,10 @@ void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void
                 return actual;
             }
         }
-        if (slot && smap_insert(slot, key, value) == 0) {
+        if (slot && smap_insert(m, slot, key, value) == 0)
             actual = value;
-            m->count++;
-        } else {
+        else
             oom = 1;
-        }
     }
     neverc_rwmutex_unlock(&m->rw);
     if (loaded) *loaded = oom ? -1 : was_loaded;
@@ -812,11 +844,7 @@ void *neverc_sync_map_load_and_delete(neverc_sync_map_t *m, const char *key, int
     if (slot && slot->occupied == SMAP_OCCUPIED) {
         val = slot->value;
         found = 1;
-        free(slot->key);
-        slot->key = NULL;
-        slot->value = NULL;
-        slot->occupied = SMAP_TOMBSTONE;
-        m->count--;
+        smap_remove(m, slot);
     }
     neverc_rwmutex_unlock(&m->rw);
     if (loaded) *loaded = found;
@@ -839,6 +867,7 @@ void neverc_sync_map_clear(neverc_sync_map_t *m) {
         m->buckets[i].occupied = SMAP_EMPTY;
     }
     m->count = 0;
+    m->tombstones = 0;
     neverc_rwmutex_unlock(&m->rw);
 }
 
@@ -911,8 +940,8 @@ void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, i
         slot->value = value;
         was_loaded = 1;
     } else {
-        if (!slot || m->count >= m->cap - m->cap / 4) {
-            if (smap_grow(m) != 0) {
+        if (smap_needs_rehash(m, slot)) {
+            if (smap_rehash(m) != 0) {
                 neverc_rwmutex_unlock(&m->rw);
                 if (loaded) *loaded = -1;
                 return NULL;
@@ -927,9 +956,7 @@ void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, i
                 return previous;
             }
         }
-        if (slot && smap_insert(slot, key, value) == 0)
-            m->count++;
-        else {
+        if (!slot || smap_insert(m, slot, key, value) != 0) {
             neverc_rwmutex_unlock(&m->rw);
             if (loaded) *loaded = -1;
             return NULL;
@@ -961,11 +988,7 @@ int neverc_sync_map_compare_and_delete(neverc_sync_map_t *m, const char *key, vo
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     int deleted = 0;
     if (slot && slot->occupied == SMAP_OCCUPIED && slot->value == old_val) {
-        free(slot->key);
-        slot->key = NULL;
-        slot->value = NULL;
-        slot->occupied = SMAP_TOMBSTONE;
-        m->count--;
+        smap_remove(m, slot);
         deleted = 1;
     }
     neverc_rwmutex_unlock(&m->rw);
