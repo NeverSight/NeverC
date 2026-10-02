@@ -3594,6 +3594,36 @@ static void sse_handler(neverc_http_request_t *req,
     neverc_http_sse_end(w);
 }
 
+static void sse_start_handler(neverc_http_request_t *req,
+                              neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_sse_t *sse = neverc_sse_start(w);
+    if (!sse) return;
+    (void)neverc_sse_send(sse, "tick", "1", NULL);
+    neverc_sse_close(sse);
+}
+
+/* Fetch a stream with a raw request; returns the response length. */
+static int sse_raw_request(int port, const char *request, char *resp,
+                           size_t resp_size) {
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
+    const char *err = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+    if (!conn) return -1;
+    neverc_tcp_set_timeout(conn, 3000);
+    neverc_tcp_write(conn, request, strlen(request));
+    size_t total = 0;
+    int n;
+    while (total < resp_size - 1 &&
+           (n = neverc_tcp_read(conn, resp + total,
+                                resp_size - total - 1)) > 0)
+        total += (size_t)n;
+    resp[total] = '\0';
+    neverc_tcp_close(conn);
+    return (int)total;
+}
+
 static void test_sse(void) {
     printf("[sse]\n");
 
@@ -3604,6 +3634,7 @@ static void test_sse(void) {
     if (srv == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "/events", sse_handler);
+        neverc_http_mux_handle(mux, "/sse-start", sse_start_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_http_listen_and_serve(addr, mux);
@@ -3643,6 +3674,24 @@ static void test_sse(void) {
         check_int("sse multiline data1", strstr(resp, "data: line1\n") != NULL, 1);
         check_int("sse multiline data2", strstr(resp, "data: line2\n") != NULL, 1);
         check_int("sse retry", strstr(resp, "retry: 3000\n") != NULL, 1);
+    }
+
+    /* RFC 9112 §6.1: an HTTP/1.0 client gets an identity stream that ends
+     * when the connection closes, never chunked framing. */
+    {
+        char resp[4096];
+        int n = sse_raw_request(port,
+            "GET /sse-start HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n",
+            resp, sizeof(resp));
+        const char *body = n > 0 ? strstr(resp, "\r\n\r\n") : NULL;
+        check_int("sse_start http10 response", n > 0, 1);
+        check_int("sse_start http10 no chunked framing",
+                  n > 0 && strstr(resp, "Transfer-Encoding") == NULL, 1);
+        check_int("sse_start http10 closes",
+                  n > 0 && strstr(resp, "Connection: close\r\n") != NULL, 1);
+        check_int("sse_start http10 identity body",
+                  body && strcmp(body + 4, "event: tick\ndata: 1\n\n") == 0,
+                  1);
     }
 
     stop_test_server(srv);
