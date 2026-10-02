@@ -74,6 +74,16 @@ static void large_handler(neverc_http_request_t *req,
             return;
 }
 
+/* Streams two chunks and stops at the first write the writer rejects. */
+static void chunked_handler(neverc_http_request_t *req,
+                            neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_enable_chunked(w);
+    if (neverc_http_write_string(w, "hello ") != 6) return;
+    if (neverc_http_write_string(w, "world") != 5) return;
+    (void)neverc_http_end_chunked(w);
+}
+
 #ifndef _WIN32
 static void content_type_handler(neverc_http_request_t *req,
                                  neverc_http_response_writer_t *w) {
@@ -240,6 +250,56 @@ static void test_recorder(void) {
     neverc_httptest_recorder_free(rec);
 }
 
+/* Go ResponseRecorder implements Flusher: streaming handlers record their
+ * output instead of seeing every chunked write fail. */
+static void test_recorder_chunked(void) {
+    printf("[recorder_chunked]\n");
+
+    neverc_httptest_recorder_t *rec = neverc_httptest_new_recorder();
+    check_not_null("chunked recorder", rec);
+    if (!rec) return;
+    neverc_http_response_writer_t *w = neverc_httptest_recorder_writer(rec);
+    check_not_null("chunked recorder writer", w);
+    neverc_http_enable_chunked(w);
+    check_int("first chunked write", neverc_http_write_string(w, "hello "), 6);
+    check_int("second chunked write", neverc_http_write_string(w, "world"), 5);
+    check_int("flush chunk", neverc_http_flush_chunk(w), 0);
+    check_int("end chunked", neverc_http_end_chunked(w), 0);
+    check_int("write after end rejected",
+              neverc_http_write_string(w, "late"), -1);
+    neverc_httptest_recorder_flush(rec);
+    check_str("chunked body recorded", rec->body, "hello world");
+    check_true("chunked response has no Content-Length",
+               neverc_httptest_recorder_header(rec, "Content-Length") == NULL);
+    neverc_httptest_recorder_free(rec);
+
+    rec = neverc_httptest_new_recorder();
+    check_not_null("sse recorder", rec);
+    if (!rec) return;
+    w = neverc_httptest_recorder_writer(rec);
+    check_int("sse begin", neverc_http_sse_begin(w), 0);
+    check_int("sse event", neverc_http_sse_event(w, "tick", "1", NULL), 0);
+    neverc_http_sse_end(w);
+    neverc_httptest_recorder_flush(rec);
+    check_str("sse body recorded", rec->body, "event: tick\ndata: 1\n\n");
+    check_str("sse content type",
+              neverc_httptest_recorder_header(rec, "Content-Type"),
+              "text/event-stream");
+    neverc_httptest_recorder_free(rec);
+
+    neverc_httptest_server_t *ts = neverc_httptest_new_server(chunked_handler);
+    check_not_null("chunked handler server", ts);
+    if (!ts) return;
+    neverc_http_response_t *resp = neverc_http_get(neverc_httptest_url(ts));
+    check_not_null("chunked handler response", resp);
+    if (resp) {
+        check_int("chunked handler status", resp->status_code, 200);
+        check_str("chunked handler body", resp->body, "hello world");
+        neverc_http_response_free(resp);
+    }
+    neverc_httptest_close(ts);
+}
+
 #ifndef _WIN32
 static int httptest_raw(const char *addr, const char *request,
                         char *response, size_t response_length) {
@@ -391,6 +451,7 @@ int main(void) {
     printf("=== NeverC httptest Tests ===\n");
 
     test_recorder();
+    test_recorder_chunked();
     test_close_without_request();
     test_new_server();
     test_server_with_path();
