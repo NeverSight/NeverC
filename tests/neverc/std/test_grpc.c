@@ -1041,6 +1041,11 @@ static int grpc_h2_read_frame(neverc_tcp_conn_t *conn,
 
 typedef struct {
     neverc_tcp_listener_t *listener;
+    /* Stops a pending accept so the listener is closed only after the
+     * server task has finished with it. */
+    neverc_context_t *accept_background;
+    neverc_context_t *accept_context;
+    neverc_context_cancel_handle_t *accept_cancel;
     int kind;
     int result;
     char captured_bin[16];
@@ -1077,9 +1082,10 @@ static void grpc_fake_capture_bin(grpc_fake_h2_t *test, const uint8_t *payload,
 
 static void grpc_fake_h2_task(void *context) {
     grpc_fake_h2_t *test = (grpc_fake_h2_t *)context;
-    const char *error = NULL;
-    neverc_tcp_conn_t *conn = neverc_tcp_accept(test->listener, &error);
-    if (!conn) {
+    neverc_tcp_conn_t *conn = NULL;
+    neverc_net_result_t accepted = neverc_tcp_accept_context(
+        test->listener, test->accept_context, &conn);
+    if (accepted.status != NEVERC_NET_OK || !conn) {
         test->result = -1;
         return;
     }
@@ -1279,9 +1285,15 @@ static neverc_h2_client_t *grpc_start_fake_h2(
     const char *error = NULL;
     fake->kind = kind;
     fake->result = -1;
-    fake->listener = neverc_tcp_listen(address, &error);
-    if (!fake->listener) return NULL;
-    *executor = neverc_thread_executor_create(1U, 1U);
+    fake->accept_background = neverc_context_background();
+    fake->accept_context = fake->accept_background
+        ? neverc_context_with_cancel_handle(fake->accept_background,
+                                            &fake->accept_cancel)
+        : NULL;
+    fake->listener = fake->accept_context && fake->accept_cancel
+        ? neverc_tcp_listen(address, &error) : NULL;
+    *executor = fake->listener ? neverc_thread_executor_create(1U, 1U)
+                               : NULL;
     if (!*executor ||
         neverc_thread_executor_submit(*executor, grpc_fake_h2_task,
                                       fake) != NEVERC_THREAD_OK) {
@@ -1289,6 +1301,12 @@ static neverc_h2_client_t *grpc_start_fake_h2(
         *executor = NULL;
         neverc_tcp_listener_close(fake->listener);
         fake->listener = NULL;
+        neverc_context_cancel_handle_free(fake->accept_cancel);
+        neverc_context_free(fake->accept_context);
+        neverc_context_free(fake->accept_background);
+        fake->accept_cancel = NULL;
+        fake->accept_context = NULL;
+        fake->accept_background = NULL;
         return NULL;
     }
     return grpc_test_dial(address);
@@ -1301,11 +1319,23 @@ static void grpc_stop_fake_h2(grpc_fake_h2_t *fake,
         neverc_h2_client_close(client);
         neverc_h2_client_free(client);
     }
-    if (fake && fake->listener) neverc_tcp_listener_close(fake->listener);
+    /* The server task may not have reached accept yet; the listener must
+     * outlive it. */
+    if (fake && fake->accept_cancel)
+        neverc_context_cancel_handle_cancel(fake->accept_cancel);
     if (executor) {
         (void)neverc_thread_executor_shutdown(executor);
         neverc_thread_executor_free(executor);
     }
+    if (!fake) return;
+    if (fake->listener) neverc_tcp_listener_close(fake->listener);
+    neverc_context_cancel_handle_free(fake->accept_cancel);
+    neverc_context_free(fake->accept_context);
+    neverc_context_free(fake->accept_background);
+    fake->listener = NULL;
+    fake->accept_cancel = NULL;
+    fake->accept_context = NULL;
+    fake->accept_background = NULL;
 }
 
 static neverc_grpc_result_t *grpc_call_fake_h2(int kind) {
