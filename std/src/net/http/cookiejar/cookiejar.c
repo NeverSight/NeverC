@@ -77,16 +77,22 @@ static int valid_cookie_name(const char *name) {
     return 1;
 }
 
+/* Go validCookieValueByte: SP and ',' are accepted (they are re-quoted when
+ * the Cookie header is built); DQUOTE, ';', '\\', CTL and non-ASCII are
+ * not. */
 static int valid_cookie_value(const char *value) {
     if (!value) return 0;
     for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
-        if (*p != 0x21 && !(*p >= 0x23 && *p <= 0x2b) &&
-            !(*p >= 0x2d && *p <= 0x3a) &&
-            !(*p >= 0x3c && *p <= 0x5b) &&
-            !(*p >= 0x5d && *p <= 0x7e))
+        if (*p < 0x20 || *p >= 0x7f || *p == '"' || *p == ';' ||
+            *p == '\\')
             return 0;
     }
     return 1;
+}
+
+/* Go sanitizeCookieValue wraps values containing SP or ',' in DQUOTEs. */
+static int cookie_value_needs_quotes(const char *value) {
+    return strpbrk(value, " ,") != NULL;
 }
 
 static cookie_span_t trim_cookie_ows(cookie_span_t span) {
@@ -1052,7 +1058,9 @@ char *neverc_cookiejar_cookie_header(neverc_cookiejar_t *jar,
         if ((match_count > 0 && checked_size_add(&total, 2) != 0) ||
             checked_size_add(&total, strlen(entry->name)) != 0 ||
             checked_size_add(&total, 1) != 0 ||
-            checked_size_add(&total, strlen(entry->value)) != 0) {
+            checked_size_add(&total, strlen(entry->value)) != 0 ||
+            (cookie_value_needs_quotes(entry->value) &&
+             checked_size_add(&total, 2) != 0)) {
             jar_mutex_unlock(&jar->lock);
             return NULL;
         }
@@ -1084,7 +1092,10 @@ char *neverc_cookiejar_cookie_header(neverc_cookiejar_t *jar,
         size_t vlen = strlen(entry->value);
         memcpy(buf + off, entry->name, nlen); off += nlen;
         buf[off++] = '=';
+        int quote = cookie_value_needs_quotes(entry->value);
+        if (quote) buf[off++] = '"';
         memcpy(buf + off, entry->value, vlen); off += vlen;
+        if (quote) buf[off++] = '"';
         previous = entry;
     }
     buf[off] = '\0';
