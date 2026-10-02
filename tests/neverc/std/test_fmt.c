@@ -1641,6 +1641,27 @@ static void test_stream_scan(void) {
         fclose(tmp);
     }
 
+    /* A NUL byte is not a digit: Go Fscan ends the token there and leaves
+     * the NUL (and what follows it) for the next read. */
+    tmp = tmpfile();
+    check_true("fscan embedded NUL fixture", tmp != NULL);
+    if (tmp) {
+        static const char nul_input[] = {'1', '2', '\0', '3', '4', ' ', '5',
+                                         '\n'};
+        int a = 77, b = 77;
+        check_true("fscan embedded NUL write",
+                   fwrite(nul_input, 1, sizeof(nul_input), tmp) ==
+                       sizeof(nul_input));
+        rewind(tmp);
+        check_int("fscan token before NUL", neverc_fmt_fscan(tmp, &a), 1);
+        check_int("fscan token before NUL val", a, 12);
+        check_int("fscan at NUL fails", neverc_fmt_fscan(tmp, &b), 0);
+        check_int("fscan at NUL leaves dest", b, 77);
+        check_int("fscan leaves NUL unread", getc(tmp), '\0');
+        check_int("fscan leaves digits after NUL", getc(tmp), '3');
+        fclose(tmp);
+    }
+
     tmp = tmpfile();
     check_true("fscanln long space fixture", tmp != NULL);
     if (tmp) {
