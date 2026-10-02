@@ -521,8 +521,8 @@ again:
             next_ch(s);
             s->tok_type = scan_comment(s, nxt);
             if (s->mode & NEVERC_SCAN_SKIP_COMMENTS) {
-                if (scanner_token_overflow(s))
-                    scanner_add_error(s);
+                /* The skipped text is never exposed, so a comment longer
+                 * than tok_buf is not a truncation error. */
                 s->tok_len = 0;
                 scanner_set_token_overflow(s, 0);
                 goto again;
