@@ -605,10 +605,18 @@ static int parse_float_prefix(const char *s, size_t n, double *out,
     return best;
 }
 
+/* Go ParseComplex: syntax errors return 0, not a partially parsed real part
+ * or the caller's leftover imaginary part. */
+static int complex_syntax(double *re, double *im) {
+    if (re) *re = 0.0;
+    if (im) *im = 0.0;
+    return NEVERC_STRCONV_ERR_SYNTAX;
+}
+
 int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
-    if (!s || !re || !im) return NEVERC_STRCONV_ERR_SYNTAX;
+    if (!s || !re || !im) return complex_syntax(re, im);
     size_t slen = strlen(s);
-    if (slen == 0) return NEVERC_STRCONV_ERR_SYNTAX;
+    if (slen == 0) return complex_syntax(re, im);
 
     const char *start = s;
     size_t n = slen;
@@ -616,13 +624,13 @@ int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
         start++;
         n -= 2;
     }
-    if (n == 0) return NEVERC_STRCONV_ERR_SYNTAX;
+    if (n == 0) return complex_syntax(re, im);
 
     /* Go src/internal/strconv/atoc.go ParseComplex. */
     size_t consumed = 0;
     int pending = parse_float_prefix(start, n, re, &consumed);
     if (pending != NEVERC_STRCONV_OK && pending != NEVERC_STRCONV_ERR_RANGE)
-        return pending;
+        return complex_syntax(re, im);
     start += consumed;
     n -= consumed;
 
@@ -647,18 +655,18 @@ int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
             *re = 0.0;
             return pending;
         }
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return complex_syntax(re, im);
     default:
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return complex_syntax(re, im);
     }
 
     int r2 = parse_float_prefix(start, n, im, &consumed);
     if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
-        return r2;
+        return complex_syntax(re, im);
     start += consumed;
     n -= consumed;
     if (n != 1 || start[0] != 'i')
-        return NEVERC_STRCONV_ERR_SYNTAX;
+        return complex_syntax(re, im);
     return (pending == NEVERC_STRCONV_ERR_RANGE || r2 == NEVERC_STRCONV_ERR_RANGE)
                ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
 }
