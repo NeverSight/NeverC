@@ -2156,6 +2156,37 @@ static void test_chunked_encoding(void) {
     check_int("trailer-host drops TE field",
               n > 0 && strstr(buf, "TE: trailers") == NULL, 1);
 
+    /* RFC 9112 §6.1 / Go: HTTP/1.0 clients cannot parse chunked framing.
+     * Stream identity bytes and delimit the body by closing instead. */
+    static const char *const http10_requests[] = {
+        "GET /chunked HTTP/1.0\r\nHost: localhost\r\n\r\n",
+        "GET /chunked HTTP/1.0\r\nHost: localhost\r\n"
+        "Connection: keep-alive\r\n\r\n",
+    };
+    for (size_t i = 0; i < sizeof(http10_requests) / sizeof(*http10_requests);
+         i++) {
+        n = do_http_request(port, http10_requests[i], buf, sizeof(buf));
+        const char *body = n > 0 ? strstr(buf, "\r\n\r\n") : NULL;
+        check_int("http10 chunked resp", n > 0, 1);
+        check_int("http10 chunked no TE",
+                  n > 0 && strstr(buf, "Transfer-Encoding") == NULL, 1);
+        check_int("http10 chunked closes",
+                  n > 0 && strstr(buf, "Connection: close\r\n") != NULL, 1);
+        check_int("http10 chunked identity body",
+                  body && strcmp(body + 4, "chunk1chunk2chunk3") == 0, 1);
+    }
+
+    n = do_http_request(port,
+        "GET /trailer-host HTTP/1.0\r\nHost: localhost\r\n\r\n",
+        buf, sizeof(buf));
+    {
+        const char *body = n > 0 ? strstr(buf, "\r\n\r\n") : NULL;
+        check_int("http10 trailer response has no Trailer field",
+                  n > 0 && strstr(buf, "Trailer:") == NULL, 1);
+        check_int("http10 trailer response body",
+                  body && strcmp(body + 4, "ok") == 0, 1);
+    }
+
     stop_test_server(server_pid);
 }
 
