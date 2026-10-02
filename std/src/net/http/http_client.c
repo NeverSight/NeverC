@@ -2359,10 +2359,14 @@ static const char *http_cookie_lookup(const char *cookie_hdr, const char *name,
                 inner = val + 1;
                 inner_len = raw_len - 2;
             }
-            int valid = inner_len < buflen;
+            int valid = 1;
             for (size_t i = 0; valid && i < inner_len; i++)
                 valid = http_cookie_value_byte_ok((unsigned char)inner[i]);
             if (valid) {
+                /* Go returns the first valid match; a later cookie with
+                 * the same name is not a substitute for one that does
+                 * not fit the caller's buffer. */
+                if (inner_len >= buflen) return NULL;
                 if (inner_len > 0)
                     memcpy(buf, inner, inner_len);
                 buf[inner_len] = '\0';
