@@ -250,50 +250,92 @@ static int scan_identifier(neverc_scanner_t *s) {
 }
 
 /* Go text/scanner digits(): '_' and, for base<=10, every decimal digit stays
- * in the token. Record the first digit outside the radix when requested. */
-static void scan_digits(neverc_scanner_t *s, int base, int *invalid_digit) {
+ * in the token. Record the first digit outside the radix when requested.
+ * Returns bit 0 when a digit was seen and bit 1 when a '_' was seen. */
+static int scan_digits(neverc_scanner_t *s, int base, int *invalid_digit) {
+    int digsep = 0;
     for (;;) {
         int ch = peek_ch(s);
-        if (ch == NEVERC_SCANNER_EOF) return;
+        if (ch == NEVERC_SCANNER_EOF) return digsep;
         if (ch == '_') {
             emit(s, next_ch(s));
+            digsep |= 2;
             continue;
         }
         if (base > 10) {
-            if (!is_hex_digit(ch)) return;
+            if (!is_hex_digit(ch)) return digsep;
         } else {
-            if (!is_digit(ch)) return;
+            if (!is_digit(ch)) return digsep;
             if (invalid_digit && *invalid_digit == 0 && ch >= '0' + base)
                 *invalid_digit = ch;
         }
         emit(s, next_ch(s));
+        digsep |= 1;
     }
 }
 
+static int ascii_lower(int ch) {
+    return (ch >= 'A' && ch <= 'Z') ? ch + ('a' - 'A') : ch;
+}
+
+/* Go text/scanner invalidSep: a '_' must sit between two digits, where a
+ * base prefix counts as a digit. */
+static int number_has_invalid_separator(const char *x, size_t n) {
+    int hex = 0;
+    int d = '.';
+    size_t i = 0;
+    if (n >= 2 && x[0] == '0') {
+        int x1 = ascii_lower((unsigned char)x[1]);
+        if (x1 == 'x' || x1 == 'o' || x1 == 'b') {
+            hex = x1 == 'x';
+            d = '0';
+            i = 2;
+        }
+    }
+    for (; i < n; i++) {
+        int p = d;
+        d = (unsigned char)x[i];
+        if (d == '_') {
+            if (p != '0') return 1;
+        } else if (is_digit(d) || (hex && is_hex_digit(d))) {
+            d = '0';
+        } else {
+            if (p == '_') return 1;
+            d = '.';
+        }
+    }
+    return d == '_';
+}
+
+/* Mirrors Go text/scanner scanNumber, including its error reports: missing
+ * digits, misplaced '_', radix points in 0b/0o literals, exponents that do
+ * not match the mantissa, exponents without digits, and invalid digits. */
 static int scan_number(neverc_scanner_t *s, int first) {
     int is_float = (first == '.');
     int base = 10;
+    int prefix = 0;   /* 0 (decimal), '0' (octal), 'x', 'o', or 'b' */
+    int digsep = 0;   /* bit 0: digit seen, bit 1: '_' seen */
     int invalid_digit = 0;
+    size_t start = s->pos - 1; /* `first` is a single ASCII byte */
     emit(s, first);
 
-    if (!is_float && first == '0' && s->pos < s->src_len) {
-        int ch = peek_ch(s);
-        if (ch == 'x' || ch == 'X') {
-            emit(s, next_ch(s));
-            base = 16;
-        } else if (ch == 'o' || ch == 'O') {
-            emit(s, next_ch(s));
-            base = 8;
-        } else if (ch == 'b' || ch == 'B') {
-            emit(s, next_ch(s));
-            base = 2;
+    if (!is_float) {
+        if (first == '0') {
+            int ch = ascii_lower(peek_ch(s));
+            if (ch == 'x' || ch == 'o' || ch == 'b') {
+                emit(s, next_ch(s));
+                base = ch == 'x' ? 16 : ch == 'o' ? 8 : 2;
+                prefix = ch;
+            } else {
+                base = 8;
+                prefix = '0';
+                digsep = 1; /* the leading 0 */
+            }
         } else {
-            base = 8;
+            digsep = 1;
         }
+        digsep |= scan_digits(s, base, &invalid_digit);
     }
-
-    if (!is_float)
-        scan_digits(s, base, &invalid_digit);
 
     /* Go: '.' after the mantissa starts a float whenever ScanFloats is set,
      * including 0b/0o prefixes and with no fractional digits ("1.", "0b1.0"). */
@@ -303,23 +345,38 @@ static int scan_number(neverc_scanner_t *s, int first) {
         emit(s, next_ch(s));
     }
 
-    if (is_float)
-        scan_digits(s, base, NULL);
+    if (is_float) {
+        if (prefix == 'o' || prefix == 'b')
+            scanner_add_error(s); /* invalid radix point */
+        digsep |= scan_digits(s, base, NULL);
+    }
 
-    /* Go accepts e/E and p/P exponents under ScanFloats for every prefix
-     * (invalid combinations are still one Float token). */
-    if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len) {
-        int ch = peek_ch(s);
-        if (ch == 'e' || ch == 'E' || ch == 'p' || ch == 'P') {
-            is_float = 1;
+    if ((digsep & 1) == 0)
+        scanner_add_error(s); /* literal has no digits */
+
+    /* Go accepts e/E and p/P exponents under ScanFloats for every prefix;
+     * invalid combinations are still one Float token, with an error. */
+    int e = ascii_lower(peek_ch(s));
+    if ((s->mode & NEVERC_SCAN_FLOATS) && (e == 'e' || e == 'p')) {
+        if ((e == 'e' && prefix != 0 && prefix != '0') ||
+            (e == 'p' && prefix != 'x'))
+            scanner_add_error(s); /* exponent does not match mantissa */
+        is_float = 1;
+        emit(s, next_ch(s));
+        if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
             emit(s, next_ch(s));
-            if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
-                emit(s, next_ch(s));
-            scan_digits(s, 10, NULL);
-        }
+        int exp_digsep = scan_digits(s, 10, NULL);
+        digsep |= exp_digsep;
+        if ((exp_digsep & 1) == 0)
+            scanner_add_error(s); /* exponent has no digits */
+    } else if (prefix == 'x' && is_float) {
+        scanner_add_error(s); /* hex mantissa requires a 'p' exponent */
     }
 
     if (!is_float && invalid_digit != 0)
+        scanner_add_error(s);
+    if ((digsep & 2) &&
+        number_has_invalid_separator(s->src + start, s->pos - start))
         scanner_add_error(s);
     return is_float ? NEVERC_SCANNER_FLOAT : NEVERC_SCANNER_INT;
 }
