@@ -73,6 +73,19 @@ static int valid_split(char **parts, int count) {
     return 1;
 }
 
+static int valid_expand(const char *result, size_t outlen) {
+    static const char expected[] = "x<b|a>y<b|a>";
+    return result && outlen == sizeof(expected) - 1U &&
+           strcmp(result, expected) == 0;
+}
+
+static int valid_submatch(int found, const neverc_regexp_match_t *m,
+                          const char *text) {
+    return found == 1 && m[0].start == text + 1 && m[0].len == 2 &&
+           m[1].start == text + 1 && m[1].len == 1 &&
+           m[2].start == text + 2 && m[2].len == 1;
+}
+
 int main(void) {
     static const char find_text[] =
         "a b c d e f g h i j k l m n o p q r s t u v w x";
@@ -150,6 +163,41 @@ int main(void) {
         parts = neverc_regexp_split(re, split_text, -1, &count);
         CHECK((parts == NULL && count == 0) || valid_split(parts, count));
         neverc_regexp_free_strings(parts, count);
+    }
+    neverc_regexp_free(re);
+
+    /* Group expansion runs a second, capture-recording pass. Losing one of
+     * its allocations must fail the whole call, not drop the group text. */
+    reset_allocator(0);
+    re = neverc_regexp_compile("(a)(b)", NULL);
+    CHECK(re != NULL);
+    reset_allocator(0);
+    outlen = 0;
+    result = neverc_regexp_replace_all(re, "xabyab", "<$2|$1>", &outlen);
+    CHECK(valid_expand(result, outlen));
+    size_t expand_allocations = allocation_count;
+    free(result);
+
+    for (size_t i = 1; i <= expand_allocations; i++) {
+        reset_allocator(i);
+        outlen = 99;
+        result = neverc_regexp_replace_all(re, "xabyab", "<$2|$1>", &outlen);
+        CHECK((result == NULL && outlen == 0) || valid_expand(result, outlen));
+        free(result);
+    }
+
+    static const char submatch_text[] = "xab";
+    neverc_regexp_match_t groups[3];
+    reset_allocator(0);
+    int found = neverc_regexp_find_submatch(re, submatch_text, groups, 3);
+    CHECK(valid_submatch(found, groups, submatch_text));
+    size_t submatch_allocations = allocation_count;
+
+    for (size_t i = 1; i <= submatch_allocations; i++) {
+        reset_allocator(i);
+        memset(groups, 0, sizeof(groups));
+        found = neverc_regexp_find_submatch(re, submatch_text, groups, 3);
+        CHECK(found == 0 || valid_submatch(found, groups, submatch_text));
     }
     neverc_regexp_free(re);
 
