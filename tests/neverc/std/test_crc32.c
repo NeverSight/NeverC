@@ -162,6 +162,71 @@ static void test_slicing8_other_polys(void) {
               neverc_crc32_checksum(koop, data, sizeof data), koop_ref);
 }
 
+/* Reference CRC computed bit by bit from the polynomial, without tables. */
+static uint32_t crc32_bitwise(uint32_t poly, uint32_t crc,
+                              const uint8_t *p, size_t n) {
+    crc = ~crc;
+    while (n-- > 0) {
+        crc ^= *p++;
+        for (int k = 0; k < 8; k++)
+            crc = (crc >> 1) ^ ((crc & 1) ? poly : 0);
+    }
+    return ~crc;
+}
+
+/* More distinct polynomials than the slicing-8 table cache holds, revisited
+ * round-robin, so that cached tables and tables past a full cache (byte path
+ * for short inputs, private slicing-8 tables for long ones) are all checked. */
+static void test_many_polys(void) {
+    printf("[many_polys]\n");
+    enum { NPOLY = 20 };
+    static uint8_t data[4096];
+    static neverc_crc32_table_t tabs[NPOLY];
+    static const size_t lens[] = {64, 100, 511, 512, 2048, 4096};
+    uint32_t polys[NPOLY];
+    for (size_t i = 0; i < sizeof data; i++) data[i] = (uint8_t)(i * 131u + 7u);
+    for (int i = 0; i < NPOLY; i++) {
+        polys[i] = 0x80000001u ^ (0x9E3779B9u * (uint32_t)(i + 1));
+        neverc_crc32_make_table(polys[i], tabs[i]);
+    }
+    for (int round = 0; round < 3; round++) {
+        for (int i = 0; i < NPOLY; i++) {
+            for (size_t l = 0; l < sizeof lens / sizeof lens[0]; l++) {
+                char name[64];
+                snprintf(name, sizeof name, "poly %d len %zu round %d",
+                         i, lens[l], round);
+                check_u32(name, neverc_crc32_checksum(tabs[i], data, lens[l]),
+                          crc32_bitwise(polys[i], 0, data, lens[l]));
+            }
+            uint32_t chained = neverc_crc32_update(0, tabs[i], data, 1000);
+            chained = neverc_crc32_update(chained, tabs[i], data + 1000, 3096);
+            check_u32("chained 1000+3096", chained,
+                      crc32_bitwise(polys[i], 0, data, 4096));
+        }
+    }
+}
+
+/* Two tables that agree on entry 128 (the polynomial) but differ elsewhere
+ * must not share a cached slicing-8 table. Both are linear, so slicing-8 and
+ * the byte path must agree for each. */
+static void test_same_key_different_table(void) {
+    printf("[same_key_different_table]\n");
+    uint8_t data[256];
+    for (int i = 0; i < 256; i++) data[i] = (uint8_t)(i * 29 + 3);
+
+    neverc_crc32_table_t base, odd;
+    neverc_crc32_make_table(NEVERC_CRC32_CASTAGNOLI, base);
+    for (int i = 0; i < 256; i++)
+        odd[i] = base[i] ^ ((i & 1) ? 0x01234567u : 0);
+
+    (void)neverc_crc32_checksum(base, data, sizeof data); /* cache base */
+    uint32_t want = 0;
+    for (size_t off = 0; off < sizeof data; off += 32)
+        want = neverc_crc32_update(want, odd, data + off, 32);
+    check_u32("odd table after base", neverc_crc32_checksum(odd, data, sizeof data),
+              want);
+}
+
 static void test_zero_data(void) {
     printf("[zero_data]\n");
     uint8_t zeros[16] = {0};
@@ -186,6 +251,8 @@ int main(void) {
     test_null_empty();
     test_table_buffer_reuse();
     test_slicing8_other_polys();
+    test_same_key_different_table();
+    test_many_polys();
     test_zero_data();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

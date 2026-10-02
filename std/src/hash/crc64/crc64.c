@@ -1,4 +1,5 @@
 #include "neverc/std/hash/crc64.h"
+#include <stdlib.h>
 #include <string.h>
 
 /*
@@ -67,50 +68,75 @@ static uint64_t crc64_slicing8(uint64_t crc, const uint64_t tab[8][256],
 }
 
 /*
- * Process-lifetime slot for the first table that reaches the slicing-8 path.
- * Built exactly once (CAS-claimed) and immutable afterwards, so it is safe to
- * read concurrently. Other tables (or a buffer refilled with a new polynomial,
- * detected via sentinel entries) fall back to a private per-call build, which
- * is fully reentrant.
+ * Process-lifetime slicing-8 expansions of caller tables, one slot per
+ * distinct table, so that alternating or custom polynomials do not rebuild
+ * 16 KiB of tables on every call. A table is fully built before a release CAS
+ * publishes its pointer into an empty slot, and is never mutated or freed
+ * afterwards, so readers need only an acquire load. Lookups compare the whole
+ * 256-entry source table (a caller may refill one buffer with a new
+ * polynomial, and distinct polynomials share some entries); entry 128, which
+ * is the polynomial itself for neverc_crc64_make_table output, is checked
+ * first so a slot holding another polynomial costs a single load.
  */
-static uint64_t shared64_s8[8][256];
-static int shared64_s8_ready;   /* 0 = unbuilt, 1 = building, 2 = published */
+#define CRC64_S8_SLOTS 8
+static uint64_t (*crc64_s8_cache[CRC64_S8_SLOTS])[256];
+
+/* With every slot taken by other tables, a private per-call build only pays
+ * off for longer inputs; it costs about as much as 300 bytes of byte-wise
+ * CRC. Shorter inputs use the caller's table directly. */
+#define CRC64_PRIVATE_S8_MIN 512
+
+/* Returns the cached slicing-8 expansion of `table`, building and publishing
+ * it into a free slot on first use, or NULL when every slot holds another
+ * table or allocation fails. */
+static uint64_t (*crc64_cached_s8(const neverc_crc64_table_t table))[256] {
+    uint64_t (*built)[256] = NULL;
+    for (int i = 0; i < CRC64_S8_SLOTS; i++) {
+        uint64_t (*slot)[256] =
+            __atomic_load_n(&crc64_s8_cache[i], __ATOMIC_ACQUIRE);
+        if (!slot) {
+            if (!built) {
+                built = (uint64_t (*)[256])malloc(sizeof(uint64_t[8][256]));
+                if (!built) return NULL;
+                build_slicing8_from_table(table, built);
+            }
+            if (__atomic_compare_exchange_n(&crc64_s8_cache[i], &slot, built,
+                                            0, __ATOMIC_ACQ_REL,
+                                            __ATOMIC_ACQUIRE))
+                return built;
+            /* Another thread filled the slot first; `slot` now holds its
+             * table, which may be this one. Otherwise keep the build for the
+             * next free slot. */
+        }
+        if (slot[0][128] == table[128] &&
+            memcmp(slot[0], table, sizeof(neverc_crc64_table_t)) == 0) {
+            free(built);   /* never published */
+            return slot;
+        }
+    }
+    free(built);
+    return NULL;
+}
 
 uint64_t neverc_crc64_update(uint64_t crc, const neverc_crc64_table_t table,
                               const uint8_t *data, size_t len) {
     if (!table) return crc;
     if (!data) len = 0;
-    if (len < 64) {
-        crc = ~crc;
-        for (size_t i = 0; i < len; i++)
-            crc = table[(uint8_t)(crc) ^ data[i]] ^ (crc >> 8);
-        return ~crc;
+    if (len >= 64) {
+        uint64_t (*s8)[256] = crc64_cached_s8(table);
+        if (s8) return crc64_slicing8(crc, s8, data, len);
+        if (len >= CRC64_PRIVATE_S8_MIN) {
+            /* No shared mutable state is touched, so this is reentrant. */
+            uint64_t priv[8][256];
+            build_slicing8_from_table(table, priv);
+            return crc64_slicing8(crc, priv, data, len);
+        }
     }
 
-    /* Fast path: reuse the published shared table when it is an exact copy
-     * of this source table. A full compare (not 3 sentinels) is required:
-     * distinct polynomials can collide on a handful of entries and would
-     * otherwise return a checksum for the wrong poly. */
-    if (__atomic_load_n(&shared64_s8_ready, __ATOMIC_ACQUIRE) == 2 &&
-        memcmp(shared64_s8[0], table, sizeof(neverc_crc64_table_t)) == 0) {
-        return crc64_slicing8(crc, shared64_s8, data, len);
-    }
-
-    /* Claim the slot once for the first table that needs it. */
-    int expected = 0;
-    if (__atomic_load_n(&shared64_s8_ready, __ATOMIC_RELAXED) == 0 &&
-        __atomic_compare_exchange_n(&shared64_s8_ready, &expected, 1, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        build_slicing8_from_table(table, shared64_s8);
-        __atomic_store_n(&shared64_s8_ready, 2, __ATOMIC_RELEASE);
-        return crc64_slicing8(crc, shared64_s8, data, len);
-    }
-
-    /* Slot busy or owned by a different table: build a private table on the
-     * stack. No shared mutable state is touched, so this is reentrant. */
-    uint64_t s8[8][256];
-    build_slicing8_from_table(table, s8);
-    return crc64_slicing8(crc, s8, data, len);
+    crc = ~crc;
+    for (size_t i = 0; i < len; i++)
+        crc = table[(uint8_t)(crc) ^ data[i]] ^ (crc >> 8);
+    return ~crc;
 }
 
 uint64_t neverc_crc64_checksum(const neverc_crc64_table_t table,
