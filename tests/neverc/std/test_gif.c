@@ -642,6 +642,41 @@ static void test_transparent_index_past_palette(void) {
     ASSERT_EQ(neverc_gif_decode(no_table, sizeof(no_table), &img), -1);
 }
 
+/* Noisy 256-color frames compress to more than 8 MiB of LZW data well inside
+ * the pixel limit; the decoder must read back what the encoder produced. */
+static void test_large_lzw_stream_roundtrip(void) {
+    printf("[large_lzw_stream_roundtrip]\n");
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = 2600;
+    frame.height = 2600;
+    frame.palette_size = 256;
+    for (int i = 0; i < 256; i++)
+        frame.palette[i] = (neverc_gif_color_t){(uint8_t)i, (uint8_t)(255 - i), 0};
+    size_t np = (size_t)frame.width * frame.height;
+    frame.indices = (uint8_t *)malloc(np);
+    ASSERT_TRUE(frame.indices != NULL);
+    if (!frame.indices) return;
+    uint32_t state = 12345u;
+    for (size_t i = 0; i < np; i++) {
+        state = state * 1103515245u + 12345u;
+        frame.indices[i] = (uint8_t)(state >> 24);
+    }
+
+    uint8_t *gif = NULL;
+    size_t glen = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &glen), 0);
+    ASSERT_TRUE(glen > (size_t)8 * 1024 * 1024);
+    neverc_gif_image_t img;
+    ASSERT_EQ(neverc_gif_decode(gif, glen, &img), 0);
+    ASSERT_EQ(img.num_frames, 1);
+    if (img.num_frames == 1)
+        ASSERT_TRUE(memcmp(img.frames[0].indices, frame.indices, np) == 0);
+    neverc_gif_free(&img);
+    free(gif);
+    free(frame.indices);
+}
+
 static void test_failed_decode_clears_geometry(void) {
     printf("[failed_decode_clears_geometry]\n");
     /* GCT flag set (2 entries) but only 3 of 6 color bytes are present. */
@@ -821,6 +856,7 @@ int main(void) {
     test_rejects_truncated_and_oversize_lzw();
     test_accepts_missing_end_code();
     test_transparent_index_past_palette();
+    test_large_lzw_stream_roundtrip();
     test_failed_decode_clears_geometry();
     test_frame_to_rgba_and_transparency();
     test_from_rgba_full_palette_transparency();
