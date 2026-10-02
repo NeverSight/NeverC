@@ -1610,6 +1610,37 @@ static void test_stream_scan(void) {
         fclose(tmp);
     }
 
+    /* Leading zeros keep a long token in int range: Go Fscan parses the
+     * whole token, so its value must not depend on a scratch-buffer size. */
+    tmp = tmpfile();
+    check_true("fscan long zero-padded token fixture", tmp != NULL);
+    if (tmp) {
+        int i, a = 77, b = 77;
+        for (i = 0; i < 140; i++)
+            fputc('0', tmp);
+        fputs("12 7\n", tmp);
+        rewind(tmp);
+        check_int("fscan long zero-padded octal", neverc_fmt_fscan(tmp, &a), 1);
+        check_int("fscan long zero-padded octal val", a, 10);
+        check_int("fscan after long zero-padded token",
+                  neverc_fmt_fscan(tmp, &b), 1);
+        check_int("fscan after long zero-padded token val", b, 7);
+        fclose(tmp);
+    }
+    tmp = tmpfile();
+    check_true("fscan long zero-padded hex fixture", tmp != NULL);
+    if (tmp) {
+        int i, a = 77;
+        fputs("0x", tmp);
+        for (i = 0; i < 130; i++)
+            fputc('0', tmp);
+        fputs("ff\n", tmp);
+        rewind(tmp);
+        check_int("fscan long zero-padded hex", neverc_fmt_fscan(tmp, &a), 1);
+        check_int("fscan long zero-padded hex val", a, 255);
+        fclose(tmp);
+    }
+
     tmp = tmpfile();
     check_true("fscanln long space fixture", tmp != NULL);
     if (tmp) {
