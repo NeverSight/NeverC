@@ -975,6 +975,46 @@ static void test_invalid_cookie_octets(void) {
     neverc_cookiejar_free(jar);
 }
 
+/* Go ParseSetCookie accepts SP and ',' in values (neverc_http_set_cookie
+ * emits them quoted); the Cookie header quotes them again like AddCookie. */
+static void test_cookie_value_space_comma(void) {
+    printf("[cookie_value_space_comma]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "spaced=\"x y\"; Path=/");
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "listed=p,q; Path=/");
+    neverc_cookiejar_entry_t entry = {
+        .name = "plain", .value = "a b", .path = "/",
+    };
+    neverc_cookiejar_set_cookies(jar, "https://example.com/", &entry, 1);
+    check_int("space and comma values stored", neverc_cookiejar_count(jar), 3);
+
+    neverc_cookiejar_entry_t out[4];
+    int n = neverc_cookiejar_cookies(jar, "https://example.com/", out, 4);
+    check_int("space and comma values returned", n, 3);
+    for (int i = 0; i < n; i++) {
+        if (strcmp(out[i].name, "spaced") == 0)
+            check_str("quoted space value unwrapped", out[i].value, "x y");
+        else if (strcmp(out[i].name, "listed") == 0)
+            check_str("comma value", out[i].value, "p,q");
+        else
+            check_str("entry space value", out[i].value, "a b");
+    }
+
+    char *header = neverc_cookiejar_cookie_header(jar, "https://example.com/");
+    check_not_null("space and comma cookie header", header);
+    if (header) {
+        check_int("cookie header quotes space value",
+                  strstr(header, "spaced=\"x y\"") != NULL, 1);
+        check_int("cookie header quotes comma value",
+                  strstr(header, "listed=\"p,q\"") != NULL, 1);
+        free(header);
+    }
+    neverc_cookiejar_free(jar);
+}
+
 /* ===== Secure flag ===== */
 
 static void test_secure(void) {
@@ -1371,6 +1411,7 @@ int main(void) {
     test_ipv4_mapped_isolation();
     test_ipv6_host_isolation();
     test_invalid_cookie_octets();
+    test_cookie_value_space_comma();
     test_secure();
     test_set_cookie_header();
     test_set_cookie_header_edges();
