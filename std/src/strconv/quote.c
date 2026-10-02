@@ -549,11 +549,14 @@ int neverc_strconv_format_complex(double re, double im, char fmt, int prec,
                                              bufsize - im_start);
     if (im_len < 0)
         return -1;
-    /* Trailer is "i)" plus NUL. */
-    if ((size_t)im_len + 3U > bufsize - im_start)
+
+    /* Trailer is "i)" plus NUL. A signed imaginary part moves back into the
+     * separator slot, so it ends one byte earlier than an unsigned one. */
+    int needs_separator = buf[im_start] != '+' && buf[im_start] != '-';
+    size_t im_pos = needs_separator ? im_start : pos;
+    if ((size_t)im_len + 3U > bufsize - im_pos)
         return -1;
 
-    int needs_separator = buf[im_start] != '+' && buf[im_start] != '-';
     if (needs_separator) {
         buf[pos] = '+';
         pos = im_start + (size_t)im_len;
