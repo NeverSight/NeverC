@@ -446,6 +446,33 @@ static void test_mkdir(void) {
         ASSERT_EQ(errno, ENOTDIR);
         neverc_os_remove(filebuf);
     }
+
+#if !defined(_WIN32)
+    /* Go os.MkdirAll reports why the first missing component could not be
+     * created, not the ENOENT of the components below it. */
+    {
+        char parent[1024], ro[1100], deep[1200], dangling[1100], under[1200];
+        make_test_path(parent, sizeof(parent), "neverc_test_mkdir_all_err");
+        neverc_os_remove_all(parent);
+        ASSERT_EQ(neverc_os_mkdir(parent, 0700), 0);
+        snprintf(ro, sizeof(ro), "%s/ro", parent);
+        snprintf(deep, sizeof(deep), "%s/x/y", ro);
+        snprintf(dangling, sizeof(dangling), "%s/dangling", parent);
+        snprintf(under, sizeof(under), "%s/sub", dangling);
+        if (neverc_os_geteuid() != 0) {
+            ASSERT_EQ(neverc_os_mkdir(ro, 0500), 0);
+            errno = 0;
+            ASSERT_EQ(neverc_os_mkdir_all(deep, 0755), -1);
+            ASSERT_TRUE(neverc_os_is_permission(errno));
+            chmod(ro, 0700);
+        }
+        ASSERT_EQ(neverc_os_symlink("missing-target", dangling), 0);
+        errno = 0;
+        ASSERT_EQ(neverc_os_mkdir_all(under, 0755), -1);
+        ASSERT_TRUE(neverc_os_is_exist(errno));
+        neverc_os_remove_all(parent);
+    }
+#endif
 }
 
 #if !defined(_WIN32)
