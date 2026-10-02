@@ -494,6 +494,60 @@ static void test_draw_src_vs_over_alpha(void) {
     neverc_image_rgba_free(&dst);
 }
 
+static int pixel_is(const neverc_image_rgba_t *img, uint8_t r, uint8_t g,
+                    uint8_t b, uint8_t a) {
+    uint8_t pr, pg, pb, pa;
+    neverc_image_rgba_at(img, 0, 0, &pr, &pg, &pb, &pa);
+    return pr == r && pg == g && pb == b && pa == a;
+}
+
+/* OVER uses Go image/draw's 16-bit arithmetic (drawCopyOver, drawFillOver,
+ * and drawGlyphOver for an alpha mask); expected values come from Go. */
+static void test_draw_over_matches_go_arithmetic(void) {
+    printf("[draw_over_matches_go_arithmetic]\n");
+    neverc_rect_t r = neverc_rect(0, 0, 1, 1);
+    neverc_image_rgba_t dst, src;
+    neverc_image_gray_t mask;
+    neverc_image_rgba_init(&dst, r);
+    neverc_image_rgba_init(&src, r);
+    neverc_image_gray_init(&mask, r);
+
+    neverc_image_rgba_set(&src, 0, 0, 0, 0, 0, 1);
+    neverc_image_rgba_set(&dst, 0, 0, 200, 100, 50, 255);
+    neverc_draw(&dst, r, &src, neverc_pt(0, 0), NEVERC_DRAW_OVER);
+    check("image over matches Go", pixel_is(&dst, 199, 99, 49, 255));
+
+    neverc_image_rgba_set(&dst, 0, 0, 200, 100, 50, 255);
+    neverc_draw_uniform(&dst, r, 0, 0, 0, 1, NEVERC_DRAW_OVER);
+    check("uniform over matches Go", pixel_is(&dst, 199, 99, 49, 255));
+
+    neverc_image_rgba_set(&dst, 0, 0, 2, 3, 4, 5);
+    neverc_draw_uniform(&dst, r, 0, 0, 0, 1, NEVERC_DRAW_OVER);
+    check("uniform over low values matches Go", pixel_is(&dst, 1, 2, 3, 6));
+
+    neverc_image_rgba_set(&dst, 0, 0, 200, 100, 50, 255);
+    mask.pix[0] = 128;
+    neverc_draw_gray_over(&dst, r, &mask, neverc_pt(0, 0), 0, 0, 0, 1);
+    check("masked over keeps faint coverage like Go",
+          pixel_is(&dst, 200, 100, 50, 255));
+
+    neverc_image_rgba_set(&dst, 0, 0, 255, 255, 255, 255);
+    mask.pix[0] = 1;
+    neverc_draw_gray_over(&dst, r, &mask, neverc_pt(0, 0), 0, 0, 128, 128);
+    check("masked over coverage 1 matches Go",
+          pixel_is(&dst, 255, 255, 255, 255));
+
+    neverc_image_rgba_set(&dst, 0, 0, 90, 60, 30, 200);
+    mask.pix[0] = 64;
+    neverc_draw_gray_over(&dst, r, &mask, neverc_pt(0, 0), 40, 30, 20, 100);
+    check("masked over partial coverage matches Go",
+          pixel_is(&dst, 91, 61, 32, 206));
+
+    neverc_image_rgba_free(&dst);
+    neverc_image_rgba_free(&src);
+    neverc_image_gray_free(&mask);
+}
+
 static void test_draw_null(void) {
     printf("[draw_null]\n");
     neverc_image_rgba_t dst;
@@ -528,6 +582,7 @@ int main(void) {
     test_draw_clip_wider_than_stride();
     test_draw_clip_past_stride();
     test_draw_src_vs_over_alpha();
+    test_draw_over_matches_go_arithmetic();
     test_draw_null();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
