@@ -76007,6 +76007,477 @@ struct F { int &value; F()=default; F(const F&)=default; F(F&&)noexcept(false)=d
   }
 }
 
+TEST_F(TranslateTest, CoreV2UnavailableCopyExtraParametersMoveIfNoexceptQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unavailable-copy-extra-parameters-move-if-noexcept-queries.cpp");
+  const auto Output = tmpFile("unavailable-copy-extra-parameters-move-if-noexcept-queries.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+int constructions, copies, moves, cleanups, sum, calls, operand_defaults;
+int copy_defaults, reference_defaults, array_defaults, record_defaults;
+int unique_moves, unique_defaults, unique_cleanups;
+int implicit_moves, implicit_defaults, implicit_cleanups;
+int private_copies, private_moves, private_copy_defaults, private_move_defaults, private_cleanups;
+struct Seed { int value; };
+Seed seed{5};
+int numbers[2]={7,8};
+template<class T> T &source(T &v, int n=(++operand_defaults,1)) noexcept {
+  ++calls; return v;
+}
+template<class T> bool queries(T &v) {
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(v)),T&&));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),T&&));
+  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),T&&));
+  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));
+  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));
+  static_assert(noexcept(move_if_noexcept(v)));
+  T &&alias=move_if_noexcept(std::forward<T&>(v));
+  return &alias==&v;
+}
+template<class T> struct Mutable {
+  using Self=Mutable;
+  T value;
+  Mutable(T n) noexcept : value(n) { ++constructions; }
+  Mutable(Self &o, T delta=(++copy_defaults,2), Seed &s=(++reference_defaults,seed)) noexcept
+      : value(o.value+delta+s.value) { ++o.value; ++s.value; ++copies; }
+  Mutable(Self &&o, T (&a)[2]=(++array_defaults,numbers),
+          Seed extra=(++record_defaults,Seed{4})) noexcept(false)
+      : value(o.value+a[0]+extra.value) { o.value=-1; ++a[0]; ++moves; }
+  ~Mutable() noexcept { ++cleanups; sum+=value; }
+};
+template<class T> struct Unique {
+  T value;
+  Unique(T n) noexcept : value(n) {}
+  Unique(const Unique&, int=0)=delete;
+  Unique(Unique &&o, T n=(++unique_defaults,5)) noexcept(false) : value(o.value+n) {
+    o.value=-2; ++unique_moves;
+  }
+  ~Unique() noexcept { ++unique_cleanups; }
+};
+template<class T> struct Implicit {
+  T value;
+  Implicit(T n) noexcept : value(n) {}
+  Implicit(Implicit &&o, Seed n=(++implicit_defaults,Seed{3})) noexcept(false) : value(o.value+n.value) {
+    o.value=-3; ++implicit_moves;
+  }
+  ~Implicit() noexcept { ++implicit_cleanups; }
+};
+class Private {
+  int value;
+  Private(const Private&o, int n=(++private_copy_defaults,3)) noexcept : value(o.value+n) {
+    ++private_copies;
+  }
+public:
+  Private(int n) noexcept : value(n) {}
+  Private(Private&&o, int n=(++private_move_defaults,4)) noexcept(false) : value(o.value+n) {
+    o.value=-4; ++private_moves;
+  }
+  ~Private() noexcept { ++private_cleanups; }
+  static bool check() {
+    Private a(13);
+    // The trait's access context is independent of this member's access.
+    if (!queries(a) || !queries(std::as_const(a))) return false;
+    Private b(a), c(Alias::move_if_noexcept(a));
+    return a.value==-4 && b.value==16 && c.value==17;
+  }
+};
+template<class T> struct Lazy {
+  T value=T::missing;
+  Lazy(Lazy&, T n=T::missing) noexcept { static_assert(sizeof(T)==0); }
+  Lazy(Lazy&&, T n=T::missing) noexcept(false) { static_assert(sizeof(T)==0); }
+  ~Lazy() noexcept { static_assert(sizeof(T)==0); }
+};
+struct DeletedMove {
+  int value;
+  DeletedMove(int) noexcept {}
+  DeletedMove(DeletedMove&&, int=0)=delete;
+};
+class PrivateMove {
+  int value;
+  PrivateMove(PrivateMove&&, int=0) noexcept(false) {}
+public:
+  PrivateMove(int) noexcept {}
+};
+struct DeletedOnly {
+  int value;
+  DeletedOnly(int) noexcept {}
+  DeletedOnly(const DeletedOnly&, int=0)=delete;
+};
+struct DeletedDestructor {
+  int value;
+  DeletedDestructor(int) noexcept {}
+  DeletedDestructor(const DeletedDestructor&, int=0) noexcept {}
+  DeletedDestructor(DeletedDestructor&&, int=0) noexcept {}
+  ~DeletedDestructor()=delete;
+};
+class PrivateDestructor {
+  ~PrivateDestructor()=default;
+public:
+  int value;
+  PrivateDestructor(int) noexcept {}
+  PrivateDestructor(const PrivateDestructor&, int=0) noexcept {}
+  PrivateDestructor(PrivateDestructor&&) noexcept(false)=default;
+};
+int query_only(const Lazy<int>&a, const Lazy<long>&b, DeletedMove&c, PrivateMove&d,
+               DeletedOnly&e, DeletedDestructor&f, PrivateDestructor&g) {
+  return queries(a) && queries(b) && queries(c) && queries(std::as_const(c)) &&
+         queries(d) && queries(std::as_const(d)) && queries(e) && queries(std::as_const(e)) &&
+         queries(f) && queries(std::as_const(f)) && queries(g) && queries(std::as_const(g));
+}
+int main() {
+  {
+    Mutable<int> a(10);
+    const Mutable<int> frozen(40);
+    Unique<int> unique(7);
+    Implicit<int> implicit(9);
+    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(a))),Mutable<int>&&));
+    static_assert(sizeof(Alias::move_if_noexcept(source(a)))==sizeof(a));
+    static_assert(noexcept(Alias::move_if_noexcept(source(a))));
+    if (!queries(a) || !queries(std::as_const(a)) || !queries(frozen) ||
+        !queries(unique) || !queries(std::as_const(unique)) ||
+        !queries(implicit) || !queries(std::as_const(implicit))) return 1;
+    if (constructions!=2 || copies || moves || cleanups || calls || operand_defaults ||
+        copy_defaults || reference_defaults || array_defaults || record_defaults ||
+        unique_moves || unique_defaults || unique_cleanups || implicit_moves ||
+        implicit_defaults || implicit_cleanups || seed.value!=5 || numbers[0]!=7) return 2;
+    Mutable<int> copied(a), moved(Alias::move_if_noexcept(source(a)));
+    Mutable<int> explicit_copy(moved,3,seed), explicit_move(Alias::move_if_noexcept(copied),numbers,Seed{9});
+    Unique<int> unique_move(Alias::move_if_noexcept(unique));
+    Implicit<int> implicit_move(Alias::move_if_noexcept(implicit));
+    if (a.value!=-1 || copied.value!=-1 || moved.value!=23 || explicit_copy.value!=31 ||
+        explicit_move.value!=34 || frozen.value!=40 || seed.value!=7 || numbers[0]!=9 ||
+        numbers[1]!=8 || copies!=2 || moves!=2 || calls!=1 || operand_defaults!=1 ||
+        unique.value!=-2 || unique_move.value!=12 || implicit.value!=-3 || implicit_move.value!=12 ||
+        copy_defaults!=1 || reference_defaults!=1 || array_defaults!=1 || record_defaults!=1) return 3;
+    if (!Private::check() || private_copies!=1 || private_moves!=1 || private_copy_defaults!=1 ||
+        private_move_defaults!=1 || private_cleanups!=3) return 4;
+  }
+  return constructions==2 && copies==2 && moves==2 && cleanups==6 && sum==126 &&
+         unique_moves==1 && unique_defaults==1 && unique_cleanups==2 &&
+         implicit_moves==1 && implicit_defaults==1 && implicit_cleanups==2 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unavailable-copy-extra-parameters-move-if-noexcept-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnavailableCopyExtraParametersMoveIfNoexceptQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"available-copy", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(int n=3)noexcept:value(n){}C(const C&,int=0)noexcept{}C(C&&)noexcept(false){}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp"},
+      {"available-copy-nothrow-move", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(int n=3)noexcept:value(n){}C(const C&)noexcept{}C(C&&,int=0)noexcept{}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"variadic", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(int n=3)noexcept:value(n){}C(C&,int=0,...)noexcept{}C(C&&)noexcept(false){}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"volatile-copy", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(int n=3)noexcept:value(n){}C(volatile C&,int=0)noexcept{}C(C&&)noexcept(false){}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"later-type", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(int n=3)noexcept:value(n){}C(C&,long double=0)noexcept{}C(C&&)noexcept(false){}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"later-alias", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct R{using N=decltype((sizeof(long double),0));T value;R(R&,N=0)noexcept{}R(R&&)noexcept(false){}};using C=R<int>;
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"dependent-exception", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct R{T value;R(R&,int=0)noexcept(sizeof(T)>0){}R(R&&)noexcept(false){}};using C=R<int>;
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"owned-mutable", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int value;A(int)noexcept{}A(A&,int=0)noexcept{}A(A&&)noexcept(false){}};struct C{A value;};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"constructor-template", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(int n=3)noexcept:value(n){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}template<class T>C(T&&)noexcept;};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp"},
+      {"deleted-copy-exception", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(T n):value(n){}C(const C&,int=0)noexcept(sizeof(long double)>0)=delete;C(C&&)noexcept(false){}};
+int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"move-redeclaration", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&,int=0)noexcept{}C(C&&,int=0)noexcept(sizeof(long double)>0);};
+template<class T>C<T>::C(C&&,int)noexcept(sizeof(long double)>0){}
+int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"array-bound", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&,T(&)[(sizeof(long double),2)]=T::missing)noexcept{}C(C&&)noexcept(false){}};
+int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
+)cpp"},
+      {"incomplete-later-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T value;};template<class T>struct C{T value;C(C&,A<T> = T::missing)noexcept{}C(C&&)noexcept(false){}};
+int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
+)cpp"},
+      {"later-function-reference", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&,int(&)(int)=T::missing)noexcept{}C(C&&)noexcept(false){}};
+int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
+)cpp"},
+      {"owned-deleted", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct M{int value;M(const M&,int=0)=delete;M(M&&)noexcept(false){}};struct C{M value;};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"used-copy-body", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&o,int=0)noexcept:value(o.value){long double hidden=0;}C(C&&)noexcept(false){}};
+int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));C<int>b(c);return b.value;}
+)cpp"},
+      {"used-move-body", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&)noexcept{}C(C&&o,int=0)noexcept(false):value(o.value){long double hidden=0;}};
+int f(C<int>&c){C<int>b(Alias::move_if_noexcept(c));return b.value;}
+)cpp"},
+      {"used-copy-default", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&o,int n=sizeof(long double))noexcept:value(o.value+n){}C(C&&)noexcept(false){}};
+int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));C<int>b(c);return b.value;}
+)cpp"},
+      {"used-move-default", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&)noexcept{}C(C&&o,int n=sizeof(long double))noexcept(false):value(o.value+n){}};
+int f(C<int>&c){C<int>b(Alias::move_if_noexcept(c));return b.value;}
+)cpp"},
+      {"used-destructor", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(C&o,int=0)noexcept:value(o.value){}C(C&&)noexcept(false){}~C()noexcept{long double hidden=0;}};
+int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));C<int>b(c);return b.value;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unavailable-copy-extra-parameters-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unavailable-copy-extra-parameters-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnavailableCopyExtraParametersMoveIfNoexceptQueriesAcceptPromotedCases) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"ExtraSpecialMemberArgument-root-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+
+struct A{int value;A(const A&,int=0)noexcept{}};
+struct C{int value;C(const A&){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"ExtraSpecialMemberArgument-root-move-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+
+struct A{int value;A(A&&,int=0)noexcept{}};
+struct C{int value;C(const A&){}C(C&)noexcept{}C(C&&,int=0)noexcept(false){}};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"ValueArgumentConstructor-root-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+
+struct A{int value;A(int)noexcept{}};template<class T>struct C{T value;C(const A&){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"AggregateArgumentConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct Argument{int value;};
+template<class T>struct Box{T value;};
+
+template<class T>struct C{T value;C(Argument){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"RecordReferenceConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct Argument{int value;};
+template<class T>struct Box{T value;};
+
+template<class T>struct C{T value;C(Argument&){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"ArrayLeadingConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct Argument{int value;};
+template<class T>struct Box{T value;};
+
+template<class T>struct C{T value;C(T(&)[2]){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"ScalarLeadingConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct Argument{int value;};
+template<class T>struct Box{T value;};
+
+struct C{int value;C(int,Argument={}){}C(C&,Argument={})noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"RequiredArgumentsConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct Argument{int value;};
+template<class T>struct Box{T value;};
+
+struct C{int value;C(Argument,int){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"MultiScalarConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct Box{T value;};
+
+struct C{int value;C(int,int){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"ScalarConstructor-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct Box{T value;};
+
+struct C{int value;C(int){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"MutableCopyOnly-copy-extra-parameter", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+
+struct C{int value;C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"UnavailableDestructor-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+
+struct C{int value;C(const C&,int=0)noexcept{}C(C&&)noexcept{}private:~C()noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"InaccessibleCopy-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+
+struct C{int value;C(C&&)noexcept(false){}private:C(const C&,int=0)noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"DefaultedRecord-defaulted-record-private-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;F(int n):value(n){}F(const F&)=default;F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(int){}C(C&&)noexcept(false)=default;private:C(const C&,int=0){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"DefaultedRecord-defaulted-private-destructor-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;F(int n):value(n){}F(const F&)=default;F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(int){}C(const C&,int=0){}C(C&&)=default;private:~C()=default;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"DeclaredCopy-declared-record-private-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;F(const F&o)noexcept:value(o.value){}F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(C&&)noexcept(false){}private:C(const C&,int=0)noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"DeclaredCopy-declared-private-destructor-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;F(const F&o)noexcept:value(o.value){}F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(const C&,int=0)noexcept{}C(C&&)noexcept{}private:~C()noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"ImplicitDeletedCopy-move-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;explicit F(int n):value(n){}F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(C&&o,int=0)noexcept(false):value(o.value){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"DeletedCopy-private-deleted-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;explicit F(int n):value(n){}F(const F&)=delete;F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(C&&o)noexcept(false):value(o.value){}private:C(const C&,int=0)=delete;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"DeletedCopy-copy-extra-parameter", R"cpp(
+#include <type_traits>
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct F{int value;explicit F(int n):value(n){}F(const F&)=delete;F(F&&o)noexcept(false):value(o.value){}};
+
+struct C{int value;C(const C&,int=0)=delete;C(C&&o)noexcept(false):value(o.value){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("unavailable-copy-extra-parameters-accept-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("unavailable-copy-extra-parameters-accept-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ExtraSpecialMemberArgumentMoveIfNoexceptQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("extra-special-member-argument-move-if-noexcept-queries.cpp");
   const auto Output = tmpFile("extra-special-member-argument-move-if-noexcept-queries.nc");
@@ -76237,16 +76708,6 @@ int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));re
       {"later-function-reference", R"cpp(
 template<class T>struct A{T value;A(A&&,int(&)(int)=T::missing)noexcept{}};
 struct C{int value;C(const A<int>&){}C(C&)noexcept{}C(C&&)noexcept(false){}};
-int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
-      {"root-copy-extra-parameter", R"cpp(
-struct A{int value;A(const A&,int=0)noexcept{}};
-struct C{int value;C(const A&){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};
-int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
-      {"root-move-extra-parameter", R"cpp(
-struct A{int value;A(A&&,int=0)noexcept{}};
-struct C{int value;C(const A&){}C(C&)noexcept{}C(C&&,int=0)noexcept(false){}};
 int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"used-copy-body", R"cpp(
@@ -76580,9 +77041,6 @@ struct A{int value;A(int(&)(int))noexcept{}};struct C{int value;C(const A&){}C(C
 )cpp"},
       {"incomplete-later-parameter", R"cpp(
 template<class T>struct B{T value;};template<class T>struct A{T value;A(int,B<T>)noexcept{}};template<class T>struct C{T value;C(const A<T>&){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
-)cpp"},
-      {"root-copy-extra-parameter", R"cpp(
-struct A{int value;A(int)noexcept{}};template<class T>struct C{T value;C(const A&){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
 )cpp"},
       {"used-body", R"cpp(
 template<class T>struct A{T value;A(T n=3)noexcept:value(n){long double hidden=0;}};template<class T>struct C{T value;C(const A<T>&a=A<T>())noexcept:value(a.value){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));C<int>v;return v.value;}
@@ -77143,9 +77601,6 @@ struct C{int value;C(std::array<int,2>){}C(C&)noexcept{}C(C&&)noexcept(false){}}
       {"constructor-template", R"cpp(
 struct C{int value;C(Argument){}template<class U>C(U&&){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-template<class T>struct C{T value;C(Argument){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
-)cpp"},
       {"exception", R"cpp(
 template<class T>struct C{T value;C(Argument)noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
 )cpp"},
@@ -77411,9 +77866,6 @@ template<class T>struct C{T value;C(Argument&,...){}C(C&)noexcept{}C(C&&)noexcep
       {"constructor-template", R"cpp(
 struct C{int value;C(Argument&){}template<class T>C(T&&){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-template<class T>struct C{T value;C(Argument&){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
-)cpp"},
       {"exception", R"cpp(
 template<class T>struct C{T value;C(Argument&)noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
 )cpp"},
@@ -77669,9 +78121,6 @@ template<class T>struct C{T value;C(T(&)[2],...){}C(C&)noexcept{}C(C&&)noexcept(
 )cpp"},
       {"constructor-template", R"cpp(
 struct C{int value;C(int(&)[2]){}template<class T>C(T&&){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
-)cpp"},
-      {"copy-extra-parameter", R"cpp(
-template<class T>struct C{T value;C(T(&)[2]){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
 )cpp"},
       {"exception", R"cpp(
 template<class T>struct C{T value;C(T(&)[2])noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
@@ -77931,9 +78380,6 @@ struct C{int value;C(int,Argument={},...){}C(C&)noexcept{}C(C&&)noexcept(false){
       {"constructor-template", R"cpp(
 struct C{int value;C(int,Argument={}){}C(C&)noexcept{}C(C&&)noexcept(false){}template<class T>C(T&&,Argument={})noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(int,Argument={}){}C(C&,Argument={})noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"exception", R"cpp(
 template<class T>struct C{T value;C(T,Argument={})noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
 )cpp"},
@@ -78187,9 +78633,6 @@ struct C{int value;C(Argument,int,...){}C(C&)noexcept{}C(C&&)noexcept(false){}};
       {"constructor-template", R"cpp(
 struct C{int value;template<class T>C(Argument,T){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(Argument,int){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"exception", R"cpp(
 template<class T>struct C{T value;C(Argument,int)noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
 )cpp"},
@@ -78431,9 +78874,6 @@ struct C{int value;C(int,int,...){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f
 )cpp"},
       {"constructor-template", R"cpp(
 struct C{int value;C(int,int){}C(C&)noexcept{}C(C&&)noexcept(false){}template<class T>C(T&&,int=0)noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
-)cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(int,int){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"exception", R"cpp(
 template<class T>struct C{T value;C(T,T)noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
@@ -78919,9 +79359,6 @@ struct B{B(int){}};struct C:B{int value;using B::B;C(C&)noexcept:B(0){}C(C&&)noe
       {"empty-base", R"cpp(
 struct E{};struct C:E{int value;C(int){}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(int){}C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"used-value-body", R"cpp(
 template<class T>struct C{T value;C(int n)noexcept:value(n){long double hidden=0;}C(C&)noexcept{}C(C&&)noexcept(false){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));C<int>v(3);return v.value;}
 )cpp"},
@@ -79366,9 +79803,6 @@ struct C{int value;C(...)noexcept{}C(C&)noexcept{}C(C&&)noexcept{}};int f(C&c){s
       {"constructor-template", R"cpp(
 struct C{int value;C(C&)noexcept{}C(C&&)noexcept{}template<class T>C(T&&)noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(C&,int=0)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"additional-const-copy", R"cpp(
 struct C{int value;C(C&)noexcept{}C(const C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
@@ -79626,9 +80060,6 @@ template<class T>struct C{T value;C(const C&)noexcept{}C(C&&)noexcept((sizeof(lo
       {"copy-parameter-alias", R"cpp(
 template<class T>struct C{using P=decltype((sizeof(long double),static_cast<C*>(nullptr)));T value;C(const typename std::remove_pointer<P>::type&)noexcept{}C(C&&)noexcept{}private:~C()noexcept{}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
 )cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(const C&,int=0)noexcept{}C(C&&)noexcept{}private:~C()noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"constructor-template", R"cpp(
 struct C{int value;C(const C&)noexcept{}C(C&&)noexcept{}template<class T>C(T&&)noexcept;private:~C()noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
@@ -79860,9 +80291,6 @@ template<class T>struct C{T value;C(C&&)noexcept((sizeof(long double),false)){}p
 )cpp"},
       {"destructor-exception", R"cpp(
 template<class T>struct C{T value;C(C&&)noexcept(false){}private:C(const C&)noexcept{}~C()noexcept(sizeof(long double)>0){}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
-)cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(C&&)noexcept(false){}private:C(const C&,int=0)noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"constructor-template", R"cpp(
 struct C{int value;C(C&&)noexcept(false){}template<class T>C(T&&)noexcept;private:C(const C&)noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
@@ -80553,12 +80981,6 @@ struct M{int value;M(){}M(const M&,int=0)noexcept{}M(M&&)noexcept(false){}};stru
       {"additional-copy-overload", R"cpp(
 struct C{int value;C(int){}C(C&)=delete;C(const C&)=default;C(C&&)noexcept(false)=default;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
-      {"defaulted-record-private-copy-extra-parameter", R"cpp(
-struct C{int value;C(int){}C(C&&)noexcept(false)=default;private:C(const C&,int=0){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
-      {"defaulted-private-destructor-copy-extra-parameter", R"cpp(
-struct C{int value;C(int){}C(const C&,int=0){}C(C&&)=default;private:~C()=default;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"constructor-template", R"cpp(
 struct C{int value;C(const C&)=default;C(C&&)=default;template<class T>C(T&&)noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
@@ -80814,14 +81236,8 @@ struct C{int value;C(const C&)noexcept{}C(C&&)noexcept(false){}template<class T>
       {"additional-copy-overload", R"cpp(
 struct C{int value;C(C&)=delete;C(const C&)noexcept{}C(C&&)noexcept(false){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
-      {"declared-record-private-copy-extra-parameter", R"cpp(
-struct C{int value;C(C&&)noexcept(false){}private:C(const C&,int=0)noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"defaulted-destructor-with-member-copy-extra-parameter", R"cpp(
 struct M{int value;M(){}M(const M&,int=0)noexcept{}M(M&&)noexcept(false){}};struct C{M value;C(const C&)noexcept{}C(C&&)noexcept(false){}~C()=default;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
-)cpp"},
-      {"declared-private-destructor-copy-extra-parameter", R"cpp(
-struct C{int value;C(const C&,int=0)noexcept{}C(C&&)noexcept{}private:~C()noexcept{}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"dependent-copy-exception-source", R"cpp(
 template<class T>struct C{T value;C(const C&)noexcept((sizeof(T),sizeof(long double)>0)){}C(C&&)noexcept{}};int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
@@ -81560,9 +81976,6 @@ struct M{int value;M(M&&o)noexcept:value(o.value){}private:M(M&o):value(o.value)
       {"constructor-template", R"cpp(
 struct C{int value;C(C&&o)noexcept(false):value(o.value){}template<class T>C(T&&)noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
-      {"move-extra-parameter", R"cpp(
-struct C{int value;C(C&&o,int=0)noexcept(false):value(o.value){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"move-parameter-alias", R"cpp(
 struct C;using P=decltype((sizeof(long double),static_cast<C*>(nullptr)));struct C{int value;C(typename std::remove_pointer<P>::type&&o)noexcept(false):value(o.value){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
@@ -81819,14 +82232,8 @@ struct C{int value;C(C&)=delete;C(const C&o):value(o.value){}C(C&&o)noexcept(fal
       {"const-volatile-copy", R"cpp(
 struct C{int value;C(const volatile C&)=delete;C(const C&o):value(o.value){}C(C&&o)noexcept(false):value(o.value){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
 )cpp"},
-      {"private-deleted-copy-extra-parameter", R"cpp(
-struct C{int value;C(C&&o)noexcept(false):value(o.value){}private:C(const C&,int=0)=delete;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
       {"constructor-template", R"cpp(
 struct C{int value;C(const C&)=delete;template<class T>C(T&&)noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp"},
-      {"copy-extra-parameter", R"cpp(
-struct C{int value;C(const C&,int=0)=delete;C(C&&o)noexcept(false):value(o.value){}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
 )cpp"},
       {"implicit-copy-with-constructor-template", R"cpp(
 struct C{int value;C(int n):value(n){}template<class T>C(T&&)noexcept;C&operator=(C&&o)noexcept{value=o.value;return *this;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}

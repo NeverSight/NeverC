@@ -986,7 +986,8 @@ every nested member operation selected by an actual generated copy, move or
 destructor; a query alone does not instantiate those hypothetical bodies.
 
 Object-argument queries also admit source-owned nontrivial records with an
-explicitly deleted public copy constructor taking exactly `const Record&`.
+explicitly deleted public copy constructor whose first parameter is exactly
+`const Record&`.
 The queried record's private or protected `const Record&` copy supplies the
 same proof, whether it is ordinary, defaulted or deleted: the pinned copy trait
 checks access independently of the caller. A copy-only record or a record with
@@ -1030,15 +1031,28 @@ exact absence of source; its inferred exception result and generated body
 remain lazy. This includes a defaulted move constructor deleted by an unmovable
 value member. Actual construction and assignment still require their ordinary
 body or generated-operation proof. No query performs either operation.
-This copy-unavailability proof excludes constructor templates, inherited
-constructors and copy/move constructors with extra parameters. Public
+These queried-record copy/move constructors may have extra defaulted parameters,
+including admitted scalar/record values and record or fixed-array references.
+The original first parameter still determines copy/move classification.
+Extra defaults cannot enable copying from a const object when the copy is
+inaccessible or deleted, or when only a mutable copy is declared. They also
+preserve implicit copy deletion by a declared move. Every later parameter
+retains its original type, alias, bound and exception sources. Unselected
+class-template defaults and bodies stay lazy. Actual construction checks and
+evaluates selected defaults, retaining mutations, reference bindings and
+temporary destruction. This extension also applies when the queried record's
+destructor makes construction unavailable. It does not expand the owning-graph
+proof or the copy-fallback proof for records with an available const copy.
+This copy-unavailability proof excludes constructor templates, inherited and
+variadic constructors. Public
 user-defaulted deleted copies and other causes of implicit deletion such as an
 uncopyable member require the owning-graph proof above. An inaccessible or
 deleted non-const or volatile-copy overload alone does not
 supply this exact const-copy proof.
 
 A separate bounded proof admits source-owned records whose only copy
-declaration takes exactly mutable `Record&`. The copy must be written, including
+declaration has exactly mutable `Record&` as its first parameter, optionally
+followed by defaulted parameters. The copy must be written, including
 ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases or conversion
 functions. Other constructors may be a move, a nonvariadic zero-parameter
@@ -1097,9 +1111,9 @@ record. All later parameter types and original sources are checked, including
 record types, aliases and fixed-array reference bounds. Unused class-template
 defaults stay uninstantiated; an actual copy or move checks and evaluates its
 selected defaults and body, including reference mutations and temporary
-destruction. This extension applies to parameter records; extra copy/move
-parameters on the queried record or its owned subobjects retain their separate
-requirements.
+destruction. Parameter records use this constructor-shape proof; queried
+records use the copy-unavailability proof above. Extra copy/move parameters
+on owned subobjects retain their separate requirements.
 
 The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
@@ -1148,7 +1162,8 @@ Record parameter types must already satisfy the ordinary completion checks;
 these constructor proofs do not instantiate an otherwise incomplete template
 record.
 
-Constructor templates, inherited constructors, extra copy/move parameters,
+Constructor templates, inherited constructors, extra copy/move parameters in
+the owning-graph and copy-fallback proofs,
 additional copy overloads, and other value constructors retain separate
 requirements. In particular, a first record parameter passed by value, by
 const lvalue reference or by rvalue reference can introduce its own conversion

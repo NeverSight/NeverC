@@ -3401,8 +3401,11 @@ static bool utilityUnavailableCopyConditionalMoveSource(
       return false;
     if (!Constructor->isCopyOrMoveConstructor())
       continue;
+    // Clang's copy/move classification permits extra defaulted parameters.
+    // They cannot restore an unavailable const copy or change which move
+    // declaration deletes an implicit copy. Keep every original parameter
+    // source; actual construction separately checks selected defaults.
     if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
-        Constructor->getNumParams() != 1 ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
     if (Constructor->isMoveConstructor() && !Constructor->isImplicit())
