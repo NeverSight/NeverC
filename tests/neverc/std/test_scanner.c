@@ -472,6 +472,30 @@ static void test_malformed_numbers_report_errors(void) {
     ASSERT_INT_EQ(neverc_scanner_error_count(&s), 0);
 }
 
+/* Go text/scanner reports every NUL it reads as an invalid character,
+ * including inside literals and skipped comments. */
+static void test_nul_reports_error(void) {
+    printf("[nul_reports_error]\n");
+    static const struct { const char *src; size_t len; int errors; } cases[] = {
+        {"a\0b", 3, 1}, {"\"x\0y\" z", 7, 1}, {"// c\0\nq", 7, 1},
+        {"/* \0 */ r", 9, 1}, {"`\0`", 3, 1}, {"'\0'", 3, 1}, {"\0\0", 2, 2},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        neverc_scanner_t s;
+        neverc_scanner_init(&s, cases[i].src, cases[i].len);
+        while (neverc_scanner_scan(&s) != NEVERC_SCANNER_EOF) {
+        }
+        ASSERT_INT_EQ(neverc_scanner_error_count(&s), cases[i].errors);
+    }
+
+    neverc_scanner_t s;
+    neverc_scanner_init(&s, "a\0b", 3);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), 0);
+    ASSERT_INT_EQ(neverc_scanner_error_count(&s), 1);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+}
+
 static void test_prefix_floats(void) {
     printf("[prefix_floats]\n");
     neverc_scanner_t s;
@@ -815,6 +839,7 @@ int main(void) {
     test_block_comments_are_not_nested();
     test_number_separators_and_prefixes();
     test_malformed_numbers_report_errors();
+    test_nul_reports_error();
     test_prefix_floats();
     test_null_source();
     test_mode_zero_digits_are_chars();
