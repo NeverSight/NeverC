@@ -487,6 +487,34 @@ static void test_remove_all_does_not_follow_symlinks(void) {
 
     ASSERT_EQ(neverc_os_remove_all(outside), 0);
 }
+
+/* Go os.RemoveAll still rmdirs a directory it cannot open for reading:
+ * when that directory is empty, removal succeeds. */
+static void test_remove_all_unreadable_empty_dir(void) {
+    printf("[remove all unreadable empty dir]\n");
+    char root[1024], sub[1100], file[1100];
+    make_test_path(root, sizeof(root), "neverc_test_rm_unreadable");
+    snprintf(sub, sizeof(sub), "%s/empty", root);
+    snprintf(file, sizeof(file), "%s/file", root);
+    neverc_os_remove_all(root);
+
+    ASSERT_EQ(neverc_os_mkdir(root, 0700), 0);
+    ASSERT_EQ(neverc_os_mkdir(sub, 0700), 0);
+    ASSERT_EQ(neverc_os_write_file(file, (const unsigned char *)"x", 1, 0600),
+              0);
+    ASSERT_EQ(chmod(sub, 0), 0);
+    ASSERT_EQ(neverc_os_remove_all(root), 0);
+    ASSERT_TRUE(!neverc_os_exists(root));
+    if (neverc_os_exists(sub)) chmod(sub, 0700);
+    neverc_os_remove_all(root);
+
+    ASSERT_EQ(neverc_os_mkdir(root, 0700), 0);
+    ASSERT_EQ(chmod(root, 0), 0);
+    ASSERT_EQ(neverc_os_remove_all(root), 0);
+    ASSERT_TRUE(!neverc_os_exists(root));
+    if (neverc_os_exists(root)) chmod(root, 0700);
+    neverc_os_remove_all(root);
+}
 #endif
 
 static void test_remove_all_rejects_dot(void) {
@@ -1459,6 +1487,7 @@ int main(void) {
     test_mkdir();
 #if !defined(_WIN32)
     test_remove_all_does_not_follow_symlinks();
+    test_remove_all_unreadable_empty_dir();
 #endif
     test_remove_all_rejects_dot();
 #if defined(_WIN32)
