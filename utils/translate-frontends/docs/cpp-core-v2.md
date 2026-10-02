@@ -950,8 +950,9 @@ The owning graph also admits a single public copy taking exactly mutable
 or deleted. Each such node has no bases or conversion functions. Besides its
 exact move, it may have nonvariadic zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
-by value or reference. Later parameters keep the ordinary type requirements,
-including record values/references and fixed-array references, and may have
+by value or reference, or a reference to an admitted fixed array. Later
+parameters keep the ordinary type requirements, including record
+values/references and fixed-array references, and may have
 default arguments. Ordinary nonvariadic constructors requiring
 at least two arguments are also included, with the profile's normal parameter
 type checks. The graph retains the original declarations
@@ -1053,6 +1054,17 @@ or deleted constructors, required arguments and default arguments are included.
 All parameters may have defaults. The first scalar parameter cannot consume
 `const Record&` without a conversion function, regardless of later defaults.
 
+A first parameter that is an lvalue or rvalue reference to an admitted fixed
+array also cannot consume `const Record&` without a conversion function on the
+queried record. This includes const arrays, multidimensional arrays and arrays
+of admitted records or pointers, for example `C(int (&)[2], Argument = {})`.
+Array elements cannot introduce a conversion to the array itself. Element
+types, every written dimension and parameter aliases keep their original
+source checks and the profile's ordinary extent/storage limits. Unknown-bound
+arrays remain outside this proof. Default array references stay unevaluated in
+queries; actual construction preserves the bound array and any element changes.
+This form also applies at mutable-copy nodes in the owning graph.
+
 An ordinary nonvariadic constructor requiring at least two arguments also
 cannot consume a single `const Record&`. This form admits the profile's record
 value/reference and fixed-array reference parameters, including a record
@@ -1072,8 +1084,8 @@ additional copy overloads, and other value constructors retain separate
 requirements. In particular, a first record value or reference parameter can
 introduce its own conversion from `const Record&`, including a temporary bound to a
 const or rvalue reference, when a single argument suffices. Such constructors,
-and a first array or function reference, remain outside the proof based on a
-scalar first parameter. Without a constructor
+and function references, remain outside the proofs based on a scalar or
+fixed-array reference first parameter. Without a constructor
 that can consume `const Record&`, the pinned copy trait is false for mutable
 and const objects, preserving `Record&&` and `const Record&&` respectively.
 No query copies from the operand, modifies it or instantiates a hypothetical

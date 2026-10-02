@@ -3187,11 +3187,12 @@ static bool utilityConditionalMoveValueConstructor(
   A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
   if (Latest->getMinRequiredArguments() > 1)
     return true;
-  // With no conversion function on the queried record, a scalar first
-  // parameter excludes a const-record argument regardless of later defaults.
+  // With no conversion function on the queried record, a scalar or fixed-array
+  // reference first parameter excludes a const-record argument regardless of
+  // later defaults. Array elements cannot provide a conversion to the array.
   // Every parameter still supplies its original checked signature source.
-  const auto Type =
-      Constructor->getParamDecl(0)->getType().getNonReferenceType();
+  const auto ParameterType = Constructor->getParamDecl(0)->getType();
+  const auto Type = ParameterType.getNonReferenceType();
   return !Type->isDependentType() && !Type.isVolatileQualified() &&
          !Type.isRestrictQualified() && !Type->isAtomicType() &&
          Type.getAddressSpace() == LangAS::Default &&
@@ -3199,7 +3200,9 @@ static bool utilityConditionalMoveValueConstructor(
            A.Context.getTypeSize(Type) <= 64) ||
           Type->isSpecificBuiltinType(BuiltinType::Float) ||
           Type->isSpecificBuiltinType(BuiltinType::Double) ||
-          Type->isPointerType() || Type->isNullPtrType());
+          Type->isPointerType() || Type->isNullPtrType() ||
+          (ParameterType->isReferenceType() &&
+           A.Context.getAsConstantArrayType(Type)));
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
@@ -3284,9 +3287,10 @@ static bool utilityMutableCopyConditionalMoveSource(
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths. An ordinary constructor requiring two arguments cannot
   // consume this record alone, even through a converting temporary. Otherwise
-  // require a scalar first parameter: it cannot consume this record without
-  // a conversion function, even if later parameters have defaults. Retain
-  // every written signature, including each nonviable constructor's parameter
+  // require a scalar or fixed-array reference first parameter: it cannot
+  // consume this record without a conversion function, even if later
+  // parameters have defaults. Retain every written signature, including
+  // each nonviable constructor's parameter
   // types; callers separately check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
