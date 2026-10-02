@@ -41,18 +41,27 @@ static int tar_path_is_safe(const char *name, size_t capacity,
     return neverc_fs_valid_path(normalized);
 }
 
+/* Trim leading and trailing spaces/NULs, then parse the digits before the
+ * first remaining NUL; bytes after that NUL are ignored, as in Go. */
 static int parse_octal(const uint8_t *field, size_t width, uint64_t *value) {
-    size_t i = 0;
-    while (i < width && (field[i] == '\0' || field[i] == ' ')) i++;
+    size_t start = 0, end = width;
+    while (start < end && (field[start] == '\0' || field[start] == ' '))
+        start++;
+    while (end > start && (field[end - 1U] == '\0' || field[end - 1U] == ' '))
+        end--;
+    for (size_t i = start; i < end; i++) {
+        if (field[i] == '\0') {
+            end = i;
+            break;
+        }
+    }
     uint64_t result = 0;
-    while (i < width && field[i] >= '0' && field[i] <= '7') {
+    for (size_t i = start; i < end; i++) {
+        if (field[i] < '0' || field[i] > '7') return -1;
         unsigned digit = (unsigned)(field[i] - '0');
         if (result > (UINT64_MAX - digit) / 8U) return -1;
         result = result * 8U + digit;
-        i++;
     }
-    while (i < width && (field[i] == '\0' || field[i] == ' ')) i++;
-    if (i != width) return -1;
     *value = result;
     return 0;
 }
