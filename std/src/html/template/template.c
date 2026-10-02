@@ -781,12 +781,50 @@ static int html_raw_end_tag(const char *buf, size_t i, size_t len,
            n == '/' || n == '>';
 }
 
+/* WHATWG script data states: return the offset of the `</script` that ends
+ * the element whose content starts at `i`, or `len` while the buffer is
+ * still inside it. `<!--` makes the content escaped; `<script` there enters
+ * the double-escaped state, where `</script` only returns to escaped and
+ * does not close the element. `-->` returns to plain script data. */
+static size_t html_script_data_end(const char *buf, size_t i, size_t len) {
+    enum { SD_DATA, SD_ESCAPED, SD_DOUBLE } sd = SD_DATA;
+    while (i < len) {
+        if (buf[i] == '<') {
+            if (html_raw_end_tag(buf, i, len, "</script", 8)) {
+                if (sd != SD_DOUBLE) return i;
+                sd = SD_ESCAPED;
+                i += 8;
+                continue;
+            }
+            if (sd == SD_DATA && i + 3 < len && buf[i + 1] == '!' &&
+                buf[i + 2] == '-' && buf[i + 3] == '-') {
+                sd = SD_ESCAPED;
+                i += 2; /* the same dashes also close `<!-->` */
+                continue;
+            }
+            if (sd == SD_ESCAPED &&
+                html_raw_end_tag(buf, i, len, "<script", 7)) {
+                sd = SD_DOUBLE;
+                i += 7;
+                continue;
+            }
+        } else if (buf[i] == '-' && sd != SD_DATA && i + 2 < len &&
+                   buf[i + 1] == '-' && buf[i + 2] == '>') {
+            sd = SD_DATA;
+            i += 3;
+            continue;
+        }
+        i++;
+    }
+    return len;
+}
+
 /* A JS backslash escape inside a string, template literal, or regexp covers
  * the next byte. The HTML tokenizer runs first, though: `\</script>` still
  * closes the element, so the escape must not swallow that `<`. */
-static int html_js_escape_pair(const char *buf, size_t i, size_t len) {
-    return buf[i] == '\\' && i + 1 < len &&
-           !html_raw_end_tag(buf, i + 1, len, "</script", 8);
+static int html_js_escape_pair(const char *buf, size_t i, size_t len,
+                               size_t script_end) {
+    return buf[i] == '\\' && i + 1 < len && i + 1 != script_end;
 }
 
 enum {
@@ -989,6 +1027,7 @@ static void html_scan_doc(const char *buf, size_t len,
     size_t alen = 0;
     size_t value_start = 0;
     size_t comment_body_start = 0;
+    size_t script_end = 0;
     size_t i = 0;
 
     while (i < len) {
@@ -1061,7 +1100,7 @@ static void html_scan_doc(const char *buf, size_t len,
             break;
 
         case HS_SCRIPT:
-            if (html_raw_end_tag(buf, i, len, "</script", 8)) {
+            if (i == script_end) {
                 state = HS_TAG;
                 js = JS_CODE;
                 interp_depth = 0;
@@ -1178,7 +1217,10 @@ static void html_scan_doc(const char *buf, size_t len,
                 break;
             case JS_SQ:
             case JS_DQ:
-                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len, script_end)) {
+                    i += 2;
+                    break;
+                }
                 if ((js == JS_SQ && c == '\'') ||
                     (js == JS_DQ && c == '"')) {
                     js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
@@ -1188,7 +1230,10 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_TPL:
-                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len, script_end)) {
+                    i += 2;
+                    break;
+                }
                 if (c == '`') {
                     if (interp_sp > 0) {
                         interp_depth = interp_stack[--interp_sp];
@@ -1231,7 +1276,10 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_RE:
-                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len, script_end)) {
+                    i += 2;
+                    break;
+                }
                 if (c == '[') { js = JS_RE_CLASS; i++; break; }
                 if (c == '/') {
                     js = interp_depth > 0 ? JS_TPL_EXPR : JS_CODE;
@@ -1243,7 +1291,10 @@ static void html_scan_doc(const char *buf, size_t len,
                 i++;
                 break;
             case JS_RE_CLASS:
-                if (html_js_escape_pair(buf, i, len)) { i += 2; break; }
+                if (html_js_escape_pair(buf, i, len, script_end)) {
+                    i += 2;
+                    break;
+                }
                 if (c == ']') { js = JS_RE; i++; break; }
                 i++;
                 break;
@@ -1342,6 +1393,7 @@ static void html_scan_doc(const char *buf, size_t len,
                     js = JS_CODE;
                     js_ctx_re = 1;
                     js_code_from = i + 1;
+                    script_end = html_script_data_end(buf, i + 1, len);
                 } else if (!is_end && tlen > 0 && tlen < sizeof(tag) &&
                          html_tag_is(tag, tlen, "style"))
                     state = HS_STYLE;
