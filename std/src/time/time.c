@@ -418,7 +418,10 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     int day = parse_digits(&p, 2);
     if (day < 1 || day > days_in_month(year, month)) return -1;
     if (*p++ != 'T') return -1;
-    int hour = parse_digits(&p, 2); if (hour < 0 || hour > 23 || *p++ != ':') return -1;
+    /* Go's layout fallback reads the 15 field as one or two digits. */
+    int hour = parse_digits(&p, 1);
+    if (hour >= 0 && *p >= '0' && *p <= '9') hour = hour * 10 + (*p++ - '0');
+    if (hour < 0 || hour > 23 || *p++ != ':') return -1;
     int min = parse_digits(&p, 2);  if (min < 0 || min > 59 || *p++ != ':') return -1;
     int sec = parse_digits(&p, 2);  if (sec < 0 || sec > 59) return -1;
     /* Go time.Parse rejects leap second 60 (unrepresentable). */
