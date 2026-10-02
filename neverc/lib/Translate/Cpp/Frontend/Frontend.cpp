@@ -3173,12 +3173,13 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
-static bool utilityLazyMoveSignatureSource(
+static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   if (!Method ||
-      !(Assignment || (Constructor && Constructor->isMoveConstructor())) ||
+      !(Assignment || (Constructor && Constructor->isCopyOrMoveConstructor())) ||
+      (Constructor && Constructor->isCopyConstructor() && Method->isDefaulted()) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
       !concreteClassFunction(Method))
@@ -3199,7 +3200,9 @@ static bool utilityLazyMoveSignatureSource(
   const auto *OriginConstructor = dyn_cast<CXXConstructorDecl>(Origin);
   if (!(Assignment
             ? Origin->isMoveAssignmentOperator()
-            : OriginConstructor && OriginConstructor->isMoveConstructor()) ||
+            : OriginConstructor &&
+                  OriginConstructor->isCopyConstructor() == Constructor->isCopyConstructor() &&
+                  OriginConstructor->isMoveConstructor() == Constructor->isMoveConstructor()) ||
       !standardExceptionSpecification(Written) || !PatternWritten)
     return false;
   // Declaring a defaulted move operation deletes the implicit copy even
@@ -3210,7 +3213,8 @@ static bool utilityLazyMoveSignatureSource(
         Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
     const auto OriginLocation =
         OriginInfo->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
-    return Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted() &&
+    return (Assignment || Constructor->isMoveConstructor()) &&
+           Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted() &&
            Written->getExceptionSpecType() == EST_None &&
            PatternWritten->getExceptionSpecType() == EST_None &&
            Location && OriginLocation &&
@@ -3226,7 +3230,7 @@ static bool utilityLazyMoveSignatureSource(
       PatternWritten->getNoexceptExpr() != Pattern->getNoexceptExpr())
     return false;
   const auto *Expression = Written->getNoexceptExpr();
-  // An adapter can leave an unused move's exception spec uninstantiated.
+  // An adapter can leave an unused copy/move's exception spec uninstantiated.
   // Its concrete written signature still retains the exact nondependent
   // pattern expression. Check that source without resolving or calling it.
   return !Expression ||
@@ -3368,6 +3372,70 @@ static bool utilityTrivialConditionalMoveSource(
   return Check(Check, Root, 0);
 }
 
+static bool utilityDeclaredCopyConditionalMoveSource(
+    Adapter &A, const CXXRecordDecl *Record,
+    std::vector<const CXXMethodDecl *> *Signatures) {
+  // Ordinary constructor declarations determine viability and noexcept without
+  // consuming a body. Keep one exact public const-copy, and at most one exact
+  // rvalue move (which may be private or deleted). Defaulted special members
+  // and constructor templates need their own selection/deletion source graph.
+  for (const auto *Declaration : Record->decls())
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+        Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+      return false;
+  const auto Object = A.Context.getRecordType(Record);
+  const CXXConstructorDecl *Copy = nullptr, *Move = nullptr;
+  for (const auto *Constructor : Record->ctors()) {
+    A.chargeExpansion(1, Constructor->getLocation());
+    if (Constructor->isInheritingConstructor())
+      return false;
+    if (!Constructor->isCopyOrMoveConstructor())
+      continue;
+    const bool IsCopy = Constructor->isCopyConstructor();
+    if (Constructor->isImplicit() || Constructor->isDefaulted() ||
+        Constructor->isInvalidDecl() || Constructor->isVariadic() ||
+        Constructor->getNumParams() != 1 ||
+        !A.Context.hasSameType(
+            Constructor->getParamDecl(0)->getType(),
+            IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
+                   : A.Context.getRValueReferenceType(Object)) ||
+        (IsCopy && (Constructor->isDeleted() ||
+                    Constructor->getAccess() != AS_public)) ||
+        !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
+      return false;
+    auto *&Selected = IsCopy ? Copy : Move;
+    if (Selected && Selected != Constructor->getCanonicalDecl())
+      return false;
+    Selected = Constructor->getCanonicalDecl();
+  }
+  if (!Copy)
+    return false;
+  const auto *Destructor = Record->getDestructor();
+  if (Destructor) {
+    if (Destructor->isInvalidDecl() || Destructor->isDeleted() ||
+        Destructor->getAccess() != AS_public ||
+        (!Destructor->isImplicit() && Destructor->isDefaulted()) ||
+        !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
+      return false;
+  } else if (Record->hasUserDeclaredDestructor() ||
+             !Record->hasTrivialDestructor()) {
+    return false;
+  }
+  // Inferred destruction can depend on every owned subobject. This bounded
+  // proof keeps the existing trivial owning graph and all its written special
+  // member sources; pointer/reference fields do not own their referent graph.
+  for (const auto &Base : Record->bases())
+    if (!utilityTrivialConditionalMoveSource(
+            A, Base.getType()->getAsCXXRecordDecl(), Signatures))
+      return false;
+  for (const auto *Field : Record->fields())
+    if (const auto *Member =
+            A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
+        Member && !utilityTrivialConditionalMoveSource(A, Member, Signatures))
+      return false;
+  return true;
+}
+
 static bool utilityValueAdapterSource(
     Adapter &A, const CallExpr *Call,
     std::vector<const CXXMethodDecl *> *ConditionalSignatures = nullptr) {
@@ -3419,8 +3487,8 @@ static bool utilityValueAdapterSource(
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
   // on their ordinary checks. Conditional move with an object template
-  // argument additionally proves a trivial owning graph or a deleted
-  // const-copy, retaining the original special-member signatures.
+  // argument additionally proves a trivial owning graph, a deleted const-copy
+  // or ordinary copy/move selection, retaining the special-member signatures.
   const bool OwnedRecord =
       Definition &&
       !Definition->isInvalidDecl() && !Definition->isDependentContext() &&
@@ -3430,7 +3498,9 @@ static bool utilityValueAdapterSource(
       (ReferenceCast ||
        utilityDeletedCopyConditionalMoveSource(A, Call, Definition,
                                               ConditionalSignatures) ||
-       utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures));
+       utilityTrivialConditionalMoveSource(A, Definition, ConditionalSignatures) ||
+       utilityDeclaredCopyConditionalMoveSource(A, Definition,
+                                               ConditionalSignatures));
   const bool ConditionalOwner =
       Record && *Operation == UtilityOperation::MoveIfNoexcept && !ReferenceCast &&
       utilityUniquePtrConditionalMoveSource(A, Call, Record);
@@ -12072,7 +12142,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                   // A class instance may still have lazy copy/move bodies.
                   // The exact adapter proof consumes its written signature,
                   // so check an already resolved signature or its exact
-                  // retained nondependent move signature without resolution.
+                  // retained nondependent copy/move signature without resolution.
                   // A defaulted move operation is consumed only as a
                   // declaration here. Its body keeps its generated proof.
                   if (concreteClassFunction(Signature) &&
@@ -12081,7 +12151,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                        (Constructor && Constructor->isMoveConstructor())) &&
                       (standardExceptionSpecification(
                            Signature->getType()->getAs<FunctionProtoType>()) ||
-                       utilityLazyMoveSignatureSource(A, Signature)) &&
+                       utilityLazyConditionalMoveSignatureSource(A, Signature)) &&
                       QueuedConditionalMoveSignatures.insert(Signature).second) {
                     A.chargeExpansion(1, Call->getExprLoc());
                     ConsumedConditionalMoveSignatures.push_back(Signature);
@@ -16854,7 +16924,7 @@ public:
     CurrentMethod = Method;
     CurrentDeclarator = Method;
     CurrentWrittenConditionalMoveSignature =
-        ConditionalMove && utilityLazyMoveSignatureSource(A, Method)
+        ConditionalMove && utilityLazyConditionalMoveSignatureSource(A, Method)
             ? Method : nullptr;
     CurrentDefaultField = nullptr;
     ImplicitInitializerOwner = Method->getLocation();

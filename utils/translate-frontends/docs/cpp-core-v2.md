@@ -919,6 +919,28 @@ Constructor templates, other constructor overloads, nontrivial owning graphs
 and SDK value members retain separate decision-source requirements. Non-owning
 pointer/reference fields do not consume their referents' constructor graph.
 
+An ordinary public copy constructor taking exactly `const Record&` also supplies
+conditional-move query sources. Among copy/move constructors, the record may
+have only that copy and an optional ordinary or explicitly deleted move taking
+exactly `Record&&`. A move may be private; the pinned builtin retains its exact
+access/deletion decision. A copy-only record is included. Every copy/move
+declaration and its original parameter and exception sources are checked. A
+lazy concrete template copy or move signature may retain its exact nondependent
+written exception source without instantiating a body. Unresolved dependent
+exception sources remain outside this proof.
+
+This ordinary-copy proof accepts implicit trivial or ordinary public
+destruction, while retaining the destructor's written sources. Owned bases and
+value members must satisfy the trivial constructor/destructor graph above;
+non-owning pointer/reference fields keep their original bindings. Ordinary
+value constructors are allowed, but constructor templates, inherited
+constructors, additional copy overloads, extra copy/move parameters, defaulted
+root copy/move constructors and explicitly defaulted root destructors retain
+separate requirements. Mutable and const
+operands preserve the pinned `T&&` or `const T&` result, including the copy
+fallback and throwing destruction. The query performs no copy, move or cleanup;
+actual construction and destruction retain their ordinary source checks.
+
 Object-argument queries also admit source-owned nontrivial records with an
 explicitly deleted public copy constructor taking exactly `const Record&`.
 The same proof admits an already-declared implicit, defaulted, deleted
