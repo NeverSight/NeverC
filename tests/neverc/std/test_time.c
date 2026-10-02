@@ -508,6 +508,23 @@ static void test_parse_layout(void) {
     check_int("parse 9s truncates past ns", ok, 0);
     check_int("parse 9s truncated nsec", neverc_time_nanosecond(t), 123456789);
 
+    /* Go stdFracSecond9: a separator not followed by a digit means the
+     * fraction was omitted. The separator is left for the next literal and
+     * a fraction parsed earlier stays in effect. */
+    ok = neverc_time_parse("20060102-150405.999.json",
+                           "20240102-120000.json", &t);
+    check_int("parse omitted 9s frac before literal dot", ok, 0);
+    check_int64("parse omitted 9s frac instant", t.sec, 1704196800LL);
+    ok = neverc_time_parse("20060102-150405.999.json",
+                           "20240102-120000.25.json", &t);
+    check_int("parse 9s frac before literal dot", ok, 0);
+    check_int("parse 9s frac before literal dot nsec",
+              neverc_time_nanosecond(t), 250000000);
+    ok = neverc_time_parse("05.999|.999", "45.25|", &t);
+    check_int("parse omitted second 9s frac", ok, 0);
+    check_int("parse omitted second 9s frac keeps nsec",
+              neverc_time_nanosecond(t), 250000000);
+
     ok = neverc_time_parse("15:04:05", "12:30:45.123", &t);
     check_int("parse implied frac after seconds", ok, 0);
     check_int("parse implied frac nsec", neverc_time_nanosecond(t), 123000000);
