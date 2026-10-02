@@ -3543,16 +3543,146 @@ static const ValueDecl *functionalMemberDispatchSource(
   return Source;
 }
 
-static const ValueDecl *functionalMemberInvokeSource(
+static const TypeSourceInfo *functionalMemberPointerAdapterTypeSource(
+    Adapter &A, const TemplateArgumentLoc &Argument, const ValueDecl *Member,
+    const Expr *&Expression) {
+  const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
+      ? Argument.getTypeSourceInfo() : nullptr;
+  TypeLoc Location = Info ? Info->getTypeLoc() : TypeLoc();
+  for (unsigned Depth = 0; Location && Depth < 64; ++Depth) {
+    Location = Location.getUnqualifiedLoc();
+    A.chargeExpansion(1, Location.getBeginLoc());
+    if (const auto Reference = Location.getAs<ReferenceTypeLoc>())
+      Location = Reference.getPointeeLoc();
+    else if (const auto Parentheses = Location.getAs<ParenTypeLoc>())
+      Location = Parentheses.getInnerLoc();
+    else {
+      if (const auto Deduced = Location.getAs<DecltypeTypeLoc>())
+        Expression = Deduced.getUnderlyingExpr();
+      break;
+    }
+  }
+  const auto *Reference = Expression
+      ? dyn_cast<DeclRefExpr>(Expression->IgnoreParens()) : nullptr;
+  const auto *Variable = Reference
+      ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto *Written = Variable ? Variable->getTypeSourceInfo() : nullptr;
+  const auto Stored = approvedFunctionalStoredMemberPointer(
+      A.S, A.Sources, Variable, A.Context);
+  const auto Type = Info ? Info->getType().getNonReferenceType() : QualType();
+  if (!Reference || !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !Written || !Written->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() ||
+      !Stored || Stored->Member != Member || Type.isNull() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      !A.Context.hasSameUnqualifiedType(Type, Variable->getType()))
+    return nullptr;
+  return Info;
+}
+
+struct FunctionalMemberPointerSource {
+  const ValueDecl *Member;
+  llvm::SmallVector<std::pair<const Expr *, const DeclRefExpr *>, 16> Carriers;
+  llvm::SmallVector<const TypeSourceInfo *, 8> TemplateSources;
+};
+
+static std::optional<FunctionalMemberPointerSource>
+functionalMemberPointerCarrierSource(Adapter &A, const Expr *Expression,
+                                     const ValueDecl *Member) {
+  FunctionalMemberPointerSource Result{Member, {}, {}};
+  llvm::SmallVector<const CallExpr *, 8> Adapters;
+  // Retain the actual source member behind each exact erased expression.
+  // Normal traversal still checks written types and address qualifiers; no
+  // independent member-pointer expression receives this carrier proof.
+  auto Retain = [&](auto &&Self, const Expr *E,
+                    unsigned Depth) -> const DeclRefExpr * {
+    if (!E || Depth >= 64)
+      return nullptr;
+    A.chargeExpansion(1, E->getExprLoc());
+    const DeclRefExpr *Source = nullptr;
+    if (const auto *Address = dyn_cast<UnaryOperator>(E);
+        Address && Address->getOpcode() == UO_AddrOf &&
+        Address->getType()->isMemberPointerType()) {
+      const auto *Reference =
+          dyn_cast<DeclRefExpr>(Address->getSubExpr()->IgnoreParenImpCasts());
+      if (Reference && Reference->getDecl() == Member &&
+          A.S.owns(A.Sources, Address->getExprLoc()) &&
+          A.S.owns(A.Sources, Reference->getExprLoc()))
+        Source = Reference;
+    } else if (const auto *Call = dyn_cast<CallExpr>(E)) {
+      const auto Operation =
+          approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+      if (!Operation || !utilitySDKValueAdapterSource(A, Call, *Operation))
+        return nullptr;
+      Source = Self(Self, Call->getArg(0), Depth + 1);
+      if (!Source)
+        return nullptr;
+      const auto *Leaf = directFunctionReference(Call);
+      const Expr *Callee = Call->getCallee();
+      while (Callee) {
+        Result.Carriers.emplace_back(Callee, Source);
+        if (Callee == Leaf)
+          break;
+        if (const auto *P = dyn_cast<ParenExpr>(Callee))
+          Callee = P->getSubExpr();
+        else if (const auto *C = dyn_cast<ImplicitCastExpr>(Callee))
+          Callee = C->getSubExpr();
+        else
+          return nullptr;
+      }
+      if (!Callee)
+        return nullptr;
+      if (!llvm::is_contained(Adapters, Call))
+        Adapters.push_back(Call);
+    } else if (const auto *P = dyn_cast<ParenExpr>(E)) {
+      Source = Self(Self, P->getSubExpr(), Depth + 1);
+    } else if (const auto *C = dyn_cast<ImplicitCastExpr>(E)) {
+      Source = Self(Self, C->getSubExpr(), Depth + 1);
+    } else if (const auto *T = dyn_cast<MaterializeTemporaryExpr>(E)) {
+      Source = Self(Self, T->getSubExpr(), Depth + 1);
+    } else if (const auto *C = dyn_cast<ExprWithCleanups>(E)) {
+      Source = Self(Self, C->getSubExpr(), Depth + 1);
+    } else if (const auto *Reference = dyn_cast<DeclRefExpr>(E)) {
+      const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+      const auto *Info = Variable ? Variable->getTypeSourceInfo() : nullptr;
+      const auto Stored = approvedFunctionalStoredMemberPointer(
+          A.S, A.Sources, Variable, A.Context);
+      if (Info && Info->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() &&
+          Stored && Stored->Member == Member)
+        Source = Self(Self, Stored->Initializer, Depth + 1);
+    }
+    if (Source)
+      Result.Carriers.emplace_back(E, Source);
+    return Source;
+  };
+  if (!Retain(Retain, Expression, 0))
+    return std::nullopt;
+  // Written decltype(auto-local) references keep their own completed TypeLoc
+  // source and can expose further copy adapters. Authenticate each only once.
+  for (unsigned I = 0; I < Adapters.size(); ++I) {
+    const auto *Reference =
+        cast<DeclRefExpr>(directFunctionReference(Adapters[I]));
+    for (const auto &Argument : Reference->template_arguments()) {
+      const Expr *Source = nullptr;
+      const auto *Info = functionalMemberPointerAdapterTypeSource(
+          A, Argument, Member, Source);
+      if (!Info || !Retain(Retain, Source, 0))
+        return std::nullopt;
+      Result.TemplateSources.push_back(Info);
+    }
+  }
+  return Result;
+}
+
+static std::optional<FunctionalMemberPointerSource> functionalMemberInvokeSource(
     Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || !Function->getIdentifier() || Function->getName() != "invoke" ||
       !Call->getNumArgs() || !Call->getArg(0)->getType()->isMemberPointerType())
-    return nullptr;
+    return std::nullopt;
   const auto Invoke =
       approvedFunctionalMemberInvokeCall(A.S, A.Sources, Call, A.Context);
-  if (!Invoke || Invoke->ErasedFactory || !Invoke->ErasedAdapters.empty())
-    return nullptr;
+  if (!Invoke || Invoke->ErasedFactory)
+    return std::nullopt;
   const auto *Target = Invoke->Method
       ? Invoke->Method->getType()->getAs<FunctionProtoType>() : nullptr;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
@@ -3562,9 +3692,11 @@ static const ValueDecl *functionalMemberInvokeSource(
       !functionalInvocabilitySource(A, Call, Arguments->get(0).getAsType(),
                                    Arguments->get(1),
                                    Target ? Target->isNothrow() : true))
-    return nullptr;
-  return functionalMemberDispatchSource(A, Call, *Invoke,
-                                        functionalReturnedCall(Function));
+    return std::nullopt;
+  const auto *Member = functionalMemberDispatchSource(
+      A, Call, *Invoke, functionalReturnedCall(Function));
+  return Member ? functionalMemberPointerCarrierSource(A, Call->getArg(0), Member)
+                : std::nullopt;
 }
 
 struct FunctionalMemFnSource {
@@ -8288,6 +8420,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const Expr *, const CallExpr *> AuthenticatedUtilityReferences;
   std::map<const CallExpr *, const ValueDecl *> AuthenticatedUserInvokeSources;
   std::map<const Stmt *, const Expr *> MemFnCarrierSources;
+  std::map<const Stmt *, const DeclRefExpr *> MemberPointerCarrierSources;
   std::map<const DeclRefExpr *, const CallExpr *>
       AuthenticatedMakeUniqueReferences;
   struct AlgorithmCallableSource {
@@ -11147,36 +11280,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   const TypeSourceInfo *memberPointerAdapterArgument(
       const TemplateArgumentLoc &Argument, const ValueDecl *Member) {
-    const auto *Info = Argument.getArgument().getKind() == TemplateArgument::Type
-        ? Argument.getTypeSourceInfo() : nullptr;
-    TypeLoc Location = Info ? Info->getTypeLoc() : TypeLoc();
     const Expr *Expression = nullptr;
-    for (unsigned Depth = 0; Location && Depth < 64; ++Depth) {
-      Location = Location.getUnqualifiedLoc();
-      A.chargeExpansion(1, Location.getBeginLoc());
-      if (const auto Reference = Location.getAs<ReferenceTypeLoc>())
-        Location = Reference.getPointeeLoc();
-      else if (const auto Parentheses = Location.getAs<ParenTypeLoc>())
-        Location = Parentheses.getInnerLoc();
-      else {
-        if (const auto Deduced = Location.getAs<DecltypeTypeLoc>())
-          Expression = Deduced.getUnderlyingExpr();
-        break;
-      }
-    }
-    const auto *Reference = Expression
-        ? dyn_cast<DeclRefExpr>(Expression->IgnoreParens()) : nullptr;
-    const auto *Variable = Reference
-        ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
-    const auto *Written = Variable ? Variable->getTypeSourceInfo() : nullptr;
-    const auto Stored = approvedFunctionalStoredMemberPointer(
-        A.S, A.Sources, Variable, A.Context);
-    const auto Type = Info ? Info->getType().getNonReferenceType() : QualType();
-    if (!Reference || !A.S.owns(A.Sources, Reference->getExprLoc()) ||
-        !Written || !Written->getTypeLoc().getUnqualifiedLoc().getAs<AutoTypeLoc>() ||
-        !Stored || Stored->Member != Member || Type.isNull() ||
-        Type.isVolatileQualified() || Type.isRestrictQualified() ||
-        !A.Context.hasSameUnqualifiedType(Type, Variable->getType()))
+    const auto *Info = functionalMemberPointerAdapterTypeSource(
+        A, Argument, Member, Expression);
+    if (!Info)
       return nullptr;
     // Only this adapter's written decltype of an exact auto carrier is erased.
     // Keep ordinary TypeLoc/expression traversal; compound expressions, aliases
@@ -11187,6 +11294,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       Expression = Parentheses ? Parentheses->getSubExpr() : nullptr;
     }
     return Info;
+  }
+  void retainMemberPointerCarriers(const FunctionalMemberPointerSource &Pointer) {
+    for (const auto &[Carrier, Original] : Pointer.Carriers) {
+      auto [Source, New] = MemberPointerCarrierSources.emplace(Carrier, Original);
+      if (New)
+        A.chargeExpansion(1, Carrier->getExprLoc());
+      else if (Source->second->getDecl() != Pointer.Member)
+        A.reject(Carrier->getExprLoc(), "member-pointer carrier source",
+                 "An erased pointer requires one original member source.");
+    }
+    for (const auto *Source : Pointer.TemplateSources)
+      operationTypeDependency(Source);
   }
   void retainMemFnCarriers(const FunctionalMemFnSource &MemFn) {
     for (const auto *Carrier : MemFn.Carriers) {
@@ -11200,6 +11319,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
   }
   void collectOperationSource(const Stmt *S) {
+    if (auto Found = MemberPointerCarrierSources.find(S);
+        Found != MemberPointerCarrierSources.end())
+      // Exact erased reference casts/copies retain the selected source member.
+      // Their actual children and written type arguments are still traversed.
+      S = Found->second;
     if (auto Found = MemFnCarrierSources.find(S);
         Found != MemFnCarrierSources.end()) {
       // This invocation proved the erased factory/copy chain. Retain its exact
@@ -11277,7 +11401,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (!ReferenceInvoke) {
           UserInvoke = functionalUserInvokeSource(A, Call);
           if (!UserInvoke)
-            UserInvoke = functionalMemberInvokeSource(A, Call);
+            if (const auto Pointer = functionalMemberInvokeSource(A, Call)) {
+              UserInvoke = Pointer->Member;
+              retainMemberPointerCarriers(*Pointer);
+            }
           if (!UserInvoke)
             if (const auto MemFn = functionalMemFnSource(A, Call)) {
               UserInvoke = MemFn->Member;
@@ -12012,7 +12139,14 @@ public:
         // VisitVarDecl marks the exact erased carrier chain and retains each
         // adapter's written arguments. Traverse the actual initializer once,
         // including member-address qualifiers, even for an unused local.
-        return WalkUpFromVarDecl(D) && TraverseStmt(D->getInit());
+        if (!WalkUpFromVarDecl(D))
+          return false;
+        // Retain initializer sources before their first traversal: a later
+        // query may consume these completed expressions through a local copy.
+        if (const auto Source = functionalMemberPointerCarrierSource(
+                A, Stored->Initializer, Stored->Member))
+          retainMemberPointerCarriers(*Source);
+        return TraverseStmt(D->getInit());
       }
       if (auto Stored =
               approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {

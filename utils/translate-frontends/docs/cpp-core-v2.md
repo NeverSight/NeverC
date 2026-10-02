@@ -2512,8 +2512,9 @@ receiver/argument effects and temporary lifetimes. Each adapted member-pointer
 initializer is traversed once at its declaration, including every adapter's
 written template arguments and the terminal member address's written qualifiers,
 even for an unused local. Erasing its storage does not hide unsupported source
-inside an initializer. Result-source queries for `std::invoke` and `mem_fn`
-through adapted raw pointers or their initializer chains require separate source
+inside an initializer. Materialized `std::invoke` result queries retain these
+adapted pointers as described below. Result-source queries for `mem_fn` through
+adapted raw pointers or their initializer chains still require separate source
 proof and remain outside this boundary.
 Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
@@ -2540,8 +2541,16 @@ parameter flow are authenticated before the direct method call or field
 projection is emitted.
 
 Materialized `std::invoke` adapters for admitted source-owned member functions
-also support result-source queries. Direct named addresses and ordinary exact
-local member-pointer copy initializer chains retain the selected method.
+also support result-source queries. Direct named addresses and exact local
+`auto` member-pointer copy initializer chains retain the selected method,
+including bounded mixed `move`, `forward`, `move_if_noexcept` and `as_const`
+chains at the final invoke operand and inside each copy initializer. Every
+reference adapter requires its own pinned SDK source and exact reference flow.
+The query retains each erased expression's original member source, including
+initializers checked before the query. Written cv/ref-qualified `decltype` of
+an exact local `auto` carrier still requires its own completed type source;
+compound expressions, unrelated members and independent pointer-type uses
+receive no exemption.
 Exact object, pointer and `reference_wrapper` receivers, const methods and
 lvalue/rvalue-qualified methods keep their runtime receiver rules. The public
 adapter, internal member dispatcher and exact invocability variable require
@@ -2561,7 +2570,8 @@ unresolved or reassigned member pointers remain rejected.
 
 Materialized `std::invoke` adapters for admitted source-owned data fields also
 support these result queries, including direct named addresses and exact local
-member-pointer copy chains. Scalar, object-pointer and function-pointer fields
+`auto` member-pointer copy chains with the same authenticated nested reference
+adapters. Scalar, object-pointer and function-pointer fields
 retain lvalue/rvalue reference results and the const qualification contributed
 by the field and receiver. Object, pointer and `reference_wrapper` receivers
 use their exact runtime forwarding rules. The public adapter, internal field
