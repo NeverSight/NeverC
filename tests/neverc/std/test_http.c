@@ -3597,6 +3597,7 @@ static void sse_handler(neverc_http_request_t *req,
 static void sse_start_handler(neverc_http_request_t *req,
                               neverc_http_response_writer_t *w) {
     (void)req;
+    neverc_http_set_header(w, "Access-Control-Allow-Origin", "*");
     neverc_sse_t *sse = neverc_sse_start(w);
     if (!sse) return;
     (void)neverc_sse_send(sse, "tick", "1", NULL);
@@ -3691,6 +3692,27 @@ static void test_sse(void) {
                   n > 0 && strstr(resp, "Connection: close\r\n") != NULL, 1);
         check_int("sse_start http10 identity body",
                   body && strcmp(body + 4, "event: tick\ndata: 1\n\n") == 0,
+                  1);
+    }
+
+    /* Headers set before the stream starts (CORS, custom) are sent. */
+    {
+        char resp[4096];
+        int n = sse_raw_request(port,
+            "GET /sse-start HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            "Connection: close\r\n\r\n",
+            resp, sizeof(resp));
+        const char *body = n > 0 ? strstr(resp, "\r\n\r\n") : NULL;
+        check_int("sse_start keeps handler headers",
+                  body && strstr(resp, "Access-Control-Allow-Origin: *\r\n") &&
+                      strstr(resp, "Access-Control-Allow-Origin") < body,
+                  1);
+        check_int("sse_start content type",
+                  n > 0 && strstr(resp, "Content-Type: text/event-stream\r\n"),
+                  1);
+        check_int("sse_start chunked body",
+                  body && strstr(body, "event: tick\ndata: 1\n\n") &&
+                      strstr(body, "\r\n0\r\n\r\n"),
                   1);
     }
 
