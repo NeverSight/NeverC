@@ -95,6 +95,17 @@ static int macho_section_has_file_data(uint32_t flags) {
     return type != 0x01U && type != 0x0cU && type != 0x12U;
 }
 
+/* A segment without file bytes cannot back its sections: dSYM companions
+ * keep such segments for the stripped code and data, with the original
+ * section sizes and a zero file offset. Only sections of file-backed
+ * segments must lie inside the file; section_data bounds every read. */
+static int macho_section_fits(const neverc_macho_segment_t *seg,
+                              const neverc_macho_section_t *s, size_t len) {
+    if (seg->filesz == 0 || !macho_section_has_file_data(s->flags))
+        return 1;
+    return macho_range_in_file(s->offset, s->size, len);
+}
+
 int neverc_macho_is_fat(const uint8_t *data, size_t len) {
     if (!data || len < 4) return 0;
     uint32_t magic = rd32le(data);
@@ -333,8 +344,7 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                 s->reloff = r32(sec + 48);
                 s->nreloc = r32(sec + 52);
                 s->flags  = r32(sec + 56);
-                if ((macho_section_has_file_data(s->flags) &&
-                     !macho_range_in_file(s->offset, s->size, len)) ||
+                if (!macho_section_fits(seg, s, len) ||
                     (s->nreloc != 0 &&
                      !macho_range_in_file(
                          s->reloff, (uint64_t)s->nreloc * 8U, len)))
@@ -368,8 +378,7 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                 s->reloff = r32(sec + 56);
                 s->nreloc = r32(sec + 60);
                 s->flags  = r32(sec + 64);
-                if ((macho_section_has_file_data(s->flags) &&
-                     !macho_range_in_file(s->offset, s->size, len)) ||
+                if (!macho_section_fits(seg, s, len) ||
                     (s->nreloc != 0 &&
                      !macho_range_in_file(
                          s->reloff, (uint64_t)s->nreloc * 8U, len)))
