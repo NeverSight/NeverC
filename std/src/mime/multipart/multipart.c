@@ -55,6 +55,15 @@ static int multipart_header_name_valid(const char *name) {
     return 1;
 }
 
+/* Go's textproto header reader trims SP/HTAB from both ends of every
+ * physical header line; trailing WSP is never part of a field value. */
+static size_t multipart_trim_wsp_end(const unsigned char *data, size_t start,
+                                     size_t end) {
+    while (end > start && (data[end - 1] == ' ' || data[end - 1] == '\t'))
+        end--;
+    return end;
+}
+
 static int multipart_header_value_valid(const unsigned char *s, size_t n) {
     for (size_t i = 0; i < n; i++) {
         unsigned char c = s[i];
@@ -178,17 +187,22 @@ static int parse_headers(const unsigned char *data, size_t len,
             while (vstart < line_end &&
                    (data[vstart] == ' ' || data[vstart] == '\t'))
                 vstart++;
-            size_t add = line_end - vstart;
+            size_t add = multipart_trim_wsp_end(data, vstart, line_end) -
+                         vstart;
             size_t cur = strlen(prev->value);
             if (add > 0) {
-                if (cur >= sizeof(prev->value) - 1 ||
-                    add > sizeof(prev->value) - 2 - cur ||
+                /* Folded lines join with one SP; an empty value takes the
+                 * continuation as-is. */
+                size_t sep = cur > 0 ? 1U : 0U;
+                if (cur + sep >= sizeof(prev->value) ||
+                    add >= sizeof(prev->value) - cur - sep ||
                     !multipart_header_value_valid(data + vstart, add))
                     return -1;
-                prev->value[cur] = ' ';
-                memcpy(prev->value + cur + 1, data + vstart, add);
-                prev->value[cur + 1 + add] = '\0';
-                if (!nci_rfc2047_header_safe(prev->value, cur + 1 + add))
+                if (sep)
+                    prev->value[cur] = ' ';
+                memcpy(prev->value + cur + sep, data + vstart, add);
+                prev->value[cur + sep + add] = '\0';
+                if (!nci_rfc2047_header_safe(prev->value, cur + sep + add))
                     return -1;
             }
             i = line_feed + 1;
@@ -215,7 +229,7 @@ static int parse_headers(const unsigned char *data, size_t len,
         while (vstart < line_end &&
                (data[vstart] == ' ' || data[vstart] == '\t'))
             vstart++;
-        size_t vlen = line_end - vstart;
+        size_t vlen = multipart_trim_wsp_end(data, vstart, line_end) - vstart;
         if (vlen >= sizeof(h->value) ||
             !multipart_header_value_valid(data + vstart, vlen))
             return -1;
