@@ -835,12 +835,19 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
         case NEVERC_XML_CHAR_DATA: {
             int si = stack_top - 1;
             if (si == 0) {
-                if (token_is_cdata) {
+                /* XML 1.0 Misc is Comment, PI, or literal S (#x20 #x9 #xD
+                 * #xA). Check the raw token, not the decoded text: &#32;
+                 * expands to a space but is still a character reference,
+                 * which is not surrounding whitespace. CDATA is the same
+                 * class of markup and is rejected with it. */
+                if (token_is_cdata || d.pos < token_start) {
                     failed = 1;
                     break;
                 }
-                for (size_t i = 0; i < tok.data_len; i++) {
-                    char c = tok.data[i];
+                const char *raw = d.src + token_start;
+                size_t raw_len = d.pos - token_start;
+                for (size_t i = 0; i < raw_len; i++) {
+                    unsigned char c = (unsigned char)raw[i];
                     if (c != ' ' && c != '\t' &&
                         c != '\n' && c != '\r') {
                         failed = 1;

@@ -326,6 +326,45 @@ static void test_entities_cdata_and_well_formedness(void) {
                neverc_xml_parse("", 0) == NULL, 1);
     check_bool("reject trailing non-whitespace",
                neverc_xml_parse("<root/>extra", 12) == NULL, 1);
+    /* XML 1.0 [27] Misc is Comment, PI, or literal S. A character reference
+     * is not surrounding whitespace even when it expands to a space. */
+    {
+        const char *outside_refs[] = {
+            "<a/>&#32;",
+            "&#32;<a/>",
+            "&#9;<a/>",
+            "<a/>&#xD;",
+            "<a/>&#10;",
+        };
+        const char *outside_names[] = {
+            "reject char ref after document element",
+            "reject char ref before document element",
+            "reject numeric tab ref before element",
+            "reject hex CR ref after element",
+            "reject decimal LF ref after element",
+        };
+        for (size_t i = 0; i < sizeof(outside_refs) / sizeof(outside_refs[0]); i++) {
+            neverc_xml_node_t *bad = neverc_xml_parse(
+                outside_refs[i], strlen(outside_refs[i]));
+            check_bool(outside_names[i], bad == NULL, 1);
+            neverc_xml_node_free(bad);
+        }
+    }
+    {
+        const char *spaced = "<a/> \t\r\n";
+        tree = neverc_xml_parse(spaced, strlen(spaced));
+        check_bool("accept literal whitespace around element",
+                   tree != NULL, 1);
+        neverc_xml_node_free(tree);
+        tree = NULL;
+        const char *inside = "<a>&#32;</a>";
+        tree = neverc_xml_parse(inside, strlen(inside));
+        neverc_xml_node_t *element = tree ? neverc_xml_node_child(tree, "a") : NULL;
+        check_str("char ref inside element is a space",
+                  element ? element->text : NULL, " ");
+        neverc_xml_node_free(tree);
+        tree = NULL;
+    }
 
     {
         static const char *utf8_decls[] = {
