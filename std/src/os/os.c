@@ -610,6 +610,7 @@ int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) 
     }
     if (st.st_mode & _S_IFDIR) {
         fclose(fp);
+        errno = EISDIR;
         return -1;
     }
     if ((st.st_mode & _S_IFREG) && st.st_size >= 0) {
@@ -622,7 +623,9 @@ int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) 
         return -1;
     }
     if (S_ISDIR(st.st_mode)) {
+        /* Go os.ReadFile: reading a directory fails with EISDIR. */
         fclose(fp);
+        errno = EISDIR;
         return -1;
     }
     if (S_ISREG(st.st_mode) && st.st_size >= 0) {
