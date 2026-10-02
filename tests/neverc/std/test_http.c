@@ -4918,6 +4918,41 @@ static void test_json_helpers(void) {
 
 #endif /* _WIN32 */
 
+/* ===== Cookie lookup (Go Request.Cookie) ===== */
+
+static const char *lookup_cookie(const char *header, const char *name,
+                                 char *buf, size_t buflen) {
+    static char raw[512];
+    size_t header_length = strlen(header);
+    if (header_length + 8 > sizeof(raw)) return NULL;
+    memcpy(raw, "Cookie", 7);
+    memcpy(raw + 7, header, header_length + 1);
+    neverc_http_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.raw_headers = raw;
+    req.nheaders = 1;
+    return neverc_http_get_cookie(&req, name, buf, buflen);
+}
+
+static void test_cookie_lookup(void) {
+    printf("[cookie_lookup]\n");
+    char buf[64];
+
+    /* Go readCookies trims optional whitespace around each cookie-pair. */
+    check_str("cookie OWS before semicolon",
+              lookup_cookie("a=b ; c=d", "a", buf, sizeof(buf)), "b");
+    check_str("quoted cookie OWS before semicolon",
+              lookup_cookie("a=\"b\" ; c=d", "a", buf, sizeof(buf)), "b");
+    check_str("cookie tab before name",
+              lookup_cookie("x=1;\ta=2", "a", buf, sizeof(buf)), "2");
+    check_str("cookie OWS before equals",
+              lookup_cookie("a =b; c=d", "a", buf, sizeof(buf)), "b");
+    check_str("cookie trailing tab",
+              lookup_cookie("c=d; a=b\t", "a", buf, sizeof(buf)), "b");
+    check_str("cookie value keeps inner space",
+              lookup_cookie("a=b c ; d=e", "a", buf, sizeof(buf)), "b c");
+}
+
 /* ===== ResponseHeader test ===== */
 
 static void test_response_header(void) {
@@ -4968,6 +5003,7 @@ int main(void) {
     test_canonical_header_key();
     test_not_found_handler();
     test_redirect_html_escape();
+    test_cookie_lookup();
     test_response_header();
 #ifndef _WIN32
     test_http_server();
