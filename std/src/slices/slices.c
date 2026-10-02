@@ -158,19 +158,23 @@ size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_e
     char *p = (char *)slice;
     size_t w = 1;
     size_t r = 1;
+    /* Go slices.CompactFunc: element r is dropped iff eq(s[r], s[r-1]) on the
+     * original predecessor, evaluated once per adjacent pair. Writes stay
+     * below r, so p[r - 1] still holds the original value. */
     while (r < len) {
-        if (eq(p + (w - 1) * elem_size, p + r * elem_size)) {
+        if (eq(p + r * elem_size, p + (r - 1) * elem_size)) {
             r++;
             continue;
         }
         size_t run_start = r;
         r++;
-        while (r < len && !eq(p + (r - 1) * elem_size, p + r * elem_size))
+        while (r < len && !eq(p + r * elem_size, p + (r - 1) * elem_size))
             r++;
         size_t run_len = r - run_start;
         if (w != run_start)
             memmove(p + w * elem_size, p + run_start * elem_size, run_len * elem_size);
         w += run_len;
+        if (r < len) r++;   /* the pair that ended the run matched: drop p[r] */
     }
     slices_clear_tail(p, w, len, elem_size);
     return w;
