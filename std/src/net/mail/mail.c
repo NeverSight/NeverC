@@ -168,6 +168,9 @@ static int mail_addr_spec_ok(const char *s) {
         if (neverc_netip_parse_addr(ip, &addr) != 0) return 0;
         /* RFC 5321: IPv6: must be followed by an IPv6 address, not IPv4. */
         if (want_v6 && addr.is_v4) return 0;
+        /* netip accepts a %zone suffix, but an RFC 5321 IPv6-addr has no
+         * zone ID (Go rejects zoned domain literals too). */
+        if (addr.zone[0]) return 0;
         return 1;
     }
     return mail_dot_atom_ok(dom, strlen(dom));
