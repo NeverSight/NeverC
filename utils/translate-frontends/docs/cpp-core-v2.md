@@ -981,7 +981,7 @@ exception specifications and redeclarations remain source dependencies.
 Unused template defaults and bodies stay lazy. Actual generated copies and
 moves check and evaluate the selected member defaults and bodies, preserving
 reference mutations and parameter-temporary destruction. A root with an
-available const copy retains the separate one-parameter owning-graph proof.
+available const copy uses the resolved-default source proof below.
 
 The same owned extra-parameter support applies when the root's exact public
 const-copy is already marked deleted. This includes implicit and explicitly
@@ -995,6 +995,24 @@ Actual movement can therefore move one member and copy another; both selected
 operations check their defaults and bodies. Query-only owners with deleted or
 inaccessible member moves still preserve the reference result, without making
 those moves available for construction.
+
+When a const copy remains available, queried records and their owned members
+can also have extra defaulted copy/move parameters if every later initializer
+is already resolved, source-owned and attached to its exact parameter in the
+original function prototype. This holds across every redeclaration, including
+inherited defaults. Normal signature traversal checks those initializers and
+their dependencies along with the parameter types, aliases, bounds and
+exception sources. Defaults still awaiting template instantiation require a
+separate proof; the translator does not instantiate them to admit a query.
+
+These defaults can affect the pinned reference result: a `noexcept` move
+constructor with a potentially throwing default argument, or with a default
+argument temporary whose destructor may throw, can cause copy fallback.
+Copy-only records and deleted or inaccessible moves retain the pinned overload
+decision. Queries do not evaluate defaults or instantiate constructor bodies.
+Actual selected copies and moves evaluate their own defaults once, including
+reference mutations and parameter-temporary cleanup. The same requirements
+apply through implicit/defaulted operations, nested members and fixed arrays.
 
 Non-owning pointer/reference fields keep their original bindings. Constructor
 templates, inherited constructors, additional copy overloads and nontrivial
@@ -1070,8 +1088,8 @@ class-template defaults and bodies stay lazy. Actual construction checks and
 evaluates selected defaults, retaining mutations, reference bindings and
 temporary destruction. This extension also applies when the queried record's
 destructor makes construction unavailable. Owned subobjects use the bounded
-owning-graph proof above; records with an available const copy retain their
-separate copy-fallback proof.
+owning-graph proof above; records with an available const copy use its
+resolved-default source proof.
 This copy-unavailability proof excludes constructor templates, inherited and
 variadic constructors. Public
 user-defaulted deleted copies and other causes of implicit deletion such as an
@@ -1141,9 +1159,10 @@ record types, aliases and fixed-array reference bounds. Unused class-template
 defaults stay uninstantiated; an actual copy or move checks and evaluates its
 selected defaults and body, including reference mutations and temporary
 destruction. Parameter records use this constructor-shape proof; queried
-records use the copy-unavailability proof above. Extra copy/move parameters
-on owned subobjects use the owning-graph proof above when the queried root's
-exact mutable-only or already-deleted copy establishes const-copy unavailability.
+records use the copy-unavailability or resolved-default source proof above.
+Owned subobjects use the owning-graph proof: the root's exact mutable-only or
+already-deleted copy establishes const-copy unavailability, or every extra
+copy/move default retains its already-resolved initializer source.
 
 The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
@@ -1192,9 +1211,9 @@ Record parameter types must already satisfy the ordinary completion checks;
 these constructor proofs do not instantiate an otherwise incomplete template
 record.
 
-Constructor templates, inherited constructors, extra copy/move parameters in
-owning graphs whose queried root has an available const copy, additional copy
-overloads, and other value constructors retain separate
+Constructor templates, inherited constructors, unresolved extra copy/move
+defaults when a const copy remains available, additional copy overloads, and
+other value constructors retain separate
 requirements. In particular, a first record parameter passed by value, by
 const lvalue reference or by rvalue reference can introduce its own conversion
 from `const Record&` when it has a converting constructor and a single argument

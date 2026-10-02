@@ -3173,6 +3173,33 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
+static bool utilityConditionalMoveDefaultsSource(
+    Adapter &A, const CXXConstructorDecl *Constructor) {
+  if (Constructor->getNumParams() == 1)
+    return true;
+  // With an available const-copy, extra defaults can change nothrow
+  // constructibility and hence the adapter's reference category. Require
+  // already-resolved initializers on the exact prototype parameters: ordinary
+  // signature traversal checks their original expressions and dependencies.
+  // Do not instantiate a template default to make this proof succeed.
+  for (const auto *Declaration : Constructor->redecls()) {
+    const auto *Info = Declaration->getTypeSourceInfo();
+    const auto Prototype =
+        Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
+             : FunctionProtoTypeLoc();
+    if (!Prototype || Prototype.getNumParams() != Declaration->getNumParams())
+      return false;
+    for (unsigned I = 1; I < Declaration->getNumParams(); ++I) {
+      const auto *Parameter = Declaration->getParamDecl(I);
+      A.chargeExpansion(1, Parameter->getLocation());
+      if (Prototype.getParam(I) != Parameter ||
+          !operationDefaultInitializer(A, Parameter))
+        return false;
+    }
+  }
+  return true;
+}
+
 static bool utilityConditionalMoveDirectConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
@@ -3582,7 +3609,8 @@ static bool utilityRecordConditionalMoveSource(
         continue;
       const bool IsCopy = Constructor->isCopyConstructor();
       if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
-          (!RootConstCopyUnavailable && Constructor->getNumParams() != 1))
+          (!RootConstCopyUnavailable &&
+           !utilityConditionalMoveDefaultsSource(A, Constructor)))
         return false;
       if ((!A.Context.hasSameType(
               Constructor->getParamDecl(0)->getType(),
@@ -3612,7 +3640,7 @@ static bool utilityRecordConditionalMoveSource(
     // still supplies the sources behind defaulted deletion, and every
     // signature remains a dependency; selected operations check defaults and
     // bodies. Do not declare or resolve a hypothetical copy to learn deletion.
-    // Roots with an available const-copy retain the one-parameter proof.
+    // Available const-copies require the resolved-default source proof above.
     if (Depth == 0 && (MutableCopy || Copy->isDeleted()))
       RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
