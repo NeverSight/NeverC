@@ -3447,7 +3447,8 @@ const char *neverc_http_response_header(const neverc_http_response_t *resp,
                 while (vlen > 0 &&
                        (val[vlen - 1] == ' ' || val[vlen - 1] == '\t'))
                     vlen--;
-                if (vlen >= buflen) vlen = buflen - 1;
+                /* A truncated prefix (e.g. of Location) is not the value. */
+                if (vlen >= buflen) return NULL;
                 memcpy(buf, val, vlen);
                 buf[vlen] = '\0';
                 return buf;
