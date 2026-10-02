@@ -1497,8 +1497,10 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
                 return NULL;
         }
 #else
-        int n = snprintf(path, sizeof(path), "%s/%.*s%s%.*s",
-                         dir, (int)plen, prefix, hex, (int)slen, suffix);
+        size_t dir_len = strlen(dir);
+        const char *sep = dir_len > 0 && dir[dir_len - 1] == '/' ? "" : "/";
+        int n = snprintf(path, sizeof(path), "%s%s%.*s%s%.*s", dir, sep,
+                         (int)plen, prefix, hex, (int)slen, suffix);
         if (n < 0 || (size_t)n >= sizeof(path))
             return NULL;
 #endif
@@ -2069,8 +2071,11 @@ int neverc_os_mkdir_temp(const char *dir, const char *pattern,
                 return -1;
         }
 #else
-        int n = snprintf(buf, cap, "%s/%.*s%s%.*s",
-                         dir, (int)plen, prefix, hex, (int)slen, suffix);
+        /* Go joinPath: no second separator after a dir ending in '/'. */
+        size_t dir_len = strlen(dir);
+        const char *sep = dir_len > 0 && dir[dir_len - 1] == '/' ? "" : "/";
+        int n = snprintf(buf, cap, "%s%s%.*s%s%.*s", dir, sep,
+                         (int)plen, prefix, hex, (int)slen, suffix);
         if (n < 0 || (size_t)n >= cap)
             return -1;
 #endif
