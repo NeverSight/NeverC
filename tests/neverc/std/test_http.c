@@ -4928,6 +4928,27 @@ static void test_json_helpers(void) {
     v = neverc_http_json_get(&req, "role", vbuf, sizeof(vbuf));
     check_int("json reject quote-scan role", v == NULL, 1);
 
+    /* String values are JSON-decoded (Go's encoder emits \u003c for '<'). */
+    const char *escaped =
+        "{\"q\":\"a\\u003cb\",\"p\":\"C:\\\\temp\",\"s\":\"x\\\"y\\nz\","
+        "\"e\":\"\\u00e9\\ud83d\\ude00\",\"bad\":\"\\x\",\"open\":\"abc";
+    req.body = escaped;
+    req.body_len = strlen(escaped);
+    check_str("json unicode escape",
+              neverc_http_json_get(&req, "q", vbuf, sizeof(vbuf)), "a<b");
+    check_str("json backslash escape",
+              neverc_http_json_get(&req, "p", vbuf, sizeof(vbuf)), "C:\\temp");
+    check_str("json quote and newline escapes",
+              neverc_http_json_get(&req, "s", vbuf, sizeof(vbuf)), "x\"y\nz");
+    check_str("json surrogate pair escape",
+              neverc_http_json_get(&req, "e", vbuf, sizeof(vbuf)),
+              "\xc3\xa9\xf0\x9f\x98\x80");
+    check_int("json invalid escape rejected",
+              neverc_http_json_get(&req, "bad", vbuf, sizeof(vbuf)) == NULL, 1);
+    check_int("json unterminated string rejected",
+              neverc_http_json_get(&req, "open", vbuf, sizeof(vbuf)) == NULL,
+              1);
+
     req.body = json_body;
     req.body_len = strlen(json_body);
 
