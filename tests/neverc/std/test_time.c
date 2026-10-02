@@ -243,8 +243,30 @@ static void test_format_duration(void) {
     check_bool("50µs", strcmp(s, "50µs") == 0, 1);
     free(s);
 
+    /* Go Duration.String: from one second up, the seconds field is always
+     * printed and minutes are printed whenever hours are. */
     s = neverc_time_format_duration(NEVERC_TIME_HOUR + 30 * NEVERC_TIME_MINUTE);
-    check_bool("1h30m", strcmp(s, "1h30m") == 0, 1);
+    check_str("1h30m0s", s, "1h30m0s");
+    free(s);
+
+    s = neverc_time_format_duration(NEVERC_TIME_HOUR);
+    check_str("1h0m0s", s, "1h0m0s");
+    free(s);
+
+    s = neverc_time_format_duration(NEVERC_TIME_MINUTE);
+    check_str("1m0s", s, "1m0s");
+    free(s);
+
+    s = neverc_time_format_duration(NEVERC_TIME_HOUR + NEVERC_TIME_SECOND);
+    check_str("1h0m1s", s, "1h0m1s");
+    free(s);
+
+    s = neverc_time_format_duration(NEVERC_TIME_HOUR + NEVERC_TIME_MILLISECOND);
+    check_str("1h0m0.001s", s, "1h0m0.001s");
+    free(s);
+
+    s = neverc_time_format_duration(61 * NEVERC_TIME_SECOND);
+    check_str("1m1s", s, "1m1s");
     free(s);
 
     s = neverc_time_format_duration(INT64_MIN);
@@ -1060,7 +1082,7 @@ static void test_negative_duration_ops(void) {
     check_int64("parse -1h30m value", d,
                 -(NEVERC_TIME_HOUR + 30 * NEVERC_TIME_MINUTE));
     char *s = neverc_time_format_duration(d);
-    check_str("format -1h30m", s, "-1h30m");
+    check_str("format -1h30m0s", s, "-1h30m0s");
     free(s);
 
     neverc_time_t neg = neverc_time_unix(-2, 500000000);
