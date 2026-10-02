@@ -797,7 +797,7 @@ static int smtp_validate_data_capabilities(const neverc_smtp_client_t *c,
 
 int neverc_smtp_write_data(neverc_smtp_client_t *c,
                              const void *data, size_t len) {
-    if (!c || !c->in_data) return -1;
+    if (!c || !c->in_data || c->dead) return -1;
     if (len == 0) return 0;
     if (!data) return -1;
     int in_headers;
@@ -816,7 +816,9 @@ int neverc_smtp_write_data(neverc_smtp_client_t *c,
 }
 
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {
-    if (!c || !c->in_data) return -1;
+    /* A failed DATA write is terminal: never send the final "." that would
+     * let the server accept the part already on the wire. */
+    if (!c || !c->in_data || c->dead) return -1;
     if (c->data_state == SMTP_DATA_CR) {
         if (smtp_write_all(c, "\n", 1) != 0)
             return -1;
