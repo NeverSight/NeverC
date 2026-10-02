@@ -359,6 +359,14 @@ static void test_dst_offset(void) {
 #define EDMONTON_PERMANENT_2026 1793520000LL
 #define VANCOUVER_PERMANENT_2026 1793523600LL
 #define CANADA_WINTER_2027       1800014400LL
+/* Israel: Friday before the last Sunday of March at 02:00 IST, until the
+ * last Sunday of October at 02:00 IDT. 2024-03-29 00:00:00 UTC and
+ * 2024-10-26 23:00:00 UTC; 2026-03-27 00:00:00 UTC and 2026-10-24 23:00:00
+ * UTC. */
+#define JERUSALEM_START_2024 1711670400LL
+#define JERUSALEM_END_2024   1729983600LL
+#define JERUSALEM_START_2026 1774569600LL
+#define JERUSALEM_END_2026   1792882800LL
 
 static void test_offset_at(void) {
     printf("[offset_at]\n");
@@ -503,6 +511,31 @@ static void test_offset_at(void) {
               -25200);
     check_int("Vancouver winter 2027 remains UTC-07",
               neverc_tzdata_offset_at(van, CANADA_WINTER_2027), -25200);
+
+    const neverc_tzdata_zone_t *jlm = neverc_tzdata_lookup("Asia/Jerusalem");
+    check_not_null("Jerusalem zone", jlm);
+    if (jlm) {
+        check_int("Jerusalem before 2024 DST start is IST",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_START_2024 - 1), 7200);
+        check_int("Jerusalem at 2024 DST start is IDT",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_START_2024), 10800);
+        check_int("Jerusalem before EU 2024 start is already IDT",
+                  neverc_tzdata_offset_at(jlm, EU_SPRING_2024 - 1), 10800);
+        check_int("Jerusalem before 2024 DST end is IDT",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_END_2024 - 1), 10800);
+        check_int("Jerusalem at 2024 DST end is IST",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_END_2024), 7200);
+        check_int("Jerusalem before EU 2024 end is already IST",
+                  neverc_tzdata_offset_at(jlm, EU_FALL_2024 - 1), 7200);
+        check_int("Jerusalem before 2026 DST start is IST",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_START_2026 - 1), 7200);
+        check_int("Jerusalem at 2026 DST start is IDT",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_START_2026), 10800);
+        check_int("Jerusalem before 2026 DST end is IDT",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_END_2026 - 1), 10800);
+        check_int("Jerusalem at 2026 DST end is IST",
+                  neverc_tzdata_offset_at(jlm, JERUSALEM_END_2026), 7200);
+    }
 
     neverc_tzdata_zone_t *same_name =
         neverc_tzdata_fixed_zone("Africa/Cairo", 1234);
