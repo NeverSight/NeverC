@@ -908,6 +908,24 @@ static void test_temp(void) {
     }
     ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
 
+#if !defined(_WIN32)
+    /* Go os.MkdirTemp joins without doubling a separator the directory
+     * already ends with (macOS $TMPDIR does): "/tmp/" -> "/tmp/x123". */
+    {
+        char slashdir[1100];
+        size_t tn = strlen(tmpdir);
+        snprintf(slashdir, sizeof(slashdir), "%s%s", tmpdir,
+                 tn > 0 && tmpdir[tn - 1] == '/' ? "" : "/");
+        size_t sn = strlen(slashdir);
+        ASSERT_EQ(neverc_os_mkdir_temp(slashdir, "neverc_slash_", dir_path,
+                                       sizeof(dir_path)), 0);
+        ASSERT_TRUE(strncmp(dir_path, slashdir, sn) == 0 &&
+                    dir_path[sn] != '/');
+        ASSERT_TRUE(neverc_os_is_dir(dir_path));
+        ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
+    }
+#endif
+
     ASSERT_TRUE(neverc_os_create_temp(tmpdir, "../neverc_trav_") == NULL);
     ASSERT_TRUE(neverc_os_create_temp(tmpdir, "foo/bar_") == NULL);
     ASSERT_EQ(neverc_os_mkdir_temp(tmpdir, "../neverc_trav_", dir_path,
