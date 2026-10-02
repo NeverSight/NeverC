@@ -42607,6 +42607,247 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FixedArrayAsConstQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("fixed-array-as-const-queries.cpp");
+  const auto Output = tmpFile("fixed-array-as-const-queries.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace Imported { using std::as_const; }
+namespace Reexport { using Imported::as_const; }
+namespace Alias = Reexport;
+using Row = int[3];
+using Grid = Row[2];
+int calls, effects, defaults, live, destroyed, elements, element_destructions;
+int mark() noexcept { ++defaults; return 1; }
+int effect() noexcept { ++effects; return 2; }
+struct Ticket {
+  int value;
+  Ticket(int n) noexcept : value(n) { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+struct Element {
+  int value;
+  Element(int n) noexcept : value(n) { ++elements; }
+  ~Element() noexcept { --elements; ++element_destructions; }
+};
+struct Box { int value; };
+struct References { int &left; int &&right; };
+Row &select(Row &row, int n = mark()) noexcept { ++calls; return row; }
+const Row &constant(const Row &row) noexcept { ++calls; return row; }
+Row &throwing(Row &row) noexcept(false) { ++calls; return row; }
+Row &with_temporary(Row &row, const Ticket &ticket = Ticket(mark())) noexcept {
+  ++calls; return row;
+}
+int increment(int n) { ++effects; return n + 1; }
+int add_two(int n) noexcept { ++effects; return n + 2; }
+template<class T> bool queries(T &value, const T &cv) {
+  using View = decltype(Alias::as_const(value));
+  static_assert(__is_same(View, const T &));
+  static_assert(__is_same(decltype((Alias::as_const)(value)), const T &));
+  static_assert(__is_same(decltype(Alias::as_const<T>(value)), const T &));
+  static_assert(__is_same(decltype(Alias::as_const<const T>(cv)), const T &));
+  static_assert(__is_same(decltype(Alias::as_const(cv)), const T &));
+  static_assert(__is_same(decltype(Alias::as_const(Alias::as_const(value))), const T &));
+  static_assert(sizeof(Alias::as_const(value)) == sizeof(T));
+  static_assert(alignof(decltype(Alias::as_const(value))) == alignof(T));
+  static_assert(noexcept(Alias::as_const(value)) && noexcept(Alias::as_const(cv)));
+  using Reexport::as_const;
+  static_assert(__is_same(decltype(as_const(value)), const T &));
+  return &as_const(value) == &value && &as_const(cv) == &cv;
+}
+int query_only(short (&value)[2]) {
+  static_assert(__is_same(decltype(std::as_const(value)), const short (&)[2]));
+  static_assert(sizeof(std::as_const(value)) == 2 * sizeof(short));
+  return value[0];
+}
+int main() {
+  Row row = {1, 2, 3};
+  const Row cv = {4, 5, 6};
+  Grid grid = {{7, 8, 9}, {10, 11, 12}};
+  const Grid const_grid = {{13, 14, 15}, {16, 17, 18}};
+  bool flags[2] = {false, true};
+  double reals[2] = {1.5, 2.5};
+  const char text[4] = "abc";
+  short shorts[2] = {19, 20};
+  Box boxes[2] = {{21}, {22}};
+  int target = 23, other = 24;
+  int *pointers[2] = {&target, &other};
+  const int *const_pointers[2] = {&target, &other};
+  Row *row_pointers[2] = {&row, &row};
+  using Callback = int (*)(int);
+  using Nonthrowing = int (*)(int) noexcept;
+  Callback callbacks[2] = {increment, increment};
+  Nonthrowing nonthrowing[2] = {add_two, add_two};
+  References references[1] = {{target, static_cast<int &&>(other)}};
+  if (!queries(row, cv) || !queries<const Row>(cv, cv) || !queries(grid, const_grid) ||
+      !queries(flags, flags) || !queries(reals, reals) || !queries<const char[4]>(text, text) ||
+      !queries(boxes, boxes) || !queries(pointers, pointers) ||
+      !queries(const_pointers, const_pointers) || !queries(row_pointers, row_pointers) ||
+      !queries(callbacks, callbacks) || !queries(nonthrowing, nonthrowing) ||
+      !queries(references, references) || query_only(shorts) != 19)
+    return 1;
+  static_assert(__is_same(decltype(Alias::as_const(grid)), const int (&)[2][3]));
+  static_assert(__is_same(decltype(Alias::as_const(grid)[0]), const Row &));
+  static_assert(__is_same(decltype(Alias::as_const(row)[0]), const int &));
+  static_assert(__is_same(decltype(std::move(Alias::as_const(row)[0])), const int &&));
+  static_assert(__is_same(decltype(Alias::as_const(pointers)[0]), int *const &));
+  static_assert(__is_same(decltype(Alias::as_const(references)[0].left), int &));
+  static_assert(__is_same(decltype(Alias::as_const(callbacks)[0](1)), int));
+  static_assert(!noexcept(Alias::as_const(callbacks)[0](1)));
+  static_assert(noexcept(Alias::as_const(nonthrowing)[0](1)));
+  static_assert(__is_same(decltype(Alias::as_const(select(row))), const Row &));
+  static_assert(__is_same(decltype(Alias::as_const(constant(cv))), const Row &));
+  static_assert(__is_same(decltype(Alias::as_const((effect(), row))), const Row &));
+  static_assert(__is_same(decltype(Alias::as_const(true ? row : cv)), const Row &));
+  static_assert(noexcept(Alias::as_const(select(row))));
+  static_assert(!noexcept(Alias::as_const(throwing(row))));
+  static_assert(sizeof(Alias::as_const(with_temporary(row))) == sizeof(Row));
+  static_assert(noexcept(Alias::as_const(with_temporary(row, Ticket(effect())))));
+  if (calls || effects || defaults || live || destroyed) return 2;
+  const Row &view = Alias::as_const(select(row));
+  const Row &temporary_view = Alias::as_const(with_temporary(row));
+  const auto &pointer_view = Alias::as_const(pointers);
+  const auto &callback_view = Alias::as_const(callbacks);
+  row[0] = 25;
+  pointers[0] = &row[1];
+  *pointer_view[0] = 26;
+  callbacks[0] = add_two;
+  Alias::as_const(references)[0].left = 27;
+  Alias::as_const(references)[0].right = 28;
+  const Grid &grid_view = Alias::as_const(grid);
+  grid[1][2] = 29;
+  if (&view != &row || &temporary_view != &row || view[0] != 25 ||
+      pointer_view[0] != &row[1] || row[1] != 26 || target != 27 || other != 28 ||
+      &grid_view != &grid || grid_view[1][2] != 29 || callback_view[0](1) != 3 ||
+      Alias::as_const(nonthrowing)[1](2) != 4 || calls != 2 || effects != 2 ||
+      defaults != 2 || live || destroyed != 1)
+    return 3;
+  {
+    Element owned[2] = {Element(30), Element(31)};
+    if (!queries(owned, owned) || elements != 2 || element_destructions) return 4;
+    const auto &owned_view = Alias::as_const(owned);
+    owned[0].value = 32;
+    if (&owned_view != &owned || owned_view[0].value != 32) return 5;
+  }
+  return elements == 0 && element_destructions == 2 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("fixed-array-as-const-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FixedArrayAsConstQueriesRetainSourceBoundaries) {
+  const struct {
+    const char *Name, *Source, *Code;
+  } Cases[] = {
+      {"operand-expression", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const((sizeof(long double),r))),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"selected-default", R"cpp(
+Row&source(Row&r,int n=sizeof(long double))noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(source(r))),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"original-exception", R"cpp(
+Row&source(Row&r)noexcept(sizeof(long double)>0);Row&source(Row&r)noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(source(r))),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"original-signature", R"cpp(
+Row&source(Row&r,long double n=0)noexcept{return r;}int f(Row&r){static_assert(sizeof(Reexport::as_const(source(r)))==sizeof(Row));return 0;}
+)cpp", "TR0201"},
+      {"adjusted-parameter-bound", R"cpp(
+Row&source(Row&r,int p[sizeof(long double)])noexcept{return r;}int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(source(r,nullptr))),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"outer-bound", R"cpp(
+using Bad=int[sizeof(long double)];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"inner-bound", R"cpp(
+using Bad=int[2][sizeof(long double)];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"written-template-argument", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const<int[3+0*sizeof(long double)]>(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"erased-alias-argument", R"cpp(
+template<int>using Erased=Row;int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const<Erased<sizeof(long double)>>(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"pointer-pointee", R"cpp(
+using Bad=long double*[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"callback-signature", R"cpp(
+using Callback=int(*)(long double);using Bad=Callback[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"callback-exception", R"cpp(
+using Callback=int(*)(int)noexcept(sizeof(long double)>0);using Bad=Callback[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"record-field-bound", R"cpp(
+struct Box{int n[sizeof(long double)];};using Bad=Box[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"temporary-cleanup", R"cpp(
+struct Ticket{~Ticket(){(void)sizeof(long double);}};Row&source(Row&r,const Ticket&t=Ticket{})noexcept{return r;}int f(Row&r){static_assert(sizeof(Reexport::as_const(source(r)))==sizeof(Row));return 0;}
+)cpp", "TR0201"},
+      {"primary-redeclaration", R"cpp(
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"source-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const Row&as_const<Row>(Row&r)noexcept{return r;}}}int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"const-specialization", R"cpp(
+namespace std{inline namespace __1{template<>const Row&as_const<const Row>(const Row&r)noexcept{return r;}}}int f(const Row&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"independent-function-address", R"cpp(
+using F=const Row&(*)(Row&)noexcept;int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Row&));static_assert(sizeof(static_cast<F>(&Reexport::as_const<Row>))>0);return 0;}
+)cpp", "TR0201"},
+      {"function-reference-call", R"cpp(
+const Row&(&target)(Row&)noexcept=std::as_const<Row>;int f(Row&r){static_assert(__is_same(decltype(target(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"cast-postfix", R"cpp(
+using F=const Row&(*)(Row&)noexcept;int f(Row&r){static_assert(__is_same(decltype(static_cast<F>(&Reexport::as_const<Row>)(r)),const Row&));return 0;}
+)cpp", "TR0201"},
+      {"erased-noexcept", R"cpp(
+using F=const Row&(*)(Row&);int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Row&));static_assert(!noexcept(static_cast<F>(&Reexport::as_const<Row>)(r)));return 0;}
+)cpp", "TR0201"},
+      {"volatile-array", R"cpp(
+int f(volatile Row&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const volatile Row&));return 0;}
+)cpp", "TR0201"},
+      {"unknown-bound", R"cpp(
+using Bad=int[];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"long-double-element", R"cpp(
+using Bad=long double[2];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
+)cpp", "TR0201"},
+      {"deleted-rvalue", R"cpp(
+int f(Row&r){static_assert(noexcept(Reexport::as_const(std::move(r))));return 0;}
+)cpp", "TR0202"},
+      {"reference-template-argument", R"cpp(
+int f(Row&r){static_assert(__is_same(decltype(Reexport::as_const<Row&>(r)),Row&));return 0;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("fixed-array-as-const-query-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("fixed-array-as-const-query-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, R"cpp(#include <utility>
+using Row=int[3];
+namespace Imported{using std::as_const;}
+namespace Reexport{using Imported::as_const;}
+)cpp" + std::string(Case.Source));
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleLikeAsConstQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-like-as-const-queries.cpp");
   const auto Output = tmpFile("tuple-like-as-const-queries.nc");
@@ -42855,8 +43096,8 @@ int f(volatile Tuple&t){static_assert(__is_same(decltype(Reexport::as_const(t)),
 struct Element{int value[sizeof(long double)];};int f(Element&e){static_assert(__is_same(decltype(Reexport::as_const(e)),const Element&));return 0;}
 )cpp",
        "TR0201"},
-      {"raw-array-reference", R"cpp(
-int f(int(&r)[2]){static_assert(__is_same(decltype(Reexport::as_const(r)),const int(&)[2]));return 0;}
+      {"raw-array-original-bound", R"cpp(
+using Bad=int[sizeof(long double)];int f(Bad&r){static_assert(__is_same(decltype(Reexport::as_const(r)),const Bad&));return 0;}
 )cpp",
        "TR0201"},
       {"owner-reference", R"cpp(
@@ -42986,8 +43227,8 @@ int f(volatile int&p){static_assert(__is_same(decltype(std::as_const(p)),const v
 int f(long double*&p){static_assert(__is_same(decltype(std::as_const(p)),long double*const&));return 0;}
 )cpp",
        "TR0201"},
-      {"array-reference", R"cpp(
-int f(int(&p)[2]){static_assert(__is_same(decltype(std::as_const(p)),const int(&)[2]));return 0;}
+      {"array-original-bound", R"cpp(
+using Bad=int[sizeof(long double)];int f(Bad&p){static_assert(__is_same(decltype(std::as_const(p)),const Bad&));return 0;}
 )cpp",
        "TR0201"},
       {"record-field-bound", R"cpp(
@@ -45577,8 +45818,8 @@ int&source(int&p)noexcept(sizeof(long double)>0);int&source(int&p)noexcept{retur
 int f(int&p){static_assert(__is_same(decltype(Reexport::move_if_noexcept<decltype(static_cast<int>(sizeof(long double)))>(p)),int&&));return p;}
 )cpp",
        "TR0201"},
-      {"as-const-array-query", R"cpp(
-int f(int(&p)[2]){static_assert(__is_same(decltype(Reexport::as_const(p)),const int(&)[2]));return 0;}
+      {"as-const-array-original-bound", R"cpp(
+using Bad=int[sizeof(long double)];int f(Bad&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const Bad&));return 0;}
 )cpp",
        "TR0201"},
       {"move-if-noexcept-copy-fallback-query", R"cpp(

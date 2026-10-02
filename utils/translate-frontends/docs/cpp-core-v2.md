@@ -308,6 +308,24 @@ references remain outside this scalar query boundary. Deleted rvalue overloads
 and ambiguous explicit reference template arguments still produce native C++
 diagnostics.
 
+The exact `as_const` proof also supports result-source queries on admitted
+fixed arrays. It preserves every dimension and returns a const array lvalue
+reference without decay. Scalar, pointer, callback-pointer, source-owned record
+and multidimensional elements retain their ordinary type and layout checks;
+const pointer elements still refer to the original mutable pointees, and const
+record elements retain the bindings of their reference fields. Direct and
+parenthesized names, imports, reexports, explicit object template arguments,
+query-only specializations and nested `as_const` calls use this same proof.
+Written outer and inner bounds, aliases, template arguments, callback signatures,
+record fields, original operands, selected defaults, exception specifications
+and temporary cleanup remain independent source dependencies. Queries perform
+no side effects, element construction or destruction; evaluated references alias
+the original array and observe its subsequent mutations. Unknown-bound arrays,
+volatile elements, unsupported element types, source substitutions, independent
+function addresses and indirect/cast callees retain rejection. Raw-array
+`move`, `forward` and `move_if_noexcept` result-source queries remain separate
+support work.
+
 The exact `as_const` const-reference proof also supports result-source queries
 on admitted `std::array`, `std::pair` and `std::tuple` objects, including empty,
 reference, mixed reference/value, trivial record, wrapper and nested storage.
