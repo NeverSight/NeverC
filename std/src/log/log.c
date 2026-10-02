@@ -111,9 +111,18 @@ static void log_wall_clock(time_t *sec, long *nsec) {
 #endif
 }
 
-static void write_header(log_entry_t *entry) {
-    if (entry->prefix && !(entry->flags & NEVERC_LOG_LMSGPREFIX))
+static int last_byte(const char *s) {
+    return s && s[0] ? (unsigned char)s[strlen(s) - 1] : 0;
+}
+
+/* Returns the last byte written, or 0 when the header is empty. */
+static int write_header(log_entry_t *entry) {
+    int last = 0;
+    if (entry->prefix && entry->prefix[0] &&
+        !(entry->flags & NEVERC_LOG_LMSGPREFIX)) {
         fputs(entry->prefix, entry->output);
+        last = last_byte(entry->prefix);
+    }
 
     if (entry->flags &
         (NEVERC_LOG_LDATE | NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
@@ -139,6 +148,7 @@ static void write_header(log_entry_t *entry) {
         if (tm && (entry->flags & NEVERC_LOG_LDATE)) {
             fprintf(entry->output, "%04d/%02d/%02d ",
                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+            last = ' ';
         }
         if (tm &&
             (entry->flags & (NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO))) {
@@ -147,27 +157,30 @@ static void write_header(log_entry_t *entry) {
             if (entry->flags & NEVERC_LOG_LMICRO)
                 fprintf(entry->output, ".%06ld", nsec / 1000);
             fputc(' ', entry->output);
+            last = ' ';
         }
     }
 
-    if (entry->prefix && (entry->flags & NEVERC_LOG_LMSGPREFIX))
+    if (entry->prefix && entry->prefix[0] &&
+        (entry->flags & NEVERC_LOG_LMSGPREFIX)) {
         fputs(entry->prefix, entry->output);
+        last = last_byte(entry->prefix);
+    }
+    return last;
 }
 
+/* Go log: Println always appends '\n'; the other forms append one only when
+ * the whole record (header plus message) does not already end in '\n'. */
 static void print_message(neverc_log_logger_t *l, const char *msg,
-                          int newline, int flush) {
+                          int always_newline, int flush) {
     if (!l || !msg) return;
     log_entry_t entry;
     if (!begin_entry(l, &entry)) return;
-    write_header(&entry);
+    int last = write_header(&entry);
     fputs(msg, entry.output);
-    if (newline) fputc('\n', entry.output);
+    if (msg[0]) last = last_byte(msg);
+    if (always_newline || last != '\n') fputc('\n', entry.output);
     end_entry(&entry, flush);
-}
-
-static int log_needs_nl(const char *msg) {
-    if (!msg || !msg[0]) return 1;
-    return msg[strlen(msg) - 1] != '\n';
 }
 
 static void vprint_message_go(neverc_log_logger_t *l, const char *fmt,
@@ -182,7 +195,7 @@ static void vprint_message_go(neverc_log_logger_t *l, const char *fmt,
     va_end(copy);
     if (n < 0) return;
     if ((size_t)n < sizeof(stack)) {
-        print_message(l, stack, log_needs_nl(stack), flush);
+        print_message(l, stack, 0, flush);
         return;
     }
     char *heap = (char *)malloc((size_t)n + 1U);
@@ -191,12 +204,12 @@ static void vprint_message_go(neverc_log_logger_t *l, const char *fmt,
         free(heap);
         return;
     }
-    print_message(l, heap, log_needs_nl(heap), flush);
+    print_message(l, heap, 0, flush);
     free(heap);
 }
 
 void neverc_log_print(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, log_needs_nl(msg), 0);
+    print_message(l, msg, 0, 0);
 }
 
 void neverc_log_printf(neverc_log_logger_t *l, const char *fmt, ...) {
@@ -211,7 +224,7 @@ void neverc_log_println(neverc_log_logger_t *l, const char *msg) {
 }
 
 void neverc_log_fatal(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, log_needs_nl(msg), 1);
+    print_message(l, msg, 0, 1);
     exit(1);
 }
 
@@ -229,7 +242,7 @@ void neverc_log_fatalln(neverc_log_logger_t *l, const char *msg) {
 }
 
 void neverc_log_panic(neverc_log_logger_t *l, const char *msg) {
-    print_message(l, msg, log_needs_nl(msg), 1);
+    print_message(l, msg, 0, 1);
     abort();
 }
 
