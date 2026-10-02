@@ -945,6 +945,21 @@ when moving throws or is also deleted. Every deleted declaration still supplies
 its original parameter and exception sources. The query returns an unchanged
 reference; actual construction from it requires a viable selected constructor.
 
+The owning graph also admits a single public copy taking exactly mutable
+`Record&` at a nontrivial node. That copy may be implicit, defaulted, ordinary
+or deleted. Each such node has no bases or conversion functions, and every
+other constructor is either its exact move or a nonvariadic zero-parameter
+default constructor. The graph retains the original declarations behind
+implicit mutable copies through nested value members and fixed arrays,
+including copies deleted after declaring a move constructor or move assignment.
+Mutable and const queries on these owners preserve `Record&&` and
+`const Record&&`, including owners whose member move is unavailable. Mixed
+graphs can contain const-copy nodes; an enclosing ordinary const-copy retains
+the pinned copy-fallback result when appropriate. Every node still supplies
+its written copy/move/destructor sources, and every actual generated copy,
+move, assignment or cleanup checks its selected member operations. Queries
+alone leave hypothetical member bodies uninstantiated.
+
 Non-owning pointer/reference fields keep their original bindings. Constructor
 templates, inherited constructors, additional copy overloads, extra copy/move
 parameters and nontrivial members with inaccessible copies/destructors
@@ -1016,8 +1031,8 @@ supply this exact const-copy proof.
 
 A separate bounded proof admits source-owned records whose only copy
 declaration takes exactly mutable `Record&`. The copy must be written, including
-ordinary, defaulted, deleted or inaccessible copies; an implicit mutable copy
-still needs its own source proof. These records have no bases or conversion
+ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
+use the owning-graph proof above. These records have no bases or conversion
 functions, and every other constructor is either a move or a nonvariadic
 zero-parameter default constructor. Constructor templates, inherited
 constructors, extra copy/move parameters, additional copy overloads and

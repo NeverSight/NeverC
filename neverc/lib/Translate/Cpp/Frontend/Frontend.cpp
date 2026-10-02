@@ -3242,6 +3242,26 @@ static bool utilityLazyConditionalMoveSignatureSource(
           !Expression->isInstantiationDependent());
 }
 
+static bool utilityMutableCopyConditionalMoveShape(const CXXRecordDecl *Record) {
+  // An exact mutable-only copy cannot consume a const source. Exclude other
+  // conversion paths; callers separately check copy/move overloads and sources.
+  if (Record->getNumBases() != 0)
+    return false;
+  for (const auto *Declaration : Record->decls()) {
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
+      if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
+        return false;
+    } else if (isa<CXXConversionDecl>(Declaration)) {
+      return false;
+    }
+  }
+  for (const auto *Constructor : Record->ctors())
+    if (!Constructor->isCopyOrMoveConstructor() &&
+        (Constructor->getNumParams() != 0 || Constructor->isVariadic()))
+      return false;
+  return true;
+}
+
 static bool utilityUnavailableCopyConditionalMoveSource(
     Adapter &A, const CallExpr *Call, const CXXRecordDecl *Record,
     std::vector<const CXXMethodDecl *> *Signatures) {
@@ -3253,17 +3273,10 @@ static bool utilityUnavailableCopyConditionalMoveSource(
       !Arguments->get(0).getAsType()->isObjectType() ||
       !A.Context.hasSameType(Arguments->get(0).getAsType(), Call->getType()))
     return false;
-  bool MutableCopyOnly = Record->getNumBases() == 0;
-  for (const auto *Declaration : Record->decls()) {
-    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
-      if (isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
-        return false; // Constructor-template selection keeps its own sources.
-      if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
-        MutableCopyOnly = false;
-    } else if (isa<CXXConversionDecl>(Declaration)) {
-      MutableCopyOnly = false;
-    }
-  }
+  for (const auto *Declaration : Record->decls())
+    if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+        Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
+      return false; // Constructor-template selection keeps its own sources.
   const auto CopyParameter = A.Context.getLValueReferenceType(
       A.Context.getRecordType(Record).withConst());
   const auto MutableCopyParameter =
@@ -3271,17 +3284,15 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   bool FoundExplicitCopy = false;
   bool FoundInaccessibleCopy = false;
   bool FoundMutableCopy = false;
+  bool MutableCopyOnly = true;
   bool FoundImplicitCopy = false;
   bool FoundDeclaredMove = false;
   for (const auto *Constructor : Record->ctors()) {
     A.chargeExpansion(1, Constructor->getLocation());
     if (Constructor->isInheritingConstructor())
       return false;
-    if (!Constructor->isCopyOrMoveConstructor()) {
-      if (Constructor->getNumParams() != 0 || Constructor->isVariadic())
-        MutableCopyOnly = false;
+    if (!Constructor->isCopyOrMoveConstructor())
       continue;
-    }
     if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
         Constructor->getNumParams() != 1 ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
@@ -3340,7 +3351,8 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // already-declared copy and its source-owned move; other implicit deletion
   // causes keep their own proof. No hypothetical declaration or body is made.
   if (FoundExplicitCopy || FoundInaccessibleCopy || FoundUnavailableDestructor ||
-      (MutableCopyOnly && FoundMutableCopy))
+      (MutableCopyOnly && FoundMutableCopy &&
+       utilityMutableCopyConditionalMoveShape(Record)))
     return true;
   if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
     return false;
@@ -3438,15 +3450,18 @@ static bool utilityRecordConditionalMoveSource(
     A.chargeExpansion(1, Record->getLocation());
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
-    // Each nontrivial node keeps one exact public const-copy and at most one
-    // exact rvalue move. A public copy may also be explicitly deleted, which
-    // can delete an enclosing implicit/defaulted copy. Defaulted moves may be
-    // ignored in favor of copying; preserve the SDK's selected result.
+    // Each nontrivial node keeps one exact public const or mutable copy and
+    // at most one exact rvalue move. Mutable copies also exclude alternative
+    // conversion paths. Their owning graph supplies the original declarations
+    // behind an enclosing implicit mutable copy. A public copy may be deleted;
+    // defaulted moves may be ignored in favor of copying. Preserve the SDK's
+    // selected result without instantiating any hypothetical operation.
     for (const auto *Declaration : Record->decls())
       if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
           Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
         return false;
     const auto Object = A.Context.getRecordType(Record);
+    const auto MutableCopyParameter = A.Context.getLValueReferenceType(Object);
     const CXXConstructorDecl *Copy = nullptr, *Move = nullptr;
     for (const auto *Constructor : Record->ctors()) {
       A.chargeExpansion(1, Constructor->getLocation());
@@ -3456,11 +3471,15 @@ static bool utilityRecordConditionalMoveSource(
         continue;
       const bool IsCopy = Constructor->isCopyConstructor();
       if (Constructor->isInvalidDecl() || Constructor->isVariadic() ||
-          Constructor->getNumParams() != 1 ||
-          !A.Context.hasSameType(
+          Constructor->getNumParams() != 1)
+        return false;
+      if ((!A.Context.hasSameType(
               Constructor->getParamDecl(0)->getType(),
               IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
-                     : A.Context.getRValueReferenceType(Object)) ||
+                     : A.Context.getRValueReferenceType(Object)) &&
+           !(IsCopy && A.Context.hasSameType(
+                           Constructor->getParamDecl(0)->getType(),
+                           MutableCopyParameter))) ||
           (IsCopy && Constructor->getAccess() != AS_public) ||
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
@@ -3470,6 +3489,10 @@ static bool utilityRecordConditionalMoveSource(
       Selected = Constructor->getCanonicalDecl();
     }
     if (!Copy)
+      return false;
+    if (A.Context.hasSameType(Copy->getParamDecl(0)->getType(),
+                             MutableCopyParameter) &&
+        !utilityMutableCopyConditionalMoveShape(Record))
       return false;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {
