@@ -128,4 +128,8 @@ double neverc_cmp_clamp_float64(double x, double lo, double hi) {
 
 int neverc_cmp_or_int(int a, int b) { return a != 0 ? a : b; }
 int64_t neverc_cmp_or_int64(int64_t a, int64_t b) { return a != 0 ? a : b; }
-double neverc_cmp_or_float64(double a, double b) { return a != 0.0 ? a : b; }
+/* -0.0 compares equal to the zero value, so all-zero input yields +0.0. */
+double neverc_cmp_or_float64(double a, double b) {
+    if (a != 0.0) return a;
+    return b != 0.0 ? b : 0.0;
+}
