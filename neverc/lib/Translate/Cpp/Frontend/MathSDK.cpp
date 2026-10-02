@@ -10825,58 +10825,6 @@ static bool supportedFunctionalStoredMember(const State &S,
   return true;
 }
 
-std::optional<FunctionalStoredMemberPointer>
-approvedFunctionalStoredMemberPointer(
-    const State &S, const SourceManager &SM, const VarDecl *Variable,
-    const ASTContext &Context) {
-  const auto *Requested = Variable;
-  const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
-  const CallExpr *RequestedAdapter = nullptr;
-  std::set<const VarDecl *> Seen;
-  while (functionalErasedLocalVariable(S, SM, Variable)) {
-    if (!Seen.insert(Variable->getCanonicalDecl()).second)
-      return std::nullopt;
-    const auto *MemberPointer =
-        Variable->getType()->getAs<MemberPointerType>();
-    const Expr *Initializer =
-        functionalInvokeStrippedExpression(Variable->getInit());
-    if (const auto *Adapter = dyn_cast_or_null<CallExpr>(Initializer)) {
-      const auto Operation = approvedUtilityOperation(S, SM, Adapter, Context);
-      if (!Operation || Adapter->getNumArgs() != 1 ||
-          (*Operation != UtilityOperation::Move &&
-           *Operation != UtilityOperation::Forward &&
-           *Operation != UtilityOperation::MoveIfNoexcept &&
-           *Operation != UtilityOperation::AsConst))
-        return std::nullopt;
-      if (Variable == Requested)
-        RequestedAdapter = Adapter;
-      Initializer =
-          functionalInvokeStrippedExpression(Adapter->getArg(0));
-    }
-    const auto [Address, Member] =
-        functionalMemberAddress(S, SM, Initializer, Context);
-    if (Address) {
-      if (!MemberPointer || !Member ||
-          !supportedFunctionalStoredMember(S, SM, Context, Member) ||
-          !Context.hasSameUnqualifiedType(Variable->getType(),
-                                          Address->getType()))
-        return std::nullopt;
-      return FunctionalStoredMemberPointer{Requested, RequestedInitializer,
-                                           RequestedAdapter, Address, Member};
-    }
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Initializer);
-    const auto *Source =
-        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
-    if (!MemberPointer || !Reference || !Source ||
-        !S.owns(SM, Reference->getExprLoc()) ||
-        !Context.hasSameUnqualifiedType(Variable->getType(),
-                                        Source->getType()))
-      return std::nullopt;
-    Variable = Source;
-  }
-  return std::nullopt;
-}
-
 static const Expr *functionalAdaptedCallable(
     const State &S, const SourceManager &SM, const Expr *Expression,
     const ASTContext &Context, std::vector<const CallExpr *> &Adapters) {
@@ -10896,6 +10844,49 @@ static const Expr *functionalAdaptedCallable(
     Expression = functionalInvokeStrippedExpression(Candidate->getArg(0));
   }
   return nullptr;
+}
+
+std::optional<FunctionalStoredMemberPointer>
+approvedFunctionalStoredMemberPointer(
+    const State &S, const SourceManager &SM, const VarDecl *Variable,
+    const ASTContext &Context) {
+  const auto *Requested = Variable;
+  const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
+  std::vector<const CallExpr *> RequestedAdapters;
+  std::set<const VarDecl *> Seen;
+  while (functionalErasedLocalVariable(S, SM, Variable)) {
+    if (!Seen.insert(Variable->getCanonicalDecl()).second)
+      return std::nullopt;
+    const auto *MemberPointer =
+        Variable->getType()->getAs<MemberPointerType>();
+    std::vector<const CallExpr *> Adapters;
+    const Expr *Initializer = functionalAdaptedCallable(
+        S, SM, Variable->getInit(), Context, Adapters);
+    if (Variable == Requested)
+      RequestedAdapters = std::move(Adapters);
+    const auto [Address, Member] =
+        functionalMemberAddress(S, SM, Initializer, Context);
+    if (Address) {
+      if (!MemberPointer || !Member ||
+          !supportedFunctionalStoredMember(S, SM, Context, Member) ||
+          !Context.hasSameUnqualifiedType(Variable->getType(),
+                                          Address->getType()))
+        return std::nullopt;
+      return FunctionalStoredMemberPointer{Requested, RequestedInitializer,
+                                           std::move(RequestedAdapters),
+                                           Address, Member};
+    }
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Initializer);
+    const auto *Source =
+        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    if (!MemberPointer || !Reference || !Source ||
+        !S.owns(SM, Reference->getExprLoc()) ||
+        !Context.hasSameUnqualifiedType(Variable->getType(),
+                                        Source->getType()))
+      return std::nullopt;
+    Variable = Source;
+  }
+  return std::nullopt;
 }
 
 static std::pair<const UnaryOperator *, const ValueDecl *>

@@ -2498,8 +2498,9 @@ field projection. It may be copied or moved through further exact same-type
 local automatic variables, including through authenticated `std::move`,
 `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; every
 carrier in that initializer chain is authenticated and erased. The same
-adapters may form bounded mixed chains around that authenticated pointer or a
-direct member address at its final runtime `std::invoke`, native member
+adapters may form bounded mixed chains within each copy initializer, including
+an initializer rooted in a direct member address. They may also wrap that
+authenticated pointer or address at its final runtime `std::invoke`, native member
 operation, `std::mem_fn` factory or `std::apply` use. Every layer must be an
 authenticated reference adapter; written template arguments and the terminal
 member source remain independently checked. A written cv/ref-qualified
@@ -2507,11 +2508,13 @@ member source remain independently checked. A written cv/ref-qualified
 original member for the adapter's type argument. Compound expressions, aliases
 and unrelated member sources gain no such exemption. This includes `tuple`,
 `pair` and `array` application, field assignment and method reference results, and preserves
-receiver/argument effects and temporary lifetimes. Each raw member-pointer
-initializer still permits only one adapter per copy declaration. Result-source
-queries for `std::invoke` with adapted raw pointers and for `mem_fn` factories
-containing adapted pointers require separate source proof and remain outside
-this boundary.
+receiver/argument effects and temporary lifetimes. Each adapted member-pointer
+initializer is traversed once at its declaration, including every adapter's
+written template arguments and the terminal member address's written qualifiers,
+even for an unused local. Erasing its storage does not hide unsupported source
+inside an initializer. Result-source queries for `std::invoke` and `mem_fn`
+through adapted raw pointers or their initializer chains require separate source
+proof and remain outside this boundary.
 Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
 direct address or stored data-member pointer may also be applied with native

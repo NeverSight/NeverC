@@ -439,7 +439,7 @@ approvedUtilityTupleApplyMemberCall(
 struct FunctionalStoredMemberPointer {
   const clang::VarDecl *Variable;
   const clang::Expr *Initializer;
-  const clang::CallExpr *Adapter;
+  std::vector<const clang::CallExpr *> Adapters;
   const clang::Expr *Address;
   const clang::ValueDecl *Member;
 };

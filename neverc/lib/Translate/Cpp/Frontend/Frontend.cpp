@@ -12008,12 +12008,11 @@ public:
     if (A.S.coreV2() && owned(D)) {
       if (auto Stored = approvedFunctionalStoredMemberPointer(
               A.S, A.Sources, D, A.Context);
-          Stored && Stored->Adapter) {
-        // The adapter call and its deduced template arguments are an
-        // authenticated, erased carrier for an exact local member-pointer
-        // value. Keep the declaration visible to VisitVarDecl, but do not
-        // expose library implementation types through normal traversal.
-        return WalkUpFromVarDecl(D);
+          Stored && !Stored->Adapters.empty()) {
+        // VisitVarDecl marks the exact erased carrier chain and retains each
+        // adapter's written arguments. Traverse the actual initializer once,
+        // including member-address qualifiers, even for an unused local.
+        return WalkUpFromVarDecl(D) && TraverseStmt(D->getInit());
       }
       if (auto Stored =
               approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
@@ -17316,9 +17315,16 @@ public:
           else if (const auto *Cleanup =
                        dyn_cast<ExprWithCleanups>(Expression))
             Expression = Cleanup->getSubExpr();
+          else if (const auto *Temporary =
+                       dyn_cast<MaterializeTemporaryExpr>(Expression))
+            Expression = Temporary->getSubExpr();
           else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
             Expression = Cast->getSubExpr();
-          else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
+          else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
+                   llvm::is_contained(Stored->Adapters, Adapter)) {
+            retainMemberPointerAdapterArguments(Adapter, Stored->Member);
+            Expression = Adapter->getArg(0);
+          } else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
                    Address && Address->getOpcode() == UO_AddrOf)
             Expression = Address->getSubExpr();
           else
