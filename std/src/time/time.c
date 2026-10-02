@@ -707,17 +707,18 @@ char *neverc_time_format_duration(neverc_duration_t d) {
         magnitude %= (uint64_t)NEVERC_TIME_HOUR;
         uint64_t minutes = magnitude / (uint64_t)NEVERC_TIME_MINUTE;
         magnitude %= (uint64_t)NEVERC_TIME_MINUTE;
+        /* Go Duration.String: seconds are always printed, and minutes
+         * whenever a larger unit is ("1h0m0s", "1m0s"). */
         if (hours != 0) {
             append_uint64(buf, &pos, hours);
             buf[pos++] = 'h';
         }
-        if (minutes != 0) {
+        if (hours != 0 || minutes != 0) {
             append_uint64(buf, &pos, minutes);
             buf[pos++] = 'm';
         }
-        if (magnitude != 0 || (hours == 0 && minutes == 0))
-            append_duration_decimal(buf, &pos, magnitude,
-                                    (uint64_t)NEVERC_TIME_SECOND, 9, "s");
+        append_duration_decimal(buf, &pos, magnitude,
+                                (uint64_t)NEVERC_TIME_SECOND, 9, "s");
     }
 
     buf[pos] = '\0';
