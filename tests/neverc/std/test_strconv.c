@@ -917,6 +917,34 @@ static void test_complex(void) {
                   1.0, -0.0, 'f', 1, buf, sizeof(buf)), 10);
     check_str("format_complex negative zero value", buf, "(1.0-0.0i)");
 
+    /* A signed imaginary part needs no '+' separator, so the exact-size
+     * buffer (length + NUL) must still succeed, and one byte less must fail. */
+    char signed_exact[7];
+    check_int("format_complex negative imag exact buffer",
+              neverc_strconv_format_complex(
+                  1.0, -2.0, 'g', -1, signed_exact, sizeof(signed_exact)), 6);
+    check_str("format_complex negative imag exact value",
+              signed_exact, "(1-2i)");
+    check_int("format_complex negative imag short buffer",
+              neverc_strconv_format_complex(
+                  1.0, -2.0, 'g', -1, signed_exact, sizeof(signed_exact) - 1),
+              -1);
+    char inf_exact[11];
+    check_int("format_complex +Inf imag exact buffer",
+              neverc_strconv_format_complex(
+                  1.0, inf, 'f', 1, inf_exact, sizeof(inf_exact)), 10);
+    check_str("format_complex +Inf imag exact value", inf_exact, "(1.0+Infi)");
+    char unsigned_exact[7];
+    check_int("format_complex positive imag exact buffer",
+              neverc_strconv_format_complex(
+                  1.0, 2.0, 'g', -1, unsigned_exact, sizeof(unsigned_exact)), 6);
+    check_str("format_complex positive imag exact value",
+              unsigned_exact, "(1+2i)");
+    check_int("format_complex positive imag short buffer",
+              neverc_strconv_format_complex(
+                  1.0, 2.0, 'g', -1, unsigned_exact, sizeof(unsigned_exact) - 1),
+              -1);
+
     double re, im;
     check_int("parse_complex basic",
               neverc_strconv_parse_complex("(1.5+2.5i)", &re, &im), 0);
