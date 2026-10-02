@@ -154,6 +154,20 @@ static void test_form_value(void) {
 
     v = neverc_http_form_value(NULL, 0, "k", buf, sizeof(buf));
     check_int("form null body", v == NULL, 1);
+
+    /* Go FormValue returns the first value; one that does not fit the
+     * caller's buffer must not be replaced by a later duplicate. */
+    {
+        char small[4];
+        v = neverc_http_form_value("a=hello&a=x", 11, "a", small,
+                                   sizeof(small));
+        check_int("form small buffer does not fall through", v == NULL, 1);
+        v = neverc_http_query_get("a=hello&a=x", "a", small, sizeof(small));
+        check_int("query small buffer does not fall through", v == NULL, 1);
+        v = neverc_http_form_value("a=%zz&a=x", 9, "a", small,
+                                   sizeof(small));
+        check_str("form malformed first value still skipped", v, "x");
+    }
 }
 
 /* ===== Mux ===== */
