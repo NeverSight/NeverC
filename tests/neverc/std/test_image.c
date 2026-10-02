@@ -91,6 +91,13 @@ static void test_rect(void) {
     neverc_rect_t no_overlap = neverc_rect_intersect(neverc_rect(0,0,5,5), neverc_rect(10,10,20,20));
     check("intersect_empty", neverc_rect_empty(no_overlap));
 
+    /* Go Rectangle.Intersect returns the zero rectangle whenever the
+     * result is empty, including rectangles that only share an edge. */
+    neverc_rect_t touching = neverc_rect_intersect(neverc_rect(0,0,5,10), neverc_rect(5,0,10,10));
+    check("intersect_touching_is_zero",
+          touching.min.x == 0 && touching.min.y == 0 &&
+          touching.max.x == 0 && touching.max.y == 0);
+
     neverc_rect_t overflowed = neverc_rect_add(neverc_rect(INT_MAX - 2, 0, INT_MAX, 4),
                                               neverc_pt(8, 0));
     check("rect add saturates",
