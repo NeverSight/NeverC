@@ -587,6 +587,48 @@ static void test_x509_subject_alt_name(void) {
         }
     }
 
+    /* Critical SAN whose only name is a URI [6] or rfc822Name [1]: Go parses
+     * both forms, so the extension is handled. A URI-only SAN under an empty
+     * subject is how SPIFFE identities are issued. */
+    {
+        static const uint8_t uri_san[] = {
+            0xa3, 0x1e, 0x30, 0x1c, 0x30, 0x1a,
+            0x06, 0x03, 0x55, 0x1d, 0x11, 0x01, 0x01, 0xff, 0x04, 0x10,
+            0x30, 0x0e, 0x86, 0x0c, 0x73, 0x70, 0x69, 0x66, 0x66, 0x65,
+            0x3a, 0x2f, 0x2f, 0x61, 0x2f, 0x62
+        };
+        static const uint8_t email_san[] = {
+            0xa3, 0x1e, 0x30, 0x1c, 0x30, 0x1a,
+            0x06, 0x03, 0x55, 0x1d, 0x11, 0x01, 0x01, 0xff, 0x04, 0x10,
+            0x30, 0x0e, 0x81, 0x0c, 0x61, 0x40, 0x65, 0x78, 0x61, 0x6d,
+            0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f
+        };
+        const uint8_t *const sans[] = {uri_san, email_san};
+        const char *const names[] = {
+            "critical_uri_only_san_handled",
+            "critical_email_only_san_handled"
+        };
+        for (size_t i = 0; i < 2; ++i) {
+            uint8_t der[256];
+            const size_t prefix = 125;
+            const size_t old_ext = 15;
+            const size_t san_len = sizeof(uri_san);
+            size_t suffix = sizeof(empty_san_cert_der) - prefix - old_ext;
+            memcpy(der, empty_san_cert_der, prefix);
+            memcpy(der + prefix, sans[i], san_len);
+            memcpy(der + prefix + san_len,
+                   empty_san_cert_der + prefix + old_ext, suffix);
+            der[2] = (uint8_t)(prefix + san_len + suffix - 3);
+            der[5] = (uint8_t)(prefix + san_len - 6);
+            rc = neverc_x509_parse_certificate(
+                &cert, der, prefix + san_len + suffix);
+            CHECK(names[i],
+                  rc == 0 && cert.has_unhandled_critical_extension == 0);
+            if (rc == 0)
+                neverc_x509_cert_free(&cert);
+        }
+    }
+
     rc = neverc_x509_parse_certificate(
         &cert, test_cert_der, sizeof(test_cert_der));
     CHECK("legacy_cn_parse_success", rc == 0);
