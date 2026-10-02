@@ -214,6 +214,7 @@ static const tz_entry_t tz_table[] = {
     {"Australia/Darwin",        "ACST", NULL,   34200,  0,      0},
     {"Australia/Hobart",        "AEST", "AEDT", 36000,  39600,  S},
     {"Pacific/Auckland",        "NZST", "NZDT", 43200,  46800,  S},
+    {"Pacific/Honolulu",        "HST",  NULL,   -36000, 0,      0},
     {"Pacific/Fiji",            "FJT",  NULL,   43200,  0,      0},
     {"Pacific/Guam",            "ChST", NULL,   36000,  0,      0},
     {"Pacific/Chatham",         "CHAST","CHADT",45900,  49500,  S},
