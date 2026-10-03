@@ -76004,6 +76004,292 @@ struct F { int &value; F()=default; F(const F&)=default; F(F&&)noexcept(false)=d
   }
 }
 
+TEST_F(TranslateTest, CoreV2ConstRvalueMoveIfNoexceptQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("const-rvalue-move-move-if-noexcept-queries.cpp");
+  const auto Output = tmpFile("const-rvalue-move-move-if-noexcept-queries.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+int created, copies, moves, move_defaults, copy_defaults, cleanups, sum;
+int leaf_created, leaf_copies, leaf_moves, leaf_cleanups, leaf_sum, referent=11;
+int fallback_copies, fallback_moves, fallback_defaults, fallback_cleanups, fallback_sum;
+int calls, operand_defaults;
+template<class T> T &source(T &v,int=(++operand_defaults,1)) noexcept { ++calls; return v; }
+template<class Result,class T> bool queries(T &v) {
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(v)),Result));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),Result));
+  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),Result));
+  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));
+  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));
+  static_assert(noexcept(move_if_noexcept(v)));
+  Result alias=move_if_noexcept(std::forward<T&>(v));
+  return &alias==&v;
+}
+template<class T> struct ConstMove {
+  T value;
+  ConstMove(T n=5) noexcept:value(n) { ++created; }
+  ConstMove(const ConstMove&o,int n=(++copy_defaults,10)) noexcept(false):value(o.value+n) { ++copies; }
+  ConstMove(const ConstMove&&o,int n=(++move_defaults,2)) noexcept;
+  ~ConstMove() noexcept { ++cleanups; sum+=value; }
+};
+template<class T> ConstMove<T>::ConstMove(const ConstMove&&o,int n) noexcept:value(o.value+n) { ++moves; }
+using C=ConstMove<int>;
+template<class T> struct Leaf {
+  T value;
+  Leaf(T n=7) noexcept:value(n) { ++leaf_created; }
+  Leaf(const Leaf&o) noexcept(false):value(o.value+3) { ++leaf_copies; }
+  Leaf(const Leaf&&o) noexcept:value(o.value+2) { ++leaf_moves; }
+  ~Leaf() noexcept { ++leaf_cleanups; leaf_sum+=value; }
+};
+struct Owner { const Leaf<int> values[2]; int &link=referent; };
+struct Grid { Owner values[2]; };
+int next() noexcept(false) { ++fallback_defaults; return 3; }
+struct Fallback {
+  int value;
+  Fallback(int n=20) noexcept:value(n) {}
+  Fallback(const Fallback&o) noexcept:value(o.value+1) { ++fallback_copies; }
+  Fallback(const Fallback&&o,int n=next()) noexcept:value(o.value+n) { ++fallback_moves; }
+  ~Fallback() noexcept { ++fallback_cleanups; fallback_sum+=value; }
+};
+struct Explicit {
+  int value;
+  Explicit(int n):value(n) {}
+  Explicit(const Explicit&o) noexcept(false):value(o.value+1) {}
+  explicit Explicit(const Explicit&&o) noexcept:value(o.value+2) {}
+};
+template<class T> struct Lazy {
+  T value=T::missing;
+  Lazy(const Lazy&) noexcept(false) { static_assert(sizeof(T)==0); }
+  Lazy(const Lazy&&,int=0) noexcept { static_assert(sizeof(T)==0); }
+  ~Lazy() noexcept { static_assert(sizeof(T)==0); }
+};
+struct Deleted {
+  int value;
+  Deleted(const Deleted&) noexcept(false) {}
+  Deleted(const Deleted&&)=delete;
+};
+struct Private {
+  int value;
+  Private(const Private&) noexcept(false) {}
+private:
+  Private(const Private&&,int=0) noexcept {}
+};
+struct Protected {
+  int value;
+  Protected(const Protected&) noexcept(false) {}
+protected:
+  Protected(const Protected&&) noexcept {}
+};
+int query_only(Lazy<int>&a,Deleted&b,Private&c,Protected&d) {
+  return queries<Lazy<int>&&>(a) && queries<const Lazy<int>&&>(std::as_const(a)) &&
+         queries<const Deleted&>(b) && queries<const Deleted&>(std::as_const(b)) &&
+         queries<const Private&>(c) && queries<const Private&>(std::as_const(c)) &&
+         queries<const Protected&>(d) && queries<const Protected&>(std::as_const(d));
+}
+int main() {
+  {
+    C c;
+    Owner owner;
+    Grid grid;
+    Fallback fallback;
+    Explicit explicit_move{4};
+    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(c))),C&&));
+    static_assert(noexcept(Alias::move_if_noexcept(source(std::as_const(c)))));
+    if (!queries<C&&>(c) || !queries<const C&&>(std::as_const(c)) ||
+        !queries<Owner&&>(owner) || !queries<const Owner&>(std::as_const(owner)) ||
+        !queries<Grid&&>(grid) || !queries<const Grid&>(std::as_const(grid)) ||
+        !queries<const Fallback&>(fallback) || !queries<const Fallback&>(std::as_const(fallback)) ||
+        !queries<Explicit&&>(explicit_move) || !queries<const Explicit&&>(std::as_const(explicit_move))) return 1;
+    if (created!=1 || leaf_created!=6 || copies || moves || move_defaults || copy_defaults ||
+        leaf_copies || leaf_moves || cleanups || leaf_cleanups || calls || operand_defaults ||
+        fallback_copies || fallback_moves || fallback_defaults || fallback_cleanups) return 2;
+    const C&&alias=Alias::move_if_noexcept<const C>(source(c));
+    if (&alias!=&c || calls!=1 || operand_defaults!=1 || moves || move_defaults) return 3;
+    C moved(Alias::move_if_noexcept(c));
+    C moved_const(Alias::move_if_noexcept(std::as_const(c)));
+    C copied(c);
+    if (c.value!=5 || moved.value!=7 || moved_const.value!=7 || copied.value!=15 ||
+        moves!=2 || move_defaults!=2 || copies!=1 || copy_defaults!=1) return 4;
+    Owner om(Alias::move_if_noexcept(owner));
+    Owner oc(Alias::move_if_noexcept(std::as_const(owner)));
+    Grid gm(Alias::move_if_noexcept(grid));
+    Grid gc(Alias::move_if_noexcept(std::as_const(grid)));
+    ++om.link;
+    if (owner.values[0].value!=7 || grid.values[1].values[1].value!=7 ||
+        om.values[1].value!=9 || oc.values[1].value!=10 || gm.values[1].values[1].value!=9 ||
+        gc.values[1].values[1].value!=10 || leaf_moves!=6 || leaf_copies!=6 ||
+        &om.link!=&referent || &oc.link!=&referent || &gm.values[1].link!=&referent || referent!=12) return 5;
+    Fallback fc(Alias::move_if_noexcept(fallback));
+    Fallback fcc(Alias::move_if_noexcept(std::as_const(fallback)));
+    if (fallback_defaults || fallback_moves || fallback_copies!=2 || fc.value!=21 || fcc.value!=21) return 6;
+    Fallback forced(std::move(std::as_const(fallback)));
+    if (forced.value!=23 || fallback.value!=20 || fallback_defaults!=1 || fallback_moves!=1) return 7;
+    Explicit e(Alias::move_if_noexcept(std::as_const(explicit_move)));
+    if (e.value!=6 || explicit_move.value!=4) return 8;
+  }
+  return created==1 && moves==2 && copies==1 && move_defaults==2 && copy_defaults==1 && cleanups==4 && sum==34 &&
+         leaf_created==6 && leaf_moves==6 && leaf_copies==6 && leaf_cleanups==18 && leaf_sum==156 &&
+         fallback_moves==1 && fallback_copies==2 && fallback_defaults==1 && fallback_cleanups==4 && fallback_sum==85 &&
+         calls==1 && operand_defaults==1 ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("const-rvalue-move-move-if-noexcept-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConstRvalueMoveIfNoexceptQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"two-moves", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(const C&)noexcept(false){}C(C&&)noexcept{}C(const C&&)noexcept{}};
+int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)),C&&));static_assert(__is_same(decltype(Alias::move_if_noexcept(b)),const C&&));return 0;}
+)cpp"},
+      {"volatile-move", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct C{int value;C(const C&)noexcept(false){}C(const volatile C&&)noexcept{}};
+int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)),C&&));static_assert(__is_same(decltype(Alias::move_if_noexcept(b)),const C&&));return 0;}
+)cpp"},
+      {"const-owner-lazy-move-default", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&,T=T::missing)noexcept{}};
+struct C{M<int> value;};
+int f(const C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp"},
+      {"const-field-lazy-move-default", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&,T=T::missing)noexcept{}};
+struct C{const M<int> value;};
+int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"const-owner-dependent-exception", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&)noexcept(sizeof(T)>0){}};
+struct C{M<int> value;};
+int f(const C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp"},
+      {"parameter-type", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&,long double=0)noexcept{}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+      {"first-parameter-alias", R"cpp(
+#include <utility>
+#include <type_traits>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;using Self=decltype((sizeof(long double),static_cast<M*>(nullptr)));M(const M&)noexcept(false){}M(const typename std::remove_pointer<Self>::type&&)noexcept{}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+      {"later-alias", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}using N=decltype((sizeof(long double),0));M(const M&&,N=0)noexcept{}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+      {"array-bound", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+int values[2];
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&,int(&)[(sizeof(long double),2)]=values)noexcept{}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+      {"exception-source", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&)noexcept(sizeof(long double)>0){}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+      {"default-source", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&,int=sizeof(long double))noexcept{}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+      {"used-move-body", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&o)noexcept:value(o.value){long double hidden=0;}};
+int f(const M<int>&c){M<int>v(Alias::move_if_noexcept(c));return v.value;}
+)cpp"},
+      {"used-move-default-call", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+int next()noexcept{long double hidden=0;return 2;}
+template<class T>struct M{T value;M(const M&)noexcept(false){}M(const M&&o,int n=next())noexcept:value(o.value+n){}};
+int f(const M<int>&c){M<int>v(Alias::move_if_noexcept(c));return v.value;}
+)cpp"},
+      {"used-copy-body", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(const M&o)noexcept(false):value(o.value){long double hidden=0;}M(const M&&)noexcept(false){}};
+int f(const M<int>&c){M<int>v(Alias::move_if_noexcept(c));return v.value;}
+)cpp"},
+      {"used-destructor", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;~M()noexcept{long double hidden=0;}M(const M&)noexcept(false){}M(const M&&o)noexcept:value(o.value){}};
+int f(const M<int>&c){M<int>v(Alias::move_if_noexcept(c));return v.value;}
+)cpp"},
+      {"constructor-template", R"cpp(
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;template<class U>M(U&&)noexcept;M(const M&)noexcept(false){}M(const M&&)noexcept{}};
+int f(const M<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const M<int>&&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("const-rvalue-move-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("const-rvalue-move-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConstRvalueMoveIfNoexceptQueriesAcceptPromotedCases) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"const-rvalue-extra-default", R"cpp(
+
+#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct C{T value;C(const C&)noexcept(false){}C(const C&&,int=0)noexcept{}};
+int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("const-rvalue-move-accept-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("const-rvalue-move-accept-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2InheritedConstMoveDefaultMoveIfNoexceptQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("inherited-const-move-default-move-if-noexcept-queries.cpp");
   const auto Output = tmpFile("inherited-const-move-default-move-if-noexcept-queries.nc");
@@ -76717,12 +77003,6 @@ namespace Alias { using std::move_if_noexcept; }
 template<class T>struct M{T value;M(const M&)noexcept(false){}M(M&&,T=T::missing)noexcept(false){}};
 struct C{M<int>value;};
 int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
-)cpp"},
-      {"const-rvalue-move", R"cpp(
-#include <utility>
-namespace Alias { using std::move_if_noexcept; }
-template<class T>struct C{T value;C(const C&)noexcept(false){}C(const C&&,int=0)noexcept{}};
-int f(const C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C<int>&&));return 0;}
 )cpp"},
       {"parameter-alias", R"cpp(
 #include <utility>

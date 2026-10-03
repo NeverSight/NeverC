@@ -3184,9 +3184,15 @@ static bool utilityConditionalMoveDefaultsSource(
   // require already-resolved initializers on the exact prototype parameters:
   // signature traversal checks their original expressions and dependencies.
   // Do not instantiate a template default to make this proof succeed.
+  const bool CannotBindConst =
+      ConstObject &&
+      A.Context.hasSameType(
+          Constructor->getParamDecl(0)->getType(),
+          A.Context.getRValueReferenceType(
+              A.Context.getRecordType(Constructor->getParent())));
   const bool UnavailableMove =
       Constructor->isMoveConstructor() &&
-      (ConstObject || Constructor->isDeleted() ||
+      (CannotBindConst || Constructor->isDeleted() ||
        (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
                             Constructor->getAccess() == AS_protected)));
   for (const auto *Declaration : Constructor->redecls()) {
@@ -3622,8 +3628,8 @@ static bool utilityRecordConditionalMoveSource(
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
     // Each nontrivial node keeps one exact public const or mutable copy and
-    // at most one exact rvalue move. Mutable copies also exclude alternative
-    // conversion paths. Their owning graph supplies the original declarations
+    // at most one exact mutable or const rvalue move. Mutable copies exclude
+    // alternative conversion paths. Their graph supplies the declarations
     // behind an enclosing implicit mutable copy. A public copy may be deleted;
     // defaulted moves may be ignored in favor of copying. Preserve the SDK's
     // selected result without instantiating any hypothetical operation.
@@ -3653,13 +3659,15 @@ static bool utilityRecordConditionalMoveSource(
                                                  UnrelatedAccess,
                                                  ConstObject)))
         return false;
-      if ((!A.Context.hasSameType(
-              Constructor->getParamDecl(0)->getType(),
-              IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
-                     : A.Context.getRValueReferenceType(Object)) &&
-           !(IsCopy && A.Context.hasSameType(
-                           Constructor->getParamDecl(0)->getType(),
-                           MutableCopyParameter))) ||
+      const auto Parameter = Constructor->getParamDecl(0)->getType();
+      const auto ConstParameter =
+          IsCopy ? A.Context.getLValueReferenceType(Object.withConst())
+                 : A.Context.getRValueReferenceType(Object.withConst());
+      const auto MutableParameter =
+          IsCopy ? MutableCopyParameter
+                 : A.Context.getRValueReferenceType(Object);
+      if ((!A.Context.hasSameType(Parameter, ConstParameter) &&
+           !A.Context.hasSameType(Parameter, MutableParameter)) ||
           (IsCopy && Constructor->getAccess() != AS_public) ||
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;

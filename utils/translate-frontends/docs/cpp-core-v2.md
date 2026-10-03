@@ -921,13 +921,21 @@ pointer/reference fields do not consume their referents' constructor graph.
 
 Records with ordinary value constructors also supply conditional-move query
 sources when they have one exact public `const Record&` copy and at most one
-exact `Record&&` move. These special members may be implicit, explicitly
-defaulted, ordinary or explicitly deleted; the move may also be private.
+exact `Record&&` or `const Record&&` move. These special members may be implicit,
+explicitly defaulted where permitted, ordinary or explicitly deleted; the move
+may also be private or protected.
 A copy-only record is included. An implicit or defaulted copy may be deleted by
 its fields, including an uncopyable value member or an rvalue-reference field.
 The pinned builtin preserves its exact viability and overload decision,
 including a deleted defaulted move that is ignored in favor of copying.
 Every written copy/move declaration retains its parameter and exception sources.
+An explicit `const Record&&` constructor is included. With an available copy,
+the pinned traits can select that move from mutable or const rvalues, yielding `Record&&` or
+`const Record&&` when construction is nonthrowing, and the usual const-reference
+copy fallback otherwise. Actual construction checks and executes the selected
+const-rvalue move and its defaults, preserving the source's const qualification.
+Two distinct move overloads and volatile-qualified move parameters retain their
+separate requirements.
 
 This record proof accepts implicit, defaulted or ordinary public, non-deleted
 destruction. Its bounded owning graph also includes nontrivial source-owned
@@ -1032,9 +1040,13 @@ and `const Record&&`. Every original prototype parameter, type, alias, bound,
 exception source and redeclaration remains checked, and already-resolved
 defaults retain their usual checks. Owned records need the defaulted-owner
 binding proof below or their own default and access proofs. This does not
-cover a `const Record&&` move, which can bind the const object. Query-only
-defaults and bodies remain lazy; actual selected copies evaluate and check
-their defaults and bodies, including temporary and object destruction.
+make a `const Record&&` move unavailable: it can bind the const object, so its
+extra defaults still need the resolved-default or separate unavailability
+proof. This also holds for const members and inherited const ownership; their
+qualification does not exempt an available const-rvalue move's unresolved
+default. Query-only defaults and bodies remain lazy; actual selected copies
+evaluate and check their defaults and bodies, including temporary and object
+destruction.
 
 Owned fields declared const have the same binding proof when their immediate
 owner's copy and move constructors are already defaulted, whether implicit or
