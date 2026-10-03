@@ -1015,8 +1015,9 @@ The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
 or deleted. A node with only exact mutable copies has no bases. Its conversion
 functions must satisfy the exclusions below for a const lvalue or the ordinary
-constructors must satisfy the independent arity proof below. Every original
-signature is retained. Access-based exclusions use the actual owning operation's
+constructors must satisfy the independent arity or written-deletion proofs
+below. Every original signature is retained. Access-based exclusions use the
+actual owning operation's
 context for each member edge. Besides its exact moves, it may have nonvariadic
 zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
@@ -1347,7 +1348,7 @@ ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases. Conversion
 functions must be ordinary non-template functions. Each must be excluded from
 implicit conversion of a const lvalue, or every ordinary value constructor must
-be excluded by the arity proof below. A plain C++17 `explicit`
+be excluded by arity or written deletion as below. A plain C++17 `explicit`
 conversion function cannot supply the implicit conversion
 of a constructor argument, including when the outer constructor is selected by
 direct initialization. This includes admitted scalar, pointer, enum, record and
@@ -1375,8 +1376,9 @@ receiver qualifiers. Under this conversion-based proof, every conversion must
 independently satisfy an exclusion, and every other constructor keeps its
 existing proof. In particular, a live
 implicit `const` or `const &` conversion still prevents this proof unless its
-access is excluded as below or the independent constructor arity proof applies,
-even if another conversion is deleted or an overload would make the native copy
+access is excluded as below or the independent constructor arity or
+written-deletion proof applies, even if another conversion is deleted or an
+overload would make the native copy
 trait false. A parameter record's own viable converting constructor is also
 checked independently of the source record's
 excluded conversion functions.
@@ -1424,8 +1426,10 @@ owned records, fixed arrays, friends and nested classes. Exact copy/move binding
 and their original parameter sources keep their existing checks.
 
 The latest constructor redeclaration determines the minimum arity. A later
-default making any constructor callable with one argument prevents this proof,
-as does any other one-argument candidate, including a deleted or nonpublic one.
+default making any constructor callable with one argument prevents the arity
+proof, as does any other one-argument candidate. Written deletion supplies an
+independent exclusion as below; nonpublic access alone does not extend this
+proof when a conversion remains available.
 Later defaults on a constructor that still needs two arguments remain unused;
 their original parameter and default sources are retained. Every conversion
 keeps its original signature and redeclarations even when overload resolution
@@ -1435,6 +1439,28 @@ an already-resolved one keeps its ordinary source checks. Actual conversion
 calls check their selected bodies and preserve scalar, reference and record
 results and cleanup. Conversion templates, conditional `explicit`, unsupported
 receiver qualifiers and constructor templates remain outside this proof.
+
+An ordinary constructor written as `= delete` cannot provide successful
+construction even when a live implicit conversion supplies its argument.
+This combines with arity: every ordinary value constructor must be written
+deleted or require at least two arguments when a conversion remains available.
+For example, deleted `C(int)` plus live `operator int() const` cannot copy from
+`const C&`, including if another constructor is `C(int, int)`. A live
+one-argument overload still prevents this proof even when overload resolution
+would prefer a deleted candidate. Deletion is read from the canonical
+declaration and applies independently of access, friendship and nesting, also
+for mutable-copy nodes in owned records and fixed arrays.
+
+Deleted candidates retain all original parameters, aliases, defaults and
+exception sources. Their arguments may have admitted scalar or record value
+and reference types. Unused template defaults and conversion bodies remain
+lazy; resolved sources keep their normal checks, and unresolved dependent
+exception specifications remain excluded. A query never executes conversion
+bodies or deleted-constructor defaults. Actual live conversions still check
+and execute their selected bodies, preserving reference bindings, results,
+mutations and cleanup. An actual call to a deleted constructor remains a C++
+source error. Constructor templates and variadic constructors remain excluded;
+defaulted or inferred special-member deletion keeps its separate proof.
 
 Other constructors may be a move, a nonvariadic zero-parameter
 default constructor, or an ordinary nonvariadic constructor whose first parameter

@@ -3701,8 +3701,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   // Only classify signatures already retained by the adapter's decision
   // proof. That proof excludes either the conversion or every ordinary
-  // constructor by arity. Keep exact template origins and lazy written sources
-  // without re-deciding construction or owning access here.
+  // constructor by arity or written deletion. Keep exact template origins and
+  // lazy written sources without re-deciding construction or owning access.
   const bool OrdinaryConversion = utilityConditionalMoveConversionShape(
       dyn_cast_or_null<CXXConversionDecl>(Method));
   if (!Method ||
@@ -3809,7 +3809,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   // check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
-  bool RequiresConstructorArityProof = false;
+  bool HasUsableConversion = false;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
@@ -3818,7 +3818,7 @@ static bool utilityMutableCopyConditionalMoveSource(
       if (!utilityConditionalMoveConversionShape(Conversion) ||
           !utilityConditionalMoveSignatureSource(A, Conversion, Signatures))
         return false;
-      RequiresConstructorArityProof |=
+      HasUsableConversion |=
           !utilityConditionalMoveExcludedConversion(A, Conversion,
                                                     UnrelatedAccess);
     }
@@ -3827,13 +3827,17 @@ static bool utilityMutableCopyConditionalMoveSource(
     if (Constructor->isCopyOrMoveConstructor() ||
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
-    // A usable conversion cannot restore missing constructor arguments.
+    // A usable conversion cannot restore missing constructor arguments or
+    // permit calling a written deleted constructor. Deletion is independent
+    // of owning access, including for friends and nested classes.
     // Exact copies/moves keep their separate binding proof, and zero-parameter
     // constructors cannot consume the source. Every other constructor must
-    // require more than one argument if any conversion remains available.
+    // be written deleted or require more than one argument if a conversion
+    // remains available. Every original signature is still retained below.
     // A later redeclaration can add defaults, so use its current minimum arity
     // without instantiating an unused default or hypothetical conversion.
-    if (RequiresConstructorArityProof) {
+    if (HasUsableConversion &&
+        !Constructor->getCanonicalDecl()->isDeletedAsWritten()) {
       const auto *Latest = Constructor->getMostRecentDecl();
       A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
       if (Latest->getMinRequiredArguments() <= 1)
@@ -3931,9 +3935,9 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // The queried record's inaccessible or explicitly deleted destructor also
   // makes construction traits false, even in a caller allowed to destroy it.
   // Defaulted deletion through a member retains its separate graph proof.
-  // A written mutable-only copy cannot bind a const source. With no other
-  // viable constructor, base or usable implicit conversion, the copy trait is
-  // false independently of member lifetimes and hypothetical copy bodies.
+  // A written mutable-only copy cannot bind a const source. With no bases or
+  // other successful const-source construction path, the copy trait is false
+  // independently of member lifetimes and hypothetical copy bodies.
   // Besides those declarations, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
   // already-declared copy and its source-owned move; other implicit deletion
