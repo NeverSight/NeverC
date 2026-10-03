@@ -3627,12 +3627,12 @@ static bool utilityRecordConditionalMoveSource(
     A.chargeExpansion(1, Record->getLocation());
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
-    // Each nontrivial node keeps one exact public const or mutable copy and
-    // exact mutable or const rvalue moves. Mutable copies exclude
-    // alternative conversion paths. Their graph supplies the declarations
-    // behind an enclosing implicit mutable copy. A public copy may be deleted;
-    // defaulted moves may be ignored in favor of copying. Preserve the SDK's
-    // selected result without instantiating any hypothetical operation.
+    // Each nontrivial node keeps at most one exact public copy per lvalue
+    // qualification and exact mutable or const rvalue moves. Mutable-only
+    // copies exclude alternative conversion paths. Their graph supplies the
+    // declarations behind an enclosing implicit mutable copy. Public copies
+    // may be deleted; defaulted moves may be ignored in favor of copying.
+    // Keep the SDK's result without instantiating hypothetical operations.
     for (const auto *Declaration : Record->decls())
       if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
           Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
@@ -3645,7 +3645,7 @@ static bool utilityRecordConditionalMoveSource(
     const bool UnrelatedAccess =
         !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
                    Owner->getDeclContext()->isFileContext());
-    const CXXConstructorDecl *Copy = nullptr;
+    const CXXConstructorDecl *ConstCopy = nullptr, *MutableCopy = nullptr;
     bool DefaultedMoves = true;
     for (const auto *Constructor : Record->ctors()) {
       A.chargeExpansion(1, Constructor->getLocation());
@@ -3673,9 +3673,12 @@ static bool utilityRecordConditionalMoveSource(
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
       if (IsCopy) {
-        if (Copy && Copy != Constructor->getCanonicalDecl())
+        auto *&Selected = A.Context.hasSameType(Parameter, ConstParameter)
+                              ? ConstCopy
+                              : MutableCopy;
+        if (Selected && Selected != Constructor->getCanonicalDecl())
           return false;
-        Copy = Constructor->getCanonicalDecl();
+        Selected = Constructor->getCanonicalDecl();
       } else {
         // Extra defaulted parameters can create ambiguous move overloads.
         // Every candidate keeps its sources; the pinned trait retains the
@@ -3683,11 +3686,9 @@ static bool utilityRecordConditionalMoveSource(
         DefaultedMoves &= Constructor->getCanonicalDecl()->isDefaulted();
       }
     }
-    if (!Copy)
+    if (!ConstCopy && !MutableCopy)
       return false;
-    const bool MutableCopy = A.Context.hasSameType(
-        Copy->getParamDecl(0)->getType(), MutableCopyParameter);
-    if (MutableCopy &&
+    if (!ConstCopy &&
         !utilityMutableCopyConditionalMoveSource(A, Record, Signatures))
       return false;
     // A deleted exact const-copy, or a mutable-only copy with the other
@@ -3697,7 +3698,7 @@ static bool utilityRecordConditionalMoveSource(
     // signature remains a dependency; selected operations check defaults and
     // bodies. Do not declare or resolve a hypothetical copy to learn deletion.
     // Available const-copies retain the default-source checks above.
-    if (Depth == 0 && (MutableCopy || Copy->isDeleted()))
+    if (Depth == 0 && (!ConstCopy || ConstCopy->isDeleted()))
       RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {
@@ -3717,7 +3718,9 @@ static bool utilityRecordConditionalMoveSource(
     // a const owner's qualification. Its exact mutable rvalue move cannot
     // bind that source. User-written owning operations need a separate
     // argument-source proof; never infer their member bindings from storage.
-    const bool DefaultedOwner = Copy->isDefaulted() && DefaultedMoves;
+    const bool DefaultedOwner =
+        (!ConstCopy || ConstCopy->isDefaulted()) &&
+        (!MutableCopy || MutableCopy->isDefaulted()) && DefaultedMoves;
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
                 RootConstCopyUnavailable, Record, /*ConstObject=*/false))
