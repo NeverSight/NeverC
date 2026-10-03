@@ -3506,6 +3506,23 @@ static bool utilityConditionalMoveMutableRecordReferenceResults(
              Results);
 }
 
+static bool utilityConditionalMoveConstRecordReferenceResults(
+    Adapter &A, QualType ParameterType,
+    const std::vector<const CXXRecordDecl *> &Results) {
+  const auto Type = ParameterType.getNonReferenceType();
+  if (!ParameterType->isLValueReferenceType() || !Type.isConstQualified() ||
+      Type->isDependentType() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type->isAtomicType() ||
+      Type.getAddressSpace() != LangAS::Default || !Type->isRecordType())
+    return false;
+  // A const lvalue reference can bind record values and either reference kind.
+  // Every usable record result therefore needs its own distinct-record proof,
+  // regardless of const qualification. A nonrecord result would require a
+  // second user-defined conversion to produce the referenced record.
+  return utilityConditionalMoveDistinctRecordResults(
+      A, Type->getAsCXXRecordDecl(), Results);
+}
+
 static bool utilityConditionalMoveRvalueRecordReferenceResults(
     Adapter &A, QualType ParameterType,
     const std::vector<const CXXRecordDecl *> &Results,
@@ -3899,6 +3916,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
   bool HasUsableArrayConversion = false;
+  std::vector<const CXXRecordDecl *> RecordResults;
   std::vector<const CXXRecordDecl *> MutableRecordLvalueResults;
   std::vector<const CXXRecordDecl *> RecordRvalueResults;
   std::vector<const CXXRecordDecl *> MutableRecordRvalueResults;
@@ -3917,6 +3935,8 @@ static bool utilityMutableCopyConditionalMoveSource(
         const auto Result = ConversionType.getNonReferenceType();
         HasUsableNonrecordConversion |= !Result->isRecordType();
         HasUsableArrayConversion |= Result->isArrayType();
+        if (Result->isRecordType())
+          RecordResults.push_back(Result->getAsCXXRecordDecl());
         if (Result->isRecordType() && !ConversionType->isLValueReferenceType()) {
           RecordRvalueResults.push_back(Result->getAsCXXRecordDecl());
           if (!Result.isConstQualified())
@@ -3959,6 +3979,10 @@ static bool utilityMutableCopyConditionalMoveSource(
     // also be excluded by the completed distinct-record proof above. Check
     // every such result against this constructor's first parameter; one
     // matching or otherwise unproven result retains its separate requirements.
+    // A const record lvalue reference can bind all value categories. It needs
+    // the completed distinct-record proof for every usable record result,
+    // including const ones. A nonrecord result needs another user-defined
+    // conversion and cannot supply that binding in this implicit sequence.
     // A record rvalue reference, including a const one, cannot bind a record
     // lvalue result. A nonrecord result would require another user-defined
     // conversion. A non-const record rvalue reference also cannot discard const
@@ -3993,6 +4017,8 @@ static bool utilityMutableCopyConditionalMoveSource(
            utilityConditionalMoveMutableRecordReferenceResults(
                A, Constructor->getParamDecl(0)->getType(),
                MutableRecordLvalueResults) ||
+           utilityConditionalMoveConstRecordReferenceResults(
+               A, Constructor->getParamDecl(0)->getType(), RecordResults) ||
            utilityConditionalMoveRvalueRecordReferenceResults(
                A, Constructor->getParamDecl(0)->getType(), RecordRvalueResults,
                MutableRecordRvalueResults));
