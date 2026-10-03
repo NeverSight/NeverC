@@ -1520,6 +1520,26 @@ the same proof. Actual construction requiring the deleted destructor remains a
 C++ source error; a live reference-parameter constructor can still accept an
 existing argument reference, with its selected defaults and body checked.
 
+A private or protected parameter-record destructor can likewise prevent the
+converted temporary's destruction when access checking is enabled. The root
+SDK traits have unrelated access even when written inside a member or friend.
+For mutable-copy nodes in owned records and arrays, the proof checks the actual
+owner's enclosing, friend and base contexts against the parameter record.
+Friendship granted by the queried value class does not grant access to the
+argument destructor, and a grant by the argument class to the owner prevents
+this exclusion proof. The existing canonical class/function/template and
+non-inherited friendship rules apply to that parameter class independently.
+
+The inaccessible destructor and every argument constructor retain their
+original signatures and exception sources. Clang may consume both the argument
+conversion's defaults and the outer constructor's defaults before checking
+destruction access; invalid and unsupported consumed defaults still fail.
+Unused template bodies and unselected defaults stay lazy.
+All other constructors, record-shape and completion requirements keep their
+existing checks. Actual construction and destruction inside an authorized
+context still check and evaluate their selected defaults, bodies and cleanup;
+actual destruction without access remains a C++ source error.
+
 An ordinary nonvariadic constructor of the queried record itself may likewise
 be explicitly written as `= delete`. For example, `C(const Argument&) = delete`
 cannot supply construction from `const C&` even when `Argument(const C&)` is a

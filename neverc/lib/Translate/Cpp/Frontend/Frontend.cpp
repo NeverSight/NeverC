@@ -3544,7 +3544,7 @@ static bool utilityConditionalMoveNonpublicValueConstructor(
 static bool utilityConditionalMoveValueConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor,
     std::vector<const CXXMethodDecl *> *Signatures = nullptr,
-    bool UnrelatedAccess = false) {
+    bool UnrelatedAccess = false, const CXXRecordDecl *Owner = nullptr) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
@@ -3592,21 +3592,31 @@ static bool utilityConditionalMoveValueConstructor(
   const auto *Destructor = ParameterRecord->getDestructor();
   const bool DeletedDestructor =
       Destructor && Destructor->getCanonicalDecl()->isDeletedAsWritten();
+  // Destruction of the converted argument uses the constructing context's
+  // access. Check privileges against the parameter class itself: friendship
+  // granted by the queried value class says nothing about this destructor.
+  const bool InaccessibleDestructor =
+      Destructor && !DeletedDestructor && !Destructor->isInvalidDecl() &&
+      A.Context.getLangOpts().AccessControl &&
+      (Destructor->getCanonicalDecl()->getAccess() == AS_private ||
+       Destructor->getCanonicalDecl()->getAccess() == AS_protected) &&
+      utilityConditionalMoveUnrelatedAccess(A, ParameterRecord, Owner);
   // The distinct const source requires a converted argument temporary, even
   // for reference parameters. Written deletion prevents that temporary's
   // destruction in every access context. Read only the existing declaration;
   // do not infer deletion of a defaulted destructor or instantiate its body.
-  if (DeletedDestructor &&
+  if ((DeletedDestructor || InaccessibleDestructor) &&
       !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
     return false;
-  const bool UnavailableConstruction = Inaccessible || DeletedDestructor;
+  const bool UnavailableConstruction =
+      Inaccessible || DeletedDestructor || InaccessibleDestructor;
   for (const auto *Declaration : ParameterRecord->decls())
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
         Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
       return false;
   for (const auto *Candidate : ParameterRecord->ctors()) {
     A.chargeExpansion(1, Candidate->getLocation());
-    // Nonpublic outer access or a deleted argument destructor can exclude
+    // Nonpublic outer access or an unavailable argument destructor can exclude
     // construction with a live conversion. Sema can still consume that
     // conversion's signature and defaults before failure; retain them below.
     if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
@@ -3739,7 +3749,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
 
 static bool utilityMutableCopyConditionalMoveSource(
     Adapter &A, const CXXRecordDecl *Record, bool UnrelatedAccess,
-    std::vector<const CXXMethodDecl *> *Signatures) {
+    std::vector<const CXXMethodDecl *> *Signatures,
+    const CXXRecordDecl *Owner = nullptr) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths. An ordinary constructor requiring two arguments cannot
   // consume this record alone, even through a converting temporary. Written
@@ -3764,7 +3775,7 @@ static bool utilityMutableCopyConditionalMoveSource(
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
     if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures,
-                                               UnrelatedAccess) ||
+                                               UnrelatedAccess, Owner) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
   }
@@ -4038,7 +4049,7 @@ static bool utilityRecordConditionalMoveSource(
       return false;
     if (!HasConstCopy &&
         !utilityMutableCopyConditionalMoveSource(A, Record, UnrelatedAccess,
-                                                 Signatures))
+                                                 Signatures, Owner))
       return false;
     // A mutable-only copy set or deletion of every exact const copy excludes
     // const copying at the root. Extra owned defaults cannot restore it.
