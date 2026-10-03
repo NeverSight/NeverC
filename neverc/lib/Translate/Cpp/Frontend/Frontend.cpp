@@ -3473,6 +3473,34 @@ static bool utilityConditionalMoveMutableRecordReferenceParameter(
          Type.getAddressSpace() == LangAS::Default && Type->isRecordType();
 }
 
+static bool utilityConditionalMoveMutableRecordReferenceResults(
+    Adapter &A, QualType ParameterType,
+    const std::vector<const CXXRecordDecl *> &Results) {
+  if (!utilityConditionalMoveMutableRecordReferenceParameter(ParameterType))
+    return false;
+  const auto *ParameterRecord =
+      ParameterType.getNonReferenceType()->getAsCXXRecordDecl();
+  if (!ParameterRecord)
+    return false;
+  // A completed result class without bases cannot bind a different record's
+  // lvalue reference through a standard conversion. Its own conversion would
+  // require a second user-defined conversion. Compare canonical records,
+  // preserving aliases and distinct concrete template specializations; do not
+  // complete a result class, walk bases or inspect its conversion functions.
+  for (const auto *Result : Results) {
+    const auto *Definition = Result ? Result->getDefinition() : nullptr;
+    if (!Definition || Definition->isInvalidDecl() ||
+        Definition->isDependentContext() || Definition->isUnion() ||
+        Definition->getNumBases() != 0 ||
+        !A.S.owns(A.Sources, Definition->getLocation()))
+      return false;
+    A.chargeExpansion(1, Definition->getLocation());
+    if (Definition->getCanonicalDecl() == ParameterRecord->getCanonicalDecl())
+      return false;
+  }
+  return true;
+}
+
 static bool utilityConditionalMoveDirectConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
@@ -3848,7 +3876,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
   bool HasUsableArrayConversion = false;
-  bool HasUsableMutableRecordLvalueConversion = false;
+  std::vector<const CXXRecordDecl *> MutableRecordLvalueResults;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
@@ -3864,9 +3892,9 @@ static bool utilityMutableCopyConditionalMoveSource(
         const auto Result = ConversionType.getNonReferenceType();
         HasUsableNonrecordConversion |= !Result->isRecordType();
         HasUsableArrayConversion |= Result->isArrayType();
-        HasUsableMutableRecordLvalueConversion |=
-            ConversionType->isLValueReferenceType() && Result->isRecordType() &&
-            !Result.isConstQualified();
+        if (ConversionType->isLValueReferenceType() && Result->isRecordType() &&
+            !Result.isConstQualified())
+          MutableRecordLvalueResults.push_back(Result->getAsCXXRecordDecl());
       }
     }
   }
@@ -3897,10 +3925,10 @@ static bool utilityMutableCopyConditionalMoveSource(
     // a nonrecord result would need another user-defined conversion. A const
     // record lvalue cannot discard const during reference binding, even when
     // its own conversion could return a mutable reference: that would require
-    // another user-defined conversion. Any available non-const record lvalue
-    // keeps its separate binding requirements, including distinct records.
-    // Do not inspect result-record bases or conversion functions to decide
-    // their reference compatibility.
+    // another user-defined conversion. A non-const record lvalue result may
+    // also be excluded by the completed distinct-record proof above. Check
+    // every such result against this constructor's first parameter; one
+    // matching or otherwise unproven result retains its separate requirements.
     // Retain every original signature below, including
     // argument-conversion sources consumed before an access failure.
     // A later redeclaration can add defaults, so use its current minimum arity
@@ -3920,9 +3948,9 @@ static bool utilityMutableCopyConditionalMoveSource(
            (!HasUsableArrayConversion &&
             utilityConditionalMoveArrayReferenceParameter(
                 A, Constructor->getParamDecl(0)->getType())) ||
-           (!HasUsableMutableRecordLvalueConversion &&
-            utilityConditionalMoveMutableRecordReferenceParameter(
-                Constructor->getParamDecl(0)->getType())));
+           utilityConditionalMoveMutableRecordReferenceResults(
+               A, Constructor->getParamDecl(0)->getType(),
+               MutableRecordLvalueResults));
       RequireUnavailableDestruction =
           Latest->getMinRequiredArguments() <= 1 &&
           !ExcludedConversionResults;
