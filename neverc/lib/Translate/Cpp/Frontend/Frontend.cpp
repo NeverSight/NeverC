@@ -3184,15 +3184,16 @@ static bool utilityConditionalMoveDefaultsSource(
   // require already-resolved initializers on the exact prototype parameters:
   // signature traversal checks their original expressions and dependencies.
   // Do not instantiate a template default to make this proof succeed.
+  const auto Object = A.Context.getRecordType(Constructor->getParent());
   const bool CannotBindConst =
       ConstObject &&
       A.Context.hasSameType(
           Constructor->getParamDecl(0)->getType(),
-          A.Context.getRValueReferenceType(
-              A.Context.getRecordType(Constructor->getParent())));
+          Constructor->isCopyConstructor()
+              ? A.Context.getLValueReferenceType(Object)
+              : A.Context.getRValueReferenceType(Object));
   const bool UnavailableConstructor =
-      (Constructor->isMoveConstructor() && CannotBindConst) ||
-      Constructor->isDeleted() ||
+      CannotBindConst || Constructor->isDeleted() ||
       (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
                            Constructor->getAccess() == AS_protected));
   for (const auto *Declaration : Constructor->redecls()) {
@@ -3209,7 +3210,7 @@ static bool utilityConditionalMoveDefaultsSource(
         return false;
       if (operationDefaultInitializer(A, Parameter))
         continue;
-      // An exact mutable rvalue move cannot bind a const object. A deleted or
+      // An exact mutable copy or move cannot bind a const object. A deleted or
       // inaccessible copy/move cannot provide construction in this context.
       // If Sema left its template default uninstantiated, keep that original
       // source lazy; parameter types and every written signature still pass
@@ -3715,7 +3716,7 @@ static bool utilityRecordConditionalMoveSource(
     // their written types and bindings without owning a referent graph.
     // A defaulted copy or move preserves a declared const field's qualifiers,
     // including every fixed-array element. A non-mutable field also inherits
-    // a const owner's qualification. Its exact mutable rvalue move cannot
+    // a const owner's qualification. Its exact mutable copy or move cannot
     // bind that source. User-written owning operations need a separate
     // argument-source proof; never infer their member bindings from storage.
     for (const auto &Base : Record->bases())

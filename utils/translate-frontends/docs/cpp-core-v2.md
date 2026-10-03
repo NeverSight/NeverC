@@ -1101,9 +1101,10 @@ queries on inaccessible copies or moves;
 this proof does not suppress those diagnostics.
 
 A const object query also keeps uninstantiated extra defaults of the queried
-record's exact mutable rvalue move lazy, including a public move. That move
-cannot bind a const object. The proof uses the adapter's actual object template
-argument, including an explicit `const Record` argument; a mutable query's
+record's exact mutable lvalue copy or mutable rvalue move lazy, including
+public constructors. Neither can bind a const object. The proof uses the
+adapter's actual object template argument, including an explicit `const Record`
+argument; a mutable query's
 `const Record&` copy-fallback result does not establish this binding restriction.
 The pinned construction traits still choose between `const Record&`
 and `const Record&&`. Every original prototype parameter, type, alias, bound,
@@ -1112,10 +1113,10 @@ defaults retain their usual checks. Owned records need the defaulted-owner
 binding proof below or their own default and access proofs. This does not
 make a `const Record&&` move unavailable: it can bind the const object, so its
 extra defaults still need the resolved-default or separate unavailability
-proof. This also holds for const members and inherited const ownership; their
-qualification does not exempt an available const-rvalue move's unresolved
-default. Query-only defaults and bodies remain lazy; actual selected copies
-evaluate and check their defaults and bodies, including temporary and object
+proof. An exact const-lvalue copy can also bind that source and retains its
+default-source requirements. This also holds for const members and inherited
+const ownership. Query-only defaults and bodies remain lazy; actual selected
+copies evaluate and check their defaults and bodies, including temporary and object
 destruction.
 
 Owned fields declared const have the same binding proof when their immediate
@@ -1128,8 +1129,9 @@ and qualifiers introduced by aliases. Non-mutable fields also inherit a proven
 const source owner's qualification. This propagates through nested defaulted
 owners and arrays, starting from either the adapter's const object argument or
 a declared const field. Each intermediate owner needs the same defaulted-copy
-and absent-or-defaulted-move proof. The member's exact mutable rvalue move
-therefore cannot bind, even if it is public or accessible through friendship.
+and absent-or-defaulted-move proof. The member's exact mutable lvalue copy or
+mutable rvalue move therefore cannot bind, even if it is public or accessible
+through friendship.
 Its uninstantiated extra defaults remain lazy under the same prototype and
 signature checks. Each record/owner/const-binding
 combination is checked independently: an earlier const member never exempts a
@@ -1138,8 +1140,10 @@ from its owner. Mutable sources and user-written owning copy/move bodies
 require a separate member-argument proof; a mutable root's const-reference
 copy-fallback result alone does not establish a const source. Base subobjects
 retain their existing source and layout requirements.
-This binding proof does not exempt an available member copy's defaults: if a
-query leaves an extra copy default uninstantiated, its default-source proof
+This binding proof covers every exact mutable-copy overload, including
+inherited defaults on redeclarations, without instantiating an unused body or
+default. It does not exempt an available const-copy's defaults: if a query
+leaves an extra const-copy default uninstantiated, its default-source proof
 still rejects it.
 An actual selected copy may resolve that default through ordinary Sema and
 then supplies its original initializer to the existing source checks.
