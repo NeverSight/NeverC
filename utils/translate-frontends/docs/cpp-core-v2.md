@@ -1086,13 +1086,19 @@ const queries on inaccessible moves, and inaccessible member moves that
 delete an enclosing defaulted move. For an owned member's inaccessible copy/move,
 its immediate owner and every enclosing class must have a concrete, source-owned
 definition with no bases. The bounded actual declaration-context chain must end
-at namespace scope, optionally through one source-owned free function's actual
-definition. This includes ordinary non-template functions and completed concrete
-function-template specializations, including explicit specializations and
-instantiation definitions. A specialization retains its source-owned primary
-and the exact templated function; this proof does not instantiate a body.
-That function's semantic and lexical contexts must both be namespaces;
-its canonical identity is retained for access checks.
+at namespace scope. It may pass through source-owned function definitions,
+including ordinary non-template free functions and methods, methods instantiated
+with a class, and completed concrete free or member function-template
+specializations. Explicit specializations and instantiation definitions retain
+their actual contexts. A function-template specialization retains its source-owned
+primary and the exact templated function; this proof does not instantiate a body.
+A free function's semantic and lexical contexts must both be namespaces.
+An ordinary method follows its semantic parent class, whether defined inside
+that class or at namespace scope. This includes static methods and supported
+nonstatic methods with cv/ref qualifiers. A method of a local class may lead to
+further enclosing functions and classes; every actual context is retained for
+access checks, including enclosing class-template primary, partial and full
+specializations.
 None of these classes may be the member class itself, since
 nesting in that class grants access. The member may have ordinary class-type
 friends when every friend resolves to a different canonical class from every
@@ -1104,8 +1110,8 @@ Each written friend declaration and type keeps its ordinary source checks,
 including a supported complete record or checked incomplete class identity;
 unsupported types and sources erased by an alias remain rejected.
 Ordinary non-template free function friends also do not grant access to the
-owner's constructors when their canonical identities differ from the enclosing
-function, if any. A grant to the enclosing function extends to its local classes
+owner's constructors when their canonical identities differ from every enclosing
+function. A grant to an enclosing function extends to its local classes
 and their nested classes, so it prevents this lazy-default exception. Namespace
 aliases, redeclarations and overloads use resolved identities rather than names.
 This includes hidden friends instantiated from a class
@@ -1116,7 +1122,7 @@ mixed with the unrelated class and nonclass friends above.
 The same access proof covers a source-owned free function-template friend whose
 exact primary and templated function belong to a namespace. This includes copied
 hidden primaries, supported operator templates and namespace redeclarations.
-A friend primary must differ from the enclosing function's canonical primary,
+A friend primary must differ from every enclosing function's canonical primary,
 if any: its grant includes every specialization, even a full specialization
 with its own body, and extends to the local classes there. Unrelated overloads
 and same-spelling primaries in different namespaces grant no access.
@@ -1136,10 +1142,10 @@ selected friend methods keep their access and body checks. Each ownership edge
 is checked even if another owner already used the same member type.
 A friend naming the actual owner or any enclosing class, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
-specialization friends and unsupported dependent class-template grants), local
-classes in member functions, dependent or incomplete function-template contexts,
-or class-defined friend functions, and inheritance in any enclosing scope require
-their own access proof. Each member/owner pair is checked independently,
+specialization friends and unsupported dependent class-template grants), enclosing
+constructors, destructors or conversion functions, dependent or incomplete
+function-template contexts, class-defined friend functions, and inheritance in
+any enclosing scope require their own access proof. Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
 initializing a member through another constructor. The member's unavailable
