@@ -920,8 +920,8 @@ retain separate decision-source requirements. Non-owning
 pointer/reference fields do not consume their referents' constructor graph.
 
 Records with ordinary value constructors also supply conditional-move query
-sources when they have one exact public `const Record&` copy, optionally paired
-with one exact public `Record&` copy, and moves whose first parameter is exactly
+sources when they have exact public `const Record&` copies, optionally alongside
+exact public `Record&` copies, and moves whose first parameter is exactly
 `Record&&` or `const Record&&`. These members may
 be implicit, explicitly defaulted where permitted, ordinary or explicitly
 deleted; moves may also be private or protected.
@@ -950,8 +950,7 @@ move and cause the owner to copy instead. Actual construction with explicit
 extra arguments checks and executes its selected overload. Every candidate
 still supplies its original signature and defaults; ambiguity alone does not
 exempt uninstantiated available defaults from the proof below. Volatile move
-parameters and additional copies sharing a first-parameter qualification
-retain their separate requirements.
+parameters retain their separate requirements.
 
 Both exact copy qualifications can coexist, including a deleted mutable copy
 alongside an available const copy. Each copy keeps its original signatures and
@@ -962,6 +961,17 @@ Actual direct copying from a mutable lvalue can instead select the mutable
 copy and its defaults, including mutations to the source. Defaulted owner
 copies preserve that distinction through nested members and fixed arrays:
 mutable fields can use mutable copies while const fields use const copies.
+
+Several exact copies can also share a first-parameter qualification,
+distinguished by their extra defaulted parameters. Ambiguous const copying
+makes the pinned copy-construction trait false, so the query retains an
+rvalue-reference result even when moving may throw or actual construction is
+also ambiguous. Ambiguous mutable copies can coexist with a unique const copy
+and retain the const-reference copy fallback. A query does not construct an
+object. Actual construction with explicit extra arguments selects, checks and
+executes its own overload. Every copy candidate supplies its original signature
+and defaults. Ambiguity alone does not exempt uninstantiated owned defaults
+from their source checks.
 
 This record proof accepts implicit, defaulted or ordinary public, non-deleted
 destruction. Its bounded owning graph also includes nontrivial source-owned
@@ -979,9 +989,9 @@ when moving throws or is also deleted. Every deleted declaration still supplies
 its original parameter and exception sources. The query returns an unchanged
 reference; actual construction from it requires a viable selected constructor.
 
-The owning graph also admits a public copy taking exactly mutable
-`Record&` at a nontrivial node. That copy may be implicit, defaulted, ordinary
-or deleted. A node with only that mutable copy has no bases or conversion
+The owning graph also admits public copies taking exactly mutable
+`Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
+or deleted. A node with only exact mutable copies has no bases or conversion
 functions. Besides its
 exact moves, it may have nonvariadic zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
@@ -1003,14 +1013,14 @@ its written copy/move/destructor and admitted value-constructor sources.
 Every actual generated copy, move, assignment or cleanup checks its selected member
 operations. Queries alone leave hypothetical member bodies uninstantiated.
 
-When the queried root has only that exact mutable copy and satisfies the
+When the queried root has only exact mutable copies and satisfies the
 no-base, no-conversion and other-constructor restrictions above, its owned
 copy/move constructors may have extra defaulted parameters. The root cannot
 be copied from a const object regardless of those defaults, so nested members
 and fixed arrays retain the pinned rvalue-reference result. This includes
 const-copy or deleted-const-copy members alongside the mutable-copy member,
 and members whose move is deleted or inaccessible. Every nontrivial node still
-has one or both public exact const and mutable copies, at most one of each,
+has public exact const or mutable copies,
 exact mutable or const rvalue moves, and an accessible nondeleted destructor.
 All parameter types, aliases, array bounds,
 exception specifications and redeclarations remain source dependencies.
@@ -1019,18 +1029,19 @@ moves check and evaluate the selected member defaults and bodies, preserving
 reference mutations and parameter-temporary destruction. A root with an
 available const copy uses the resolved-default source proof below.
 
-The same owned extra-parameter support applies when the root's exact public
-const-copy is already marked deleted. This includes implicit and explicitly
-defaulted copies deleted by nested members, fixed-array elements or an rvalue
-reference field. The graph still checks the original declarations behind that
+The same owned extra-parameter support applies when every exact public
+const-copy candidate at the root is already marked deleted. This includes
+implicit and explicitly defaulted copies deleted by nested members, fixed-array
+elements or an rvalue reference field. The graph still checks the original declarations behind that
 deletion, including each member's copy access and destructor. It does not
 declare or instantiate a hypothetical copy to discover whether it is deleted.
-An exact deleted const-copy prevents const copying regardless of member
+Deletion of every exact const-copy prevents const copying regardless of member
 defaults, including defaults on another member with an available const-copy.
 Actual movement can therefore move one member and copy another; both selected
 operations check their defaults and bodies. Query-only owners with deleted or
 inaccessible member moves still preserve the reference result, without making
-those moves available for construction.
+those moves available for construction. Ambiguity between const-copy candidates
+alone retains the ordinary owned-default checks.
 
 When a const copy remains available, queried records and their owned members
 can also have extra defaulted copy/move parameters if every later initializer
@@ -1114,7 +1125,7 @@ reference mutations and parameter-temporary cleanup. The same requirements
 apply through implicit/defaulted operations, nested members and fixed arrays.
 
 Non-owning pointer/reference fields keep their original bindings. Constructor
-templates, inherited constructors, additional copy overloads and nontrivial
+templates, inherited constructors, volatile copy/move parameters and nontrivial
 members with inaccessible copies/destructors
 retain separate requirements. SDK members and
 nontrivial bases retain their existing source and layout requirements. Mutable

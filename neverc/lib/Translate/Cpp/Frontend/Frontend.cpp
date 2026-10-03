@@ -3627,10 +3627,10 @@ static bool utilityRecordConditionalMoveSource(
     A.chargeExpansion(1, Record->getLocation());
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
-    // Each nontrivial node keeps at most one exact public copy per lvalue
-    // qualification and exact mutable or const rvalue moves. Mutable-only
-    // copies exclude alternative conversion paths. Their graph supplies the
-    // declarations behind an enclosing implicit mutable copy. Public copies
+    // Each nontrivial node keeps exact public mutable or const lvalue copies
+    // and exact mutable or const rvalue moves. Mutable-only copies exclude
+    // alternative conversion paths. Their graph supplies the declarations
+    // behind an enclosing implicit mutable copy. Public copies
     // may be deleted; defaulted moves may be ignored in favor of copying.
     // Keep the SDK's result without instantiating hypothetical operations.
     for (const auto *Declaration : Record->decls())
@@ -3645,8 +3645,8 @@ static bool utilityRecordConditionalMoveSource(
     const bool UnrelatedAccess =
         !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
                    Owner->getDeclContext()->isFileContext());
-    const CXXConstructorDecl *ConstCopy = nullptr, *MutableCopy = nullptr;
-    bool DefaultedMoves = true;
+    bool HasCopy = false, HasConstCopy = false, AllConstCopiesDeleted = true;
+    bool DefaultedOwner = true;
     for (const auto *Constructor : Record->ctors()) {
       A.chargeExpansion(1, Constructor->getLocation());
       if (Constructor->isInheritingConstructor())
@@ -3673,32 +3673,30 @@ static bool utilityRecordConditionalMoveSource(
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
       if (IsCopy) {
-        auto *&Selected = A.Context.hasSameType(Parameter, ConstParameter)
-                              ? ConstCopy
-                              : MutableCopy;
-        if (Selected && Selected != Constructor->getCanonicalDecl())
-          return false;
-        Selected = Constructor->getCanonicalDecl();
-      } else {
-        // Extra defaulted parameters can create ambiguous move overloads.
-        // Every candidate keeps its sources; the pinned trait retains the
-        // ambiguity result. No single move describes the owner's bindings.
-        DefaultedMoves &= Constructor->getCanonicalDecl()->isDefaulted();
+        HasCopy = true;
+        if (A.Context.hasSameType(Parameter, ConstParameter)) {
+          HasConstCopy = true;
+          AllConstCopiesDeleted &=
+              Constructor->getCanonicalDecl()->isDeleted();
+        }
       }
+      // Extra defaulted parameters can create ambiguous copy or move sets.
+      // Every candidate keeps its sources; the pinned traits retain overload
+      // resolution. All candidates must preserve defaulted owning bindings.
+      DefaultedOwner &= Constructor->getCanonicalDecl()->isDefaulted();
     }
-    if (!ConstCopy && !MutableCopy)
+    if (!HasCopy)
       return false;
-    if (!ConstCopy &&
+    if (!HasConstCopy &&
         !utilityMutableCopyConditionalMoveSource(A, Record, Signatures))
       return false;
-    // A deleted exact const-copy, or a mutable-only copy with the other
-    // constructor checks above, excludes const copying at the root. Extra
-    // defaults in owned copy/move constructors cannot restore it. The graph
-    // still supplies the sources behind defaulted deletion, and every
-    // signature remains a dependency; selected operations check defaults and
-    // bodies. Do not declare or resolve a hypothetical copy to learn deletion.
-    // Available const-copies retain the default-source checks above.
-    if (Depth == 0 && (!ConstCopy || ConstCopy->isDeleted()))
+    // A mutable-only copy set or deletion of every exact const copy excludes
+    // const copying at the root. Extra owned defaults cannot restore it.
+    // Ambiguity alone retains ordinary default-source checks. The graph still
+    // supplies defaulted-deletion sources, and every signature is a dependency;
+    // selected operations check defaults and bodies. Do not declare or resolve
+    // a hypothetical copy to learn deletion.
+    if (Depth == 0 && (!HasConstCopy || AllConstCopiesDeleted))
       RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {
@@ -3718,9 +3716,6 @@ static bool utilityRecordConditionalMoveSource(
     // a const owner's qualification. Its exact mutable rvalue move cannot
     // bind that source. User-written owning operations need a separate
     // argument-source proof; never infer their member bindings from storage.
-    const bool DefaultedOwner =
-        (!ConstCopy || ConstCopy->isDefaulted()) &&
-        (!MutableCopy || MutableCopy->isDefaulted()) && DefaultedMoves;
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
                 RootConstCopyUnavailable, Record, /*ConstObject=*/false))
