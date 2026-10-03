@@ -3641,7 +3641,7 @@ static bool utilityConditionalMoveValueConstructor(
 }
 
 static bool utilityConditionalMoveExcludedConversion(
-    const CXXConversionDecl *Conversion) {
+    Adapter &A, const CXXConversionDecl *Conversion, bool UnrelatedAccess) {
   if (!Conversion || Conversion->isInvalidDecl() || Conversion->isImplicit() ||
       Conversion->isVirtual() || Conversion->isStatic() ||
       Conversion->isExplicitObjectMemberFunction() || Conversion->isVariadic() ||
@@ -3654,13 +3654,19 @@ static bool utilityConditionalMoveExcludedConversion(
   // Constructor arguments use implicit conversion from the copy trait's
   // const record lvalue. Plain explicit and written deleted conversions cannot
   // supply it; neither can a mutable receiver or an rvalue-qualified receiver.
+  // Nonpublic access also excludes a conversion when the constructing context
+  // has no privileges. The root trait is unrelated even inside a member or
+  // friend; an owned record must use its actual enclosing operation's access.
   // Read the original declaration for out-of-line definitions. Conditional
   // explicit and conversion templates keep their separate source requirements.
   const auto *Canonical = Conversion->getCanonicalDecl();
   const auto Specifier = Canonical->getExplicitSpecifier();
+  const auto Access = Canonical->getAccess();
   return !Specifier.getExpr() &&
          (Specifier.isExplicit() || Canonical->isDeletedAsWritten() ||
-          !Conversion->isConst() || Conversion->getRefQualifier() == RQ_RValue);
+          !Conversion->isConst() || Conversion->getRefQualifier() == RQ_RValue ||
+          (UnrelatedAccess && A.Context.getLangOpts().AccessControl &&
+           (Access == AS_private || Access == AS_protected)));
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
@@ -3687,8 +3693,11 @@ static bool utilityLazyConditionalMoveSignatureSource(
       RecordArgumentConstructor;
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
+  // Only classify signatures already retained by the adapter's decision
+  // proof. Nonpublic declarations and their exact template origins can retain
+  // lazy written sources; the actual owning access was checked before queuing.
   const bool ExcludedConversion = utilityConditionalMoveExcludedConversion(
-      dyn_cast_or_null<CXXConversionDecl>(Method));
+      A, dyn_cast_or_null<CXXConversionDecl>(Method), /*UnrelatedAccess=*/true);
   if (!Method ||
       !(Assignment || Destructor || ExcludedConversion || OrdinaryConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
@@ -3720,7 +3729,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
       : ExcludedConversion ? utilityConditionalMoveExcludedConversion(
-                                  dyn_cast<CXXConversionDecl>(Origin))
+                                  A, dyn_cast<CXXConversionDecl>(Origin),
+                                  /*UnrelatedAccess=*/true)
       : OrdinaryConstructor ? OriginConstructor &&
                                   !OriginConstructor->isCopyOrMoveConstructor() &&
                                   !OriginConstructor->isVariadic() &&
@@ -3798,7 +3808,8 @@ static bool utilityMutableCopyConditionalMoveSource(
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
         return false;
     } else if (const auto *Conversion = dyn_cast<CXXConversionDecl>(Declaration)) {
-      if (!utilityConditionalMoveExcludedConversion(Conversion) ||
+      if (!utilityConditionalMoveExcludedConversion(A, Conversion,
+                                                    UnrelatedAccess) ||
           !utilityConditionalMoveSignatureSource(A, Conversion, Signatures))
         return false;
     }

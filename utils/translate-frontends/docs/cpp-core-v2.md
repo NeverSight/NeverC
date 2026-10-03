@@ -1015,7 +1015,8 @@ The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
 or deleted. A node with only exact mutable copies has no bases. Its conversion
 functions must satisfy the exclusions below for a const lvalue, retaining every
-original signature. Besides its exact moves, it may have nonvariadic
+original signature. Access-based exclusions use the actual owning operation's
+context for each member edge. Besides its exact moves, it may have nonvariadic
 zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
 by value or reference, a reference to an admitted fixed array, or a mutable
@@ -1370,10 +1371,34 @@ or record conversion results follow the same binding proof. Deletion is read
 from the canonical declaration; out-of-line definitions retain their exact
 receiver qualifiers. Every conversion must independently satisfy an exclusion,
 and every other constructor keeps its existing proof. In particular, a live
-implicit `const` or `const &` conversion still prevents this proof, even if
-another conversion is deleted or an overload would make the native copy trait
-false. A parameter record's own viable converting constructor is also checked
-independently of the source record's excluded conversion functions.
+implicit `const` or `const &` conversion still prevents this proof unless its
+access is excluded as below, even if another conversion is deleted or an overload
+would make the native copy trait false. A parameter record's own viable
+converting constructor is also checked independently of the source record's
+excluded conversion functions.
+
+An ordinary private or protected conversion can also be excluded when access
+checking is enabled and the constructing context is unrelated to the queried
+record. The root SDK traits always use unrelated access, including when the
+query is written inside a member or friend. For example, a private
+`operator int() const` cannot make `C(int)` constructible from `const C&` in
+that trait. Canonical access also covers out-of-line definitions and admitted
+scalar, reference and record results. Mutable-copy nodes in owned records and
+fixed arrays use their actual owner and enclosing contexts: friendship,
+nesting or a related base prevents this access exclusion unless another
+independent exclusion applies. Friendship granted only to a base is not
+inherited. Each occurrence of a member retains its own owning context.
+
+Access failure does not skip original conversion signatures, redeclarations or
+exception sources. Native trait resolution can still consume a constructor's
+default arguments before rejecting a private conversion; those expressions
+remain checked, including resolved template defaults. It can also resolve a
+dependent conversion exception specification along that failed access path.
+Unused conversion bodies stay lazy. An uninstantiated specification retains only
+its exact admitted nondependent written source; resolved dependent specifications
+keep their normal checks. Actual conversions from an authorized member or
+friend check and execute the selected body, while an inaccessible actual call
+remains a C++ source error.
 
 All original conversion signatures and exception sources stay checked. Unused
 template conversion bodies stay lazy, and a nondependent written exception
