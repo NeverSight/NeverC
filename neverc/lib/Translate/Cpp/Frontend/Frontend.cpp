@@ -3473,6 +3473,15 @@ static bool utilityConditionalMoveMutableRecordReferenceParameter(
          Type.getAddressSpace() == LangAS::Default && Type->isRecordType();
 }
 
+static bool utilityConditionalMoveRvalueRecordReferenceParameter(
+    QualType ParameterType) {
+  const auto Type = ParameterType.getNonReferenceType();
+  return ParameterType->isRValueReferenceType() && !Type->isDependentType() &&
+         !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+         !Type->isAtomicType() &&
+         Type.getAddressSpace() == LangAS::Default && Type->isRecordType();
+}
+
 static bool utilityConditionalMoveMutableRecordReferenceResults(
     Adapter &A, QualType ParameterType,
     const std::vector<const CXXRecordDecl *> &Results) {
@@ -3876,6 +3885,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
   bool HasUsableArrayConversion = false;
+  bool HasUsableNonlvalueRecordConversion = false;
   std::vector<const CXXRecordDecl *> MutableRecordLvalueResults;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
@@ -3892,6 +3902,8 @@ static bool utilityMutableCopyConditionalMoveSource(
         const auto Result = ConversionType.getNonReferenceType();
         HasUsableNonrecordConversion |= !Result->isRecordType();
         HasUsableArrayConversion |= Result->isArrayType();
+        HasUsableNonlvalueRecordConversion |=
+            Result->isRecordType() && !ConversionType->isLValueReferenceType();
         if (ConversionType->isLValueReferenceType() && Result->isRecordType() &&
             !Result.isConstQualified())
           MutableRecordLvalueResults.push_back(Result->getAsCXXRecordDecl());
@@ -3929,6 +3941,12 @@ static bool utilityMutableCopyConditionalMoveSource(
     // also be excluded by the completed distinct-record proof above. Check
     // every such result against this constructor's first parameter; one
     // matching or otherwise unproven result retains its separate requirements.
+    // A record rvalue reference, including a const one, cannot bind a record
+    // lvalue result. A nonrecord result would require another user-defined
+    // conversion. Any usable record value or rvalue result keeps its separate
+    // binding requirements. A parameter-record constructor could still create
+    // a temporary directly from the source; the constructor-shape check below
+    // must independently exclude that path before admitting an rvalue reference.
     // Retain every original signature below, including
     // argument-conversion sources consumed before an access failure.
     // A later redeclaration can add defaults, so use its current minimum arity
@@ -3950,7 +3968,10 @@ static bool utilityMutableCopyConditionalMoveSource(
                 A, Constructor->getParamDecl(0)->getType())) ||
            utilityConditionalMoveMutableRecordReferenceResults(
                A, Constructor->getParamDecl(0)->getType(),
-               MutableRecordLvalueResults));
+               MutableRecordLvalueResults) ||
+           (!HasUsableNonlvalueRecordConversion &&
+            utilityConditionalMoveRvalueRecordReferenceParameter(
+                Constructor->getParamDecl(0)->getType())));
       RequireUnavailableDestruction =
           Latest->getMinRequiredArguments() <= 1 &&
           !ExcludedConversionResults;

@@ -1598,8 +1598,8 @@ or `operator Argument&&() const`: record prvalues and xvalues cannot bind that
 mutable lvalue reference. Scalar, pointer and array-reference results cannot
 bind it either, and a returned record's own conversion would require a second
 user-defined conversion. Const record values and rvalue references follow the
-same exclusion. Const lvalue-reference, rvalue-reference and by-value record
-parameters keep their separate requirements.
+same exclusion. Const lvalue-reference and by-value record parameters keep
+their separate requirements. Record rvalue references use the rule below.
 
 A const record lvalue result is also excluded: `operator const Argument&() const`
 cannot supply `C(Argument&)` because binding cannot discard the result's `const`.
@@ -1647,6 +1647,31 @@ conversion to a distinct record reference preserves its original object too;
 separately converting that reference to an argument reference checks both
 selected calls, their bindings and mutations. Copies of the intermediate
 record and temporary cleanup retain their ordinary lifetime behavior.
+
+A record rvalue-reference parameter, whether mutable or const, excludes live
+source conversions when none returns a record value or rvalue reference.
+For example, neither `C(Argument&&)` nor `C(const Argument&&)` can bind a result
+from `operator Argument&() const` or `operator const Argument&() const`.
+Other record lvalues cannot supply that binding either, and scalar, pointer
+or array-reference results would require another user-defined conversion.
+An existing usable record value or rvalue result prevents this exclusion,
+even if its record identity or qualification would need a further proof.
+
+This result check does not by itself exclude construction: an
+`Argument(const C&)` could create a temporary directly from the source and
+bind the rvalue reference. Every parameter-record constructor must also
+satisfy the constructor-shape rules below. For example, a plain explicit
+argument constructor cannot supply that implicit conversion; a scalar
+argument constructor cannot consume the source through an additional source
+conversion. The existing completion, signature, alias, default and exception
+checks remain in place, including actual owner access and lazy template
+bodies. Parameter definitions already completed by the native query are
+retained; the adapter does not request completion. Actual construction
+through an explicitly moved existing argument
+preserves its identity and mutations without introducing an argument move.
+Separately copying or moving an argument value performs those operations and
+their required cleanup, and a selected explicit rvalue-reference conversion
+retains its call and binding.
 
 A completed source-owned record with no bases or an admitted empty single-base
 chain can also be the first parameter by value, by const lvalue reference, or by
