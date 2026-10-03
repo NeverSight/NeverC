@@ -3192,12 +3192,14 @@ static bool utilityConditionalMoveUnrelatedAccess(
       // destructors and conversions, inherit their actual semantic class
       // context, including out-of-line definitions.
       const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+      const DeclContext *NextContext = Function->getDeclContext();
       if (Function->isInvalidDecl() || OwnerFunctions.size() >= 64 ||
           Function->isDependentContext() || Function->getType().isNull() ||
           Function->getType()->isDependentType() ||
           (Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
            !(Method ? concreteMemberFunction(Method)
-                    : concreteFreeFunctionTemplate(Function))) ||
+                    : (concreteFreeFunctionTemplate(Function) ||
+                       concreteFriendFunction(Function)))) ||
           !Function->doesThisDeclarationHaveABody() ||
           !A.S.owns(A.Sources, Function->getLocation()))
         return false;
@@ -3207,10 +3209,30 @@ static bool utilityConditionalMoveUnrelatedAccess(
             (Method->getLexicalDeclContext() != Method->getParent() &&
              !Method->getLexicalDeclContext()->isFileContext()))
           return false;
-      } else if (Function->getKind() != Decl::Function ||
-                 !Function->getDeclContext()->isFileContext() ||
-                 !Function->getLexicalDeclContext()->isFileContext())
-        return false;
+      } else {
+        if (Function->getKind() != Decl::Function ||
+            !Function->getDeclContext()->isFileContext())
+          return false;
+        if (const auto *Lexical =
+                dyn_cast<CXXRecordDecl>(Function->getLexicalDeclContext())) {
+          const auto *Definition = Lexical->getDefinition();
+          if (!Function->getFriendObjectKind() || !Definition ||
+              Lexical->isInvalidDecl() || Definition->isInvalidDecl() ||
+              Definition->isDependentContext() || Definition->isUnion() ||
+              Definition->isLocalClass() || Definition->isLambda() ||
+              Definition->getNumBases() != 0 ||
+              !A.S.owns(A.Sources, Lexical->getLocation()) ||
+              !A.S.owns(A.Sources, Definition->getLocation()))
+            return false;
+          A.chargeExpansion(1, Lexical->getLocation());
+          // Match SemaAccess's effective context: a nested inline friend has
+          // no implicit enclosing-class privileges. Its own canonical function
+          // (and primary, if any) still participates in explicit friend grants.
+          if (!isa<CXXRecordDecl>(Lexical->getDeclContext()))
+            NextContext = Lexical;
+        } else if (!Function->getLexicalDeclContext()->isFileContext())
+          return false;
+      }
       A.chargeExpansion(1, Function->getLocation());
       if (const auto *Primary = Function->getPrimaryTemplate()) {
         const auto *Pattern = Primary->getTemplatedDecl();
@@ -3230,7 +3252,7 @@ static bool utilityConditionalMoveUnrelatedAccess(
       // A method of a local class can lead to more enclosing functions. Keep
       // each one: friendship granted to any outer function remains effective.
       OwnerFunctions.push_back(Function);
-      Context = Function->getDeclContext();
+      Context = NextContext;
       continue;
     }
     const auto *Scope = dyn_cast<CXXRecordDecl>(Context);

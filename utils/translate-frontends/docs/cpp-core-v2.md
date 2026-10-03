@@ -1092,7 +1092,17 @@ with a class, and completed concrete free or member function-template
 specializations. Explicit specializations and instantiation definitions retain
 their actual contexts. A function-template specialization retains its source-owned
 primary and the exact templated function; this proof does not instantiate a body.
-A free function's semantic and lexical contexts must both be namespaces.
+A free function's semantic context must be a namespace. Its lexical context may
+also be a namespace, or a complete, concrete, source-owned class with no bases
+when the function is an inline friend defined there. This includes supported
+ordinary friends, friends instantiated with a class, and concrete friend-template
+specializations. A non-nested inline friend's actual lexical class participates
+in the access checks. A nested inline friend instead continues directly to its
+semantic namespace, following C++17's nested-friend access rule: its local classes
+do not implicitly inherit the lexical class's or enclosing classes' privileges.
+Its canonical function and template primary still participate in explicit friend
+grants. The written/copied friend declarations, exact selected body source and
+lexical context retain their ordinary source checks.
 An ordinary method follows its semantic parent class, whether defined inside
 that class or at namespace scope. This includes static methods and supported
 nonstatic methods with cv/ref qualifiers, as well as supported constructors,
@@ -1147,8 +1157,8 @@ is checked even if another owner already used the same member type.
 A friend naming the actual owner or any enclosing class, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
 specialization friends and unsupported dependent class-template grants), dependent
-or incomplete function-template contexts, class-defined friend functions, and
-inheritance in any enclosing scope require their own access proof.
+or incomplete function-template contexts, and inheritance in retained class scopes
+or the lexical friend class require their own access proof.
 Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
