@@ -3627,11 +3627,12 @@ static bool utilityRecordConditionalMoveSource(
     A.chargeExpansion(1, Record->getLocation());
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
-    // Each nontrivial node keeps exact public mutable or const lvalue copies
+    // Each nontrivial node keeps exact mutable or const lvalue copies
     // and exact mutable or const rvalue moves. Mutable-only copies exclude
     // alternative conversion paths. Their graph supplies the declarations
-    // behind an enclosing implicit mutable copy. Public copies
-    // may be deleted; defaulted moves may be ignored in favor of copying.
+    // behind an enclosing implicit mutable copy. Copies and moves may have
+    // any access or be deleted; the pinned traits retain each owning context's
+    // access decision. Defaulted moves may be ignored in favor of copying.
     // Keep the SDK's result without instantiating hypothetical operations.
     for (const auto *Declaration : Record->decls())
       if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
@@ -3669,7 +3670,6 @@ static bool utilityRecordConditionalMoveSource(
                  : A.Context.getRValueReferenceType(Object);
       if ((!A.Context.hasSameType(Parameter, ConstParameter) &&
            !A.Context.hasSameType(Parameter, MutableParameter)) ||
-          (IsCopy && Constructor->getAccess() != AS_public) ||
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
       if (IsCopy) {

@@ -920,11 +920,11 @@ retain separate decision-source requirements. Non-owning
 pointer/reference fields do not consume their referents' constructor graph.
 
 Records with ordinary value constructors also supply conditional-move query
-sources when they have exact public `const Record&` copies, optionally alongside
-exact public `Record&` copies, and moves whose first parameter is exactly
+sources when they have exact `const Record&` copies, optionally alongside
+exact `Record&` copies, and moves whose first parameter is exactly
 `Record&&` or `const Record&&`. These members may
 be implicit, explicitly defaulted where permitted, ordinary or explicitly
-deleted; moves may also be private or protected.
+deleted; copies and moves may also be private or protected.
 A copy-only record is included. An implicit or defaulted copy may be deleted by
 its fields, including an uncopyable value member or an rvalue-reference field.
 The pinned builtin preserves its exact viability and overload decision,
@@ -973,6 +973,17 @@ executes its own overload. Every copy candidate supplies its original signature
 and defaults. Ambiguity alone does not exempt uninstantiated owned defaults
 from their source checks.
 
+The queried record's construction trait still uses unrelated access. Member
+copying retains its owner's original access context. A private or protected
+member copy can delete an unrelated owner's implicit or defaulted
+copy while a friend or nested owner can still copy the same member type. A
+private mutable copy can also coexist with an available public const copy and
+retain the const-reference fallback. The graph retains every copy declaration,
+including inaccessible and deleted overloads; it does not make them callable.
+Actual construction still requires valid access and checks the selected body,
+defaults and cleanup. Private or protected access alone does not exempt an
+owned copy's uninstantiated default arguments from their source requirements.
+
 This record proof accepts implicit, defaulted or ordinary public, non-deleted
 destruction. Its bounded owning graph also includes nontrivial source-owned
 value members, nested records and fixed-array elements. Every nontrivial node
@@ -982,14 +993,14 @@ written parameter and exception sources. The graph supplies inferred exception
 and defaulted-deletion sources, including an inaccessible member move that
 deletes an enclosing defaulted move and permits a copy instead.
 
-A nontrivial member's explicitly deleted public `const Member&` copy can delete
+A nontrivial member's explicitly deleted `const Member&` copy can delete
 enclosing implicit or defaulted copies through nested members and fixed arrays.
 Such owners retain the pinned `T&&` branch for mutable and const operands, even
 when moving throws or is also deleted. Every deleted declaration still supplies
 its original parameter and exception sources. The query returns an unchanged
 reference; actual construction from it requires a viable selected constructor.
 
-The owning graph also admits public copies taking exactly mutable
+The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
 or deleted. A node with only exact mutable copies has no bases or conversion
 functions. Besides its
@@ -1020,7 +1031,7 @@ be copied from a const object regardless of those defaults, so nested members
 and fixed arrays retain the pinned rvalue-reference result. This includes
 const-copy or deleted-const-copy members alongside the mutable-copy member,
 and members whose move is deleted or inaccessible. Every nontrivial node still
-has public exact const or mutable copies,
+has exact const or mutable copies,
 exact mutable or const rvalue moves, and an accessible nondeleted destructor.
 All parameter types, aliases, array bounds,
 exception specifications and redeclarations remain source dependencies.
@@ -1029,12 +1040,13 @@ moves check and evaluate the selected member defaults and bodies, preserving
 reference mutations and parameter-temporary destruction. A root with an
 available const copy uses the resolved-default source proof below.
 
-The same owned extra-parameter support applies when every exact public
+The same owned extra-parameter support applies when every exact
 const-copy candidate at the root is already marked deleted. This includes
 implicit and explicitly defaulted copies deleted by nested members, fixed-array
-elements or an rvalue reference field. The graph still checks the original declarations behind that
-deletion, including each member's copy access and destructor. It does not
-declare or instantiate a hypothetical copy to discover whether it is deleted.
+elements or an rvalue reference field. The graph still checks the original
+declarations behind that deletion, including each member's copy access and
+destructor. It does not declare or instantiate a hypothetical copy to discover
+whether it is deleted.
 Deletion of every exact const-copy prevents const copying regardless of member
 defaults, including defaults on another member with an available const-copy.
 Actual movement can therefore move one member and copy another; both selected
@@ -1126,7 +1138,7 @@ apply through implicit/defaulted operations, nested members and fixed arrays.
 
 Non-owning pointer/reference fields keep their original bindings. Constructor
 templates, inherited constructors, volatile copy/move parameters and nontrivial
-members with inaccessible copies/destructors
+members with inaccessible or deleted destructors
 retain separate requirements. SDK members and
 nontrivial bases retain their existing source and layout requirements. Mutable
 and const operands preserve the pinned `T&&` or `const T&` result, including
