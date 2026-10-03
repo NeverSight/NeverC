@@ -1107,9 +1107,19 @@ friend-template source events, template parameters, signatures, selected default
 and bodies remain checked. Unused generic bodies remain lazy. Friendship still
 grants the free function's own specializations their normal access; a copy or move
 actually selected there checks its defaults and body as usual.
+An ordinary class-template friend is also unrelated when its resolved canonical
+primary differs from the immediate owner's primary. A grant to the owner's
+primary includes its partial and full specializations, so those owners do not
+qualify for the lazy-default access exception. Ordinary non-template owners have
+no matching primary. Namespace aliases, redeclarations and supported member
+template targets use the resolved identities; a matching spelling alone does
+not establish a grant. Every original and copied friend header, inherited
+default and required target definition keeps its ordinary source checks, and
+selected friend methods keep their access and body checks. Each ownership edge
+is checked even if another owner already used the same member type.
 A friend naming the actual owner, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
-specialization friends and class templates), and nested
+specialization friends and unsupported dependent class-template grants), and nested
 or derived owners require their own access proof. Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by

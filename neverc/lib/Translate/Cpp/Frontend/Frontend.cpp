@@ -3181,8 +3181,8 @@ static bool utilityConditionalMoveUnrelatedAccess(
   if (Owner->getNumBases() != 0 || !Owner->getDeclContext()->isFileContext())
     return false;
   // A namespace-scope owner with no bases cannot acquire class-friend access
-  // through a distinct record. Use resolved canonical identities, including
-  // aliases and substituted friend types. A free function or function-template
+  // through a distinct record or a different class template's specializations.
+  // Use resolved canonical identities. A free function or function-template
   // friend cannot name that owner's constructors either. Other friend shapes need
   // their own proof; ordinary traversal still checks each written friend source.
   for (const auto *Friend : Record->friends()) {
@@ -3193,6 +3193,25 @@ static bool utilityConditionalMoveUnrelatedAccess(
         !A.S.owns(A.Sources, Friend->getLocation()))
       return false;
     if (const auto *Target = Friend->getFriendDecl()) {
+      if (const auto *Template = dyn_cast<ClassTemplateDecl>(Target)) {
+        const auto *Pattern = Template->getTemplatedDecl();
+        if (Template->isInvalidDecl() || Template->hasAttrs() ||
+            !A.S.owns(A.Sources, Template->getLocation()) ||
+            Pattern->isInvalidDecl() ||
+            !A.S.owns(A.Sources, Pattern->getLocation()) ||
+            Pattern->getDescribedClassTemplate() != Template ||
+            Pattern->getDeclContext() != Template->getDeclContext())
+          return false;
+        // A grant to a primary includes its partial and full specializations.
+        // Match Sema's actual primary, not the selected body or written name.
+        const auto *OwnerTemplate = Owner->getDescribedClassTemplate();
+        if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner))
+          OwnerTemplate = Instance->getSpecializedTemplate();
+        if (OwnerTemplate && OwnerTemplate->getCanonicalDecl() ==
+                                 Template->getCanonicalDecl())
+          return false;
+        continue;
+      }
       const auto *Template = dyn_cast<FunctionTemplateDecl>(Target);
       const auto *Function = Template ? Template->getTemplatedDecl()
                                       : dyn_cast<FunctionDecl>(Target);
