@@ -920,10 +920,10 @@ retain separate decision-source requirements. Non-owning
 pointer/reference fields do not consume their referents' constructor graph.
 
 Records with ordinary value constructors also supply conditional-move query
-sources when they have one exact public `const Record&` copy and at most one
-of each exact move signature, `Record&&` and `const Record&&`. These members may
-be implicit, explicitly defaulted where permitted, ordinary or explicitly deleted; the move
-may also be private or protected.
+sources when they have one exact public `const Record&` copy and moves whose
+first parameter is exactly `Record&&` or `const Record&&`. These members may
+be implicit, explicitly defaulted where permitted, ordinary or explicitly
+deleted; moves may also be private or protected.
 A copy-only record is included. An implicit or defaulted copy may be deleted by
 its fields, including an uncopyable value member or an rvalue-reference field.
 The pinned builtin preserves its exact viability and overload decision,
@@ -941,8 +941,15 @@ supplies its original signatures and default sources; an unused overload does
 not hide resolved defaults, parameter types or exception expressions. Const
 queries may keep an exact mutable move's uninstantiated defaults lazy under
 the binding proof below while still checking the available const-rvalue move.
-Additional moves sharing a first-parameter qualification and volatile-qualified
-move parameters retain their separate requirements.
+Several moves can share a first-parameter qualification, distinguished by
+their extra defaulted parameters. The pinned traits retain ambiguity and its
+copy fallback, including deleted or inaccessible candidates participating in
+overload resolution. An ambiguous member move can delete an owner's defaulted
+move and cause the owner to copy instead. Actual construction with explicit
+extra arguments checks and executes its selected overload. Every candidate
+still supplies its original signature and defaults; ambiguity alone does not
+exempt uninstantiated available defaults from the proof below. Volatile move
+parameters and multiple copy overloads retain their separate requirements.
 
 This record proof accepts implicit, defaulted or ordinary public, non-deleted
 destruction. Its bounded owning graph also includes nontrivial source-owned
@@ -963,7 +970,7 @@ reference; actual construction from it requires a viable selected constructor.
 The owning graph also admits a single public copy taking exactly mutable
 `Record&` at a nontrivial node. That copy may be implicit, defaulted, ordinary
 or deleted. Each such node has no bases or conversion functions. Besides its
-exact move, it may have nonvariadic zero-parameter default constructors or
+exact moves, it may have nonvariadic zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
 by value or reference, a reference to an admitted fixed array, or a mutable
 lvalue reference to an admitted record. A source-owned record parameter by
@@ -990,9 +997,9 @@ be copied from a const object regardless of those defaults, so nested members
 and fixed arrays retain the pinned rvalue-reference result. This includes
 const-copy or deleted-const-copy members alongside the mutable-copy member,
 and members whose move is deleted or inaccessible. Every nontrivial node still
-has one public exact const or mutable copy, at most one move of each exact
-rvalue qualification, and an accessible nondeleted destructor. All parameter
-types, aliases, array bounds,
+has one public exact const or mutable copy, exact mutable or const rvalue
+moves, and an accessible nondeleted destructor. All parameter types, aliases,
+array bounds,
 exception specifications and redeclarations remain source dependencies.
 Unused template defaults and bodies stay lazy. Actual generated copies and
 moves check and evaluate the selected member defaults and bodies, preserving
@@ -1058,7 +1065,7 @@ destruction.
 
 Owned fields declared const have the same binding proof when their immediate
 owner's copy and move constructors are already defaulted, whether implicit or
-explicit. Either move overload may be absent, but every declared move must be
+explicit. Moves may be absent, but every declared move overload must be
 defaulted for this owning proof. A defaulted owning operation preserves
 the source field's declared const qualification, including fixed-array elements
 and qualifiers introduced by aliases. Non-mutable fields also inherit a proven

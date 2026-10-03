@@ -3628,7 +3628,7 @@ static bool utilityRecordConditionalMoveSource(
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
     // Each nontrivial node keeps one exact public const or mutable copy and
-    // at most one exact move per rvalue qualification. Mutable copies exclude
+    // exact mutable or const rvalue moves. Mutable copies exclude
     // alternative conversion paths. Their graph supplies the declarations
     // behind an enclosing implicit mutable copy. A public copy may be deleted;
     // defaulted moves may be ignored in favor of copying. Preserve the SDK's
@@ -3645,8 +3645,8 @@ static bool utilityRecordConditionalMoveSource(
     const bool UnrelatedAccess =
         !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
                    Owner->getDeclContext()->isFileContext());
-    const CXXConstructorDecl *Copy = nullptr, *Move = nullptr,
-                             *ConstMove = nullptr;
+    const CXXConstructorDecl *Copy = nullptr;
+    bool DefaultedMoves = true;
     for (const auto *Constructor : Record->ctors()) {
       A.chargeExpansion(1, Constructor->getLocation());
       if (Constructor->isInheritingConstructor())
@@ -3672,13 +3672,16 @@ static bool utilityRecordConditionalMoveSource(
           (IsCopy && Constructor->getAccess() != AS_public) ||
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
-      auto *&Selected = IsCopy ? Copy
-                        : A.Context.hasSameType(Parameter, ConstParameter)
-                            ? ConstMove
-                            : Move;
-      if (Selected && Selected != Constructor->getCanonicalDecl())
-        return false;
-      Selected = Constructor->getCanonicalDecl();
+      if (IsCopy) {
+        if (Copy && Copy != Constructor->getCanonicalDecl())
+          return false;
+        Copy = Constructor->getCanonicalDecl();
+      } else {
+        // Extra defaulted parameters can create ambiguous move overloads.
+        // Every candidate keeps its sources; the pinned trait retains the
+        // ambiguity result. No single move describes the owner's bindings.
+        DefaultedMoves &= Constructor->getCanonicalDecl()->isDefaulted();
+      }
     }
     if (!Copy)
       return false;
@@ -3714,9 +3717,7 @@ static bool utilityRecordConditionalMoveSource(
     // a const owner's qualification. Its exact mutable rvalue move cannot
     // bind that source. User-written owning operations need a separate
     // argument-source proof; never infer their member bindings from storage.
-    const bool DefaultedOwner =
-        Copy->isDefaulted() && (!Move || Move->isDefaulted()) &&
-        (!ConstMove || ConstMove->isDefaulted());
+    const bool DefaultedOwner = Copy->isDefaulted() && DefaultedMoves;
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
                 RootConstCopyUnavailable, Record, /*ConstObject=*/false))
