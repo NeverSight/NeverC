@@ -491,6 +491,31 @@ static void test_addrport(void) {
     ASSERT_EQ(ap.port, 80);
     ASSERT_EQ(neverc_netip_parse_addrport("[::1]:00080", &ap), 0);
     ASSERT_EQ(ap.port, 80);
+    /* Go parses the port with strconv.ParseUint(port, 10, 16): any number of
+     * leading zeros is accepted as long as the value fits in 16 bits. */
+    ASSERT_EQ(neverc_netip_parse_addrport("1.2.3.4:00000000000080", &ap), 0);
+    ASSERT_EQ(ap.port, 80);
+    ASSERT_TRUE(ap.addr.valid && ap.addr.is_v4);
+    ASSERT_EQ(neverc_netip_parse_addrport("[::1]:000000000000443", &ap), 0);
+    ASSERT_EQ(ap.port, 443);
+    ASSERT_EQ(neverc_netip_parse_addrport("1.2.3.4:00000000000", &ap), 0);
+    ASSERT_EQ(ap.port, 0);
+    {
+        char padded[64];
+        memset(padded, 0, sizeof(padded));
+        memcpy(padded, "1.2.3.4:", 8);
+        memset(padded + 8, '0', 40);
+        memcpy(padded + 48, "65535", 5);
+        ASSERT_EQ(neverc_netip_parse_addrport(padded, &ap), 0);
+        ASSERT_EQ(ap.port, 65535);
+        padded[52] = '6';                   /* ...000065536 */
+        ASSERT_EQ(neverc_netip_parse_addrport(padded, &ap), -1);
+        ASSERT_TRUE(!ap.addr.valid);
+    }
+    ASSERT_EQ(neverc_netip_parse_addrport("1.2.3.4:99999999999", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("1.2.3.4:4294967376", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("1.2.3.4:+80", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("1.2.3.4: 80", &ap), -1);
     neverc_netip_addrport_t invalid;
     memset(&invalid, 0, sizeof(invalid));
     ASSERT_EQ(neverc_netip_addrport_string(&invalid, buf, sizeof(buf)), -1);

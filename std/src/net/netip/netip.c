@@ -364,7 +364,9 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
 
     const char *port_str = colon + 1;
     size_t plen = slen - (size_t)(port_str - s);
-    if (plen == 0 || plen > 10) return -1;
+    /* Go parses the port as a base-10 uint16: leading zeros of any length
+     * are fine, and the per-digit overflow check below bounds the value. */
+    if (plen == 0) return -1;
     unsigned port = 0;
     for (size_t i = 0; i < plen; i++) {
         if (port_str[i] < '0' || port_str[i] > '9') return -1;
