@@ -1087,8 +1087,12 @@ delete an enclosing defaulted move. For an owned member's inaccessible copy/move
 its immediate owner must be declared at namespace scope with no bases. The
 member may have ordinary class-type friends when every friend resolves to a
 different canonical class from that owner, including aliases and substituted
-friend types. Each written friend declaration and type keeps its ordinary source
-checks, including a supported complete record or checked incomplete class identity.
+friend types. Resolved nonclass friend types, such as integers, enums, `void` or
+pointer aliases, grant no access and do not prevent this proof. This also applies
+to substituted nonclass types and mixtures of unrelated class and nonclass friends.
+Each written friend declaration and type keeps its ordinary source checks,
+including a supported complete record or checked incomplete class identity;
+unsupported types and sources erased by an alias remain rejected.
 A friend naming the actual owner, unresolved or other friend shapes
 (including function and class-template friends), and nested or derived owners
 require their own access proof. Each member/owner pair is checked independently,

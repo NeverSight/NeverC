@@ -3198,6 +3198,10 @@ static bool utilityConditionalMoveUnrelatedAccess(
         Info->getType()->isInstantiationDependentType() ||
         !A.S.owns(A.Sources, Info->getTypeLoc().getBeginLoc()))
       return false;
+    // A resolved non-class friend grants no access. Ordinary traversal still
+    // checks its written type, including any erased alias arguments.
+    if (!Info->getType()->isRecordType())
+      continue;
     const auto *FriendRecord = Info->getType()->getAsCXXRecordDecl();
     if (!FriendRecord || FriendRecord->isInvalidDecl() ||
         FriendRecord->getCanonicalDecl() == Owner->getCanonicalDecl())
