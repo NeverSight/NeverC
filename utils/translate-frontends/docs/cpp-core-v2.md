@@ -1441,6 +1441,23 @@ Unused template defaults and bodies stay lazy. Actual construction from
 `Other` checks and evaluates the selected constructors and defaults, including
 copies, moves, reference bindings, mutations and temporary destruction.
 
+An ordinary nonvariadic parameter-record constructor may instead take a mutable
+or const record rvalue reference, including a reference to the queried record
+itself. Neither `Argument(C&&)` nor `Argument(const C&&)` can bind the copy
+trait's `const C&` lvalue. Aliases preserve this reference category and record
+identity; later defaults and an admitted empty base chain do not change the
+binding. This proof applies only to the implicit conversion to `Argument`.
+For example, `C(Argument&&)` can still consume a temporary made by
+`Argument(const C&)`, so a root constructor's rvalue-reference parameter alone
+does not prove const-copy unavailability. Existing source, completion and
+exception checks still apply to every written signature. Unused template
+defaults and bodies stay lazy; defaults consumed by a trait query or actual
+construction retain their checks. In particular, a query for `const C` may
+consider `Argument(const C&&)` while checking construction from a const rvalue.
+Actual construction from an rvalue evaluates selected defaults and preserves
+the bound object, copy/move effects and destruction. Mutable-copy nodes in
+owned records and fixed arrays use the same const-lvalue binding proof.
+
 An ordinary nonvariadic parameter-record constructor with a plain C++17
 `explicit` specifier cannot supply the implicit argument conversion either.
 For example, `explicit Argument(const C&, int = 3)` does not make `C(Argument)`

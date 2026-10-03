@@ -3495,7 +3495,7 @@ static bool utilityConditionalMoveExplicitArgumentConstructor(
   return Specifier.isExplicit() && !Specifier.getExpr();
 }
 
-static bool utilityConditionalMoveDistinctArgumentConstructor(
+static bool utilityConditionalMoveRecordArgumentConstructor(
     const CXXConstructorDecl *Constructor, const CXXRecordDecl *SourceRecord) {
   if (!Constructor || !SourceRecord || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
@@ -3503,7 +3503,8 @@ static bool utilityConditionalMoveDistinctArgumentConstructor(
       Constructor->getDescribedFunctionTemplate() ||
       Constructor->getPrimaryTemplate() || Constructor->getNumParams() == 0)
     return false;
-  const auto Type = Constructor->getParamDecl(0)->getType().getNonReferenceType();
+  const auto ParameterType = Constructor->getParamDecl(0)->getType();
+  const auto Type = ParameterType.getNonReferenceType();
   if (Type->isDependentType() || Type.isVolatileQualified() ||
       Type.isRestrictQualified() || Type->isAtomicType() ||
       Type.getAddressSpace() != LangAS::Default)
@@ -3512,10 +3513,16 @@ static bool utilityConditionalMoveDistinctArgumentConstructor(
   // The queried source has no bases or conversion functions. A distinct
   // record cannot consume it by standard conversion, and converting to this
   // constructor's parameter before invoking the constructor would require
-  // two user-defined conversions. Compare canonical types without inspecting
-  // another constructor set, completing a class or instantiating a body.
-  return ParameterRecord && ParameterRecord->getCanonicalDecl() !=
-                                SourceRecord->getCanonicalDecl();
+  // two user-defined conversions. A record rvalue reference also cannot bind
+  // the const lvalue, even when it refers to the same canonical source record.
+  // This proof applies only to an implicit parameter-record conversion: a
+  // constructor of the queried record can bind a converted temporary instead.
+  // Do not inspect another constructor set, complete a class or instantiate a
+  // body to decide this binding.
+  return ParameterRecord &&
+         (ParameterType->isRValueReferenceType() ||
+          ParameterRecord->getCanonicalDecl() !=
+              SourceRecord->getCanonicalDecl());
 }
 
 static bool utilityConditionalMoveValueConstructor(
@@ -3539,7 +3546,8 @@ static bool utilityConditionalMoveValueConstructor(
   // copy/move parameters do not change that first self-reference; retain their
   // complete signatures without evaluating an unused default. Its other
   // constructors may exclude that source by arity, a direct first-parameter
-  // proof, a plain explicit specifier or a distinct record first parameter.
+  // proof, a plain explicit specifier, a distinct record first parameter or a
+  // record rvalue reference that cannot bind the const lvalue.
   // Inspect only this existing constructor set; do not recurse into another
   // parameter record, complete a class, or instantiate a hypothetical body or
   // default argument.
@@ -3564,7 +3572,7 @@ static bool utilityConditionalMoveValueConstructor(
          !Candidate->isCopyOrMoveConstructor() &&
          !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
          !utilityConditionalMoveDirectConstructor(A, Candidate) &&
-         !utilityConditionalMoveDistinctArgumentConstructor(
+         !utilityConditionalMoveRecordArgumentConstructor(
              Candidate, Constructor->getParent())) ||
         !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
       return false;
@@ -3585,12 +3593,12 @@ static bool utilityLazyConditionalMoveSignatureSource(
       utilityConditionalMoveExplicitArgumentConstructor(Constructor);
   // This recognizes only an already-authorized written signature. The
   // adapter's decision proof separately checks the queried source record.
-  const bool DistinctArgumentConstructor =
-      Constructor && utilityConditionalMoveDistinctArgumentConstructor(
+  const bool RecordArgumentConstructor =
+      Constructor && utilityConditionalMoveRecordArgumentConstructor(
                          Constructor, Constructor->getParent());
   const bool OrdinaryConstructor =
       DefaultConstructor || ValueConstructor || ExplicitArgumentConstructor ||
-      DistinctArgumentConstructor;
+      RecordArgumentConstructor;
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||
