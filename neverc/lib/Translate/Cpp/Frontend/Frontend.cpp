@@ -3495,6 +3495,29 @@ static bool utilityConditionalMoveExplicitArgumentConstructor(
   return Specifier.isExplicit() && !Specifier.getExpr();
 }
 
+static bool utilityConditionalMoveDistinctArgumentConstructor(
+    const CXXConstructorDecl *Constructor, const CXXRecordDecl *SourceRecord) {
+  if (!Constructor || !SourceRecord || Constructor->isInvalidDecl() ||
+      Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
+      Constructor->isInheritingConstructor() ||
+      Constructor->getDescribedFunctionTemplate() ||
+      Constructor->getPrimaryTemplate() || Constructor->getNumParams() == 0)
+    return false;
+  const auto Type = Constructor->getParamDecl(0)->getType().getNonReferenceType();
+  if (Type->isDependentType() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type->isAtomicType() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  const auto *ParameterRecord = Type->getAsCXXRecordDecl();
+  // The queried source has no bases or conversion functions. A distinct
+  // record cannot consume it by standard conversion, and converting to this
+  // constructor's parameter before invoking the constructor would require
+  // two user-defined conversions. Compare canonical types without inspecting
+  // another constructor set, completing a class or instantiating a body.
+  return ParameterRecord && ParameterRecord->getCanonicalDecl() !=
+                                SourceRecord->getCanonicalDecl();
+}
+
 static bool utilityConditionalMoveValueConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor,
     std::vector<const CXXMethodDecl *> *Signatures = nullptr) {
@@ -3516,9 +3539,10 @@ static bool utilityConditionalMoveValueConstructor(
   // copy/move parameters do not change that first self-reference; retain their
   // complete signatures without evaluating an unused default. Its other
   // constructors may exclude that source by arity, a direct first-parameter
-  // proof or a plain explicit specifier. Inspect only this existing constructor
-  // set; do not recurse into another parameter record, complete a class, or
-  // instantiate a hypothetical body or default argument.
+  // proof, a plain explicit specifier or a distinct record first parameter.
+  // Inspect only this existing constructor set; do not recurse into another
+  // parameter record, complete a class, or instantiate a hypothetical body or
+  // default argument.
   const auto *ParameterRecord = Type->getAsCXXRecordDecl();
   ParameterRecord = ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
   if (!ParameterRecord || ParameterRecord->isInvalidDecl() ||
@@ -3539,7 +3563,9 @@ static bool utilityConditionalMoveValueConstructor(
         (Candidate->getNumParams() != 0 &&
          !Candidate->isCopyOrMoveConstructor() &&
          !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
-         !utilityConditionalMoveDirectConstructor(A, Candidate)) ||
+         !utilityConditionalMoveDirectConstructor(A, Candidate) &&
+         !utilityConditionalMoveDistinctArgumentConstructor(
+             Candidate, Constructor->getParent())) ||
         !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
       return false;
   }
@@ -3557,8 +3583,14 @@ static bool utilityLazyConditionalMoveSignatureSource(
       utilityConditionalMoveValueConstructor(A, Constructor);
   const bool ExplicitArgumentConstructor =
       utilityConditionalMoveExplicitArgumentConstructor(Constructor);
+  // This recognizes only an already-authorized written signature. The
+  // adapter's decision proof separately checks the queried source record.
+  const bool DistinctArgumentConstructor =
+      Constructor && utilityConditionalMoveDistinctArgumentConstructor(
+                         Constructor, Constructor->getParent());
   const bool OrdinaryConstructor =
-      DefaultConstructor || ValueConstructor || ExplicitArgumentConstructor;
+      DefaultConstructor || ValueConstructor || ExplicitArgumentConstructor ||
+      DistinctArgumentConstructor;
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||

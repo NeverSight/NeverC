@@ -1423,9 +1423,23 @@ hypothetical conversion or default construction. Actual construction checks and
 evaluates selected defaults, preserves scalar/array/record reference bindings,
 and retains mutations and temporary cleanup. This check does not recursively
 inspect the constructors of another record used as the parameter record's
-first parameter; record values, const record lvalue references and record
-rvalue references at that further level retain separate requirements unless
-the constructor has the plain `explicit` specifier described below.
+first parameter.
+
+An ordinary nonvariadic parameter-record constructor can also take a distinct
+admitted record as its first parameter, by value or reference. For example,
+`Argument(const Other&)` cannot convert the queried `const C&` when `Other`
+and `C` are different canonical record types and `C` has no bases or conversion
+functions. Even if `Other(const C&)` exists, implicitly converting `C` to
+`Argument` through it would require two user-defined conversions. A single
+implicit conversion sequence cannot perform both. This check compares the
+existing record identities without inspecting `Other`'s constructors or
+instantiating a hypothetical conversion. Aliases of `C` retain the same
+identity and do not qualify as distinct records. Every parameter type and
+original signature still passes the ordinary source and completion checks;
+this proof does not complete an otherwise incomplete `Other` specialization.
+Unused template defaults and bodies stay lazy. Actual construction from
+`Other` checks and evaluates the selected constructors and defaults, including
+copies, moves, reference bindings, mutations and temporary destruction.
 
 An ordinary nonvariadic parameter-record constructor with a plain C++17
 `explicit` specifier cannot supply the implicit argument conversion either.
