@@ -1015,8 +1015,9 @@ The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
 or deleted. A node with only exact mutable copies has no bases. Its conversion
 functions must satisfy the exclusions below for a const lvalue or the ordinary
-constructors must satisfy the independent arity, written-deletion or
-unrelated-access proofs below. Every original signature is retained.
+constructors must satisfy the independent arity, written-deletion,
+unrelated-access or by-value argument destruction proofs below. Every original
+signature is retained.
 Access-based exclusions use the
 actual owning operation's
 context for each member edge. Besides its exact moves, it may have nonvariadic
@@ -1349,8 +1350,9 @@ ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases. Conversion
 functions must be ordinary non-template functions. Each must be excluded from
 implicit conversion of a const lvalue, or every ordinary value constructor must
-be excluded by arity, written deletion or unrelated access as below. A plain
-C++17 `explicit` conversion function cannot supply the implicit conversion
+be excluded by arity, written deletion, unrelated access or by-value argument
+destruction as below. A plain C++17 `explicit` conversion function cannot
+supply the implicit conversion
 of a constructor argument, including when the outer constructor is selected by
 direct initialization. This includes admitted scalar, pointer, enum, record and
 reference results, const/ref-qualified receivers, private or explicitly deleted
@@ -1378,7 +1380,8 @@ independently satisfy an exclusion, and every other constructor keeps its
 existing proof. In particular, a live
 implicit `const` or `const &` conversion still prevents this proof unless its
 access is excluded as below or the independent constructor arity,
-written-deletion or unrelated-access proof applies, even if another conversion
+written-deletion, unrelated-access or by-value argument destruction proof
+applies, even if another conversion
 is deleted or an overload would make the native copy
 trait false. A parameter record's own viable converting constructor is also
 checked independently of the source record's
@@ -1444,8 +1447,8 @@ receiver qualifiers and constructor templates remain outside this proof.
 An ordinary constructor written as `= delete` cannot provide successful
 construction even when a live implicit conversion supplies its argument.
 This combines with arity and unrelated access: every ordinary value constructor
-must be written deleted, inaccessible or require at least two arguments when a
-conversion remains available.
+must be written deleted, inaccessible, require at least two arguments or have
+unavailable by-value argument destruction when a conversion remains available.
 For example, deleted `C(int)` plus live `operator int() const` cannot copy from
 `const C&`, including if another constructor is `C(int, int)`. A live
 one-argument overload still prevents this proof even when overload resolution
@@ -1712,6 +1715,37 @@ All other constructors, record-shape and completion requirements keep their
 existing checks. Actual construction and destruction inside an authorized
 context still check and evaluate their selected defaults, bodies and cleanup;
 actual destruction without access remains a C++ source error.
+
+When ordinary live implicit source conversions remain, unavailable argument
+destruction also excludes a constructor whose first parameter is a record by
+value. For example, `operator Argument&() const` cannot make `C(Argument)`
+constructible from `const C&` if `~Argument()` is written deleted or is
+inaccessible in the constructing context. The by-value parameter must be
+destroyable even when the conversion returns an existing object reference.
+Value, lvalue-reference and rvalue-reference conversion results follow this
+same rule. Every other value constructor independently needs an admitted
+exclusion, which can combine argument destruction, arity, written deletion and
+unrelated access.
+
+With these live source conversions, a reference parameter needs its own
+proof: `C(const Argument&)` or `C(Argument&&)` can bind an existing reference
+returned by a conversion without creating an argument temporary. An
+unavailable destructor alone does not exclude those bindings. Root queries
+still use unrelated access, while each owning member or array occurrence
+checks its actual owner and enclosing contexts against the argument class.
+Written deletion also applies to friends and nested owners; inaccessible
+destruction does not apply when that argument class grants the owner access.
+
+The by-value proof retains every original constructor, conversion and
+destructor signature, parameter alias, default and exception source. Unused
+template bodies remain lazy, including invalid bodies that a query never
+selects. Already-resolved dependent exception sources stay checked; unresolved
+dependent sources remain outside this proof. Public destructors, inferred
+defaulted deletion, constructor and conversion templates, variadic constructors
+and conditional explicit argument constructors keep their existing limits.
+Actual construction in an authorized context checks and evaluates conversion
+calls, parameter copies, defaults and destruction; unsupported selected bodies
+and actual inaccessible or deleted destruction still fail.
 
 An ordinary nonvariadic constructor of the queried record itself may likewise
 be explicitly written as `= delete`. For example, `C(const Argument&) = delete`

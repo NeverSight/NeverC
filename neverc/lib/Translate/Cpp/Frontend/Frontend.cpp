@@ -3544,7 +3544,8 @@ static bool utilityConditionalMoveNonpublicConstructor(
 static bool utilityConditionalMoveValueConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor,
     std::vector<const CXXMethodDecl *> *Signatures = nullptr,
-    bool UnrelatedAccess = false, const CXXRecordDecl *Owner = nullptr) {
+    bool UnrelatedAccess = false, const CXXRecordDecl *Owner = nullptr,
+    bool RequireUnavailableDestruction = false) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
@@ -3554,9 +3555,16 @@ static bool utilityConditionalMoveValueConstructor(
   // canonical deletion does not resolve a defaulted operation or instantiate
   // an argument conversion. Callers still retain the complete signature, and
   // every other constructor must independently exclude the const source.
-  if (Constructor->getCanonicalDecl()->isDeletedAsWritten() ||
-      utilityConditionalMoveDirectConstructor(A, Constructor))
+  if (!RequireUnavailableDestruction &&
+      (Constructor->getCanonicalDecl()->isDeletedAsWritten() ||
+       utilityConditionalMoveDirectConstructor(A, Constructor)))
     return true;
+  // With a live source conversion, a reference parameter may bind an existing
+  // argument object without destroying it. Only a by-value parameter has an
+  // unavoidable destruction requirement independent of conversion selection.
+  if (RequireUnavailableDestruction &&
+      Constructor->getParamDecl(0)->getType()->isReferenceType())
+    return false;
   const bool Inaccessible =
       UnrelatedAccess &&
       utilityConditionalMoveNonpublicConstructor(A, Constructor);
@@ -3601,10 +3609,15 @@ static bool utilityConditionalMoveValueConstructor(
       (Destructor->getCanonicalDecl()->getAccess() == AS_private ||
        Destructor->getCanonicalDecl()->getAccess() == AS_protected) &&
       utilityConditionalMoveUnrelatedAccess(A, ParameterRecord, Owner);
-  // The distinct const source requires a converted argument temporary, even
-  // for reference parameters. Written deletion prevents that temporary's
-  // destruction in every access context. Read only the existing declaration;
-  // do not infer deletion of a defaulted destructor or instantiate its body.
+  // Without a usable source conversion, the distinct const source requires a
+  // converted argument temporary, even for reference parameters. A by-value
+  // parameter must also be destroyed when a usable conversion does exist.
+  // Written deletion prevents destruction in every access context. Read only
+  // the existing declaration; do not infer defaulted deletion or instantiate
+  // a destructor body. Access uses the parameter class's actual owner grants.
+  if (RequireUnavailableDestruction &&
+      !DeletedDestructor && !InaccessibleDestructor)
+    return false;
   if ((DeletedDestructor || InaccessibleDestructor) &&
       !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
     return false;
@@ -3701,8 +3714,9 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   // Only classify signatures already retained by the adapter's decision
   // proof. That proof excludes either the conversion or every ordinary
-  // constructor by arity, written deletion or unrelated access. Keep exact
-  // template origins and lazy written sources without re-deciding that proof.
+  // constructor by arity, written deletion, unrelated access or unavailable
+  // by-value argument destruction. Keep exact template origins and lazy
+  // written sources without re-deciding that proof.
   const bool OrdinaryConversion = utilityConditionalMoveConversionShape(
       dyn_cast_or_null<CXXConversionDecl>(Method));
   if (!Method ||
@@ -3833,22 +3847,24 @@ static bool utilityMutableCopyConditionalMoveSource(
     // owning context's unrelated-access proof and enabled access checking.
     // Exact copies/moves keep their separate binding proof, and zero-parameter
     // constructors cannot consume the source. Every other constructor must
-    // be written deleted, inaccessible or require more than one argument if a
-    // conversion remains available. Retain every original signature below,
-    // including argument-conversion sources consumed before an access failure.
+    // be written deleted, inaccessible, require more than one argument or
+    // require unavailable by-value argument destruction if a conversion
+    // remains available. Retain every original signature below, including
+    // argument-conversion sources consumed before an access failure.
     // A later redeclaration can add defaults, so use its current minimum arity
     // without instantiating an unused default or hypothetical conversion.
+    bool RequireUnavailableDestruction = false;
     if (HasUsableConversion &&
         !Constructor->getCanonicalDecl()->isDeletedAsWritten() &&
         !(UnrelatedAccess &&
           utilityConditionalMoveNonpublicConstructor(A, Constructor))) {
       const auto *Latest = Constructor->getMostRecentDecl();
       A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
-      if (Latest->getMinRequiredArguments() <= 1)
-        return false;
+      RequireUnavailableDestruction = Latest->getMinRequiredArguments() <= 1;
     }
     if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures,
-                                               UnrelatedAccess, Owner) ||
+                                               UnrelatedAccess, Owner,
+                                               RequireUnavailableDestruction) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
   }
