@@ -1084,9 +1084,12 @@ exception specifications and redeclarations remain checked. Already-resolved
 defaults use the ordinary source checks above. This covers deleted copies/moves,
 const queries on inaccessible moves, and inaccessible member moves that
 delete an enclosing defaulted move. For an owned member's inaccessible copy/move,
-its immediate owner must be declared at namespace scope with no bases. The
-member may have ordinary class-type friends when every friend resolves to a
-different canonical class from that owner, including aliases and substituted
+its immediate owner and every enclosing class must have a concrete, source-owned
+definition with no bases. The bounded actual declaration-context chain must end
+at namespace scope. None of these classes may be the member class itself, since
+nesting in that class grants access. The member may have ordinary class-type
+friends when every friend resolves to a different canonical class from every
+owning or enclosing context, including aliases and substituted
 friend types. Resolved nonclass friend types, such as integers, enums, `void` or
 pointer aliases, grant no access and do not prevent this proof. This also applies
 to substituted nonclass types and mixtures of unrelated class and nonclass friends.
@@ -1108,8 +1111,8 @@ and bodies remain checked. Unused generic bodies remain lazy. Friendship still
 grants the free function's own specializations their normal access; a copy or move
 actually selected there checks its defaults and body as usual.
 An ordinary class-template friend is also unrelated when its resolved canonical
-primary differs from the immediate owner's primary. A grant to the owner's
-primary includes its partial and full specializations, so those owners do not
+primary differs from the primary of every owning or enclosing class. A grant to
+any such primary includes its partial and full specializations, so those owners do not
 qualify for the lazy-default access exception. Ordinary non-template owners have
 no matching primary. Namespace aliases, redeclarations and supported member
 template targets use the resolved identities; a matching spelling alone does
@@ -1117,10 +1120,11 @@ not establish a grant. Every original and copied friend header, inherited
 default and required target definition keeps its ordinary source checks, and
 selected friend methods keep their access and body checks. Each ownership edge
 is checked even if another owner already used the same member type.
-A friend naming the actual owner, unresolved or other friend shapes
+A friend naming the actual owner or any enclosing class, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
-specialization friends and unsupported dependent class-template grants), and nested
-or derived owners require their own access proof. Each member/owner pair is checked independently,
+specialization friends and unsupported dependent class-template grants), local
+classes in function contexts, and inheritance in any enclosing scope require
+their own access proof. Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
 initializing a member through another constructor. The member's unavailable

@@ -3178,13 +3178,30 @@ static bool utilityConditionalMoveUnrelatedAccess(
     Adapter &A, const CXXRecordDecl *Record, const CXXRecordDecl *Owner) {
   if (!Owner)
     return true; // The root SDK traits have unrelated access.
-  if (Owner->getNumBases() != 0 || !Owner->getDeclContext()->isFileContext())
-    return false;
-  // A namespace-scope owner with no bases cannot acquire class-friend access
-  // through a distinct record or a different class template's specializations.
-  // Use resolved canonical identities. A free function or function-template
-  // friend cannot name that owner's constructors either. Other friend shapes need
-  // their own proof; ordinary traversal still checks each written friend source.
+  // A nested class inherits the access of each enclosing class. Follow the
+  // actual declaration-context chain, as Sema does, and compare canonical
+  // identities only after retaining those contexts. Local/function contexts
+  // and any base relationship need a separate proof.
+  std::vector<const CXXRecordDecl *> OwnerContexts;
+  const DeclContext *Context = Owner;
+  while (!Context->isFileContext()) {
+    const auto *Scope = dyn_cast<CXXRecordDecl>(Context);
+    const auto *Definition = Scope ? Scope->getDefinition() : nullptr;
+    if (!Scope || !Definition || OwnerContexts.size() >= 64 ||
+        Scope->isInvalidDecl() || Definition->isInvalidDecl() ||
+        Definition->isDependentContext() || Definition->isUnion() ||
+        Definition->getNumBases() != 0 ||
+        !A.S.owns(A.Sources, Scope->getLocation()) ||
+        !A.S.owns(A.Sources, Definition->getLocation()) ||
+        Scope->getCanonicalDecl() == Record->getCanonicalDecl())
+      return false;
+    A.chargeExpansion(1, Scope->getLocation());
+    OwnerContexts.push_back(Scope);
+    Context = Scope->getDeclContext();
+  }
+  // No unrelated class or free-function friend grants access to an owning
+  // constructor in these contexts. Ordinary traversal still checks every
+  // written friend source, including copied template declarations.
   for (const auto *Friend : Record->friends()) {
     A.chargeExpansion(1, Friend->getLocation());
     if (Friend->isInvalidDecl() || Friend->hasAttrs() ||
@@ -3204,12 +3221,15 @@ static bool utilityConditionalMoveUnrelatedAccess(
           return false;
         // A grant to a primary includes its partial and full specializations.
         // Match Sema's actual primary, not the selected body or written name.
-        const auto *OwnerTemplate = Owner->getDescribedClassTemplate();
-        if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Owner))
-          OwnerTemplate = Instance->getSpecializedTemplate();
-        if (OwnerTemplate && OwnerTemplate->getCanonicalDecl() ==
-                                 Template->getCanonicalDecl())
-          return false;
+        for (const auto *Scope : OwnerContexts) {
+          A.chargeExpansion(1, Scope->getLocation());
+          const auto *OwnerTemplate = Scope->getDescribedClassTemplate();
+          if (const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Scope))
+            OwnerTemplate = Instance->getSpecializedTemplate();
+          if (OwnerTemplate && OwnerTemplate->getCanonicalDecl() ==
+                                   Template->getCanonicalDecl())
+            return false;
+        }
         continue;
       }
       const auto *Template = dyn_cast<FunctionTemplateDecl>(Target);
@@ -3248,9 +3268,13 @@ static bool utilityConditionalMoveUnrelatedAccess(
     if (!Info->getType()->isRecordType())
       continue;
     const auto *FriendRecord = Info->getType()->getAsCXXRecordDecl();
-    if (!FriendRecord || FriendRecord->isInvalidDecl() ||
-        FriendRecord->getCanonicalDecl() == Owner->getCanonicalDecl())
+    if (!FriendRecord || FriendRecord->isInvalidDecl())
       return false;
+    for (const auto *Scope : OwnerContexts) {
+      A.chargeExpansion(1, Scope->getLocation());
+      if (FriendRecord->getCanonicalDecl() == Scope->getCanonicalDecl())
+        return false;
+    }
   }
   return true;
 }
