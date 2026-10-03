@@ -997,6 +997,18 @@ static int h2_append_hdr_block(h2_conn_t *conn, const uint8_t *data, size_t len)
 }
 
 static h2_stream_t *h2_find_stream(h2_conn_t *conn, uint32_t id);
+
+/* Existing-stream HEADERS: the closed/reset decision is made while
+ * state_lock is held. Callers use the returned decision; they do not
+ * re-read stream->state after the lock is released. */
+static int h2_headers_stream_is_closed(h2_conn_t *conn, h2_stream_t *stream) {
+    nc_mutex_lock(&conn->state_lock);
+    int reject = stream->state == H2_STREAM_HALF_CLOSED_REMOTE ||
+                 stream->state == H2_STREAM_CLOSED ||
+                 nc_atomic_load(&stream->reset);
+    nc_mutex_unlock(&conn->state_lock);
+    return reject;
+}
 static h2_stream_t *h2_create_stream(h2_conn_t *conn, uint32_t id);
 static void h2_close_stream(h2_conn_t *conn, h2_stream_t *s);
 static void h2_remove_stream(h2_conn_t *conn, uint32_t id);
@@ -1280,9 +1292,7 @@ static int h2_process_trailer_block(h2_conn_t *conn, h2_stream_t *stream,
         }
         return -2;
     }
-    if (!end_stream ||
-        (stream->state != H2_STREAM_OPEN &&
-         stream->state != H2_STREAM_HALF_CLOSED_LOCAL)) {
+    if (!end_stream) {
         for (int i = 0; i < count; i++) {
             free(trailers[i].name);
             free(trailers[i].value);
@@ -1298,9 +1308,17 @@ static int h2_process_trailer_block(h2_conn_t *conn, h2_stream_t *stream,
     }
     if (!valid) return -2;
 
+    /* Observe and publish in one hold. A stream closed after validation
+     * must stay closed, not be stored back as half-closed remote. */
     nc_mutex_lock(&conn->state_lock);
-    stream->state = stream->state == H2_STREAM_HALF_CLOSED_LOCAL
-        ? H2_STREAM_CLOSED : H2_STREAM_HALF_CLOSED_REMOTE;
+    if (stream->state == H2_STREAM_OPEN)
+        stream->state = H2_STREAM_HALF_CLOSED_REMOTE;
+    else if (stream->state == H2_STREAM_HALF_CLOSED_LOCAL)
+        stream->state = H2_STREAM_CLOSED;
+    else {
+        nc_mutex_unlock(&conn->state_lock);
+        return -2;
+    }
     nc_mutex_unlock(&conn->state_lock);
     nc_atomic_store(&stream->remote_ended, 1);
     if (stream->receive_queue)
@@ -2337,19 +2355,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
 
         case NC_H2_FRAME_HEADERS: {
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
-            if (stream && stream->state == H2_STREAM_CLOSED &&
-                !nc_atomic_load(&stream->reset)) {
-                if (h2_reject_headers_keep_hpack(
-                        &conn, &fhdr, payload, NC_H2_STREAM_CLOSED) != 0) {
-                    free(payload);
-                    goto cleanup;
-                }
-                break;
-            }
-            if (stream &&
-                (stream->state == H2_STREAM_HALF_CLOSED_REMOTE ||
-                 stream->state == H2_STREAM_CLOSED ||
-                 nc_atomic_load(&stream->reset))) {
+            if (stream && h2_headers_stream_is_closed(&conn, stream)) {
                 if (h2_reject_headers_keep_hpack(
                         &conn, &fhdr, payload, NC_H2_STREAM_CLOSED) != 0) {
                     free(payload);
