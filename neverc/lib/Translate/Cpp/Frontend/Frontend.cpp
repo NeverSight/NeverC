@@ -3701,8 +3701,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   // Only classify signatures already retained by the adapter's decision
   // proof. That proof excludes either the conversion or every ordinary
-  // constructor by arity or written deletion. Keep exact template origins and
-  // lazy written sources without re-deciding construction or owning access.
+  // constructor by arity, written deletion or unrelated access. Keep exact
+  // template origins and lazy written sources without re-deciding that proof.
   const bool OrdinaryConversion = utilityConditionalMoveConversionShape(
       dyn_cast_or_null<CXXConversionDecl>(Method));
   if (!Method ||
@@ -3828,16 +3828,20 @@ static bool utilityMutableCopyConditionalMoveSource(
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
     // A usable conversion cannot restore missing constructor arguments or
-    // permit calling a written deleted constructor. Deletion is independent
-    // of owning access, including for friends and nested classes.
+    // permit calling a written deleted or inaccessible constructor. Deletion
+    // is independent of access; a nonpublic constructor needs the actual
+    // owning context's unrelated-access proof and enabled access checking.
     // Exact copies/moves keep their separate binding proof, and zero-parameter
     // constructors cannot consume the source. Every other constructor must
-    // be written deleted or require more than one argument if a conversion
-    // remains available. Every original signature is still retained below.
+    // be written deleted, inaccessible or require more than one argument if a
+    // conversion remains available. Retain every original signature below,
+    // including argument-conversion sources consumed before an access failure.
     // A later redeclaration can add defaults, so use its current minimum arity
     // without instantiating an unused default or hypothetical conversion.
     if (HasUsableConversion &&
-        !Constructor->getCanonicalDecl()->isDeletedAsWritten()) {
+        !Constructor->getCanonicalDecl()->isDeletedAsWritten() &&
+        !(UnrelatedAccess &&
+          utilityConditionalMoveNonpublicConstructor(A, Constructor))) {
       const auto *Latest = Constructor->getMostRecentDecl();
       A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
       if (Latest->getMinRequiredArguments() <= 1)

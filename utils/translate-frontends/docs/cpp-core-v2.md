@@ -1015,8 +1015,9 @@ The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
 or deleted. A node with only exact mutable copies has no bases. Its conversion
 functions must satisfy the exclusions below for a const lvalue or the ordinary
-constructors must satisfy the independent arity or written-deletion proofs
-below. Every original signature is retained. Access-based exclusions use the
+constructors must satisfy the independent arity, written-deletion or
+unrelated-access proofs below. Every original signature is retained.
+Access-based exclusions use the
 actual owning operation's
 context for each member edge. Besides its exact moves, it may have nonvariadic
 zero-parameter default constructors or
@@ -1348,8 +1349,8 @@ ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
 use the owning-graph proof above. These records have no bases. Conversion
 functions must be ordinary non-template functions. Each must be excluded from
 implicit conversion of a const lvalue, or every ordinary value constructor must
-be excluded by arity or written deletion as below. A plain C++17 `explicit`
-conversion function cannot supply the implicit conversion
+be excluded by arity, written deletion or unrelated access as below. A plain
+C++17 `explicit` conversion function cannot supply the implicit conversion
 of a constructor argument, including when the outer constructor is selected by
 direct initialization. This includes admitted scalar, pointer, enum, record and
 reference results, const/ref-qualified receivers, private or explicitly deleted
@@ -1376,9 +1377,9 @@ receiver qualifiers. Under this conversion-based proof, every conversion must
 independently satisfy an exclusion, and every other constructor keeps its
 existing proof. In particular, a live
 implicit `const` or `const &` conversion still prevents this proof unless its
-access is excluded as below or the independent constructor arity or
-written-deletion proof applies, even if another conversion is deleted or an
-overload would make the native copy
+access is excluded as below or the independent constructor arity,
+written-deletion or unrelated-access proof applies, even if another conversion
+is deleted or an overload would make the native copy
 trait false. A parameter record's own viable converting constructor is also
 checked independently of the source record's
 excluded conversion functions.
@@ -1427,9 +1428,9 @@ and their original parameter sources keep their existing checks.
 
 The latest constructor redeclaration determines the minimum arity. A later
 default making any constructor callable with one argument prevents the arity
-proof, as does any other one-argument candidate. Written deletion supplies an
-independent exclusion as below; nonpublic access alone does not extend this
-proof when a conversion remains available.
+proof, as does any other one-argument candidate. Written deletion or nonpublic
+access in an unrelated constructing context supplies an independent exclusion
+as below when a conversion remains available.
 Later defaults on a constructor that still needs two arguments remain unused;
 their original parameter and default sources are retained. Every conversion
 keeps its original signature and redeclarations even when overload resolution
@@ -1442,8 +1443,9 @@ receiver qualifiers and constructor templates remain outside this proof.
 
 An ordinary constructor written as `= delete` cannot provide successful
 construction even when a live implicit conversion supplies its argument.
-This combines with arity: every ordinary value constructor must be written
-deleted or require at least two arguments when a conversion remains available.
+This combines with arity and unrelated access: every ordinary value constructor
+must be written deleted, inaccessible or require at least two arguments when a
+conversion remains available.
 For example, deleted `C(int)` plus live `operator int() const` cannot copy from
 `const C&`, including if another constructor is `C(int, int)`. A live
 one-argument overload still prevents this proof even when overload resolution
@@ -1461,6 +1463,29 @@ and execute their selected bodies, preserving reference bindings, results,
 mutations and cleanup. An actual call to a deleted constructor remains a C++
 source error. Constructor templates and variadic constructors remain excluded;
 defaulted or inferred special-member deletion keeps its separate proof.
+
+An ordinary private or protected value constructor also excludes successful
+construction with a live implicit conversion when access checking is enabled
+and the constructing context is unrelated to its class. Root SDK traits use
+unrelated access even when queried inside a member or friend. Mutable-copy
+nodes in owned records and arrays use their actual owner and enclosing
+contexts. Friendship, nesting or a related base prevents this exclusion unless
+another independent proof applies. Friendship granted only to a base is not
+inherited. Every occurrence of an owned record retains its own context, and a
+public one-argument alternative still prevents this proof even if a private
+candidate would win overload resolution.
+
+Canonical access covers out-of-line constructors. Original constructor and
+conversion signatures, parameter-record constructor sources, aliases and
+defaults retain their existing checks. Native trait resolution can consume
+defaults and resolve dependent exception specifications before an access
+failure; those resolved sources remain checked. Unused template bodies stay
+lazy, with only exact nondependent written exception sources retained when
+uninstantiated. Actual construction from authorized members or friends checks
+and executes the selected constructor and defaults, preserving mutations and
+cleanup; an inaccessible actual call remains a C++ source error. Constructor
+and conversion templates, conditional explicit specifiers and variadic
+constructors remain outside this extension.
 
 Other constructors may be a move, a nonvariadic zero-parameter
 default constructor, or an ordinary nonvariadic constructor whose first parameter
