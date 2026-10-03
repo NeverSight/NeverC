@@ -15,6 +15,8 @@
  * Character classes: [a-z] [^abc] []] [[:name:]] \d \D \w \W \s \S \xHH \x{H+};
  *   \s is Go/RE2 [\t\n\f\r ] (no VT); [[:space:]] also matches VT.
  *   [\b] is backspace. \x{H+} in a class matches the UTF-8 rune.
+ *   Non-ASCII members and ranges of any size ([α-ω], [\x{4e00}-\x{9fff}])
+ *   match whole UTF-8 runes; a negated class takes only ASCII and \xHH.
  * ReplaceAll expands $0 $1 ${name} $$ (Go/RE2 Expand). Unknown letter/digit
  * escapes are errors (no backreferences).
  */

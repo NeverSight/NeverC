@@ -106,6 +106,26 @@ int main(void) {
         CHECK(err != NULL);
     }
 
+    /* Non-ASCII class ranges are collected and compiled to UTF-8 byte
+     * sequences; every allocation on that path must fail cleanly. */
+    static const char range_pattern[] =
+        "[\\x{4e00}-\\x{9fff}a-z\\x{3040}-\\x{30ff}\\x{10000}-\\x{10ffff}]{2}"
+        "[é中ü]";
+    reset_allocator(0);
+    re = neverc_regexp_compile(range_pattern, &err);
+    CHECK(re != NULL);
+    compile_allocations = allocation_count;
+    CHECK(neverc_regexp_match(re, "中a\xC3\xBC"));
+    neverc_regexp_free(re);
+
+    for (size_t i = 1; i <= compile_allocations; i++) {
+        reset_allocator(i);
+        err = NULL;
+        re = neverc_regexp_compile(range_pattern, &err);
+        CHECK(re == NULL);
+        CHECK(err != NULL);
+    }
+
     reset_allocator(0);
     re = neverc_regexp_compile("[a-z]", NULL);
     CHECK(re != NULL);

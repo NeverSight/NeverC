@@ -548,19 +548,16 @@ static int cc_bitmap_empty(const charclass_t *cc) {
     return 1;
 }
 
-static frag_t mk_alt(neverc_regexp_t *re, frag_t a, frag_t b) {
-    if (!a.start) return b;
-    if (!b.start) return a;
-    nfa_state_t *split = new_state(re, NFA_SPLIT);
-    nfa_state_t *end = new_state(re, NFA_MATCH);
-    split->out1 = a.start;
-    split->out2 = b.start;
-    if (a.end) a.end->out1 = end;
-    if (b.end) b.end->out1 = end;
-    return frag(split, end);
-}
+/* Non-ASCII class members are kept as rune ranges while the class is parsed,
+ * then sorted, merged and compiled into UTF-8 byte-sequence alternatives
+ * (class_frag), so a class costs states per range rather than per rune. The
+ * ASCII part stays in the byte bitmap. */
+typedef struct { int lo, hi; } rune_range_t;
 
-#define NCI_RE_CLASS_RUNE_CAP 256
+typedef struct {
+    rune_range_t *v;
+    int           n, cap;
+} rune_ranges_t;
 
 static int class_read_utf8_atom(parser_t *par, int *out) {
     const unsigned char *s = (const unsigned char *)par->p;
@@ -577,31 +574,242 @@ static int class_read_utf8_atom(parser_t *par, int *out) {
     return 1;
 }
 
-static int class_add_rune(parser_t *par, frag_t **extras, int *nextras,
-                          int *extras_cap, int r) {
-    if (*nextras >= NCI_RE_CLASS_RUNE_CAP) {
-        par->err = "character class too large";
-        return 0;
+/* Add runes [lo,hi] to a class: code points below 0x80 go in the bitmap, the
+ * rest is recorded as a rune range. Surrogates in a range are skipped when
+ * the class is compiled. */
+static int class_add_range(parser_t *par, charclass_t *cc, rune_ranges_t *rs,
+                           int lo, int hi) {
+    if (lo < 0x80) {
+        for (int r = lo; r <= hi && r < 0x80; r++) cc_set(cc, r);
+        if (hi < 0x80) return 1;
+        lo = 0x80;
     }
-    if (*nextras == *extras_cap) {
-        int nc = *extras_cap ? *extras_cap * 2 : 8;
-        if (nc > NCI_RE_CLASS_RUNE_CAP) nc = NCI_RE_CLASS_RUNE_CAP;
-        frag_t *nb = (frag_t *)NC_REGEXP_REALLOC(*extras, (size_t)nc * sizeof(*nb));
+    if (rs->n == rs->cap) {
+        int nc = rs->cap ? rs->cap * 2 : 8;
+        if (rs->cap > INT_MAX / 2 ||
+            (size_t)nc > SIZE_MAX / sizeof(*rs->v)) {
+            par->err = "out of memory";
+            par->re->oom = 1;
+            return 0;
+        }
+        rune_range_t *nb = (rune_range_t *)NC_REGEXP_REALLOC(
+            rs->v, (size_t)nc * sizeof(*nb));
         if (!nb) {
             par->err = "out of memory";
             par->re->oom = 1;
             return 0;
         }
-        *extras = nb;
-        *extras_cap = nc;
+        rs->v = nb;
+        rs->cap = nc;
     }
-    frag_t rf = frag_rune(par->re, r);
-    if (!rf.start) {
+    rs->v[rs->n].lo = lo;
+    rs->v[rs->n].hi = hi;
+    rs->n++;
+    return 1;
+}
+
+/* A single non-ASCII member must be encodable: a lone surrogate is an
+ * error here as it is outside a class. */
+static int class_add_rune(parser_t *par, charclass_t *cc, rune_ranges_t *rs,
+                          int r) {
+    unsigned char b[4];
+    if (rune_utf8(r, b) <= 0) {
         par->err = "invalid escape sequence";
         return 0;
     }
-    (*extras)[(*nextras)++] = rf;
-    return 1;
+    return class_add_range(par, cc, rs, r, r);
+}
+
+static int rune_range_cmp(const void *a, const void *b) {
+    const rune_range_t *x = (const rune_range_t *)a;
+    const rune_range_t *y = (const rune_range_t *)b;
+    return (x->lo > y->lo) - (x->lo < y->lo);
+}
+
+/* Alternation under construction: alternatives are chained through splits
+ * (out1 = alternative, out2 = the rest) and all end in one shared state.
+ * Byte sequences arrive in ascending order; consecutive ones that share
+ * every byte range but the last are held and merged into one sequence whose
+ * last byte is a bitmap, so listing scattered runes stays compact. */
+typedef struct {
+    neverc_regexp_t *re;
+    nfa_state_t     *entry;
+    nfa_state_t    **slot;      /* where the next split or last alternative goes */
+    nfa_state_t     *pending;   /* newest alternative, not yet linked in */
+    nfa_state_t     *end;
+    charclass_t     *cont;      /* shared bitmap for continuation bytes 80-BF */
+    int              held_len;  /* 0, or length of the held sequence */
+    unsigned char    held_lo[4], held_hi[4];
+    charclass_t      held_last; /* last-byte set of the held sequence */
+} class_alt_t;
+
+static void class_alt_add(class_alt_t *alt, nfa_state_t *start) {
+    if (alt->pending) {
+        nfa_state_t *split = new_state(alt->re, NFA_SPLIT);
+        split->out1 = alt->pending;
+        *alt->slot = split;
+        alt->slot = &split->out2;
+    }
+    alt->pending = start;
+}
+
+/* One state consuming a byte in [lo,hi]. */
+static nfa_state_t *class_byte_state(class_alt_t *alt, int lo, int hi) {
+    nfa_state_t *s;
+    if (lo == hi) {
+        s = new_state(alt->re, NFA_CHAR);
+        s->ch = lo;
+        return s;
+    }
+    charclass_t *cc = (lo == 0x80 && hi == 0xBF) ? alt->cont : NULL;
+    if (!cc) {
+        cc = new_class(alt->re);
+        for (int b = lo; b <= hi; b++) cc_set(cc, b);
+        if (lo == 0x80 && hi == 0xBF) alt->cont = cc;
+    }
+    s = new_state(alt->re, NFA_CLASS);
+    s->cls = cc;
+    return s;
+}
+
+/* Emit the held sequence: its leading byte ranges, then its last-byte set. */
+static void class_alt_flush(class_alt_t *alt) {
+    int n = alt->held_len;
+    if (n == 0) return;
+    alt->held_len = 0;
+    nfa_state_t *first = NULL, *prev = NULL;
+    for (int i = 0; i < n; i++) {
+        nfa_state_t *s;
+        if (i < n - 1) {
+            s = class_byte_state(alt, alt->held_lo[i], alt->held_hi[i]);
+        } else {
+            int lo = -1, hi = -1, contiguous = 1;
+            for (int c = 0; c < 256; c++) {
+                if (!cc_test(&alt->held_last, c)) continue;
+                if (lo < 0) lo = c;
+                else if (c != hi + 1) contiguous = 0;
+                hi = c;
+            }
+            if (contiguous) {
+                s = class_byte_state(alt, lo, hi);
+            } else {
+                charclass_t *cc = new_class(alt->re);
+                memcpy(cc->bitmap, alt->held_last.bitmap, sizeof(cc->bitmap));
+                s = new_state(alt->re, NFA_CLASS);
+                s->cls = cc;
+            }
+        }
+        if (prev) prev->out1 = s;
+        else first = s;
+        prev = s;
+    }
+    prev->out1 = alt->end;
+    class_alt_add(alt, first);
+}
+
+/* [lo,hi] encode to the same length, and at each continuation byte either
+ * the two ends agree on every higher bit or lo has all lower bits clear and
+ * hi all lower bits set. The encodings of exactly these runes are then the
+ * byte sequences whose i-th byte lies between the i-th bytes of lo's and
+ * hi's encodings. */
+static void class_alt_add_utf8_seq(class_alt_t *alt, int lo, int hi) {
+    unsigned char a[4], b[4];
+    int n = rune_utf8(lo, a);
+    if (n <= 0 || rune_utf8(hi, b) != n) {
+        alt->re->oom = 1;               /* unreachable: split by length */
+        return;
+    }
+    int same_prefix = alt->held_len == n;
+    for (int i = 0; same_prefix && i < n - 1; i++)
+        same_prefix = alt->held_lo[i] == a[i] && alt->held_hi[i] == b[i];
+    if (!same_prefix) {
+        class_alt_flush(alt);
+        alt->held_len = n;
+        memcpy(alt->held_lo, a, (size_t)n);
+        memcpy(alt->held_hi, b, (size_t)n);
+        memset(&alt->held_last, 0, sizeof(alt->held_last));
+    }
+    for (int c = a[n - 1]; c <= b[n - 1]; c++) cc_set(&alt->held_last, c);
+}
+
+/* Split non-ASCII runes [lo,hi] into pieces class_alt_add_utf8_seq can emit:
+ * skip surrogates, then split at encoding-length boundaries, then at the
+ * lowest continuation byte where the ends differ above it without spanning
+ * its full 6-bit range. Each split leaves pieces that need fewer splits, so
+ * the recursion is shallow and a range yields only a few sequences. */
+static void class_alt_add_runes(class_alt_t *alt, int lo, int hi) {
+    static const int len_max[] = { 0x7F, 0x7FF, 0xFFFF };
+    if (lo > hi || alt->re->oom) return;
+    if (lo <= 0xDFFF && hi >= 0xD800) {
+        if (lo < 0xD800) class_alt_add_runes(alt, lo, 0xD7FF);
+        if (hi > 0xDFFF) class_alt_add_runes(alt, 0xE000, hi);
+        return;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (lo <= len_max[i] && hi > len_max[i]) {
+            class_alt_add_runes(alt, lo, len_max[i]);
+            class_alt_add_runes(alt, len_max[i] + 1, hi);
+            return;
+        }
+    }
+    for (int i = 1; i < 4; i++) {
+        int m = (1 << (6 * i)) - 1;
+        if ((lo & ~m) == (hi & ~m)) break;
+        if (lo & m) {
+            class_alt_add_runes(alt, lo, lo | m);
+            class_alt_add_runes(alt, (lo | m) + 1, hi);
+            return;
+        }
+        if ((hi & m) != m) {
+            class_alt_add_runes(alt, lo, (hi & ~m) - 1);
+            class_alt_add_runes(alt, hi & ~m, hi);
+            return;
+        }
+    }
+    class_alt_add_utf8_seq(alt, lo, hi);
+}
+
+/* Compile a parsed class: the byte bitmap (when it can match anything) plus
+ * one UTF-8 byte sequence per piece of the merged rune ranges. A class with
+ * nothing left (e.g. only surrogates) still gets its empty bitmap state, so
+ * it compiles and never matches. Sorts rs in place. */
+static frag_t class_frag(neverc_regexp_t *re, charclass_t *cc,
+                         rune_ranges_t *rs) {
+    class_alt_t alt;
+    memset(&alt, 0, sizeof(alt));
+    alt.re = re;
+    alt.slot = &alt.entry;
+    alt.end = new_state(re, NFA_MATCH);
+    int bitmap = !cc_bitmap_empty(cc) || cc->negated;
+    if (bitmap) {
+        nfa_state_t *s = new_state(re, NFA_CLASS);
+        s->cls = cc;
+        s->out1 = alt.end;
+        class_alt_add(&alt, s);
+    }
+    if (rs->n > 0) {
+        qsort(rs->v, (size_t)rs->n, sizeof(*rs->v), rune_range_cmp);
+        int lo = rs->v[0].lo, hi = rs->v[0].hi;
+        for (int i = 1; i < rs->n; i++) {
+            if (rs->v[i].lo <= hi + 1) {
+                if (rs->v[i].hi > hi) hi = rs->v[i].hi;
+                continue;
+            }
+            class_alt_add_runes(&alt, lo, hi);
+            lo = rs->v[i].lo;
+            hi = rs->v[i].hi;
+        }
+        class_alt_add_runes(&alt, lo, hi);
+        class_alt_flush(&alt);
+    }
+    if (!alt.pending) {
+        nfa_state_t *s = new_state(re, NFA_CLASS);
+        s->cls = cc;
+        s->out1 = alt.end;
+        class_alt_add(&alt, s);
+    }
+    *alt.slot = alt.pending;
+    return frag(alt.entry, alt.end);
 }
 
 static frag_t parse_atom(parser_t *par) {
@@ -679,9 +887,7 @@ static frag_t parse_atom(parser_t *par) {
         if (*par->p == '^') { cc->negated = 1; par->p++; }
         int entries = 0;
         int first = 1;
-        int nextras = 0, extras_cap = 0;
-        frag_t *extras = NULL;
-        frag_t f = { NULL, NULL };
+        rune_ranges_t ranges = { NULL, 0, 0 };
         /* ']' is literal as the first class byte (or first after '^'), matching
          * POSIX/Go: []] and [^]] are valid. */
         while (*par->p && (*par->p != ']' || first)) {
@@ -758,6 +964,9 @@ static frag_t parse_atom(parser_t *par) {
                                 par->p += 2;
                                 if (!parse_hex_escape(par, &hi, &hi_braced))
                                     goto class_fail;
+                            } else if ((unsigned char)*par->p >= 0x80) {
+                                if (!class_read_utf8_atom(par, &hi))
+                                    goto class_fail;
                             } else {
                                 par->err = "invalid character class range";
                                 goto class_fail;
@@ -766,20 +975,12 @@ static frag_t parse_atom(parser_t *par) {
                                 par->err = "invalid character class range";
                                 goto class_fail;
                             }
-                            if (hi - lo >= NCI_RE_CLASS_RUNE_CAP - nextras) {
-                                par->err = "character class too large";
+                            if (!class_add_range(par, cc, &ranges, lo, hi))
                                 goto class_fail;
-                            }
-                            for (int r = lo; r <= hi; r++) {
-                                if (r < 128) cc_set(cc, r);
-                                else if (!class_add_rune(par, &extras, &nextras,
-                                                         &extras_cap, r))
-                                    goto class_fail;
-                            }
                             entries++;
                             continue;
                         }
-                        if (!class_add_rune(par, &extras, &nextras, &extras_cap, lo))
+                        if (!class_add_rune(par, cc, &ranges, lo))
                             goto class_fail;
                         entries++;
                         continue;
@@ -825,16 +1026,8 @@ static frag_t parse_atom(parser_t *par) {
                                 par->err = "invalid character class range";
                                 goto class_fail;
                             }
-                            if (hi - lo >= NCI_RE_CLASS_RUNE_CAP - nextras) {
-                                par->err = "character class too large";
+                            if (!class_add_range(par, cc, &ranges, lo, hi))
                                 goto class_fail;
-                            }
-                            for (int r = lo; r <= hi; r++) {
-                                if (r < 128) cc_set(cc, r);
-                                else if (!class_add_rune(par, &extras, &nextras,
-                                                         &extras_cap, r))
-                                    goto class_fail;
-                            }
                             entries++;
                             continue;
                         }
@@ -867,16 +1060,8 @@ static frag_t parse_atom(parser_t *par) {
                         par->err = "invalid character class range";
                         goto class_fail;
                     }
-                    if (hi - lo >= NCI_RE_CLASS_RUNE_CAP - nextras) {
-                        par->err = "character class too large";
+                    if (!class_add_range(par, cc, &ranges, lo, hi))
                         goto class_fail;
-                    }
-                    for (int r = lo; r <= hi; r++) {
-                        if (r < 128) cc_set(cc, r);
-                        else if (!class_add_rune(par, &extras, &nextras,
-                                                 &extras_cap, r))
-                            goto class_fail;
-                    }
                     entries++;
                     continue;
                 }
@@ -890,7 +1075,7 @@ static frag_t parse_atom(parser_t *par) {
                     par->err = "invalid escape sequence";
                     goto class_fail;
                 }
-                if (!class_add_rune(par, &extras, &nextras, &extras_cap, lo))
+                if (!class_add_rune(par, cc, &ranges, lo))
                     goto class_fail;
             } else {
                 cc_set(cc, lo);
@@ -906,19 +1091,13 @@ static frag_t parse_atom(parser_t *par) {
             par->err = "empty character class";
             goto class_fail;
         }
-        if (!cc_bitmap_empty(cc) || cc->negated || nextras == 0) {
-            nfa_state_t *s = new_state(par->re, NFA_CLASS);
-            s->cls = cc;
-            nfa_state_t *e = new_state(par->re, NFA_MATCH);
-            s->out1 = e;
-            f = frag(s, e);
+        {
+            frag_t f = class_frag(par->re, cc, &ranges);
+            free(ranges.v);
+            return f;
         }
-        for (int i = 0; i < nextras; i++)
-            f = mk_alt(par->re, f, extras[i]);
-        free(extras);
-        return f;
     class_fail:
-        free(extras);
+        free(ranges.v);
         return frag(NULL, NULL);
     }
 

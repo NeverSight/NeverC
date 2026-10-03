@@ -1357,6 +1357,219 @@ static void test_find_differential(void) {
     check_int("find_all differential mismatches", all_mis, 0);
 }
 
+static size_t utf8_put(char *out, unsigned r) {
+    if (r < 0x80) { out[0] = (char)r; return 1; }
+    if (r < 0x800) {
+        out[0] = (char)(0xC0 | (r >> 6));
+        out[1] = (char)(0x80 | (r & 0x3F));
+        return 2;
+    }
+    if (r < 0x10000) {
+        out[0] = (char)(0xE0 | (r >> 12));
+        out[1] = (char)(0x80 | ((r >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (r & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (r >> 18));
+    out[1] = (char)(0x80 | ((r >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((r >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (r & 0x3F));
+    return 4;
+}
+
+static int match_rune(neverc_regexp_t *re, unsigned r) {
+    char text[5];
+    text[utf8_put(text, r)] = '\0';
+    return neverc_regexp_match(re, text);
+}
+
+/* Go accepts non-ASCII class members and ranges of any size; they match
+ * whole UTF-8 runes. Expected results agree with Go regexp. */
+static void test_utf8_class_ranges(void) {
+    section("[utf8 class ranges]");
+    char buf[64];
+    const char *err = NULL;
+
+    neverc_regexp_t *re = neverc_regexp_compile("^[a-中]$", &err);
+    check_bool("[a-中] compiles", re != NULL, 1);
+    if (re) {
+        check_bool("[a-中] a", neverc_regexp_match(re, "a"), 1);
+        check_bool("[a-中] DEL", neverc_regexp_match(re, "\x7f"), 1);
+        check_bool("[a-中] é", neverc_regexp_match(re, "é"), 1);
+        check_bool("[a-中] U+0800", neverc_regexp_match(re, "\xE0\xA0\x80"), 1);
+        check_bool("[a-中] 中", neverc_regexp_match(re, "中"), 1);
+        check_bool("[a-中] 丰 after 中", neverc_regexp_match(re, "丰"), 0);
+        check_bool("[a-中] backquote", neverc_regexp_match(re, "`"), 0);
+        check_bool("[a-中] lone lead byte", neverc_regexp_match(re, "\xE4"), 0);
+        neverc_regexp_free(re);
+    }
+
+    re = neverc_regexp_compile("[\\x{4e00}-\\x{9fff}]+", &err);
+    check_bool("[\\x{4e00}-\\x{9fff}] compiles", re != NULL, 1);
+    if (re) {
+        check_str("CJK run", find_str(re, "abc中文def", buf), "中文");
+        check_bool("U+4E00", neverc_regexp_match(re, "\xE4\xB8\x80"), 1);
+        check_bool("U+9FFF", neverc_regexp_match(re, "\xE9\xBF\xBF"), 1);
+        check_bool("U+4DFF below", neverc_regexp_match(re, "\xE4\xB7\xBF"), 0);
+        check_bool("U+A000 above", neverc_regexp_match(re, "\xEA\x80\x80"), 0);
+        check_bool("hangul outside", neverc_regexp_match(re, "가"), 0);
+        neverc_regexp_free(re);
+    }
+
+    /* Mixed ASCII and non-ASCII members keep the ASCII part. */
+    re = neverc_regexp_compile("[0-9\\x{3040}-\\x{30FF}a-f]+", &err);
+    check_bool("kana+hex compiles", re != NULL, 1);
+    if (re) {
+        check_str("kana+hex run", find_str(re, "xxあいう123カナzz", buf),
+                  "あいう123カナ");
+        neverc_regexp_free(re);
+    }
+
+    /* Every encoding length; overlong forms never match. */
+    re = neverc_regexp_compile("^[\\x{80}-\\x{10FFFF}]+$", &err);
+    check_bool("all non-ASCII compiles", re != NULL, 1);
+    if (re) {
+        check_bool("2/3/4-byte runes", neverc_regexp_match(re, "é中😀"), 1);
+        check_bool("U+10FFFF", neverc_regexp_match(re, "\xF4\x8F\xBF\xBF"), 1);
+        check_bool("ASCII outside", neverc_regexp_match(re, "a"), 0);
+        check_bool("overlong C0 80", neverc_regexp_match(re, "\xC0\x80"), 0);
+        check_bool("overlong E0 9F BF", neverc_regexp_match(re, "\xE0\x9F\xBF"), 0);
+        check_bool("overlong F0 8F BF BF",
+                   neverc_regexp_match(re, "\xF0\x8F\xBF\xBF"), 0);
+        check_bool("past U+10FFFF", neverc_regexp_match(re, "\xF4\x90\x80\x80"), 0);
+        /* Text stays byte-oriented: a stray continuation byte is not a rune
+         * (Go would read it as U+FFFD and match). */
+        check_bool("stray continuation byte", neverc_regexp_match(re, "\x80"), 0);
+        neverc_regexp_free(re);
+    }
+
+    /* Surrogates inside a range are skipped, not an error. */
+    re = neverc_regexp_compile("^[\\x{D000}-\\x{E000}]$", &err);
+    check_bool("range over surrogates compiles", re != NULL, 1);
+    if (re) {
+        check_bool("U+D7FF", neverc_regexp_match(re, "\xED\x9F\xBF"), 1);
+        check_bool("U+E000", neverc_regexp_match(re, "\xEE\x80\x80"), 1);
+        check_bool("encoded surrogate", neverc_regexp_match(re, "\xED\xA0\x80"), 0);
+        check_bool("U+CFFF", neverc_regexp_match(re, "\xEC\xBF\xBF"), 0);
+        neverc_regexp_free(re);
+    }
+    re = neverc_regexp_compile("[\\x{D800}-\\x{DFFF}]", &err);
+    check_bool("all-surrogate range compiles", re != NULL, 1);
+    if (re) {
+        size_t mlen = 0;
+        check_bool("all-surrogate range matches nothing",
+                   neverc_regexp_find(re, "\xED\xA0\x80 abc é", &mlen) == NULL, 1);
+        neverc_regexp_free(re);
+    }
+
+    /* Over 256 individually listed runes. */
+    {
+        char pat[2 + 300 * 3 + 3];
+        size_t n = 0;
+        pat[n++] = '[';
+        for (unsigned r = 0x4E00; r < 0x4E00 + 300; r++) n += utf8_put(pat + n, r);
+        pat[n++] = ']';
+        pat[n++] = '+';
+        pat[n] = '\0';
+        re = neverc_regexp_compile(pat, &err);
+        check_bool("300 listed runes compile", re != NULL, 1);
+        if (re) {
+            check_bool("first listed", match_rune(re, 0x4E00), 1);
+            check_bool("last listed", match_rune(re, 0x4E00 + 299), 1);
+            check_bool("next unlisted", match_rune(re, 0x4E00 + 300), 0);
+            neverc_regexp_free(re);
+        }
+    }
+
+    /* Repeats clone the class; captures see whole runes. */
+    re = neverc_regexp_compile("([\\x{4e00}-\\x{9fff}]{2})([a-z]+)", &err);
+    check_bool("CJK repeat compiles", re != NULL, 1);
+    if (re) {
+        neverc_regexp_match_t m[3];
+        const char *text = "x中文字abc";
+        memset(m, 0, sizeof(m));
+        check_int("CJK repeat found", neverc_regexp_find_submatch(re, text, m, 3), 1);
+        check_int("CJK repeat g1", m[1].start == text + 4 && m[1].len == 6, 1);
+        check_int("CJK repeat g2", m[2].start == text + 10 && m[2].len == 3, 1);
+        neverc_regexp_free(re);
+    }
+    check_bool("[α-ω]{3}", neverc_regexp_match_string("^[α-ω]{3}$", "αβγ"), 1);
+    check_bool("[α-ω]{3} short", neverc_regexp_match_string("^[α-ω]{3}$", "αβ"), 0);
+    re = neverc_regexp_compile_posix("[α-ω]+", &err);
+    check_bool("posix [α-ω] compiles", re != NULL, 1);
+    if (re) {
+        check_str("posix [α-ω] find", find_str(re, "abc αβγ", buf), "αβγ");
+        neverc_regexp_free(re);
+    }
+
+    /* A \x{H+} start may end at a literal UTF-8 rune, as in Go. */
+    re = neverc_regexp_compile("^[\\x{4e00}-龥]$", &err);
+    check_bool("[\\x{4e00}-龥] compiles", re != NULL, 1);
+    if (re) {
+        check_bool("[\\x{4e00}-龥] 中", neverc_regexp_match(re, "中"), 1);
+        check_bool("[\\x{4e00}-龥] past end", neverc_regexp_match(re, "龦"), 0);
+        neverc_regexp_free(re);
+    }
+    check_bool("[\\x{80}-中]+", neverc_regexp_match_string("^[\\x{80}-中]+$", "é中"), 1);
+    check_bool("[\\x{e9}-é]", neverc_regexp_match_string("^[\\x{e9}-é]$", "é"), 1);
+    re = neverc_regexp_compile("[\\x{e9}-è]", &err);
+    check_bool("[\\x{e9}-è] reversed rejected", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+    re = neverc_regexp_compile("[\\x{100}-a]", &err);
+    check_bool("[\\x{100}-a] reversed rejected", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+
+    /* Negated classes stay ASCII/byte-only (fail closed). */
+    re = neverc_regexp_compile("[^\\x{4e00}-\\x{9fff}]", &err);
+    check_bool("negated CJK range rejected", re == NULL && err != NULL, 1);
+    neverc_regexp_free(re);
+
+    /* Random ranges: a rune matches iff it is in range and encodable. */
+    {
+        unsigned long long seed = 0x5deece66dULL;
+        int mismatches = 0, compiled = 0;
+        for (int it = 0; it < 300; it++) {
+            unsigned lo, hi;
+            seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+            lo = 0x80 + (unsigned)((seed >> 33) % (0x10FFFF - 0x80 + 1));
+            seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+            unsigned span = (unsigned)(seed >> 33);
+            span = (it % 3 == 0) ? span % 0x110000 : (it % 3 == 1)
+                ? span % 0x1000 : span % 0x40;
+            hi = lo + span > 0x10FFFF ? 0x10FFFF : lo + span;
+            char pat[48];
+            snprintf(pat, sizeof(pat), "^[\\x{%X}-\\x{%X}]$", lo, hi);
+            re = neverc_regexp_compile(pat, NULL);
+            if (!re) { mismatches++; continue; }
+            compiled++;
+            unsigned probes[12] = {
+                lo - 1, lo, lo + 1, hi - 1, hi, hi + 1,
+                0x7FF, 0x800, 0xFFFF, 0x10000, 0xD7FF, 0xE000
+            };
+            for (int k = 0; k < 20; k++) {
+                unsigned r;
+                if (k < 12) r = probes[k];
+                else {
+                    seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+                    r = lo + (unsigned)((seed >> 33) % (hi - lo + 1));
+                }
+                if (r < 0x80 || r > 0x10FFFF || (r >= 0xD800 && r <= 0xDFFF))
+                    continue;
+                int want = r >= lo && r <= hi;
+                if (match_rune(re, r) != want) {
+                    if (mismatches < 5)
+                        printf("  range diff: %s rune U+%04X want %d\n",
+                               pat, r, want);
+                    mismatches++;
+                }
+            }
+            neverc_regexp_free(re);
+        }
+        check_int("random ranges compiled", compiled, 300);
+        check_int("random range mismatches", mismatches, 0);
+    }
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -1380,6 +1593,7 @@ int main(void) {
     test_posix_classes();
     test_named_groups_and_replace_expand();
     test_utf8_class_and_nfa_bound();
+    test_utf8_class_ranges();
     test_go_compat_edges();
     test_find_differential();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
