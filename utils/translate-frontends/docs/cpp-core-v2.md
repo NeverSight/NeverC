@@ -1654,8 +1654,8 @@ For example, neither `C(Argument&&)` nor `C(const Argument&&)` can bind a result
 from `operator Argument&() const` or `operator const Argument&() const`.
 Other record lvalues cannot supply that binding either, and scalar, pointer
 or array-reference results would require another user-defined conversion.
-A usable non-const record value or rvalue result prevents this exclusion,
-even if its record identity would need a further proof.
+Record values and rvalue results retain their binding requirements unless
+the qualification or record-identity exclusions below apply.
 
 A non-const record rvalue-reference parameter also excludes const-qualified
 record values and rvalue-reference results. Neither
@@ -1665,7 +1665,20 @@ The reference cannot discard the result's `const`, and a conversion on the
 result record would require another user-defined conversion. Aliases retain
 the original qualification. This reads the existing result type without
 examining a base graph or conversion set. A `const Argument&&` parameter
-retains these results, and every constructor independently needs its proof.
+retains these results for the record-identity check below.
+
+A remaining record value or rvalue-reference result is also excluded when
+its class already has a complete source-owned non-union definition without
+bases and differs canonically from the parameter record. Thus a result from
+`operator Other() const` or `operator Other&&() const` cannot bind
+`C(Argument&&)` or `C(const Argument&&)` under those conditions. This also
+covers const-qualified `Other` results binding a const parameter. Aliases
+preserve identity, and distinct completed template specializations remain
+different records. The proof checks every usable result against each
+constructor parameter and charges each comparison to the expansion budget.
+It does not complete result definitions, inspect conversion functions or
+walk bases. A matching result, or an otherwise unproven result with bases,
+an incomplete/SDK definition or a union type, keeps its separate requirements.
 
 This result check does not by itself exclude construction: an
 `Argument(const C&)` could create a temporary directly from the source and
@@ -1689,6 +1702,11 @@ the mutable move cannot bind it. A const record prvalue instead retains its
 C++17 copy-elision and temporary-lifetime behavior, including a temporary
 bound to a const rvalue reference. Queries do not execute these conversions,
 copies, moves, defaults or cleanups.
+
+Conversion to a distinct record rvalue reference also preserves the original
+object. A separately selected conversion on that result has its own checked
+call and binding. Copying a named result reference or explicitly moving its
+object retains the resulting copies, moved-from state and cleanup.
 
 A completed source-owned record with no bases or an admitted empty single-base
 chain can also be the first parameter by value, by const lvalue reference, or by

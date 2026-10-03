@@ -3473,28 +3473,13 @@ static bool utilityConditionalMoveMutableRecordReferenceParameter(
          Type.getAddressSpace() == LangAS::Default && Type->isRecordType();
 }
 
-static bool utilityConditionalMoveRvalueRecordReferenceResults(
-    QualType ParameterType, bool HasRecordRvalue, bool HasMutableRecordRvalue) {
-  const auto Type = ParameterType.getNonReferenceType();
-  return ParameterType->isRValueReferenceType() && !Type->isDependentType() &&
-         !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
-         !Type->isAtomicType() &&
-         Type.getAddressSpace() == LangAS::Default && Type->isRecordType() &&
-         (!HasRecordRvalue ||
-          (!Type.isConstQualified() && !HasMutableRecordRvalue));
-}
-
-static bool utilityConditionalMoveMutableRecordReferenceResults(
-    Adapter &A, QualType ParameterType,
+static bool utilityConditionalMoveDistinctRecordResults(
+    Adapter &A, const CXXRecordDecl *ParameterRecord,
     const std::vector<const CXXRecordDecl *> &Results) {
-  if (!utilityConditionalMoveMutableRecordReferenceParameter(ParameterType))
-    return false;
-  const auto *ParameterRecord =
-      ParameterType.getNonReferenceType()->getAsCXXRecordDecl();
   if (!ParameterRecord)
     return false;
   // A completed result class without bases cannot bind a different record's
-  // lvalue reference through a standard conversion. Its own conversion would
+  // reference through a standard conversion. Its own conversion would
   // require a second user-defined conversion. Compare canonical records,
   // preserving aliases and distinct concrete template specializations; do not
   // complete a result class, walk bases or inspect its conversion functions.
@@ -3510,6 +3495,33 @@ static bool utilityConditionalMoveMutableRecordReferenceResults(
       return false;
   }
   return true;
+}
+
+static bool utilityConditionalMoveMutableRecordReferenceResults(
+    Adapter &A, QualType ParameterType,
+    const std::vector<const CXXRecordDecl *> &Results) {
+  return utilityConditionalMoveMutableRecordReferenceParameter(ParameterType) &&
+         utilityConditionalMoveDistinctRecordResults(
+             A, ParameterType.getNonReferenceType()->getAsCXXRecordDecl(),
+             Results);
+}
+
+static bool utilityConditionalMoveRvalueRecordReferenceResults(
+    Adapter &A, QualType ParameterType,
+    const std::vector<const CXXRecordDecl *> &Results,
+    const std::vector<const CXXRecordDecl *> &MutableResults) {
+  const auto Type = ParameterType.getNonReferenceType();
+  if (!ParameterType->isRValueReferenceType() || Type->isDependentType() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type->isAtomicType() || Type.getAddressSpace() != LangAS::Default ||
+      !Type->isRecordType())
+    return false;
+  // Lvalue results cannot bind an rvalue reference. A non-const parameter also
+  // excludes const record values/xvalues. Every remaining result must have a
+  // completed distinct record identity that excludes a standard conversion.
+  return utilityConditionalMoveDistinctRecordResults(
+      A, Type->getAsCXXRecordDecl(),
+      Type.isConstQualified() ? Results : MutableResults);
 }
 
 static bool utilityConditionalMoveDirectConstructor(
@@ -3887,9 +3899,9 @@ static bool utilityMutableCopyConditionalMoveSource(
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
   bool HasUsableArrayConversion = false;
-  bool HasUsableNonlvalueRecordConversion = false;
-  bool HasUsableMutableNonlvalueRecordConversion = false;
   std::vector<const CXXRecordDecl *> MutableRecordLvalueResults;
+  std::vector<const CXXRecordDecl *> RecordRvalueResults;
+  std::vector<const CXXRecordDecl *> MutableRecordRvalueResults;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
@@ -3906,9 +3918,9 @@ static bool utilityMutableCopyConditionalMoveSource(
         HasUsableNonrecordConversion |= !Result->isRecordType();
         HasUsableArrayConversion |= Result->isArrayType();
         if (Result->isRecordType() && !ConversionType->isLValueReferenceType()) {
-          HasUsableNonlvalueRecordConversion = true;
-          HasUsableMutableNonlvalueRecordConversion |=
-              !Result.isConstQualified();
+          RecordRvalueResults.push_back(Result->getAsCXXRecordDecl());
+          if (!Result.isConstQualified())
+            MutableRecordRvalueResults.push_back(Result->getAsCXXRecordDecl());
         }
         if (ConversionType->isLValueReferenceType() && Result->isRecordType() &&
             !Result.isConstQualified())
@@ -3951,9 +3963,11 @@ static bool utilityMutableCopyConditionalMoveSource(
     // lvalue result. A nonrecord result would require another user-defined
     // conversion. A non-const record rvalue reference also cannot discard const
     // from a record value or rvalue-reference result. The result's own conversion
-    // would need another user-defined conversion. A const parameter retains
-    // those results, and any usable non-const record rvalue keeps its separate
-    // binding requirements. Read only the existing result qualification.
+    // would need another user-defined conversion. Check each remaining record
+    // value or rvalue result against this constructor's parameter using the
+    // completed distinct-record proof above. Const parameters retain const
+    // results for that identity check. Matching or otherwise unproven results
+    // keep their separate binding requirements.
     // A parameter-record constructor could still create a temporary directly
     // from the source; the constructor-shape check below
     // must independently exclude that path before admitting an rvalue reference.
@@ -3980,9 +3994,8 @@ static bool utilityMutableCopyConditionalMoveSource(
                A, Constructor->getParamDecl(0)->getType(),
                MutableRecordLvalueResults) ||
            utilityConditionalMoveRvalueRecordReferenceResults(
-               Constructor->getParamDecl(0)->getType(),
-               HasUsableNonlvalueRecordConversion,
-               HasUsableMutableNonlvalueRecordConversion));
+               A, Constructor->getParamDecl(0)->getType(), RecordRvalueResults,
+               MutableRecordRvalueResults));
       RequireUnavailableDestruction =
           Latest->getMinRequiredArguments() <= 1 &&
           !ExcludedConversionResults;
