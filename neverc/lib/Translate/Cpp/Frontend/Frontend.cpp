@@ -3180,11 +3180,28 @@ static bool utilityConditionalMoveUnrelatedAccess(
     return true; // The root SDK traits have unrelated access.
   // A nested class inherits the access of each enclosing class. Follow the
   // actual declaration-context chain, as Sema does, and compare canonical
-  // identities only after retaining those contexts. Local/function contexts
-  // and any base relationship need a separate proof.
+  // identities only after retaining those contexts. A local class can also
+  // inherit an enclosing function's grants; keep that actual definition too.
   std::vector<const CXXRecordDecl *> OwnerContexts;
+  const FunctionDecl *EnclosingFunction = nullptr;
   const DeclContext *Context = Owner;
   while (!Context->isFileContext()) {
+    if (const auto *Function = dyn_cast<FunctionDecl>(Context)) {
+      // An inline friend can carry its lexical class's privileges even though
+      // its semantic context is a namespace. Member/template functions and
+      // class-defined friends need their own effective-context proof.
+      if (Function->getKind() != Decl::Function || Function->isInvalidDecl() ||
+          Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+          !Function->doesThisDeclarationHaveABody() ||
+          !Function->getDeclContext()->isFileContext() ||
+          !Function->getLexicalDeclContext()->isFileContext() ||
+          !A.S.owns(A.Sources, Function->getLocation()))
+        return false;
+      A.chargeExpansion(1, Function->getLocation());
+      EnclosingFunction = Function;
+      Context = Function->getDeclContext();
+      continue;
+    }
     const auto *Scope = dyn_cast<CXXRecordDecl>(Context);
     const auto *Definition = Scope ? Scope->getDefinition() : nullptr;
     if (!Scope || !Definition || OwnerContexts.size() >= 64 ||
@@ -3199,9 +3216,9 @@ static bool utilityConditionalMoveUnrelatedAccess(
     OwnerContexts.push_back(Scope);
     Context = Scope->getDeclContext();
   }
-  // No unrelated class or free-function friend grants access to an owning
-  // constructor in these contexts. Ordinary traversal still checks every
-  // written friend source, including copied template declarations.
+  // Compare all retained class/function contexts before declaring a friend
+  // unrelated. Ordinary traversal still checks every written friend source,
+  // including copied template declarations.
   for (const auto *Friend : Record->friends()) {
     A.chargeExpansion(1, Friend->getLocation());
     if (Friend->isInvalidDecl() || Friend->hasAttrs() ||
@@ -3239,6 +3256,9 @@ static bool utilityConditionalMoveUnrelatedAccess(
           Function->isInvalidDecl() ||
           !Function->getDeclContext()->getRedeclContext()->isFileContext() ||
           !A.S.owns(A.Sources, Function->getLocation()))
+        return false;
+      if (EnclosingFunction && Function->getCanonicalDecl() ==
+                                   EnclosingFunction->getCanonicalDecl())
         return false;
       // A namespace free-function primary and all of its specializations remain
       // unrelated to the owner's constructors. Require the exact primary pair;
