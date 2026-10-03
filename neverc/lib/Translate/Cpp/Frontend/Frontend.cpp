@@ -3469,11 +3469,18 @@ static bool utilityConditionalMoveArrayReferenceResults(
     const std::vector<const CXXConversionDecl *> &Conversions) {
   if (!utilityConditionalMoveArrayReferenceParameter(A, ParameterType))
     return false;
+  const auto HasNonpointerElementType = [](QualType Type) {
+    return !Type->isDependentType() &&
+           (Type->isBuiltinType() || Type->isEnumeralType() ||
+            Type->isRecordType());
+  };
   // Non-array results cannot bind this reference. Exclude incompatible value
   // categories and bindings that discard array const qualification. Remaining
-  // array results must differ in rank or a corresponding fixed bound: a
-  // standard conversion cannot reshape an array. Do not examine element
-  // conversions or instantiate any signature, default or body.
+  // array results can differ in rank or a corresponding fixed bound: a
+  // standard conversion cannot reshape an array. Matching shapes also exclude
+  // distinct builtin, enum or record element types: array reference binding
+  // does not convert individual elements. Do not instantiate any signature,
+  // element conversion, default or body.
   for (const auto *Conversion : Conversions) {
     auto Parameter = ParameterType.getNonReferenceType();
     const auto ConversionType = Conversion->getConversionType();
@@ -3508,8 +3515,16 @@ static bool utilityConditionalMoveArrayReferenceResults(
       Parameter = ParameterArray->getElementType();
       Result = ResultArray->getElementType();
     }
-    if (!DifferentShape)
-      return false;
+    if (!DifferentShape) {
+      if (!HasNonpointerElementType(Parameter) ||
+          !HasNonpointerElementType(Result))
+        return false;
+      A.chargeExpansion(1, Conversion->getLocation());
+      // Aliases and cv variants of the same element do not prove exclusion.
+      // Pointer elements keep their separate qualification requirements.
+      if (A.Context.hasSameUnqualifiedType(Parameter, Result))
+        return false;
+    }
   }
   return true;
 }
@@ -4023,11 +4038,12 @@ static bool utilityMutableCopyConditionalMoveSource(
     // another user-defined conversion. A fixed-array rvalue reference cannot
     // bind an array lvalue result; a mutable array lvalue reference cannot bind
     // an array rvalue result. A non-const array reference also cannot discard
-    // const from the result array. Each remaining array result needs a
-    // different rank or bound in at least one corresponding fixed dimension.
-    // Compare every usable result for each constructor; matching shapes,
-    // unknown bounds or other element/qualification differences retain their
-    // separate binding requirements.
+    // const from the result array. Each remaining array result can be excluded
+    // by a different rank or bound in a corresponding fixed dimension.
+    // Matching shapes can exclude distinct builtin, enum or record element
+    // types without considering element conversions. Compare every usable
+    // result for each constructor; matching element identities, unknown bounds
+    // or pointer element differences retain their separate requirements.
     // A mutable record lvalue reference cannot bind record prvalues or xvalues;
     // a nonrecord result would need another user-defined conversion. A const
     // record lvalue cannot discard const during reference binding, even when

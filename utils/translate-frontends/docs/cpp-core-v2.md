@@ -1579,6 +1579,17 @@ dimensions, for the admitted const and lvalue/rvalue reference forms. It does
 not flatten arrays, insert dimensions or follow pointer elements into their
 pointee types. Unknown array bounds do not establish a rank difference.
 
+For matching ranks and bounds, different builtin, enumeration or record
+element types also exclude an array result. For example, `int (&)[2]` cannot
+bind `long (&)[2]`, and `A (&)[2]` cannot bind `B (&)[2]` when `A` and `B` name
+different records, even if `B` provides a conversion to `A`. Array reference
+binding does not convert individual elements. The comparison uses canonical
+unqualified element types, so aliases of the same type and added top-level
+const do not establish this exclusion. Both terminal element types must be
+in these admitted nonpointer categories; pointer elements retain their
+separate qualification requirements. No element conversion is inspected or
+instantiated, and all element types still pass their ordinary source checks.
+
 Fixed-array results can also be excluded by reference binding, even when the
 bounds match:
 
@@ -1598,14 +1609,14 @@ nonpublic conversions in the actual owning context. Result arrays must still
 have a known fixed bound before using the binding proof.
 
 Every constructor independently needs an admitted exclusion for every usable
-array result. One result with a retained reference binding and matching rank
-and bounds keeps its separate requirements, as do unknown bounds and other
-differences in element type or qualification. Equal bounds written through
-different aliases or constant expressions remain equal. Each result's binding
-check and each compared dimension, including a dimension present on only one
-side, consume the existing expansion budget. All written dimensions retain
-their source checks even when reference binding or an earlier dimension
-already excludes the result.
+array result. One result with a retained reference binding, matching rank and
+bounds, and the same unqualified element type keeps its separate requirements,
+as do unknown bounds and remaining pointer element or qualification cases.
+Equal bounds written through different aliases or constant expressions remain
+equal. Each result's binding check, each compared dimension (including a
+dimension present on only one side), and each element identity comparison
+consume the existing expansion budget. All written dimensions and element
+aliases retain their source checks even when an earlier exclusion succeeds.
 Excluded conversions retain their existing receiver, deletion, explicitness
 and access checks. Each mutable-copy node in an owned record or fixed array
 uses its actual owner context, including friendship that makes a nonpublic
