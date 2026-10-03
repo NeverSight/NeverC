@@ -3478,6 +3478,23 @@ static bool utilityConditionalMoveDirectConstructor(
           Type->isRecordType());
 }
 
+static bool utilityConditionalMoveExplicitArgumentConstructor(
+    const CXXConstructorDecl *Constructor) {
+  if (!Constructor || Constructor->isInvalidDecl() ||
+      Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
+      Constructor->isInheritingConstructor() ||
+      Constructor->getDescribedFunctionTemplate() ||
+      Constructor->getPrimaryTemplate() || Constructor->getNumParams() == 0)
+    return false;
+  // An explicit constructor cannot supply the implicit conversion to another
+  // constructor's argument. This does not exclude explicit constructors of
+  // the queried record itself: the trait uses direct-initialization there.
+  // Admit only the plain C++17 specifier, without consuming an expression or
+  // requesting resolution of a conditional explicit specifier.
+  const auto Specifier = Constructor->getExplicitSpecifier();
+  return Specifier.isExplicit() && !Specifier.getExpr();
+}
+
 static bool utilityConditionalMoveValueConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor,
     std::vector<const CXXMethodDecl *> *Signatures = nullptr) {
@@ -3497,11 +3514,11 @@ static bool utilityConditionalMoveValueConstructor(
   // an admitted empty base chain. The queried record has no bases, and an
   // inherited converting constructor remains excluded below. Extra defaulted
   // copy/move parameters do not change that first self-reference; retain their
-  // complete signatures
-  // without evaluating an unused default. Its other constructors may exclude
-  // that source by arity or a direct first-parameter proof. Inspect only this
-  // existing constructor set; do not recurse into another parameter record,
-  // complete a class, or instantiate a hypothetical body or default argument.
+  // complete signatures without evaluating an unused default. Its other
+  // constructors may exclude that source by arity, a direct first-parameter
+  // proof or a plain explicit specifier. Inspect only this existing constructor
+  // set; do not recurse into another parameter record, complete a class, or
+  // instantiate a hypothetical body or default argument.
   const auto *ParameterRecord = Type->getAsCXXRecordDecl();
   ParameterRecord = ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
   if (!ParameterRecord || ParameterRecord->isInvalidDecl() ||
@@ -3521,6 +3538,7 @@ static bool utilityConditionalMoveValueConstructor(
         Candidate->isInheritingConstructor() ||
         (Candidate->getNumParams() != 0 &&
          !Candidate->isCopyOrMoveConstructor() &&
+         !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
          !utilityConditionalMoveDirectConstructor(A, Candidate)) ||
         !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
       return false;
@@ -3531,16 +3549,20 @@ static bool utilityConditionalMoveValueConstructor(
 static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
-  // Parameter-record proofs also retain unused zero-parameter constructors.
-  // Their exact written signatures need no hypothetical default construction.
+  // Parameter-record proofs also retain unused default and explicit
+  // constructors. Their written signatures need no hypothetical construction.
   const bool DefaultConstructor = Constructor && !Constructor->isVariadic() &&
                                   Constructor->getNumParams() == 0;
   const bool ValueConstructor =
       utilityConditionalMoveValueConstructor(A, Constructor);
+  const bool ExplicitArgumentConstructor =
+      utilityConditionalMoveExplicitArgumentConstructor(Constructor);
+  const bool OrdinaryConstructor =
+      DefaultConstructor || ValueConstructor || ExplicitArgumentConstructor;
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   if (!Method ||
-      !(Assignment || Destructor || DefaultConstructor || ValueConstructor ||
+      !(Assignment || Destructor || OrdinaryConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
@@ -3560,14 +3582,17 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const auto *Pattern = Origin->getType()->getAs<FunctionProtoType>();
   const auto *PatternWritten = OriginInfo->getType()->getAs<FunctionProtoType>();
   const auto *OriginConstructor = dyn_cast<CXXConstructorDecl>(Origin);
+  if (ExplicitArgumentConstructor &&
+      !utilityConditionalMoveExplicitArgumentConstructor(OriginConstructor))
+    return false;
   const bool MatchingOrigin =
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
-      : DefaultConstructor || ValueConstructor ? OriginConstructor &&
-                               !OriginConstructor->isCopyOrMoveConstructor() &&
-                               !OriginConstructor->isVariadic() &&
-                               OriginConstructor->getNumParams() ==
-                                   Constructor->getNumParams()
+      : OrdinaryConstructor ? OriginConstructor &&
+                                  !OriginConstructor->isCopyOrMoveConstructor() &&
+                                  !OriginConstructor->isVariadic() &&
+                                  OriginConstructor->getNumParams() ==
+                                      Constructor->getNumParams()
                    : OriginConstructor &&
                          !OriginConstructor->isVariadic() &&
                          OriginConstructor->getNumParams() ==

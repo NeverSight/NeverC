@@ -1424,7 +1424,23 @@ evaluates selected defaults, preserves scalar/array/record reference bindings,
 and retains mutations and temporary cleanup. This check does not recursively
 inspect the constructors of another record used as the parameter record's
 first parameter; record values, const record lvalue references and record
-rvalue references at that further level retain separate requirements.
+rvalue references at that further level retain separate requirements unless
+the constructor has the plain `explicit` specifier described below.
+
+An ordinary nonvariadic parameter-record constructor with a plain C++17
+`explicit` specifier cannot supply the implicit argument conversion either.
+For example, `explicit Argument(const C&, int = 3)` does not make `C(Argument)`
+or `C(const Argument&)` accept a `const C&`. This also applies to mutable and
+const rvalue-reference parameters, deleted or inaccessible explicit
+constructors, completed class-template parameter records and admitted empty
+base chains. Every constructor redeclaration retains its original signature;
+an out-of-line definition keeps the canonical declaration's explicit status.
+Unused template defaults and bodies stay uninstantiated, while actual explicit
+construction checks and evaluates its selected defaults and body. Conditional
+`explicit(expression)` specifiers and constructor templates remain outside
+this proof. This exclusion applies only to the implicit conversion to a
+parameter record: an explicit constructor of the queried record itself still
+participates in the trait's direct-initialization.
 
 Each parameter-record constructor retains its original signature and every
 redeclaration, including aliases and exception sources. Unused class-template
