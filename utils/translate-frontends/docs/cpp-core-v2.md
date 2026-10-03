@@ -1014,8 +1014,9 @@ reference; actual construction from it requires a viable selected constructor.
 The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
 or deleted. A node with only exact mutable copies has no bases. Its conversion
-functions must satisfy the exclusions below for a const lvalue, retaining every
-original signature. Access-based exclusions use the actual owning operation's
+functions must satisfy the exclusions below for a const lvalue or the ordinary
+constructors must satisfy the independent arity proof below. Every original
+signature is retained. Access-based exclusions use the actual owning operation's
 context for each member edge. Besides its exact moves, it may have nonvariadic
 zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
@@ -1343,9 +1344,10 @@ A separate bounded proof admits source-owned records whose only copy
 declaration has exactly mutable `Record&` as its first parameter, optionally
 followed by defaulted parameters. The copy must be written, including
 ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
-use the owning-graph proof above. These records have no bases. Every conversion
-function must be an ordinary non-template function excluded from implicit
-conversion of a const lvalue by one of the proofs below. A plain C++17 `explicit`
+use the owning-graph proof above. These records have no bases. Conversion
+functions must be ordinary non-template functions. Each must be excluded from
+implicit conversion of a const lvalue, or every ordinary value constructor must
+be excluded by the arity proof below. A plain C++17 `explicit`
 conversion function cannot supply the implicit conversion
 of a constructor argument, including when the outer constructor is selected by
 direct initialization. This includes admitted scalar, pointer, enum, record and
@@ -1369,12 +1371,14 @@ even when the receiver is const. For example, `operator int() &`,
 `C(int)` accept `const C&`. Unqualified mutable receivers and admitted reference
 or record conversion results follow the same binding proof. Deletion is read
 from the canonical declaration; out-of-line definitions retain their exact
-receiver qualifiers. Every conversion must independently satisfy an exclusion,
-and every other constructor keeps its existing proof. In particular, a live
+receiver qualifiers. Under this conversion-based proof, every conversion must
+independently satisfy an exclusion, and every other constructor keeps its
+existing proof. In particular, a live
 implicit `const` or `const &` conversion still prevents this proof unless its
-access is excluded as below, even if another conversion is deleted or an overload
-would make the native copy trait false. A parameter record's own viable
-converting constructor is also checked independently of the source record's
+access is excluded as below or the independent constructor arity proof applies,
+even if another conversion is deleted or an overload would make the native copy
+trait false. A parameter record's own viable converting constructor is also
+checked independently of the source record's
 excluded conversion functions.
 
 An ordinary private or protected conversion can also be excluded when access
@@ -1408,6 +1412,29 @@ including implicit scalar/reference/record results, mutations and cleanup.
 Actual calls to deleted functions or with incompatible receiver qualifiers
 remain C++ source errors. The same rules apply to mutable and const queries and
 to mutable-copy nodes in owned records and arrays.
+
+Ordinary live implicit conversions are also admitted when the record has only
+the exact copy/move constructors, nonvariadic zero-parameter constructors, or
+ordinary nonvariadic constructors that each require at least two arguments.
+For example, `operator int() const` cannot make `C(int, int)` consume a single
+`const C&`. This proof does not depend on conversion access or the result type:
+an available conversion cannot supply missing constructor arguments. It also
+applies when no ordinary value constructor exists, and to mutable-copy nodes in
+owned records, fixed arrays, friends and nested classes. Exact copy/move bindings
+and their original parameter sources keep their existing checks.
+
+The latest constructor redeclaration determines the minimum arity. A later
+default making any constructor callable with one argument prevents this proof,
+as does any other one-argument candidate, including a deleted or nonpublic one.
+Later defaults on a constructor that still needs two arguments remain unused;
+their original parameter and default sources are retained. Every conversion
+keeps its original signature and redeclarations even when overload resolution
+does not need it. An unused nondependent template exception source may remain
+lazy; an unresolved dependent exception source still prevents admission, while
+an already-resolved one keeps its ordinary source checks. Actual conversion
+calls check their selected bodies and preserve scalar, reference and record
+results and cleanup. Conversion templates, conditional `explicit`, unsupported
+receiver qualifiers and constructor templates remain outside this proof.
 
 Other constructors may be a move, a nonvariadic zero-parameter
 default constructor, or an ordinary nonvariadic constructor whose first parameter

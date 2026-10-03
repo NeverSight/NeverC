@@ -3640,8 +3640,8 @@ static bool utilityConditionalMoveValueConstructor(
   return true;
 }
 
-static bool utilityConditionalMoveExcludedConversion(
-    Adapter &A, const CXXConversionDecl *Conversion, bool UnrelatedAccess) {
+static bool utilityConditionalMoveConversionShape(
+    const CXXConversionDecl *Conversion) {
   if (!Conversion || Conversion->isInvalidDecl() || Conversion->isImplicit() ||
       Conversion->isVirtual() || Conversion->isStatic() ||
       Conversion->isExplicitObjectMemberFunction() || Conversion->isVariadic() ||
@@ -3650,6 +3650,13 @@ static bool utilityConditionalMoveExcludedConversion(
       Conversion->getPrimaryTemplate() ||
       Conversion->getMethodQualifiers().hasVolatile() ||
       Conversion->getMethodQualifiers().hasRestrict())
+    return false;
+  return !Conversion->getCanonicalDecl()->getExplicitSpecifier().getExpr();
+}
+
+static bool utilityConditionalMoveExcludedConversion(
+    Adapter &A, const CXXConversionDecl *Conversion, bool UnrelatedAccess) {
+  if (!utilityConditionalMoveConversionShape(Conversion))
     return false;
   // Constructor arguments use implicit conversion from the copy trait's
   // const record lvalue. Plain explicit and written deleted conversions cannot
@@ -3662,11 +3669,10 @@ static bool utilityConditionalMoveExcludedConversion(
   const auto *Canonical = Conversion->getCanonicalDecl();
   const auto Specifier = Canonical->getExplicitSpecifier();
   const auto Access = Canonical->getAccess();
-  return !Specifier.getExpr() &&
-         (Specifier.isExplicit() || Canonical->isDeletedAsWritten() ||
-          !Conversion->isConst() || Conversion->getRefQualifier() == RQ_RValue ||
-          (UnrelatedAccess && A.Context.getLangOpts().AccessControl &&
-           (Access == AS_private || Access == AS_protected)));
+  return Specifier.isExplicit() || Canonical->isDeletedAsWritten() ||
+         !Conversion->isConst() || Conversion->getRefQualifier() == RQ_RValue ||
+         (UnrelatedAccess && A.Context.getLangOpts().AccessControl &&
+          (Access == AS_private || Access == AS_protected));
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
@@ -3694,12 +3700,13 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   // Only classify signatures already retained by the adapter's decision
-  // proof. Nonpublic declarations and their exact template origins can retain
-  // lazy written sources; the actual owning access was checked before queuing.
-  const bool ExcludedConversion = utilityConditionalMoveExcludedConversion(
-      A, dyn_cast_or_null<CXXConversionDecl>(Method), /*UnrelatedAccess=*/true);
+  // proof. That proof excludes either the conversion or every ordinary
+  // constructor by arity. Keep exact template origins and lazy written sources
+  // without re-deciding construction or owning access here.
+  const bool OrdinaryConversion = utilityConditionalMoveConversionShape(
+      dyn_cast_or_null<CXXConversionDecl>(Method));
   if (!Method ||
-      !(Assignment || Destructor || ExcludedConversion || OrdinaryConstructor ||
+      !(Assignment || Destructor || OrdinaryConversion || OrdinaryConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
@@ -3728,9 +3735,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool MatchingOrigin =
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
-      : ExcludedConversion ? utilityConditionalMoveExcludedConversion(
-                                  A, dyn_cast<CXXConversionDecl>(Origin),
-                                  /*UnrelatedAccess=*/true)
+      : OrdinaryConversion ? utilityConditionalMoveConversionShape(
+                                  dyn_cast<CXXConversionDecl>(Origin))
       : OrdinaryConstructor ? OriginConstructor &&
                                   !OriginConstructor->isCopyOrMoveConstructor() &&
                                   !OriginConstructor->isVariadic() &&
@@ -3803,21 +3809,36 @@ static bool utilityMutableCopyConditionalMoveSource(
   // check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
+  bool RequiresConstructorArityProof = false;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
         return false;
     } else if (const auto *Conversion = dyn_cast<CXXConversionDecl>(Declaration)) {
-      if (!utilityConditionalMoveExcludedConversion(A, Conversion,
-                                                    UnrelatedAccess) ||
+      if (!utilityConditionalMoveConversionShape(Conversion) ||
           !utilityConditionalMoveSignatureSource(A, Conversion, Signatures))
         return false;
+      RequiresConstructorArityProof |=
+          !utilityConditionalMoveExcludedConversion(A, Conversion,
+                                                    UnrelatedAccess);
     }
   }
   for (const auto *Constructor : Record->ctors()) {
     if (Constructor->isCopyOrMoveConstructor() ||
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
+    // A usable conversion cannot restore missing constructor arguments.
+    // Exact copies/moves keep their separate binding proof, and zero-parameter
+    // constructors cannot consume the source. Every other constructor must
+    // require more than one argument if any conversion remains available.
+    // A later redeclaration can add defaults, so use its current minimum arity
+    // without instantiating an unused default or hypothetical conversion.
+    if (RequiresConstructorArityProof) {
+      const auto *Latest = Constructor->getMostRecentDecl();
+      A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
+      if (Latest->getMinRequiredArguments() <= 1)
+        return false;
+    }
     if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures,
                                                UnrelatedAccess, Owner) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
