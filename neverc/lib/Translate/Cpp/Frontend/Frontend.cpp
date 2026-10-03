@@ -3471,9 +3471,9 @@ static bool utilityConditionalMoveArrayReferenceResults(
     return false;
   // Non-array results cannot bind this reference. Exclude incompatible value
   // categories and bindings that discard array const qualification. Remaining
-  // array results must differ in a corresponding fixed dimension: a standard
-  // conversion cannot resize an array. Do not examine element conversions or
-  // instantiate any signature, default or body.
+  // array results must differ in rank or a corresponding fixed bound: a
+  // standard conversion cannot reshape an array. Do not examine element
+  // conversions or instantiate any signature, default or body.
   for (const auto *Conversion : Conversions) {
     auto Parameter = ParameterType.getNonReferenceType();
     const auto ConversionType = Conversion->getConversionType();
@@ -3488,21 +3488,27 @@ static bool utilityConditionalMoveArrayReferenceResults(
          ConversionType->isRValueReferenceType()) ||
         (!Parameter.isConstQualified() && Result.isConstQualified()))
       continue;
-    bool DifferentBound = false;
-    while (const auto *ParameterArray =
-               A.Context.getAsConstantArrayType(Parameter)) {
-      A.chargeExpansion(1, Conversion->getLocation());
+    bool DifferentShape = false;
+    for (;;) {
+      const auto *ParameterArray = A.Context.getAsConstantArrayType(Parameter);
       const auto *ResultArray = A.Context.getAsConstantArrayType(Result);
-      if (!ResultArray)
-        return false;
+      if (!ParameterArray && !ResultArray)
+        break;
+      A.chargeExpansion(1, Conversion->getLocation());
+      if (!ParameterArray || !ResultArray) {
+        // One side must have reached a non-array element. An unresolved array
+        // bound is not a rank difference; pointers remain non-array elements.
+        DifferentShape = Parameter->isArrayType() != Result->isArrayType();
+        break;
+      }
       if (ParameterArray->getSize() != ResultArray->getSize()) {
-        DifferentBound = true;
+        DifferentShape = true;
         break;
       }
       Parameter = ParameterArray->getElementType();
       Result = ResultArray->getElementType();
     }
-    if (!DifferentBound)
+    if (!DifferentShape)
       return false;
   }
   return true;
@@ -4018,10 +4024,10 @@ static bool utilityMutableCopyConditionalMoveSource(
     // bind an array lvalue result; a mutable array lvalue reference cannot bind
     // an array rvalue result. A non-const array reference also cannot discard
     // const from the result array. Each remaining array result needs a
-    // different bound in at least one corresponding fixed dimension. Compare
-    // every usable result for each constructor; matching bounds, unknown bounds
-    // or other element/qualification/rank differences retain their separate
-    // binding requirements.
+    // different rank or bound in at least one corresponding fixed dimension.
+    // Compare every usable result for each constructor; matching shapes,
+    // unknown bounds or other element/qualification differences retain their
+    // separate binding requirements.
     // A mutable record lvalue reference cannot bind record prvalues or xvalues;
     // a nonrecord result would need another user-defined conversion. A const
     // record lvalue cannot discard const during reference binding, even when

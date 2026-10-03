@@ -1570,6 +1570,15 @@ lvalue/rvalue references, deeper dimensions, record/pointer elements and
 aliases. The proof compares already-resolved bounds; it does not resize arrays
 or consult element conversions.
 
+Different array ranks also exclude a result, even when every shared leading
+dimension has the same bound. For example, `int (&)[2][3]` cannot bind
+`int (&)[2]`, and `int (&)[2]` cannot bind `int (&)[2][3]`. The comparison stops
+when one side reaches a non-array element while the other still has a fixed
+array dimension. It works in either direction and after multiple matching
+dimensions, for the admitted const and lvalue/rvalue reference forms. It does
+not flatten arrays, insert dimensions or follow pointer elements into their
+pointee types. Unknown array bounds do not establish a rank difference.
+
 Fixed-array results can also be excluded by reference binding, even when the
 bounds match:
 
@@ -1589,17 +1598,18 @@ nonpublic conversions in the actual owning context. Result arrays must still
 have a known fixed bound before using the binding proof.
 
 Every constructor independently needs an admitted exclusion for every usable
-array result. One result with a retained reference binding and matching bounds
-keeps its separate requirements, as do unknown bounds and other differences
-in element type, qualification or rank. Equal bounds written through different
-aliases or constant expressions remain equal. Each result's binding check and
-each compared dimension consume the existing expansion budget. All written
-dimensions retain their source checks even when reference binding or an
-earlier dimension already excludes the result.
+array result. One result with a retained reference binding and matching rank
+and bounds keeps its separate requirements, as do unknown bounds and other
+differences in element type or qualification. Equal bounds written through
+different aliases or constant expressions remain equal. Each result's binding
+check and each compared dimension, including a dimension present on only one
+side, consume the existing expansion budget. All written dimensions retain
+their source checks even when reference binding or an earlier dimension
+already excludes the result.
 Excluded conversions retain their existing receiver, deletion, explicitness
 and access checks. Each mutable-copy node in an owned record or fixed array
 uses its actual owner context, including friendship that makes a nonpublic
-array conversion available. The bound comparison applies to that available
+array conversion available. The shape comparison applies to that available
 conversion in the owning context too.
 
 All original signatures, array bounds, element/result aliases, defaults and
