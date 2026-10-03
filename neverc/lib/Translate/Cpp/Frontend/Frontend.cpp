@@ -3628,7 +3628,7 @@ static bool utilityRecordConditionalMoveSource(
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
       return true;
     // Each nontrivial node keeps one exact public const or mutable copy and
-    // at most one exact mutable or const rvalue move. Mutable copies exclude
+    // at most one exact move per rvalue qualification. Mutable copies exclude
     // alternative conversion paths. Their graph supplies the declarations
     // behind an enclosing implicit mutable copy. A public copy may be deleted;
     // defaulted moves may be ignored in favor of copying. Preserve the SDK's
@@ -3645,7 +3645,8 @@ static bool utilityRecordConditionalMoveSource(
     const bool UnrelatedAccess =
         !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
                    Owner->getDeclContext()->isFileContext());
-    const CXXConstructorDecl *Copy = nullptr, *Move = nullptr;
+    const CXXConstructorDecl *Copy = nullptr, *Move = nullptr,
+                             *ConstMove = nullptr;
     for (const auto *Constructor : Record->ctors()) {
       A.chargeExpansion(1, Constructor->getLocation());
       if (Constructor->isInheritingConstructor())
@@ -3671,7 +3672,10 @@ static bool utilityRecordConditionalMoveSource(
           (IsCopy && Constructor->getAccess() != AS_public) ||
           !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
         return false;
-      auto *&Selected = IsCopy ? Copy : Move;
+      auto *&Selected = IsCopy ? Copy
+                        : A.Context.hasSameType(Parameter, ConstParameter)
+                            ? ConstMove
+                            : Move;
       if (Selected && Selected != Constructor->getCanonicalDecl())
         return false;
       Selected = Constructor->getCanonicalDecl();
@@ -3711,7 +3715,8 @@ static bool utilityRecordConditionalMoveSource(
     // bind that source. User-written owning operations need a separate
     // argument-source proof; never infer their member bindings from storage.
     const bool DefaultedOwner =
-        Copy->isDefaulted() && (!Move || Move->isDefaulted());
+        Copy->isDefaulted() && (!Move || Move->isDefaulted()) &&
+        (!ConstMove || ConstMove->isDefaulted());
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
                 RootConstCopyUnavailable, Record, /*ConstObject=*/false))

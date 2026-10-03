@@ -921,8 +921,8 @@ pointer/reference fields do not consume their referents' constructor graph.
 
 Records with ordinary value constructors also supply conditional-move query
 sources when they have one exact public `const Record&` copy and at most one
-exact `Record&&` or `const Record&&` move. These special members may be implicit,
-explicitly defaulted where permitted, ordinary or explicitly deleted; the move
+of each exact move signature, `Record&&` and `const Record&&`. These members may
+be implicit, explicitly defaulted where permitted, ordinary or explicitly deleted; the move
 may also be private or protected.
 A copy-only record is included. An implicit or defaulted copy may be deleted by
 its fields, including an uncopyable value member or an rvalue-reference field.
@@ -934,8 +934,15 @@ the pinned traits can select that move from mutable or const rvalues, yielding `
 `const Record&&` when construction is nonthrowing, and the usual const-reference
 copy fallback otherwise. Actual construction checks and executes the selected
 const-rvalue move and its defaults, preserving the source's const qualification.
-Two distinct move overloads and volatile-qualified move parameters retain their
-separate requirements.
+Both move qualifications can coexist. The pinned traits retain overload
+ranking, including a preferred mutable move that throws, is deleted or is
+inaccessible even when a const-rvalue move exists. Each move independently
+supplies its original signatures and default sources; an unused overload does
+not hide resolved defaults, parameter types or exception expressions. Const
+queries may keep an exact mutable move's uninstantiated defaults lazy under
+the binding proof below while still checking the available const-rvalue move.
+Additional moves sharing a first-parameter qualification and volatile-qualified
+move parameters retain their separate requirements.
 
 This record proof accepts implicit, defaulted or ordinary public, non-deleted
 destruction. Its bounded owning graph also includes nontrivial source-owned
@@ -983,8 +990,9 @@ be copied from a const object regardless of those defaults, so nested members
 and fixed arrays retain the pinned rvalue-reference result. This includes
 const-copy or deleted-const-copy members alongside the mutable-copy member,
 and members whose move is deleted or inaccessible. Every nontrivial node still
-has one public exact const or mutable copy, at most one exact move, and an
-accessible nondeleted destructor. All parameter types, aliases, array bounds,
+has one public exact const or mutable copy, at most one move of each exact
+rvalue qualification, and an accessible nondeleted destructor. All parameter
+types, aliases, array bounds,
 exception specifications and redeclarations remain source dependencies.
 Unused template defaults and bodies stay lazy. Actual generated copies and
 moves check and evaluate the selected member defaults and bodies, preserving
@@ -1050,7 +1058,8 @@ destruction.
 
 Owned fields declared const have the same binding proof when their immediate
 owner's copy and move constructors are already defaulted, whether implicit or
-explicit. An absent move is allowed. A defaulted owning operation preserves
+explicit. Either move overload may be absent, but every declared move must be
+defaulted for this owning proof. A defaulted owning operation preserves
 the source field's declared const qualification, including fixed-array elements
 and qualifiers introduced by aliases. Non-mutable fields also inherit a proven
 const source owner's qualification. This propagates through nested defaulted
