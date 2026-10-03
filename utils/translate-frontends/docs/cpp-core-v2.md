@@ -1654,8 +1654,18 @@ For example, neither `C(Argument&&)` nor `C(const Argument&&)` can bind a result
 from `operator Argument&() const` or `operator const Argument&() const`.
 Other record lvalues cannot supply that binding either, and scalar, pointer
 or array-reference results would require another user-defined conversion.
-An existing usable record value or rvalue result prevents this exclusion,
-even if its record identity or qualification would need a further proof.
+A usable non-const record value or rvalue result prevents this exclusion,
+even if its record identity would need a further proof.
+
+A non-const record rvalue-reference parameter also excludes const-qualified
+record values and rvalue-reference results. Neither
+`operator const Argument() const` nor `operator const Argument&&() const`
+can supply `C(Argument&&)`.
+The reference cannot discard the result's `const`, and a conversion on the
+result record would require another user-defined conversion. Aliases retain
+the original qualification. This reads the existing result type without
+examining a base graph or conversion set. A `const Argument&&` parameter
+retains these results, and every constructor independently needs its proof.
 
 This result check does not by itself exclude construction: an
 `Argument(const C&)` could create a temporary directly from the source and
@@ -1672,6 +1682,13 @@ preserves its identity and mutations without introducing an argument move.
 Separately copying or moving an argument value performs those operations and
 their required cleanup, and a selected explicit rvalue-reference conversion
 retains its call and binding.
+
+Actual conversion to a const record rvalue reference preserves the original
+object. Copying a value from that reference invokes the copy operation when
+the mutable move cannot bind it. A const record prvalue instead retains its
+C++17 copy-elision and temporary-lifetime behavior, including a temporary
+bound to a const rvalue reference. Queries do not execute these conversions,
+copies, moves, defaults or cleanups.
 
 A completed source-owned record with no bases or an admitted empty single-base
 chain can also be the first parameter by value, by const lvalue reference, or by
