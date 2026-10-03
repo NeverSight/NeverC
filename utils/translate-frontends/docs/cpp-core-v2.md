@@ -981,8 +981,8 @@ private mutable copy can also coexist with an available public const copy and
 retain the const-reference fallback. The graph retains every copy declaration,
 including inaccessible and deleted overloads; it does not make them callable.
 Actual construction still requires valid access and checks the selected body,
-defaults and cleanup. Private or protected access alone does not exempt an
-owned copy's uninstantiated default arguments from their source requirements.
+defaults and cleanup. An owned copy's uninstantiated default arguments use the
+unrelated-access proof below; accessible copies retain their source requirements.
 
 This record proof accepts implicit, defaulted, ordinary or deleted destruction
 at any access level. Its bounded owning graph also includes nontrivial source-owned
@@ -1075,21 +1075,29 @@ their dependencies along with the parameter types, aliases, bounds and
 exception sources. Defaults still awaiting template instantiation require a
 separate proof; the translator does not instantiate them to admit a query.
 
-An exact deleted, private or protected move has a narrower exception: any
+An exact deleted, private or protected copy or move has a narrower exception: any
 extra template default that Sema has left uninstantiated may stay lazy. The
 parameter and original default expression must be source-owned, with the
-parameter retained in every original prototype. Such a move cannot provide
-construction to the SDK traits. Its parameter types, aliases, bounds,
+parameter retained in every original prototype. Such a constructor cannot
+provide construction in the proven context. Its parameter types, aliases, bounds,
 exception specifications and redeclarations remain checked. Already-resolved
-defaults use the ordinary source checks above. This covers deleted moves,
+defaults use the ordinary source checks above. This covers deleted copies/moves,
 const queries on inaccessible moves, and inaccessible member moves that
-delete an enclosing defaulted move. For an owned member's inaccessible move,
+delete an enclosing defaulted move. For an owned member's inaccessible copy/move,
 the member must have no friends and its immediate owner must be declared at
 namespace scope with no bases. Friend, nested or derived owners require their
 own access proof. Each member/owner pair is checked independently, including
 when the same member type appears in several ownership contexts.
-Sema can still instantiate defaults during
-other queries, including a direct mutable query on an inaccessible move;
+An owner with user-written constructors can retain an available const copy by
+initializing a member through another constructor. The member's unavailable
+copy defaults may then remain uninstantiated, including mutable-copy overloads,
+paired or ambiguous copy sets and inherited defaults on redeclarations. Every
+candidate keeps its signature sources; deletion works independently of friend
+access, while private/protected copies require the owning-access proof above.
+Queries neither evaluate those defaults nor instantiate the unused copy bodies.
+Actual selected operations check and execute their own defaults and bodies.
+Sema can still instantiate defaults during other queries, including direct
+queries on inaccessible copies or moves;
 this proof does not suppress those diagnostics.
 
 A const object query also keeps uninstantiated extra defaults of the queried
@@ -1130,8 +1138,9 @@ from its owner. Mutable sources and user-written owning copy/move bodies
 require a separate member-argument proof; a mutable root's const-reference
 copy-fallback result alone does not establish a const source. Base subobjects
 retain their existing source and layout requirements.
-This does not exempt member copy defaults: if a query leaves an extra copy
-default uninstantiated, the available-copy default proof still rejects it.
+This binding proof does not exempt an available member copy's defaults: if a
+query leaves an extra copy default uninstantiated, its default-source proof
+still rejects it.
 An actual selected copy may resolve that default through ordinary Sema and
 then supplies its original initializer to the existing source checks.
 Actual generated owner copies and moves still check and execute the selected

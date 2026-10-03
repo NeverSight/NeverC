@@ -3190,11 +3190,11 @@ static bool utilityConditionalMoveDefaultsSource(
           Constructor->getParamDecl(0)->getType(),
           A.Context.getRValueReferenceType(
               A.Context.getRecordType(Constructor->getParent())));
-  const bool UnavailableMove =
-      Constructor->isMoveConstructor() &&
-      (CannotBindConst || Constructor->isDeleted() ||
-       (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
-                            Constructor->getAccess() == AS_protected)));
+  const bool UnavailableConstructor =
+      (Constructor->isMoveConstructor() && CannotBindConst) ||
+      Constructor->isDeleted() ||
+      (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
+                           Constructor->getAccess() == AS_protected));
   for (const auto *Declaration : Constructor->redecls()) {
     const auto *Info = Declaration->getTypeSourceInfo();
     const auto Prototype =
@@ -3210,11 +3210,11 @@ static bool utilityConditionalMoveDefaultsSource(
       if (operationDefaultInitializer(A, Parameter))
         continue;
       // An exact mutable rvalue move cannot bind a const object. A deleted or
-      // inaccessible move also cannot provide construction to the SDK traits.
+      // inaccessible copy/move cannot provide construction in this context.
       // If Sema left its template default uninstantiated, keep that original
       // source lazy; parameter types and every written signature still pass
       // ordinary traversal. Resolved defaults keep the checks above.
-      if (!UnavailableMove || !lazyTemplateDefault(Parameter) ||
+      if (!UnavailableConstructor || !lazyTemplateDefault(Parameter) ||
           Parameter->isInvalidDecl() || Parameter->isImplicit() ||
           !A.S.owns(A.Sources, Parameter->getLocation()))
         return false;
@@ -3642,7 +3642,7 @@ static bool utilityRecordConditionalMoveSource(
     const auto MutableCopyParameter = A.Context.getLValueReferenceType(Object);
     // The root SDK trait has unrelated access. An owning operation can have
     // friendship, enclosing-class or derived-class access to its member's
-    // move, so retain a conservative unrelated-access proof for each edge.
+    // copy or move, so retain an unrelated-access proof for each edge.
     const bool UnrelatedAccess =
         !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
                    Owner->getDeclContext()->isFileContext());
