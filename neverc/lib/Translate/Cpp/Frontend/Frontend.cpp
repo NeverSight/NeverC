@@ -3455,6 +3455,15 @@ static bool utilityConditionalMoveScalarParameter(Adapter &A,
          Type->isPointerType() || Type->isNullPtrType();
 }
 
+static bool utilityConditionalMoveArrayReferenceParameter(
+    Adapter &A, QualType ParameterType) {
+  const auto Type = ParameterType.getNonReferenceType();
+  return ParameterType->isReferenceType() && !Type->isDependentType() &&
+         !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+         !Type->isAtomicType() && Type.getAddressSpace() == LangAS::Default &&
+         A.Context.getAsConstantArrayType(Type);
+}
+
 static bool utilityConditionalMoveDirectConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
@@ -3482,8 +3491,7 @@ static bool utilityConditionalMoveDirectConstructor(
       Type.getAddressSpace() != LangAS::Default)
     return false;
   return utilityConditionalMoveScalarParameter(A, ParameterType) ||
-         (ParameterType->isReferenceType() &&
-          A.Context.getAsConstantArrayType(Type)) ||
+         utilityConditionalMoveArrayReferenceParameter(A, ParameterType) ||
          (ParameterType->isLValueReferenceType() && !Type.isConstQualified() &&
           Type->isRecordType());
 }
@@ -3725,8 +3733,9 @@ static bool utilityLazyConditionalMoveSignatureSource(
   // Only classify signatures already retained by the adapter's decision
   // proof. That proof excludes either the conversion or every ordinary
   // constructor by arity, written deletion, unrelated access, unavailable
-  // by-value argument destruction or record-to-scalar conversion. Keep exact
-  // template origins and lazy written sources without re-deciding that proof.
+  // by-value argument destruction or incompatible conversion result kinds.
+  // Keep exact template origins and lazy written sources without re-deciding
+  // that proof.
   const bool OrdinaryConversion = utilityConditionalMoveConversionShape(
       dyn_cast_or_null<CXXConversionDecl>(Method));
   if (!Method ||
@@ -3835,6 +3844,7 @@ static bool utilityMutableCopyConditionalMoveSource(
     return false;
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
+  bool HasUsableArrayConversion = false;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
@@ -3848,6 +3858,7 @@ static bool utilityMutableCopyConditionalMoveSource(
         HasUsableConversion = true;
         const auto Result = Conversion->getConversionType().getNonReferenceType();
         HasUsableNonrecordConversion |= !Result->isRecordType();
+        HasUsableArrayConversion |= Result->isArrayType();
       }
     }
   }
@@ -3869,7 +3880,12 @@ static bool utilityMutableCopyConditionalMoveSource(
     // This holds for record values and references, regardless of that record's
     // conversion functions. Do not inspect or instantiate those functions.
     // A record parameter may bind a conversion result directly and cannot use
-    // this exclusion. Retain every original signature below, including
+    // this exclusion. A fixed-array reference parameter cannot bind any
+    // non-array conversion result: pointers do not implicitly dereference,
+    // scalars do not initialize individual elements, and a record would need
+    // another user-defined conversion. An available array result keeps its
+    // separate binding requirements even if the bounds or qualifiers differ.
+    // Retain every original signature below, including
     // argument-conversion sources consumed before an access failure.
     // A later redeclaration can add defaults, so use its current minimum arity
     // without instantiating an unused default or hypothetical conversion.
@@ -3880,11 +3896,17 @@ static bool utilityMutableCopyConditionalMoveSource(
           utilityConditionalMoveNonpublicConstructor(A, Constructor))) {
       const auto *Latest = Constructor->getMostRecentDecl();
       A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
+      const bool ExcludedConversionResults =
+          Constructor->getNumParams() != 0 &&
+          ((!HasUsableNonrecordConversion &&
+            utilityConditionalMoveScalarParameter(
+                A, Constructor->getParamDecl(0)->getType())) ||
+           (!HasUsableArrayConversion &&
+            utilityConditionalMoveArrayReferenceParameter(
+                A, Constructor->getParamDecl(0)->getType())));
       RequireUnavailableDestruction =
           Latest->getMinRequiredArguments() <= 1 &&
-          (HasUsableNonrecordConversion || Constructor->getNumParams() == 0 ||
-           !utilityConditionalMoveScalarParameter(
-               A, Constructor->getParamDecl(0)->getType()));
+          !ExcludedConversionResults;
     }
     if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures,
                                                UnrelatedAccess, Owner,

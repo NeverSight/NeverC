@@ -1381,7 +1381,7 @@ existing proof. In particular, a live
 implicit `const` or `const &` conversion still prevents this proof unless its
 access is excluded as below or the independent constructor arity,
 written-deletion, unrelated-access, by-value argument destruction or
-record-result/scalar-parameter proof
+conversion-result/parameter-kind proof
 applies, even if another conversion
 is deleted or an overload would make the native copy
 trait false. A parameter record's own viable converting constructor is also
@@ -1449,12 +1449,12 @@ An ordinary constructor written as `= delete` cannot provide successful
 construction even when a live implicit conversion supplies its argument.
 This combines with arity and unrelated access: every ordinary value constructor
 must be written deleted, inaccessible, require at least two arguments, have
-unavailable by-value argument destruction or exclude record-only conversion
-results through its scalar first parameter when a conversion remains available.
+unavailable by-value argument destruction or exclude the remaining conversion
+result kinds through its scalar or fixed-array-reference first parameter.
 For example, deleted `C(int)` plus live `operator int() const` cannot copy from
 `const C&`, including if another constructor is `C(int, int)`. A live
-one-argument overload still prevents this proof even when overload resolution
-would prefer a deleted candidate. Deletion is read from the canonical
+one-argument overload still needs its own exclusion even when overload
+resolution would prefer a deleted candidate. Deletion is read from the canonical
 declaration and applies independently of access, friendship and nesting, also
 for mutable-copy nodes in owned records and fixed arrays.
 
@@ -1549,6 +1549,35 @@ source checks and the profile's ordinary extent/storage limits. Unknown-bound
 arrays remain outside this proof. Default array references stay unevaluated in
 queries; actual construction preserves the bound array and any element changes.
 This form also applies at mutable-copy nodes in the owning graph.
+
+A fixed-array-reference parameter also excludes ordinary live source
+conversions when none of their results is an array. For example, `C(int (&)[2])`
+cannot consume `const C&` through `operator int() const`, `operator int*() const`
+or `operator Argument() const`. Scalars do not initialize individual array
+elements during reference binding, pointers do not implicitly dereference,
+and a record result would need a second user-defined conversion, even if it
+provides its own conversion to an array reference. The proof includes mutable
+and const lvalue/rvalue array references, multidimensional arrays, arrays of
+admitted records or pointers, and aliases. An array value parameter decays to
+a pointer and does not use this reference proof.
+
+Every constructor independently needs an admitted exclusion. Any usable array
+conversion result prevents this proof, including results with different
+bounds or qualifiers; their compatibility keeps its separate requirements.
+Excluded conversions retain their existing receiver, deletion, explicitness
+and access checks. Each mutable-copy node in an owned record or fixed array
+uses its actual owner context, including friendship that makes a nonpublic
+array conversion available.
+
+All original signatures, array bounds, element/result aliases, defaults and
+exception sources stay checked. Unused template defaults and bodies remain
+lazy without hypothetical conversion or array construction. Unresolved
+dependent exception sources, unknown bounds, unsupported elements, variadic
+constructors and constructor/conversion templates retain their existing
+limits. Actual construction from an existing array or a separately converted
+array reference checks the selected calls and defaults, preserves the original
+array binding and mutations, and performs required temporary cleanup. Actual
+attempts to chain two implicit user-defined conversions remain source errors.
 
 A first parameter that is a non-const lvalue reference to an admitted record
 also excludes `const Record&` under the same base and conversion restrictions.
@@ -1758,7 +1787,7 @@ destroyable even when the conversion returns an existing object reference.
 Value, lvalue-reference and rvalue-reference conversion results follow this
 same rule. Every other value constructor independently needs an admitted
 exclusion, which can combine argument destruction, arity, written deletion,
-unrelated access and scalar parameters with record-only conversion results.
+unrelated access and conversion-result/parameter-kind exclusions.
 
 With these live source conversions, a reference parameter needs its own
 proof: `C(const Argument&)` or `C(Argument&&)` can bind an existing reference
