@@ -9306,6 +9306,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const FunctionDecl *, const FriendDecl *> FriendFunctionDeclarations;
   std::map<const FunctionDecl *, const FriendDecl *> WrittenFriendFunctions;
   std::set<const FriendDecl *> WrittenFriendDeclarations, CheckedFriendDeclarations;
+  std::set<const CXXRecordDecl *> FriendIntroducedRecords;
   std::map<const FunctionTemplateDecl *, const FriendFunctionTemplateSource *> FriendTemplateSources;
   std::map<const FunctionTemplateDecl *, const FriendDecl *>
       FriendTemplateDeclarations, WrittenFriendTemplates;
@@ -10628,6 +10629,39 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
            Body->getCanonicalDecl() ==
                cast<CXXRecordDecl>(Written->getDeclContext())->getCanonicalDecl();
   }
+  bool incompleteFriendRecordIdentity(const FriendDecl *D) {
+    if (!genericFriendTypeShape(D))
+      return false;
+    const auto Type = D->getFriendType()->getType();
+    const auto *Record = Type->getAsCXXRecordDecl();
+    if (!Record || Record->getDefinition() || Type->isDependentType() ||
+        Type->isInstantiationDependentType() || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type->isAtomicType() ||
+        Type.getAddressSpace() != LangAS::Default)
+      return false;
+    if (incompleteRecordMetadataIdentity(A, Record) ||
+        FriendIntroducedRecords.count(Record))
+      return true;
+    // A friend can introduce a namespace tag without making it visible to
+    // ordinary lookup. Bind that exact owned tag to this checked declaration;
+    // never grant identity from a name or canonical type alone. Copied friends
+    // visit their proven original declaration before reaching this helper.
+    const auto *Elaborated = Type->getAs<ElaboratedType>();
+    if (!Elaborated || Elaborated->getOwnedTagDecl() != Record ||
+        Record->getKind() != Decl::CXXRecord || !owned(Record) ||
+        Record->isInvalidDecl() || !Record->getIdentifier() ||
+        Record->isUnion() || Record->isLambda() || Record->isLocalClass() ||
+        Record->isInjectedClassName() || hasNonFinalAttributes(Record) ||
+        !Record->getFriendObjectKind() || Record->getDescribedClassTemplate() ||
+        Record->getInstantiatedFromMemberClass() ||
+        Record->getNumTemplateParameterLists() ||
+        !isa<TranslationUnitDecl, NamespaceDecl>(Record->getDeclContext()) ||
+        Record->getLexicalDeclContext() != D->getDeclContext())
+      return false;
+    if (FriendIntroducedRecords.insert(Record).second)
+      A.chargeExpansion(1, Record->getLocation());
+    return true;
+  }
   bool traverseFriendTypeSource(const FriendDecl *D) {
     if (!genericFriendTypeShape(D)) {
       A.reject(D->getFriendLoc(), "friend type source",
@@ -10686,7 +10720,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       ImplicitInitializerOwner = SavedOwner;
       TemplateParameterTypeSource = SavedParameterSource;
     });
-    A.type(Type, D->getFriendLoc(), true);
+    if (!incompleteFriendRecordIdentity(D))
+      A.type(Type, D->getFriendLoc(), true);
     if (!A.S.Diagnostics.empty())
       return true;
     if (!TraverseTypeLoc(Info->getTypeLoc()))
@@ -18053,7 +18088,7 @@ public:
     if (const auto *Type = D->getFriendType()) {
       if (Type->getType().isNull() || Type->getType()->isDependentType())
         A.reject(D->getFriendLoc(), "friend type", "A resolved supported friend type is required.");
-      else
+      else if (!incompleteFriendRecordIdentity(D))
         A.type(Type->getType(), D->getFriendLoc(), true);
     } else {
       const auto *Function = dyn_cast_or_null<FunctionDecl>(D->getFriendDecl());
@@ -18871,7 +18906,8 @@ public:
           !D->getDescribedClassTemplate() && !D->getInstantiatedFromMemberClass() &&
           !D->isDependentContext() && !D->getNumTemplateParameterLists() &&
           incompleteRecordMetadataIdentity(A, D) && classOwnerScope(D->getDeclContext());
-      if (!D->getDefinition() && !ForwardIdentity)
+      if (!D->getDefinition() && !ForwardIdentity &&
+          !FriendIntroducedRecords.count(D))
         A.reject(D->getLocation(), "record",
                  "An incomplete record requires an admitted type-only declaration identity.");
       return true;

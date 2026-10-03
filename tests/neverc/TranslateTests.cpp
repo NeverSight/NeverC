@@ -76320,6 +76320,216 @@ int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)
   }
 }
 
+TEST_F(TranslateTest, CoreV2IncompleteClassFriendTypesRunAtBothOptimizations) {
+  const auto Source = tmpFile("incomplete-class-friend-move-if-noexcept.cpp");
+  const auto Output = tmpFile("incomplete-class-friend-move-if-noexcept.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+int made,member_moves,copies,moves,cleanups,sum,referent=11,calls,defaults;
+template<class T>T&source(T&v,int=(++defaults,1)) noexcept { ++calls; return v; }
+template<class Result,class T>bool queries(T&v) {
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(v)),Result));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),Result));
+  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),Result));
+  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));
+  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));
+  static_assert(noexcept(move_if_noexcept(v)));
+  Result alias=move_if_noexcept(std::forward<T&>(v));
+  return &alias==&v;
+}
+struct Other;
+
+using FriendAlias=Other;
+template<class T>struct Private {
+  friend FriendAlias;
+  T value;
+  Private(T n=5) noexcept:value(n) { ++made; }
+  Private(Private&&o) noexcept:value(o.value+3) { o.value=-o.value; ++member_moves; }
+  ~Private() noexcept { ++cleanups; sum+=value; }
+private:
+  Private(const Private&,T=(sizeof(long double),T::missing)) noexcept {
+    static_assert(sizeof(T)==0);
+  }
+};
+template<class T>struct Protected {
+  friend struct First;
+  friend struct Second;
+  T value;
+  Protected(T n=5) noexcept:value(n) { ++made; }
+  Protected(Protected&&o) noexcept:value(o.value+3) { o.value=-o.value; ++member_moves; }
+  ~Protected() noexcept { ++cleanups; sum+=value; }
+protected:
+  Protected(const Protected&,T=T::missing) noexcept { static_assert(sizeof(T)==0); }
+};
+template<class T>struct LockedMove {
+  friend struct Other;
+  T value;
+  LockedMove(T n=7) noexcept:value(n) { ++made; }
+  LockedMove(const LockedMove&o) noexcept(false):value(o.value+2) { ++copies; }
+  ~LockedMove() noexcept { ++cleanups; sum+=value; }
+private:
+  LockedMove(LockedMove&&,T=T::missing) noexcept { static_assert(sizeof(T)==0); }
+};
+struct LockedOwner { LockedMove<int> value[2]; };
+template<class M>struct Owner {
+  M value;
+  int&link=referent;
+  Owner(int n=5) noexcept:value(n) {}
+  Owner(const Owner&o) noexcept:value(o.value.value+10),link(o.link) { ++copies; }
+  Owner(Owner&&o) noexcept(false):value(std::move(o.value)),link(o.link) { ++moves; }
+};
+template<class M>bool exercise() {
+  made=member_moves=copies=moves=cleanups=sum=0;
+  using C=Owner<M>;
+  {
+    C original;
+    if(!queries<const C&>(original)||!queries<const C&&>(std::as_const(original))) return false;
+    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(original))),const C&));
+    if(made!=1||member_moves||copies||moves||cleanups) return false;
+    const C&alias=Alias::move_if_noexcept(source(original));
+    if(&alias!=&original) return false;
+    C copied(Alias::move_if_noexcept(original));
+    C const_copied(Alias::move_if_noexcept(std::as_const(original)));
+    C moved(std::move(original));
+    if(original.value.value!=-5||copied.value.value!=15||const_copied.value.value!=15||
+       moved.value.value!=8||made!=3||member_moves!=1||copies!=2||moves!=1||cleanups||
+       &copied.link!=&referent||&const_copied.link!=&referent||&moved.link!=&referent) return false;
+  }
+  return cleanups==4&&sum==33;
+}
+struct Grid { Owner<Private<int>> rows[2]; };
+int main() {
+  if(!exercise<Private<int>>()||calls!=1||defaults!=1) return 1;
+  if(!exercise<Protected<int>>()||calls!=2||defaults!=2) return 2;
+  made=member_moves=copies=moves=cleanups=sum=0;
+  {
+    Grid original;
+    if(!queries<const Grid&>(original)||!queries<const Grid&&>(std::as_const(original))) return 4;
+    if(made!=2||member_moves||copies||moves||cleanups) return 5;
+    Grid copied(Alias::move_if_noexcept(original));
+    Grid moved(std::move(original));
+    ++copied.rows[1].link;
+    if(original.rows[0].value.value!=-5||copied.rows[1].value.value!=15||
+       moved.rows[1].value.value!=8||made!=4||member_moves!=2||copies!=2||moves!=2||cleanups||
+       &copied.rows[0].link!=&referent||&moved.rows[1].link!=&referent||referent!=12) return 6;
+  }
+  if(cleanups!=6||sum!=36||calls!=2||defaults!=2) return 7;
+  made=member_moves=copies=moves=cleanups=sum=0;
+  {
+    LockedOwner original;
+    if(!queries<const LockedOwner&>(original)||
+       !queries<const LockedOwner&>(std::as_const(original))) return 8;
+    if(made!=2||copies||cleanups) return 9;
+    LockedOwner copied(Alias::move_if_noexcept(source(original)));
+    LockedOwner fallback(std::move(original));
+    if(copied.value[0].value!=9||fallback.value[1].value!=9||
+       original.value[0].value!=7||copies!=4||member_moves||cleanups) return 10;
+  }
+  return cleanups==6&&sum==50&&calls==3&&defaults==3 ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("incomplete-class-friend" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2IncompleteClassFriendTypesRetainSourceAndLanguageBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"hidden-alias", R"cpp(class Reader;using Alias=decltype((sizeof(long double),*(Reader*)0));using F=__remove_reference_t(Alias);struct Cell{friend F;int n;};int main(){Cell c{3};return c.n-3;}
+)cpp", "TR0201"},
+      {"hidden-template-argument", R"cpp(template<int N>class Reader;struct Cell{friend class Reader<sizeof(long double)>;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"hidden-template-default", R"cpp(template<int N=sizeof(long double)>class Reader;struct Cell{friend class Reader<>;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"union-friend", R"cpp(union Reader;struct Cell{friend union Reader;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"volatile-friend", R"cpp(class Reader;using F=volatile Reader;struct Cell{friend F;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"complete-forbidden-record", R"cpp(struct Reader{long double n;};struct Cell{friend struct Reader;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"incomplete-pointer-storage", R"cpp(class Reader;struct Cell{friend class Reader;Reader*p=nullptr;};int main(){Cell c;return c.p==nullptr?0:1;}
+)cpp", "TR0201"},
+      {"unsupported-friend-header", R"cpp(template<class T>struct Reader{struct Nested;};template<class U>struct Cell{template<class T>friend class Reader<T>::Nested;int n=3;};int main(){Cell<int>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"hidden-introduced-friend", R"cpp(struct Cell{friend class Reader;};Reader*p=nullptr;int main(){return p==nullptr;}
+)cpp", "TR0202"},
+      {"incomplete-object", R"cpp(class Reader;struct Cell{friend class Reader;};int main(){Reader object;return 0;}
+)cpp", "TR0202"},
+      {"incomplete-size", R"cpp(class Reader;struct Cell{friend class Reader;};int main(){return sizeof(Reader);}
+)cpp", "TR0202"},
+      {"ungranted-access", R"cpp(class Reader;class Cell{friend class Reader;int n=3;};int main(){Cell c;return c.n;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("incomplete-class-friend-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("incomplete-class-friend-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2IncompleteClassFriendTypesAdmitDeclaredIdentities) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"ordinary-forward", R"cpp(class Reader;struct Cell{friend class Reader;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"ordinary-introduced", R"cpp(struct Cell{friend class Reader;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"generic-introduced", R"cpp(template<class T>struct Cell{friend class Reader;T n=3;};int main(){Cell<int>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"unused-generic-introduced", R"cpp(template<class T>struct Cell{friend class Reader;};int main(){return 0;}
+)cpp", "TR0201"},
+      {"substituted-type", R"cpp(class Reader;template<class T>struct Cell{friend T;int n=3;};int main(){Cell<Reader>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"substituted-alias", R"cpp(class Reader;using Alias=Reader;template<class T>struct Cell{using F=T;friend F;int n=3;};int main(){Cell<Alias>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"dependent-typename", R"cpp(class Reader;struct Config{using R=Reader;};template<class T>struct Cell{friend typename T::R;int n=3;};int main(){Cell<Config>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"namespace-qualified", R"cpp(namespace N{class Reader;}template<class T>struct Cell{friend class N::Reader;T n=3;};int main(){Cell<int>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"nested-predeclared", R"cpp(struct Outer{class Reader;};struct Cell{friend class Outer::Reader;int n=3;};int main(){Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"partial-and-nested", R"cpp(class Reader;template<class T>struct Outer;template<class T>struct Outer<T*>{struct Cell{friend T;int n=3;};};int main(){Outer<Reader*>::Cell c;return c.n-3;}
+)cpp", "TR0201"},
+      {"incomplete-specialization", R"cpp(template<class T>struct Reader;template<class T>struct Cell{friend class Reader<T>;int n=3;};int main(){Cell<int>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"lazy-specialization-body", R"cpp(template<class T>struct Reader{static_assert(sizeof(T)==0);};template<class T>struct Cell{friend class Reader<T>;int n=3;};int main(){Cell<int>c;return c.n-3;}
+)cpp", "TR0201"},
+      {"promoted-other-friend-copy", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{friend struct Other;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};
+int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(b)),const C&&));return 0;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("incomplete-class-friend-accept-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("incomplete-class-friend-accept-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RootMutableCopyMoveIfNoexceptQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("root-mutable-copy-move-if-noexcept.cpp");
   const auto Output = tmpFile("root-mutable-copy-move-if-noexcept.nc");
@@ -76962,12 +77172,6 @@ int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)
       {"friend-copy", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
 template<class T>struct M{friend struct C;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
-struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};
-int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(b)),const C&&));return 0;}
-)cpp"},
-      {"other-friend-copy", R"cpp(#include <utility>
-namespace Alias { using std::move_if_noexcept; }
-template<class T>struct M{friend struct Other;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
 struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};
 int f(C&a,const C&b){static_assert(__is_same(decltype(Alias::move_if_noexcept(a)),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(b)),const C&&));return 0;}
 )cpp"},

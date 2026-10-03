@@ -1088,7 +1088,7 @@ its immediate owner must be declared at namespace scope with no bases. The
 member may have ordinary class-type friends when every friend resolves to a
 different canonical class from that owner, including aliases and substituted
 friend types. Each written friend declaration and type keeps its ordinary source
-checks, including the requirement for a supported complete friend record.
+checks, including a supported complete record or checked incomplete class identity.
 A friend naming the actual owner, unresolved or other friend shapes
 (including function and class-template friends), and nested or derived owners
 require their own access proof. Each member/owner pair is checked independently,
@@ -9269,6 +9269,18 @@ actual substituted TypeLoc are checked, including elaborated owned tags. A still
 dependent type is deferred only in a dependent class context after source identity
 checks; a concrete granting class needs a resolved type. Folded aliases and type
 expressions retain their source checks.
+
+An ordinary source-owned class friend may remain incomplete. Predeclared class
+names, aliases and resolved template substitutions use the existing type-only
+identity checks. An elaborated friend declaration that introduces a namespace
+class instead retains its exact owned tag and granting declaration; copied
+friends first check their paired original source. This does not instantiate a
+friend class-template body or emit a placeholder record. The original TypeLoc,
+alias expressions, qualifiers, template arguments and defaults are still checked.
+Unions, unsupported qualifiers and unproved friend headers retain their existing
+boundaries. Clang still controls name visibility and access: a friend-introduced
+name is not made visible to ordinary lookup. Storage and operations that require
+a complete type keep their independent checks.
 
 Friend type grants add no functions, implicit receivers, template levels or
 runtime storage. Existing concrete record and method/call lowering remains in
