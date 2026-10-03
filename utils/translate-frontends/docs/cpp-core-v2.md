@@ -1490,6 +1490,22 @@ inherited constructors and other root constructor forms keep their separate
 requirements. Mutable-copy nodes in owned records and arrays use the same
 parameter-conversion proof.
 
+An ordinary nonvariadic constructor of the queried record itself may likewise
+be explicitly written as `= delete`. For example, `C(const Argument&) = delete`
+cannot supply construction from `const C&` even when `Argument(const C&)` is a
+live converting constructor. This includes value and mutable/const reference
+parameters, aliases, extra defaulted parameters, private deleted constructors
+and completed class-template records. The proof reads only canonical written
+deletion; it does not infer defaulted deletion or inspect the parameter record's
+constructor set. The queried record still has no bases or conversion functions,
+and every other constructor must independently satisfy its existing proof.
+All written parameter types, aliases, completion requirements and exception
+sources remain checked. Unused template defaults and bodies stay lazy; selected
+live operations retain their ordinary checks and evaluation. Actual use of a
+deleted constructor remains a C++ source error. Constructor templates, inherited
+and variadic constructors retain their separate restrictions. Mutable-copy nodes
+in owned records and fixed arrays use the same written-deletion proof.
+
 Each parameter-record constructor retains its original signature and every
 redeclaration, including aliases and exception sources. Unused class-template
 constructors can retain an exact nondependent written

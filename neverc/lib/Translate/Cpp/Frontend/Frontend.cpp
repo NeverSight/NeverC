@@ -3532,7 +3532,13 @@ static bool utilityConditionalMoveValueConstructor(
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
     return false;
-  if (utilityConditionalMoveDirectConstructor(A, Constructor))
+  // A written deleted constructor cannot supply successful construction even
+  // when its argument can convert from the queried const record. Reading its
+  // canonical deletion does not resolve a defaulted operation or instantiate
+  // an argument conversion. Callers still retain the complete signature, and
+  // every other constructor must independently exclude the const source.
+  if (Constructor->getCanonicalDecl()->isDeletedAsWritten() ||
+      utilityConditionalMoveDirectConstructor(A, Constructor))
     return true;
   const auto Type = Constructor->getParamDecl(0)->getType().getNonReferenceType();
   if (Type->isDependentType() || Type.isVolatileQualified() ||
@@ -3685,11 +3691,12 @@ static bool utilityMutableCopyConditionalMoveSource(
     std::vector<const CXXMethodDecl *> *Signatures) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths. An ordinary constructor requiring two arguments cannot
-  // consume this record alone, even through a converting temporary. Otherwise
-  // require a first parameter that cannot consume this record without a
-  // conversion function, even if later parameters have defaults. Retain every
-  // written signature, including each nonviable constructor's parameter types;
-  // callers separately check copy/move overloads and sources.
+  // consume this record alone, even through a converting temporary. Written
+  // deletion also excludes successful construction. Otherwise require a first
+  // parameter that cannot consume this record without a conversion function,
+  // even if later parameters have defaults. Retain every written signature,
+  // including each nonviable constructor's parameter types; callers separately
+  // check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
     return false;
   for (const auto *Declaration : Record->decls()) {
