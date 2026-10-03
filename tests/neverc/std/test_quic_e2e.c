@@ -1009,8 +1009,71 @@ static void quic_test_rejects_unimplemented_options(void) {
     CHECK(error != NULL && strstr(error, "configuration") != NULL);
 }
 
+/* RFC 9000 §10.2: the draining state lasts at least three PTOs, and the PTO
+ * (RFC 9002 §6.2.1) floors its variance term at kGranularity. With a steady
+ * path whose rttvar has decayed to zero, the draining timer must not end at
+ * three times smoothed_rtt + max_ack_delay. */
+static void quic_test_draining_lasts_three_ptos(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    CHECK(conn != NULL);
+    if (!conn) return;
+    nc_mutex_lock(&conn->lock);
+    conn->state = QUIC_CONN_DRAINING;
+    conn->close_pending = 0;
+    conn->draining_started_ms = 1000U;
+    conn->loss.rtt.has_sample = 1;
+    conn->loss.rtt.smoothed_rtt = 200U;
+    conn->loss.rtt.rttvar = 0U;
+    conn->loss.rtt.max_ack_delay = 25U;
+    uint64_t pto = neverc_quic_pto(&conn->loss.rtt, 1);
+    nc_mutex_unlock(&conn->lock);
+    CHECK(pto == 200U + 1U + 25U);
+
+    neverc_quic_conn_tick(conn, 1000U + 3U * (200U + 25U));
+    nc_mutex_lock(&conn->lock);
+    CHECK(conn->state == QUIC_CONN_DRAINING);
+    nc_mutex_unlock(&conn->lock);
+
+    neverc_quic_conn_tick(conn, 1000U + 3U * pto);
+    nc_mutex_lock(&conn->lock);
+    CHECK(conn->state == QUIC_CONN_CLOSED);
+    nc_mutex_unlock(&conn->lock);
+    neverc_quic_conn_destroy(conn);
+
+    /* PTO under 100ms (smoothed 10, rttvar 0, max_ack_delay 25 → 36).
+     * A 100ms floor would keep the connection open until 3*100. */
+    struct neverc_quic_conn *low =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    CHECK(low != NULL);
+    if (!low) return;
+    nc_mutex_lock(&low->lock);
+    low->state = QUIC_CONN_DRAINING;
+    low->close_pending = 0;
+    low->draining_started_ms = 1000U;
+    low->loss.rtt.has_sample = 1;
+    low->loss.rtt.smoothed_rtt = 10U;
+    low->loss.rtt.rttvar = 0U;
+    low->loss.rtt.max_ack_delay = 25U;
+    uint64_t low_pto = neverc_quic_pto(&low->loss.rtt, 1);
+    nc_mutex_unlock(&low->lock);
+    CHECK(low_pto == 10U + 1U + 25U);
+
+    neverc_quic_conn_tick(low, 1000U + 3U * low_pto - 1U);
+    nc_mutex_lock(&low->lock);
+    CHECK(low->state == QUIC_CONN_DRAINING);
+    nc_mutex_unlock(&low->lock);
+
+    neverc_quic_conn_tick(low, 1000U + 3U * low_pto);
+    nc_mutex_lock(&low->lock);
+    CHECK(low->state == QUIC_CONN_CLOSED);
+    nc_mutex_unlock(&low->lock);
+    neverc_quic_conn_destroy(low);
+}
+
 int main(void) {
     printf("QUIC end-to-end test suite:\n");
+    quic_test_draining_lasts_three_ptos();
     quic_test_rejects_unimplemented_options();
     quic_test_clienthello_legacy_session_id_empty();
     quic_test_preserves_clienthello_parser_error();

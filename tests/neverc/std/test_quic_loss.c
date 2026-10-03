@@ -95,6 +95,32 @@ static void test_pto_computation(void) {
     ASSERT_EQ(neverc_quic_idle_period_ms(100, &rtt, 0), 900);
     ASSERT_EQ(neverc_quic_idle_period_ms(5000, &rtt, 0), 5000);
     ASSERT_EQ(neverc_quic_idle_period_ms(0, &rtt, 0), 0);
+
+    /* RFC 9002 §6.2.1: PTO = smoothed_rtt + max(4*rttvar, kGranularity)
+     * + max_ack_delay. A steady path drives rttvar to zero; the granularity
+     * must still be added on top of smoothed_rtt, or the probe fires at the
+     * very moment the ACK is due. */
+    neverc_quic_rtt_init(&rtt);
+    for (int i = 0; i < 8; i++)
+        neverc_quic_rtt_update(&rtt, 10, 0, 1);
+    ASSERT_EQ(rtt.smoothed_rtt, 10);
+    ASSERT_EQ(rtt.rttvar, 0);
+    ASSERT_EQ(neverc_quic_pto(&rtt, 0), 10 + QUIC_GRANULARITY_MS);
+    ASSERT_EQ(neverc_quic_pto(&rtt, 1),
+              10 + QUIC_GRANULARITY_MS + QUIC_MAX_ACK_DELAY_MS);
+
+    /* Sub-granularity variance (4*rttvar < kGranularity) is replaced by the
+     * granularity, not compared against smoothed_rtt + 4*rttvar. */
+    rtt.smoothed_rtt = 0;
+    rtt.rttvar = 0;
+    ASSERT_EQ(neverc_quic_pto(&rtt, 0), QUIC_GRANULARITY_MS);
+    rtt.smoothed_rtt = 7;
+    rtt.rttvar = 1;
+    ASSERT_EQ(neverc_quic_pto(&rtt, 0), 7 + 4);
+    ASSERT_EQ(neverc_quic_idle_period_ms(1, &rtt, 0), 3 * (7 + 4));
+    rtt.rttvar = 0;
+    ASSERT_EQ(neverc_quic_idle_period_ms(1, &rtt, 0),
+              3 * (7 + QUIC_GRANULARITY_MS));
 }
 
 /* ======================================================================

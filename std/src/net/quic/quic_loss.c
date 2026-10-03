@@ -84,12 +84,15 @@ void neverc_quic_rtt_update(quic_rtt_t *rtt, uint64_t latest_rtt,
         quic_saturating_mul(7, rtt->smoothed_rtt), adjusted_rtt) / 8;
 }
 
-/* PTO computation (RFC 9002 §6.2.1) */
+/* PTO computation (RFC 9002 §6.2.1):
+ *   smoothed_rtt + max(4 * rttvar, kGranularity) [+ max_ack_delay]
+ * The granularity floors the variance term, not the sum, so a path whose
+ * rttvar has decayed to zero still waits past smoothed_rtt. */
 uint64_t neverc_quic_pto(const quic_rtt_t *rtt, int include_max_ack_delay) {
-    uint64_t pto = quic_saturating_add(
-        rtt->smoothed_rtt, quic_saturating_mul(4, rtt->rttvar));
-    if (pto < QUIC_GRANULARITY_MS)
-        pto = QUIC_GRANULARITY_MS;
+    uint64_t variance = quic_saturating_mul(4, rtt->rttvar);
+    if (variance < QUIC_GRANULARITY_MS)
+        variance = QUIC_GRANULARITY_MS;
+    uint64_t pto = quic_saturating_add(rtt->smoothed_rtt, variance);
     if (include_max_ack_delay)
         pto = quic_saturating_add(pto, rtt->max_ack_delay);
     return pto;

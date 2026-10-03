@@ -1859,10 +1859,10 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
     }
     if (conn->state == QUIC_CONN_DRAINING) {
         int send_close = conn->close_pending;
+        /* Same RFC 9002 probe timeout as loss detection. No second floor:
+         * a sub-100ms PTO must still drain for exactly three of those. */
         uint64_t pto = conn->loss.rtt.has_sample ?
-            conn->loss.rtt.smoothed_rtt + 4U * conn->loss.rtt.rttvar +
-                conn->loss.rtt.max_ack_delay : 1000U;
-        if (pto < 100U) pto = 100U;
+            neverc_quic_pto(&conn->loss.rtt, 1) : 1000U;
         if (now_ms >= conn->draining_started_ms &&
             now_ms - conn->draining_started_ms >= 3U * pto) {
             conn->state = QUIC_CONN_CLOSED;
