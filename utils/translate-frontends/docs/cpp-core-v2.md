@@ -1473,6 +1473,23 @@ this proof. This exclusion applies only to the implicit conversion to a
 parameter record: an explicit constructor of the queried record itself still
 participates in the trait's direct-initialization.
 
+An ordinary nonvariadic parameter-record constructor explicitly written as
+`= delete` also cannot provide a successful implicit conversion. For example,
+`Argument(const C&, int = 3) = delete` does not make `C(Argument)` or a
+corresponding reference-parameter constructor accept `const C&`. The proof
+reads the canonical declaration's written deletion; it does not infer deletion
+by instantiating an operation. Every other constructor must independently meet
+one of the admitted proofs, and Clang retains overload resolution including
+deleted candidates. This applies to source-owned completed class templates,
+aliases, private deleted constructors and admitted empty base chains. All
+parameter types, original signatures and exception sources remain checked;
+unused template defaults stay lazy. An actual call to the deleted constructor
+is a C++ source error. Construction through another live overload still checks
+its selected defaults, body and lifetime operations. Constructor templates,
+inherited constructors and other root constructor forms keep their separate
+requirements. Mutable-copy nodes in owned records and arrays use the same
+parameter-conversion proof.
+
 Each parameter-record constructor retains its original signature and every
 redeclaration, including aliases and exception sources. Unused class-template
 constructors can retain an exact nondependent written

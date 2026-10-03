@@ -3545,9 +3545,12 @@ static bool utilityConditionalMoveValueConstructor(
   // inherited converting constructor remains excluded below. Extra defaulted
   // copy/move parameters do not change that first self-reference; retain their
   // complete signatures without evaluating an unused default. Its other
-  // constructors may exclude that source by arity, a direct first-parameter
-  // proof, a plain explicit specifier, a distinct record first parameter or a
-  // record rvalue reference that cannot bind the const lvalue.
+  // constructors may exclude that source by written deletion, arity, a direct
+  // first-parameter proof, a plain explicit specifier, a distinct record first
+  // parameter or a record rvalue reference that cannot bind the const lvalue.
+  // Selecting a deleted constructor cannot provide the implicit conversion;
+  // every other candidate must still satisfy its own proof. Retain even a
+  // deleted candidate's complete signature and every redeclaration.
   // Inspect only this existing constructor set; do not recurse into another
   // parameter record, complete a class, or instantiate a hypothetical body or
   // default argument.
@@ -3570,6 +3573,7 @@ static bool utilityConditionalMoveValueConstructor(
         Candidate->isInheritingConstructor() ||
         (Candidate->getNumParams() != 0 &&
          !Candidate->isCopyOrMoveConstructor() &&
+         !Candidate->getCanonicalDecl()->isDeletedAsWritten() &&
          !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
          !utilityConditionalMoveDirectConstructor(A, Candidate) &&
          !utilityConditionalMoveRecordArgumentConstructor(
