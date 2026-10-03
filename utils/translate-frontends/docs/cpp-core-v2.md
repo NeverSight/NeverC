@@ -1450,7 +1450,8 @@ construction even when a live implicit conversion supplies its argument.
 This combines with arity and unrelated access: every ordinary value constructor
 must be written deleted, inaccessible, require at least two arguments, have
 unavailable by-value argument destruction or exclude the remaining conversion
-result kinds through its scalar or fixed-array-reference first parameter.
+result kinds through its scalar, fixed-array-reference or mutable record
+lvalue-reference first parameter.
 For example, deleted `C(int)` plus live `operator int() const` cannot copy from
 `const C&`, including if another constructor is `C(int, int)`. A live
 one-argument overload still needs its own exclusion even when overload
@@ -1589,6 +1590,31 @@ no hypothetical conversion constructor or unused default/body is instantiated.
 This form includes default reference arguments and mutable-copy nodes in the
 owning graph. Actual construction evaluates selected defaults, preserves the
 original record binding and retains mutations made through it.
+
+A mutable record lvalue-reference parameter also excludes ordinary live source
+conversions when none returns a record lvalue reference. For example,
+`C(Argument&)` cannot consume `const C&` through `operator Argument() const`
+or `operator Argument&&() const`: record prvalues and xvalues cannot bind that
+mutable lvalue reference. Scalar, pointer and array-reference results cannot
+bind it either, and a returned record's own conversion would require a second
+user-defined conversion. Const record values and rvalue references follow the
+same exclusion. Const lvalue-reference, rvalue-reference and by-value record
+parameters keep their separate requirements.
+
+Every constructor independently needs an admitted exclusion. Any usable record
+lvalue-reference conversion prevents this proof, including const or distinct
+record results; their reference compatibility needs a separate proof. Excluded
+conversions retain their receiver, deletion, explicitness and access checks.
+Owned records and fixed arrays check the actual owner, including friendship that
+makes a private record-lvalue conversion available. All parameter/result aliases,
+completed record definitions, redeclarations, defaults and exception sources
+remain checked. Unused template defaults and bodies remain lazy; unresolved
+dependent exceptions and constructor/conversion templates keep their existing
+limits. Actual construction from an existing argument evaluates its selected
+defaults and preserves the bound record and mutations. Initializing a named
+argument object from a converted value first allows that object's lvalue to
+bind the reference. Temporary destruction and selected conversion bodies
+retain their usual checks.
 
 A completed source-owned record with no bases or an admitted empty single-base
 chain can also be the first parameter by value, by const lvalue reference, or by
