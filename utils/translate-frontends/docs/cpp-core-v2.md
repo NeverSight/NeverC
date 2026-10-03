@@ -1099,8 +1099,17 @@ body, supported free operators and qualified namespace functions. Each friend
 keeps its declaration, signature, default-argument and selected-body source
 checks, and required definitions still need to be present. Such friends may be
 mixed with the unrelated class and nonclass friends above.
+The same access proof covers a source-owned free function-template friend whose
+exact primary and templated function belong to a namespace. This includes copied
+hidden primaries, supported operator templates and namespace redeclarations:
+none of their specializations can be an owning class's constructor. The ordinary
+friend-template source events, template parameters, signatures, selected defaults
+and bodies remain checked. Unused generic bodies remain lazy. Friendship still
+grants the free function's own specializations their normal access; a copy or move
+actually selected there checks its defaults and body as usual.
 A friend naming the actual owner, unresolved or other friend shapes
-(including member functions, function templates and class templates), and nested
+(including member functions and their templates, individual function-template
+specialization friends and class templates), and nested
 or derived owners require their own access proof. Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
