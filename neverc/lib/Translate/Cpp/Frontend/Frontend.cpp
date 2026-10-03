@@ -3493,8 +3493,11 @@ static bool utilityConditionalMoveValueConstructor(
       Type.getAddressSpace() != LangAS::Default)
     return false;
   // A parameter record's default/copy/move constructors cannot convert the
-  // distinct queried const record. Extra defaulted copy/move parameters do
-  // not change that first self-reference; retain their complete signatures
+  // distinct queried const record, including when the parameter record has
+  // an admitted empty base chain. The queried record has no bases, and an
+  // inherited converting constructor remains excluded below. Extra defaulted
+  // copy/move parameters do not change that first self-reference; retain their
+  // complete signatures
   // without evaluating an unused default. Its other constructors may exclude
   // that source by arity or a direct first-parameter proof. Inspect only this
   // existing constructor set; do not recurse into another parameter record,
@@ -3503,7 +3506,8 @@ static bool utilityConditionalMoveValueConstructor(
   ParameterRecord = ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
   if (!ParameterRecord || ParameterRecord->isInvalidDecl() ||
       ParameterRecord->isDependentContext() || ParameterRecord->isUnion() ||
-      ParameterRecord->getNumBases() != 0 ||
+      (ParameterRecord->getNumBases() != 0 &&
+       !A.emptyBaseChainShape(ParameterRecord)) ||
       !A.S.owns(A.Sources, ParameterRecord->getLocation()))
     return false;
   A.chargeExpansion(1, ParameterRecord->getLocation());

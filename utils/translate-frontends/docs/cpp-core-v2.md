@@ -1378,8 +1378,9 @@ This form includes default reference arguments and mutable-copy nodes in the
 owning graph. Actual construction evaluates selected defaults, preserves the
 original record binding and retains mutations made through it.
 
-A completed source-owned record with no bases can also be the first parameter
-by value, by const lvalue reference, or by either mutable or const rvalue
+A completed source-owned record with no bases or an admitted empty single-base
+chain can also be the first parameter by value, by const lvalue reference, or by
+either mutable or const rvalue
 reference when each constructor is a nonvariadic zero-parameter constructor,
 a copy/move constructor (including extra defaulted parameters), or one of the
 ordinary constructors described below. Zero-parameter
@@ -1389,6 +1390,12 @@ functions. This includes constructor-free aggregates, non-aggregates, empty
 records, private fields, reference members and nontrivial destruction. Explicitly
 defaulted, deleted, inaccessible and user-provided constructors can satisfy
 this shape. Their ordinary type, field and selected lifetime checks still apply.
+For an empty base chain, every node retains the existing completed-definition,
+storage and written base-type checks. The queried record still has no bases or
+conversion functions, so it cannot convert to the parameter record through a
+base. A base's converting constructor is not inherited implicitly; inherited
+constructors remain excluded. Actual parameter construction, copying, moving
+and destruction retain the selected base operations and their source checks.
 
 For example, a parameter record's `Argument(const Argument&, int = 0)` or
 `Argument(Argument&&, Seed = {})` retains a first reference to that same
@@ -1424,7 +1431,7 @@ redeclaration, including aliases and exception sources. Unused class-template
 constructors can retain an exact nondependent written
 exception specification without instantiating a body or resolving a hypothetical
 exception result; dependent specifications retain their separate requirements.
-SDK records, unions, bases, constructor templates, inherited constructors,
+SDK records, unions, other bases, constructor templates, inherited constructors,
 other constructor forms remain outside this proof. The proof reads an existing
 definition and does not instantiate an incomplete parameter specialization,
 default member initializer
