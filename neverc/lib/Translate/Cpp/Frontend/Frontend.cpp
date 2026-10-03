@@ -3174,6 +3174,25 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
+static bool utilityConditionalMoveUnrelatedBases(
+    Adapter &A, const CXXRecordDecl *Scope, const CXXRecordDecl *Record) {
+  if (!Scope->getNumBases())
+    return true;
+  // Reuse the bounded, completed empty-chain storage proof. Inheritance from
+  // the member class can confer protected access, so exclude that identity at
+  // every level. Do not add bases to the effective owner contexts: friendship
+  // granted to a base class is not inherited by its derived classes.
+  if (!A.emptyBaseChainShape(Scope))
+    return false;
+  while (Scope->getNumBases()) {
+    Scope = Scope->bases_begin()->getType()->getAsCXXRecordDecl()->getDefinition();
+    A.chargeExpansion(1, Scope->getLocation());
+    if (Scope->getCanonicalDecl() == Record->getCanonicalDecl())
+      return false;
+  }
+  return true;
+}
+
 static bool utilityConditionalMoveUnrelatedAccess(
     Adapter &A, const CXXRecordDecl *Record, const CXXRecordDecl *Owner) {
   if (!Owner)
@@ -3220,7 +3239,7 @@ static bool utilityConditionalMoveUnrelatedAccess(
               Lexical->isInvalidDecl() || Definition->isInvalidDecl() ||
               Definition->isDependentContext() || Definition->isUnion() ||
               Definition->isLocalClass() || Definition->isLambda() ||
-              Definition->getNumBases() != 0 ||
+              !utilityConditionalMoveUnrelatedBases(A, Definition, Record) ||
               !A.S.owns(A.Sources, Lexical->getLocation()) ||
               !A.S.owns(A.Sources, Definition->getLocation()))
             return false;
@@ -3260,7 +3279,7 @@ static bool utilityConditionalMoveUnrelatedAccess(
     if (!Scope || !Definition || OwnerContexts.size() >= 64 ||
         Scope->isInvalidDecl() || Definition->isInvalidDecl() ||
         Definition->isDependentContext() || Definition->isUnion() ||
-        Definition->getNumBases() != 0 ||
+        !utilityConditionalMoveUnrelatedBases(A, Definition, Record) ||
         !A.S.owns(A.Sources, Scope->getLocation()) ||
         !A.S.owns(A.Sources, Definition->getLocation()) ||
         Scope->getCanonicalDecl() == Record->getCanonicalDecl())

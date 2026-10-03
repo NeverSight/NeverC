@@ -1085,7 +1085,14 @@ defaults use the ordinary source checks above. This covers deleted copies/moves,
 const queries on inaccessible moves, and inaccessible member moves that
 delete an enclosing defaulted move. For an owned member's inaccessible copy/move,
 its immediate owner and every enclosing class must have a concrete, source-owned
-definition with no bases. The bounded actual declaration-context chain must end
+definition with no bases or an admitted empty single-base chain. No direct or
+indirect base in that chain may be the member class itself, since derivation can
+confer protected access. Base classes are not added to the effective owning
+contexts: friendship granted to a base class is not inherited. The existing
+empty-chain storage checks and original base type sources remain required,
+including erased alias arguments and selected lifecycle effects. This proof
+reads completed definitions without instantiating hypothetical bodies or defaults.
+The bounded actual declaration-context chain must end
 at namespace scope. It may pass through source-owned function definitions,
 including ordinary non-template free functions and methods, methods instantiated
 with a class, and completed concrete free or member function-template
@@ -1093,8 +1100,9 @@ specializations. Explicit specializations and instantiation definitions retain
 their actual contexts. A function-template specialization retains its source-owned
 primary and the exact templated function; this proof does not instantiate a body.
 A free function's semantic context must be a namespace. Its lexical context may
-also be a namespace, or a complete, concrete, source-owned class with no bases
-when the function is an inline friend defined there. This includes supported
+also be a namespace, or a complete, concrete, source-owned class satisfying the
+same base-chain restrictions when the function is an inline friend defined there.
+This includes supported
 ordinary friends, friends instantiated with a class, and concrete friend-template
 specializations. A non-nested inline friend's actual lexical class participates
 in the access checks. A nested inline friend instead continues directly to its
@@ -1157,8 +1165,8 @@ is checked even if another owner already used the same member type.
 A friend naming the actual owner or any enclosing class, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
 specialization friends and unsupported dependent class-template grants), dependent
-or incomplete function-template contexts, and inheritance in retained class scopes
-or the lexical friend class require their own access proof.
+or incomplete function-template contexts, and other inheritance in retained class
+scopes or the lexical friend class require their own access proof.
 Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
