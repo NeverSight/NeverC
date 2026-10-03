@@ -33,6 +33,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <set>
+#include <tuple>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -3599,23 +3600,23 @@ static bool utilityRecordConditionalMoveSource(
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
   // Use the adapter's actual object T: a mutable query's copy-fallback result
   // is also const, but its mutable rvalue move can still affect that decision.
-  // This binding proof applies only to the queried root. Owned operations
-  // retain their independent checks, including mutable fields and user bodies.
+  // Owned operations establish their own const binding proof below; root
+  // constness alone does not describe mutable fields or user-written bodies.
   const bool RootConstObject =
       Arguments && Arguments->size() == 1 &&
       Arguments->get(0).getKind() == TemplateArgument::Type &&
       A.Context.hasSameType(Arguments->get(0).getAsType(),
                            A.Context.getRecordType(Root).withConst());
-  std::set<std::pair<const CXXRecordDecl *, const CXXRecordDecl *>> Seen;
+  std::set<std::tuple<const CXXRecordDecl *, const CXXRecordDecl *, bool>> Seen;
   auto Check = [&](auto &&Self, const CXXRecordDecl *Record,
                    unsigned Depth, bool RootConstCopyUnavailable,
-                   const CXXRecordDecl *Owner) -> bool {
+                   const CXXRecordDecl *Owner, bool ConstObject) -> bool {
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Depth >= 64 || Record->isInvalidDecl() ||
         Record->isDependentContext() || Record->isUnion() ||
         !A.S.owns(A.Sources, Record->getLocation()))
       return false;
-    if (!Seen.insert({Record, Owner}).second)
+    if (!Seen.insert({Record, Owner, ConstObject}).second)
       return true;
     A.chargeExpansion(1, Record->getLocation());
     if (utilityTrivialConditionalMoveSource(A, Record, Signatures, Depth))
@@ -3650,7 +3651,7 @@ static bool utilityRecordConditionalMoveSource(
           (!RootConstCopyUnavailable &&
            !utilityConditionalMoveDefaultsSource(A, Constructor,
                                                  UnrelatedAccess,
-                                                 RootConstObject && Depth == 0)))
+                                                 ConstObject)))
         return false;
       if ((!A.Context.hasSameType(
               Constructor->getParamDecl(0)->getType(),
@@ -3696,20 +3697,27 @@ static bool utilityRecordConditionalMoveSource(
     // Copy/move viability and inferred exceptions include bases, array
     // elements and nontrivial value members. Reference/pointer fields retain
     // their written types and bindings without owning a referent graph.
+    // A defaulted copy or move preserves a declared const field's qualifiers,
+    // including every fixed-array element. Its exact mutable rvalue move
+    // cannot bind that source. User-written owning operations need a separate
+    // argument-source proof; never infer their member bindings from storage.
+    const bool DefaultedOwner =
+        Copy->isDefaulted() && (!Move || Move->isDefaulted());
     for (const auto &Base : Record->bases())
       if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1,
-                RootConstCopyUnavailable, Record))
+                RootConstCopyUnavailable, Record, /*ConstObject=*/false))
         return false;
-    for (const auto *Field : Record->fields())
-      if (const auto *Member =
-              A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl();
+    for (const auto *Field : Record->fields()) {
+      const auto Element = A.Context.getBaseElementType(Field->getType());
+      if (const auto *Member = Element->getAsCXXRecordDecl();
           Member && !Self(Self, Member, Depth + 1, RootConstCopyUnavailable,
-                          Record))
+                          Record, DefaultedOwner && Element.isConstQualified()))
         return false;
+    }
     return true;
   };
   return Check(Check, Root, 0, /*RootConstCopyUnavailable=*/false,
-               /*Owner=*/nullptr);
+               /*Owner=*/nullptr, RootConstObject);
 }
 
 static bool utilityValueAdapterSource(

@@ -1027,7 +1027,7 @@ record's exact mutable rvalue move lazy, including a public move. That move
 cannot bind a const object. The proof uses the adapter's actual object template
 argument, including an explicit `const Record` argument; a mutable query's
 `const Record&` copy-fallback result does not establish this binding restriction.
-The pinned copy and destruction traits still choose between `const Record&`
+The pinned construction traits still choose between `const Record&`
 and `const Record&&`. Every original prototype parameter, type, alias, bound,
 exception source and redeclaration remains checked, and already-resolved
 defaults retain their usual checks. This exception applies to the queried root;
@@ -1035,6 +1035,26 @@ owned records still need their own default and access proofs. It does not
 cover a `const Record&&` move, which can bind the const object. Query-only
 defaults and bodies remain lazy; actual selected copies evaluate and check
 their defaults and bodies, including temporary and object destruction.
+
+Owned fields declared const have the same binding proof when their immediate
+owner's copy and move constructors are already defaulted, whether implicit or
+explicit. An absent move is allowed. A defaulted owning operation preserves
+the source field's declared const qualification, including fixed-array elements
+and qualifiers introduced by aliases. The member's exact mutable rvalue move
+therefore cannot bind, even if it is public or accessible through friendship.
+Its uninstantiated extra defaults remain lazy under the same prototype and
+signature checks. This applies to nested owners and arrays of owners when each
+const member edge has that defaulted-owner proof. Each record/owner/const-binding
+combination is checked independently: an earlier const member never exempts a
+mutable member of the same type. Root constness alone, a mutable field, or a
+user-written owning copy/move body requires a separate member-argument proof.
+This does not exempt member copy defaults: if a query leaves an extra copy
+default uninstantiated, the available-copy default proof still rejects it.
+An actual selected copy may resolve that default through ordinary Sema and
+then supplies its original initializer to the existing source checks.
+Actual generated owner copies and moves still check and execute the selected
+member copy defaults, bodies and destruction; moving an owner can copy its
+const member.
 
 These defaults can affect the pinned reference result: a `noexcept` move
 constructor with a potentially throwing default argument, or with a default
