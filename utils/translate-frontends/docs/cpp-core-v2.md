@@ -1093,9 +1093,15 @@ to substituted nonclass types and mixtures of unrelated class and nonclass frien
 Each written friend declaration and type keeps its ordinary source checks,
 including a supported complete record or checked incomplete class identity;
 unsupported types and sources erased by an alias remain rejected.
+Ordinary non-template free function friends also do not grant access to the
+owner's constructors. This includes hidden friends instantiated from a class
+body, supported free operators and qualified namespace functions. Each friend
+keeps its declaration, signature, default-argument and selected-body source
+checks, and required definitions still need to be present. Such friends may be
+mixed with the unrelated class and nonclass friends above.
 A friend naming the actual owner, unresolved or other friend shapes
-(including function and class-template friends), and nested or derived owners
-require their own access proof. Each member/owner pair is checked independently,
+(including member functions, function templates and class templates), and nested
+or derived owners require their own access proof. Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
 initializing a member through another constructor. The member's unavailable

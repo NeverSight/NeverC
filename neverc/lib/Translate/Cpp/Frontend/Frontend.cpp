@@ -3182,16 +3182,32 @@ static bool utilityConditionalMoveUnrelatedAccess(
     return false;
   // A namespace-scope owner with no bases cannot acquire class-friend access
   // through a distinct record. Use resolved canonical identities, including
-  // aliases and substituted friend types; other friend shapes need their own
-  // access proof. Ordinary traversal still checks each written friend source.
+  // aliases and substituted friend types. An ordinary free function friend
+  // cannot name that owner's constructors either. Other friend shapes need
+  // their own proof; ordinary traversal still checks each written friend source.
   for (const auto *Friend : Record->friends()) {
     A.chargeExpansion(1, Friend->getLocation());
     if (Friend->isInvalidDecl() || Friend->hasAttrs() ||
         Friend->isUnsupportedFriend() || Friend->isPackExpansion() ||
         Friend->getFriendTypeNumTemplateParameterLists() ||
-        Friend->getFriendDecl() ||
         !A.S.owns(A.Sources, Friend->getLocation()))
       return false;
+    if (const auto *Target = Friend->getFriendDecl()) {
+      const auto *Function = dyn_cast<FunctionDecl>(Target);
+      if (!Function || Function->getKind() != Decl::Function ||
+          Function->isInvalidDecl() ||
+          !Function->getDeclContext()->getRedeclContext()->isFileContext() ||
+          !A.S.owns(A.Sources, Function->getLocation()))
+        return false;
+      // Include non-template hidden friends instantiated from a class body.
+      // Function-template grants and member functions keep separate proofs.
+      if (Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+          (Function->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+           !Function->getMemberSpecializationInfo() ||
+           !Function->getInstantiatedFromMemberFunction()))
+        return false;
+      continue;
+    }
     const auto *Info = Friend->getFriendType();
     if (!Info || Info->getType().isNull() ||
         Info->getType()->isDependentType() ||
