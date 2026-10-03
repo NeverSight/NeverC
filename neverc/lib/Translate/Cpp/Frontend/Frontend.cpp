@@ -3589,19 +3589,31 @@ static bool utilityConditionalMoveValueConstructor(
       !A.S.owns(A.Sources, ParameterRecord->getLocation()))
     return false;
   A.chargeExpansion(1, ParameterRecord->getLocation());
+  const auto *Destructor = ParameterRecord->getDestructor();
+  const bool DeletedDestructor =
+      Destructor && Destructor->getCanonicalDecl()->isDeletedAsWritten();
+  // The distinct const source requires a converted argument temporary, even
+  // for reference parameters. Written deletion prevents that temporary's
+  // destruction in every access context. Read only the existing declaration;
+  // do not infer deletion of a defaulted destructor or instantiate its body.
+  if (DeletedDestructor &&
+      !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
+    return false;
+  const bool UnavailableConstruction = Inaccessible || DeletedDestructor;
   for (const auto *Declaration : ParameterRecord->decls())
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
         Template && isa<CXXConstructorDecl>(Template->getTemplatedDecl()))
       return false;
   for (const auto *Candidate : ParameterRecord->ctors()) {
     A.chargeExpansion(1, Candidate->getLocation());
-    // An inaccessible outer constructor cannot supply construction even with
-    // a live argument conversion. Sema can still consume that conversion's
-    // signature and defaults before checking access, so retain them below.
+    // Nonpublic outer access or a deleted argument destructor can exclude
+    // construction with a live conversion. Sema can still consume that
+    // conversion's signature and defaults before failure; retain them below.
     if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
         Candidate->isInheritingConstructor() ||
-        (Inaccessible && Candidate->getExplicitSpecifier().getExpr()) ||
-        (!Inaccessible && Candidate->getNumParams() != 0 &&
+        (UnavailableConstruction &&
+         Candidate->getExplicitSpecifier().getExpr()) ||
+        (!UnavailableConstruction && Candidate->getNumParams() != 0 &&
          !Candidate->isCopyOrMoveConstructor() &&
          !Candidate->getCanonicalDecl()->isDeletedAsWritten() &&
          !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
@@ -3687,12 +3699,21 @@ static bool utilityLazyConditionalMoveSignatureSource(
   // A defaulted special member may retain a lazy inferred exception result
   // and generated body. Consume only the original absence of written source;
   // the adapter's decision proof separately accounts for the owning graph.
+  // A written deleted destructor can also keep an unevaluated exception
+  // result when overload resolution never needs it. Its canonical deletion
+  // supplies the separate decision proof; retain the exact source absence
+  // on both the concrete declaration and its template origin.
   if (Prototype->getExceptionSpecType() == EST_Unevaluated) {
     const auto Location =
         Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
     const auto OriginLocation =
         OriginInfo->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
-    return Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted() &&
+    const bool Defaulted =
+        Method->isExplicitlyDefaulted() && Origin->isExplicitlyDefaulted();
+    const bool DeletedDestructor =
+        Destructor && Method->getCanonicalDecl()->isDeletedAsWritten() &&
+        Origin->getCanonicalDecl()->isDeletedAsWritten();
+    return (Defaulted || DeletedDestructor) &&
            Written->getExceptionSpecType() == EST_None &&
            PatternWritten->getExceptionSpecType() == EST_None &&
            Location && OriginLocation &&

@@ -1490,6 +1490,36 @@ inherited constructors and other root constructor forms keep their separate
 requirements. Mutable-copy nodes in owned records and arrays use the same
 parameter-conversion proof.
 
+A completed source-owned parameter record with an explicitly deleted destructor
+also cannot provide the converted temporary needed by these constructors. For
+example, live `Argument(const C&)` together with `~Argument() = delete` cannot
+make `C(Argument)`, `C(const Argument&)`, `C(Argument&&)` or
+`C(const Argument&&)` constructible from the distinct `const C&`. The queried
+record still has no bases or conversion functions. This proof reads only the
+existing destructor's canonical written deletion, without inferring defaulted
+deletion or requesting a body or exception-specification instantiation. Deletion
+applies in every access context, including related owners and friends. Every
+other constructor of the queried record must independently satisfy its proof.
+
+All argument constructor signatures and the deleted destructor's original
+signature remain checked, including aliases, redeclarations and exception
+sources. Clang can consume the converting argument constructor's defaults
+before rejecting the temporary's destruction; invalid or unsupported consumed
+defaults still fail. Unused bodies and unselected defaults remain lazy,
+including an outer constructor default that Clang has not instantiated.
+Already-resolved dependent exception specifications retain the ordinary
+written/resolved source checks. A deleted class-template destructor whose
+exception specification is still unevaluated can retain the exact absence of
+written exception source on both its declaration and template origin. This
+does not resolve the exception result or infer deletion. This proof includes
+completed class templates and admitted empty base chains under the existing
+parameter-record restrictions;
+constructor templates, inherited and variadic constructors retain their
+separate exclusions. Mutable-copy nodes in owned records and fixed arrays use
+the same proof. Actual construction requiring the deleted destructor remains a
+C++ source error; a live reference-parameter constructor can still accept an
+existing argument reference, with its selected defaults and body checked.
+
 An ordinary nonvariadic constructor of the queried record itself may likewise
 be explicitly written as `= delete`. For example, `C(const Argument&) = delete`
 cannot supply construction from `const C&` even when `Argument(const C&)` is a
