@@ -1380,7 +1380,8 @@ independently satisfy an exclusion, and every other constructor keeps its
 existing proof. In particular, a live
 implicit `const` or `const &` conversion still prevents this proof unless its
 access is excluded as below or the independent constructor arity,
-written-deletion, unrelated-access or by-value argument destruction proof
+written-deletion, unrelated-access, by-value argument destruction or
+record-result/scalar-parameter proof
 applies, even if another conversion
 is deleted or an overload would make the native copy
 trait false. A parameter record's own viable converting constructor is also
@@ -1447,8 +1448,9 @@ receiver qualifiers and constructor templates remain outside this proof.
 An ordinary constructor written as `= delete` cannot provide successful
 construction even when a live implicit conversion supplies its argument.
 This combines with arity and unrelated access: every ordinary value constructor
-must be written deleted, inaccessible, require at least two arguments or have
-unavailable by-value argument destruction when a conversion remains available.
+must be written deleted, inaccessible, require at least two arguments, have
+unavailable by-value argument destruction or exclude record-only conversion
+results through its scalar first parameter when a conversion remains available.
 For example, deleted `C(int)` plus live `operator int() const` cannot copy from
 `const C&`, including if another constructor is `C(int, int)`. A live
 one-argument overload still prevents this proof even when overload resolution
@@ -1505,6 +1507,37 @@ or deleted constructors, required arguments and default arguments are included.
 All parameters may have defaults. The first scalar parameter cannot consume
 `const Record&` without a usable implicit conversion from that lvalue,
 regardless of later defaults.
+
+The scalar-parameter proof also applies when every remaining usable source
+conversion returns a record, by value or reference. For example, with a
+mutable-only `C(C&)` copy and a throwing move, `C(int = 0)` cannot take
+`const C&` through `operator Argument() const`. Converting the resulting
+`Argument` to `int` would need a second user-defined conversion in the same
+implicit conversion sequence, even if `Argument::operator int()` exists.
+The same proof covers admitted scalar lvalue/rvalue-reference parameters,
+multiple scalar constructor overloads, record-result aliases and out-of-line
+conversion definitions. It reads existing conversion result types without
+inspecting the result record's conversion set or instantiating its bodies.
+
+Every constructor still independently needs an admitted exclusion. Record
+parameters can bind a record conversion result directly, so this proof does
+not admit them. A remaining usable non-record conversion also prevents this
+proof, even when its particular result cannot reach the scalar parameter;
+other independent exclusions can still apply. Explicit, deleted, mutable-only,
+rvalue-qualified and inaccessible conversions keep their existing exclusions
+and access rules. Mutable-copy nodes in owned records and arrays use their
+actual owner contexts when deciding which conversions remain usable.
+
+All constructor and conversion signatures, parameter/result aliases, defaults
+and exception sources remain checked. Unused template defaults and bodies
+stay lazy; resolved dependent exception sources retain their ordinary checks,
+while unresolved dependent sources remain excluded. A query never runs either
+conversion or a constructor default. Explicitly separating the conversions,
+such as constructing an `Argument` first and then passing it to `C(int)`,
+checks and evaluates both selected calls, defaults and lifetime operations.
+Unsupported selected sources and actual attempts to chain two implicit
+user-defined conversions still fail. Constructor/conversion templates,
+variadic constructors and the existing type restrictions remain unchanged.
 
 A first parameter that is an lvalue or rvalue reference to an admitted fixed
 array also cannot consume `const Record&` without a usable implicit conversion
@@ -1724,8 +1757,8 @@ inaccessible in the constructing context. The by-value parameter must be
 destroyable even when the conversion returns an existing object reference.
 Value, lvalue-reference and rvalue-reference conversion results follow this
 same rule. Every other value constructor independently needs an admitted
-exclusion, which can combine argument destruction, arity, written deletion and
-unrelated access.
+exclusion, which can combine argument destruction, arity, written deletion,
+unrelated access and scalar parameters with record-only conversion results.
 
 With these live source conversions, a reference parameter needs its own
 proof: `C(const Argument&)` or `C(Argument&&)` can bind an existing reference

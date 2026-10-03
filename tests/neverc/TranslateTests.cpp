@@ -84603,10 +84603,6 @@ struct A{int n;friend struct C;struct O;private:~A()noexcept{}};struct C{A*p;C(A
 namespace Alias { using std::move_if_noexcept; }
 struct A{int n;friend struct C;friend struct Friend;private:~A()noexcept{}};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};struct Plain{C value;};struct Friend{C value;};struct O{Plain plain;Friend privileged;};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}
 )cpp", "TR0201"},
-      {"other-single-argument-overload", R"cpp(#include <utility>
-namespace Alias { using std::move_if_noexcept; }
-struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}C(double)noexcept{}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
-)cpp", "TR0201"},
       {"argument-constructor-template", R"cpp(#include <utility>
 namespace Alias { using std::move_if_noexcept; }
 struct A{int n;template<class T>A(T)noexcept{}~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
@@ -84762,6 +84758,278 @@ template<class T>struct A{T n;private:~A()noexcept(sizeof(T)>0){static_assert(si
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("value-argument-destruction-accept-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("value-argument-destruction-accept-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordToScalarMoveIfNoexceptQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("record-to-scalar-move-if-noexcept.cpp");
+  const auto Output = tmpFile("record-to-scalar-move-if-noexcept.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias=Reexport;
+int values,copies,moves,cleanups,defaults,calls,operand_defaults;
+int record_calls,scalar_calls,tokens,token_cleanups;
+struct Token{
+  int value;
+  explicit Token(int n)noexcept:value(n){++tokens;}
+  ~Token()noexcept{++token_cleanups;}
+  operator int()const noexcept{++scalar_calls;return value;}
+};
+struct Value{
+  int value;
+  Value(int n=(++defaults,2))noexcept:value(n){++values;}
+  Value(Value&v)noexcept:value(v.value){++v.value;++copies;}
+  Value(Value&&v)noexcept(false):value(v.value){v.value=-1;++moves;}
+  ~Value()noexcept{++cleanups;}
+  operator Token()const noexcept{++record_calls;return Token(value);}
+};
+struct Owner{Value elements[2];};
+template<class T>T&source(T&v,int=(++operand_defaults,1))noexcept{++calls;return v;}
+template<class T>bool queries(T&v){
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(v)),T&&));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),T&&));
+  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),T&&));
+  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));
+  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));
+  static_assert(noexcept(move_if_noexcept(v)));
+  T&&alias=move_if_noexcept(std::forward<T&>(v));
+  return &alias==&v;
+}
+template<class T>struct LazyToken{
+  T n;
+  operator T()const noexcept{static_assert(sizeof(T)==0);return n;}
+};
+template<class T>struct LazyValue{
+  T n;
+  LazyValue(T,T=T::missing)noexcept{static_assert(sizeof(T)==0);}
+  LazyValue(LazyValue&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}
+  LazyValue(LazyValue&&)noexcept(false){static_assert(sizeof(T)==0);}
+  operator LazyToken<T>()const noexcept{static_assert(sizeof(T)==0);return LazyToken<T>{n};}
+};
+template<class T>struct Box{T elements[2];};
+static_assert(sizeof(LazyToken<int>)==sizeof(int)&&sizeof(LazyToken<long>)==sizeof(long));
+int query_only(LazyValue<int>&a,Box<LazyValue<long>>&b){
+  return queries(a)&&queries(std::as_const(a))&&queries(b)&&queries(std::as_const(b));
+}
+int main(){
+  {
+    Value seed(10);
+    Owner owner;
+    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(seed))),Value&&));
+    static_assert(sizeof(Alias::move_if_noexcept(source(seed)))==sizeof(Value));
+    static_assert(noexcept(Alias::move_if_noexcept(source(seed))));
+    if(!queries(seed)||!queries(std::as_const(seed))||!queries(owner)||!queries(std::as_const(owner)))return 1;
+    if(values!=3||defaults!=2||copies||moves||cleanups||calls||operand_defaults||
+       record_calls||scalar_calls||tokens||token_cleanups)return 2;
+    Value&&alias=Alias::move_if_noexcept(source(seed));
+    if(&alias!=&seed||calls!=1||operand_defaults!=1)return 3;
+    Value copied(seed),moved(Alias::move_if_noexcept(seed));
+    Owner copied_owner(owner),moved_owner(Alias::move_if_noexcept(owner));
+    if(seed.value!=-1||copied.value!=10||moved.value!=11||owner.elements[0].value!=-1||owner.elements[1].value!=-1||
+       copied_owner.elements[0].value!=2||moved_owner.elements[1].value!=3||copies!=3||moves!=3||cleanups)return 4;
+    Token token=copied;
+    int converted=token;
+    Value actual(token);
+    Value from_temporary(static_cast<Token>(moved));
+    if(converted!=10||actual.value!=10||from_temporary.value!=11||values!=5||defaults!=2||record_calls!=2||
+       scalar_calls!=3||tokens!=2||token_cleanups!=1||cleanups)return 5;
+  }
+  return values==5&&defaults==2&&copies==3&&moves==3&&cleanups==11&&record_calls==2&&
+         scalar_calls==3&&tokens==2&&token_cleanups==2&&calls==1&&operand_defaults==1?0:6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-to-scalar" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordToScalarMoveIfNoexceptQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"live-scalar-conversion", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}operator int()const noexcept{return n;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp", "TR0201"},
+      {"live-record-pointer-conversion", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(bool)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A*()const noexcept{return p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp", "TR0201"},
+      {"record-parameter-binding", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(const A&)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp", "TR0201"},
+      {"mutable-record-parameter-binding", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(A&)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp", "TR0201"},
+      {"mixed-constructor-parameters", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp", "TR0201"},
+      {"incompatible-nonrecord-result", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}operator int*()const noexcept{return nullptr;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"conversion-template", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}template<class T>operator T()const noexcept{return T{};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&));return 0;}
+)cpp", "TR0201"},
+      {"constructor-template", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}template<class T>C(T)noexcept=delete;C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"variadic-constructor", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int,...)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"volatile-receiver", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const volatile noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"erased-parameter-alias", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T,int N>using Erase=T;struct A{int n;};struct C{int n;A*p;C(Erase<int,sizeof(long double)>)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"erased-result-alias", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T,int N>using Erase=T;struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator Erase<A,sizeof(long double)>()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"constructor-exception-source", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept(sizeof(long double)>0){}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"conversion-exception-source", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept(sizeof(long double)>0){return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp", "TR0201"},
+      {"unresolved-dependent-exception", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T n;operator T()const noexcept{static_assert(sizeof(T)==0);return n;}};template<class T>struct C{T n;C(T,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>()const noexcept(sizeof(T)>0){static_assert(sizeof(T)==0);return A<T>{n};}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp", "TR0201"},
+      {"selected-invalid-conversion", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T n;operator T()const noexcept{static_assert(sizeof(T)==0);return n;}};template<class T>struct C{T n;C(T,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>()const noexcept{static_assert(sizeof(T)==0);return A<T>{n};}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+A<int>g(const C<int>&c){return c;})cpp", "TR0202"},
+      {"actual-double-user-conversion", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;operator int()const noexcept{return n;}};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+int g(const C&c){C result(c);return result.n;})cpp", "TR0202"},
+      {"selected-conversion-body", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{long double hidden=0;return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+A g(const C&c){return c;})cpp", "TR0201"},
+      {"selected-constructor-default", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T n;};template<class T>struct C{T n;C(T x,T d=sizeof(long double))noexcept:n(x+d){}C(C&)noexcept{}C(C&&)noexcept(false){}operator A<T>()const noexcept{return A<T>{n};}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+int g(){C<int> c(1);return c.n;})cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("record-to-scalar-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("record-to-scalar-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordToScalarMoveIfNoexceptQueriesAdmitRecordResults) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"record-value", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"record-lvalue", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"record-rvalue", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A&&()const noexcept{return static_cast<A&&>(*p);}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"const-record-reference", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(const int&)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator const A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"mutable-scalar-reference", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;operator int&()noexcept{return n;}};struct C{int n;A*p;C(int&)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"scalar-rvalue-reference", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int&&)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"scalar-overloads", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(bool)noexcept{}C(float)noexcept{}C(double)noexcept{}C(long)noexcept{}C(int*)noexcept{}C(decltype(nullptr))noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"enum-and-alias", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+enum class Number:unsigned{one=1};struct A{int n;};using Token=A;struct C{int n;A*p;C(Number,int=0)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator Token()const noexcept;};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+C::operator Token()const noexcept{return Token{n};})cpp"},
+      {"second-user-conversion", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;operator int()const noexcept{return n;}};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"multiple-record-conversions", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct B{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}B*q;operator A()const noexcept{return A{n};}operator B&()const noexcept{return *q;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"excluded-scalar-conversions", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}explicit operator int()const noexcept{return n;}operator double()const noexcept=delete;operator float()noexcept{return float(n);}operator long()const&&noexcept{return n;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+      {"owned-array", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};struct O{C elements[2];};int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}
+)cpp"},
+      {"friend-and-nested-owner", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}friend struct O;struct Nested;operator A()const noexcept{return A{n};}};struct O{C elements[2];};struct C::Nested{C c;};int nested(C::Nested&n){static_assert(__is_same(decltype(Alias::move_if_noexcept(n)),C::Nested&&));return 0;}int f(O&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O&&));return 0;}
+)cpp"},
+      {"const-query", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;};struct C{int n;A*p;C(int)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}operator A()const noexcept{return A{n};}};int f(const C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),const C&&));return 0;}
+)cpp"},
+      {"lazy-template-signatures", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T n;operator T()const noexcept{static_assert(sizeof(T)==0);return n;}};template<class T>struct C{T n;C(T,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>()const noexcept{static_assert(sizeof(T)==0);return A<T>{n};}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+)cpp"},
+      {"lazy-owned-array", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T n;operator T()const noexcept{static_assert(sizeof(T)==0);return n;}};template<class T>struct C{T n;C(T,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>()const noexcept{static_assert(sizeof(T)==0);return A<T>{n};}};static_assert(sizeof(A<int>)==sizeof(int));template<class T>struct O{C<T> elements[2];};int f(O<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),O<int>&&));return 0;}
+)cpp"},
+      {"resolved-exception-source", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct A{T n;operator T()const noexcept{static_assert(sizeof(T)==0);return n;}};template<class T>struct C{T n;C(T,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}C(C&&)noexcept(false){static_assert(sizeof(T)==0);}operator A<T>()const noexcept(sizeof(T)>0){return A<T>{n};}};static_assert(sizeof(A<int>)==sizeof(int));int f(C<int>&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C<int>&&));return 0;}
+A<int>g(const C<int>&c){return c;})cpp"},
+      {"promoted-argument-destruction-and-scalar", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+struct A{int n;~A()=delete;};struct C{A*p;C(A)noexcept{}C(C&)noexcept{}C(C&&)noexcept(false){}C(double)noexcept{}operator A&()const noexcept{return *p;}};int f(C&c){static_assert(__is_same(decltype(Alias::move_if_noexcept(c)),C&&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("record-to-scalar-accept-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("record-to-scalar-accept-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
