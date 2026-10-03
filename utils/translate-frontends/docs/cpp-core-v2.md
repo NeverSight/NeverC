@@ -1490,6 +1490,28 @@ inherited constructors and other root constructor forms keep their separate
 requirements. Mutable-copy nodes in owned records and arrays use the same
 parameter-conversion proof.
 
+An ordinary nonvariadic private or protected parameter-record constructor also
+cannot supply the implicit conversion when access checking is enabled and the
+constructing context has no access to it. For example, private
+`Argument(const C&, int = 3)` does not make `C(const Argument&)` constructible
+from `const C&` in the root SDK traits, even if the query is written inside
+`Argument` itself. Value and rvalue-reference argument forms follow the same
+rule. The proof reads the canonical constructor declaration, including for an
+out-of-line definition, completed class templates and admitted empty base chains.
+
+Mutable-copy nodes in owned records and arrays check the actual owner's
+enclosing, friend and base contexts against `Argument`. A grant by `C` alone
+does not grant access to `Argument`; a grant by `Argument` to the owner prevents
+this exclusion proof. Each other argument constructor must independently pass
+an admitted proof. All original signatures and exception sources remain
+checked. Clang can consume both the conversion's defaults and the outer
+constructor's defaults before rejecting access, so their invalid or unsupported
+sources still fail. Unused bodies and unselected defaults stay lazy. Actual
+construction inside an authorized context checks and evaluates the selected
+conversion, defaults and cleanup; an unauthorized call remains a C++ source
+error. Constructor templates, inherited constructors and conditional explicit
+specifiers keep their existing restrictions.
+
 A completed source-owned parameter record with an explicitly deleted destructor
 also cannot provide the converted temporary needed by these constructors. For
 example, live `Argument(const C&)` together with `~Argument() = delete` cannot

@@ -3525,7 +3525,7 @@ static bool utilityConditionalMoveRecordArgumentConstructor(
               SourceRecord->getCanonicalDecl());
 }
 
-static bool utilityConditionalMoveNonpublicValueConstructor(
+static bool utilityConditionalMoveNonpublicConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
@@ -3559,7 +3559,7 @@ static bool utilityConditionalMoveValueConstructor(
     return true;
   const bool Inaccessible =
       UnrelatedAccess &&
-      utilityConditionalMoveNonpublicValueConstructor(A, Constructor);
+      utilityConditionalMoveNonpublicConstructor(A, Constructor);
   const auto Type = Constructor->getParamDecl(0)->getType().getNonReferenceType();
   if (Type->isDependentType() || Type.isVolatileQualified() ||
       Type.isRestrictQualified() || Type->isAtomicType() ||
@@ -3619,6 +3619,8 @@ static bool utilityConditionalMoveValueConstructor(
     // Nonpublic outer access or an unavailable argument destructor can exclude
     // construction with a live conversion. Sema can still consume that
     // conversion's signature and defaults before failure; retain them below.
+    // A nonpublic conversion has its own access boundary: use the parameter
+    // class's grants to the actual owner, independently of the value class.
     if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
         Candidate->isInheritingConstructor() ||
         (UnavailableConstruction &&
@@ -3629,7 +3631,9 @@ static bool utilityConditionalMoveValueConstructor(
          !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
          !utilityConditionalMoveDirectConstructor(A, Candidate) &&
          !utilityConditionalMoveRecordArgumentConstructor(
-             Candidate, Constructor->getParent())) ||
+             Candidate, Constructor->getParent()) &&
+         !(utilityConditionalMoveNonpublicConstructor(A, Candidate) &&
+           utilityConditionalMoveUnrelatedAccess(A, ParameterRecord, Owner))) ||
         !utilityConditionalMoveSignatureSource(A, Candidate, Signatures))
       return false;
   }
@@ -3644,7 +3648,7 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool DefaultConstructor = Constructor && !Constructor->isVariadic() &&
                                   Constructor->getNumParams() == 0;
   const bool NonpublicValueConstructor =
-      utilityConditionalMoveNonpublicValueConstructor(A, Constructor);
+      utilityConditionalMoveNonpublicConstructor(A, Constructor);
   const bool ValueConstructor =
       NonpublicValueConstructor ||
       utilityConditionalMoveValueConstructor(A, Constructor);
@@ -3682,7 +3686,7 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const auto *PatternWritten = OriginInfo->getType()->getAs<FunctionProtoType>();
   const auto *OriginConstructor = dyn_cast<CXXConstructorDecl>(Origin);
   if (NonpublicValueConstructor &&
-      !utilityConditionalMoveNonpublicValueConstructor(A, OriginConstructor))
+      !utilityConditionalMoveNonpublicConstructor(A, OriginConstructor))
     return false;
   if (ExplicitArgumentConstructor &&
       !utilityConditionalMoveExplicitArgumentConstructor(OriginConstructor))
