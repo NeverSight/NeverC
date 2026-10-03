@@ -156,6 +156,10 @@ void neverc_bigint_set(neverc_bigint_t *z, const neverc_bigint_t *x) {
 #define NCI_BASECONV_THRESHOLD 80
 #endif
 
+/* Go big.MaxBase: digits are 0-9, then 'a'-'z' for 10..35, then 'A'-'Z' for
+ * 36..61. Up to base 36 the letters are case-insensitive (10..35). */
+#define NCI_BIGINT_MAX_BASE 62
+
 /*
  * Interpret limb[lo..hi) (most-significant first, each < chunk_base) as a
  * base-chunk_base number: out = sum limb[i] * chunk_base^(hi-1-i).
@@ -205,7 +209,8 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
             else { base = 8; zero_is_digit = 1; after_prefix = 1; }
         }
     }
-    if (base < 2 || base > 36) return -1;
+    if (base < 2 || base > NCI_BIGINT_MAX_BASE) return -1;
+    int upper_digit0 = base <= 36 ? 10 : 36;    /* value of 'A' */
 
     /* Largest power of base that fits in a single word: k source digits fold in
      * with one multiprecision mul+add instead of one per digit. */
@@ -234,7 +239,7 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
         int d;
         if (*q >= '0' && *q <= '9') d = *q - '0';
         else if (*q >= 'a' && *q <= 'z') d = *q - 'a' + 10;
-        else if (*q >= 'A' && *q <= 'Z') d = *q - 'A' + 10;
+        else if (*q >= 'A' && *q <= 'Z') d = *q - 'A' + upper_digit0;
         else return -1;
         if (d >= base) return -1;
         ndigits++;
@@ -272,7 +277,7 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
                 int d;
                 if (*q >= '0' && *q <= '9') d = *q - '0';
                 else if (*q >= 'a' && *q <= 'z') d = *q - 'a' + 10;
-                else if (*q >= 'A' && *q <= 'Z') d = *q - 'A' + 10;
+                else if (*q >= 'A' && *q <= 'Z') d = *q - 'A' + upper_digit0;
                 else continue;                          /* '_' (already validated) */
                 acc = acc * (uint32_t)base + (uint32_t)d;
                 if (++cnt == want) { limb[li++] = acc; acc = 0; cnt = 0; want = (size_t)k; }
@@ -315,7 +320,7 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
         int d;
         if (*p >= '0' && *p <= '9') d = *p - '0';
         else if (*p >= 'a' && *p <= 'z') d = *p - 'a' + 10;
-        else if (*p >= 'A' && *p <= 'Z') d = *p - 'A' + 10;
+        else if (*p >= 'A' && *p <= 'Z') d = *p - 'A' + upper_digit0;
         else if (*p == '_') continue;
         else {
             neverc_bigint_free(&bk); neverc_bigint_free(&digit);
@@ -2334,14 +2339,15 @@ static void bigint_emit_chunks(char *dst, const neverc_bigint_t *v, size_t nch,
 }
 
 int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t cap) {
-    if (base < 2 || base > 36 || !buf || cap == 0) return -1;
+    if (base < 2 || base > NCI_BIGINT_MAX_BASE || !buf || cap == 0) return -1;
     if (x->len == 0) {
         if (cap < 2) return -1;
         buf[0] = '0'; buf[1] = '\0';
         return 1;
     }
 
-    static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    static const char digits[] =
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     /* Largest power of base that still fits in a single word, so each division
      * is the fast single-word path and yields k digits at once (~k-fold fewer

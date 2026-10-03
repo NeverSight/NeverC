@@ -21,6 +21,10 @@ void neverc_bigint_free(neverc_bigint_t *z);
 void neverc_bigint_set_int64(neverc_bigint_t *z, int64_t x);
 void neverc_bigint_set_uint64(neverc_bigint_t *z, uint64_t x);
 void neverc_bigint_set(neverc_bigint_t *z, const neverc_bigint_t *x);
+/* Go Int.SetString: base is 0 or 2..62. Up to base 36 letters are
+ * case-insensitive digits 10..35; above it 'a'..'z' are 10..35 and 'A'..'Z'
+ * are 36..61. Base 0 reads a 0b/0o/0x/0 prefix (else base 10) and allows '_'
+ * between digits. Returns 0, or -1 and leaves z unchanged. */
 int  neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base);
 
 int64_t  neverc_bigint_int64(const neverc_bigint_t *x);
@@ -52,6 +56,10 @@ void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *x,
 void neverc_bigint_gcd(neverc_bigint_t *z, const neverc_bigint_t *x,
                        const neverc_bigint_t *y);
 
+/* Go Int.Text for base 2..62 ('a'..'z' are 10..35, 'A'..'Z' are 36..61),
+ * NUL-terminated in buf. Returns the length, or -1 for an invalid base or
+ * buffer, when cap cannot hold the digits and the NUL, or on allocation
+ * failure. */
 int  neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t cap);
 
 #ifdef __cplusplus

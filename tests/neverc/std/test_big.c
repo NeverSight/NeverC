@@ -112,7 +112,7 @@ static void test_set_string(void) {
     ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
     ASSERT_INT_EQ(neverc_bigint_set_string(&a, "99", 1), -1);
     ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
-    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "99", 37), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "99", 63), -1);
     ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
     ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_000", 10), -1);
     ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
@@ -472,6 +472,127 @@ static void test_string(void) {
     ASSERT_STR_EQ(buf, "1010");
 
     neverc_bigint_free(&a);
+}
+
+/* Go big.Int SetString/Text accept bases up to MaxBase (62): above base 36
+ * 'a'..'z' are 10..35 and 'A'..'Z' are 36..61. Expected values come from
+ * Go's math/big. */
+static void test_string_high_bases(void) {
+    printf("[string_high_bases]\n");
+    neverc_bigint_t a, b;
+    neverc_bigint_init(&a);
+    neverc_bigint_init(&b);
+    char buf[256];
+    memset(buf, 0, sizeof(buf));
+
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "Z", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 61);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "z", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 35);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "Z", 36), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 35);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "10", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 62);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "zz", 37), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 1330);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "A", 37), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 36);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "99", 37), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 342);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "-Zz", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), -3817);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "+1", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 1);
+    /* No prefixes or separators unless base is 0: 'x' is digit 33 here. */
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0x1", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 2047);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "aZ9", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42231);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "-0", 62), 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&a));
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "00000Z", 62), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 61);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "helloWorld", 62), 0);
+    ASSERT_TRUE(neverc_bigint_uint64(&a) == 233262402326386991ULL);
+
+    neverc_bigint_set_int64(&a, 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "B", 37), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_0", 62), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "-", 62), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "", 62), -1);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 42);
+
+    neverc_bigint_set_int64(&a, 61);
+    ASSERT_INT_EQ(neverc_bigint_string(&a, 62, buf, sizeof(buf)), 1);
+    ASSERT_STR_EQ(buf, "Z");
+    neverc_bigint_set_int64(&a, 62);
+    neverc_bigint_string(&a, 62, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "10");
+    neverc_bigint_set_int64(&a, 36);
+    neverc_bigint_string(&a, 37, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "A");
+    neverc_bigint_set_string(&a, "-12345678901234567890", 10);
+    neverc_bigint_string(&a, 62, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "-eHZl6hWz5OW");
+    ASSERT_INT_EQ(neverc_bigint_string(&a, 63, buf, sizeof(buf)), -1);
+
+    static const struct { int base; const char *text; } pow3_200[] = {
+        { 37, "lhzt4vq4e76je6qzpuh99wp5liwgy0igwmnnw3rzhp26b7zevlx7r98966539" },
+        { 50, "1JyHEux7bevjwsLLfLFvwbdDe9dMyy91G8FlFpk6vwB4vAyhywEv1Ghu1" },
+        { 61, "6krM14IdwK1A19cNUzl51fRer841WCnxtNKpEqfabuqk2LTXVtrxn1" },
+        { 62, "2FUFuUtBzVLmGOTq3k52tQj1sXA3q7CihhKJRdbaDLC0xVrqK4ujw5" },
+    };
+    neverc_bigint_t three, e200;
+    neverc_bigint_init(&three);
+    neverc_bigint_init(&e200);
+    neverc_bigint_set_int64(&three, 3);
+    neverc_bigint_set_int64(&e200, 200);
+    neverc_bigint_exp(&a, &three, &e200, NULL);
+    for (size_t i = 0; i < sizeof(pow3_200) / sizeof(pow3_200[0]); i++) {
+        ASSERT_TRUE(neverc_bigint_string(&a, pow3_200[i].base, buf,
+                                         sizeof(buf)) > 0);
+        ASSERT_STR_EQ(buf, pow3_200[i].text);
+        ASSERT_INT_EQ(neverc_bigint_set_string(&b, pow3_200[i].text,
+                                               pow3_200[i].base), 0);
+        ASSERT_INT_EQ(neverc_bigint_cmp(&a, &b), 0);
+    }
+    neverc_bigint_free(&three);
+    neverc_bigint_free(&e200);
+
+    /* Thousands of base-62 digits take the divide-and-conquer parse and
+     * format paths; both must keep the case-sensitive digit values. */
+    {
+        static const char digits62[] =
+            "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        size_t ndig = 4000;
+        char *text = (char *)malloc(ndig + 2);
+        char *out = (char *)malloc(ndig + 2);
+        ASSERT_TRUE(text != NULL && out != NULL);
+        if (text && out) {
+            uint32_t x = 0x9e3779b9u;
+            text[0] = 'Z';
+            for (size_t i = 1; i < ndig; i++) {
+                x = x * 1664525u + 1013904223u;
+                text[i] = digits62[(x >> 16) % 62u];
+            }
+            text[ndig] = '\0';
+            ASSERT_INT_EQ(neverc_bigint_set_string(&a, text, 62), 0);
+            ASSERT_INT_EQ(neverc_bigint_string(&a, 62, out, ndig + 2),
+                          (int)ndig);
+            ASSERT_TRUE(strcmp(text, out) == 0);
+            /* Lower-casing the text must change the value above base 36. */
+            for (size_t i = 0; i < ndig; i++)
+                if (text[i] >= 'A' && text[i] <= 'Z') text[i] += 'a' - 'A';
+            ASSERT_INT_EQ(neverc_bigint_set_string(&b, text, 62), 0);
+            ASSERT_TRUE(neverc_bigint_cmp(&a, &b) != 0);
+        }
+        free(text);
+        free(out);
+    }
+
+    neverc_bigint_free(&a);
+    neverc_bigint_free(&b);
 }
 
 static void test_exp_mod(void) {
@@ -1137,6 +1258,7 @@ int main(void) {
     test_shift();
     test_bit_ops();
     test_string();
+    test_string_high_bases();
     test_exp_mod();
     test_gcd();
     test_large_numbers();
