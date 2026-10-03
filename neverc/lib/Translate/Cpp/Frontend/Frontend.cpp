@@ -3525,9 +3525,26 @@ static bool utilityConditionalMoveRecordArgumentConstructor(
               SourceRecord->getCanonicalDecl());
 }
 
+static bool utilityConditionalMoveNonpublicValueConstructor(
+    Adapter &A, const CXXConstructorDecl *Constructor) {
+  if (!Constructor || Constructor->isInvalidDecl() ||
+      Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
+      Constructor->isInheritingConstructor() ||
+      Constructor->getDescribedFunctionTemplate() ||
+      Constructor->getPrimaryTemplate() || Constructor->getNumParams() == 0 ||
+      Constructor->getExplicitSpecifier().getExpr() ||
+      !A.Context.getLangOpts().AccessControl)
+    return false;
+  // This recognizes the declaration only. The decision proof separately
+  // establishes that the actual owning context has no access privileges.
+  const auto Access = Constructor->getCanonicalDecl()->getAccess();
+  return Access == AS_private || Access == AS_protected;
+}
+
 static bool utilityConditionalMoveValueConstructor(
     Adapter &A, const CXXConstructorDecl *Constructor,
-    std::vector<const CXXMethodDecl *> *Signatures = nullptr) {
+    std::vector<const CXXMethodDecl *> *Signatures = nullptr,
+    bool UnrelatedAccess = false) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isCopyOrMoveConstructor() || Constructor->isVariadic() ||
       Constructor->getNumParams() == 0)
@@ -3540,6 +3557,9 @@ static bool utilityConditionalMoveValueConstructor(
   if (Constructor->getCanonicalDecl()->isDeletedAsWritten() ||
       utilityConditionalMoveDirectConstructor(A, Constructor))
     return true;
+  const bool Inaccessible =
+      UnrelatedAccess &&
+      utilityConditionalMoveNonpublicValueConstructor(A, Constructor);
   const auto Type = Constructor->getParamDecl(0)->getType().getNonReferenceType();
   if (Type->isDependentType() || Type.isVolatileQualified() ||
       Type.isRestrictQualified() || Type->isAtomicType() ||
@@ -3575,9 +3595,13 @@ static bool utilityConditionalMoveValueConstructor(
       return false;
   for (const auto *Candidate : ParameterRecord->ctors()) {
     A.chargeExpansion(1, Candidate->getLocation());
+    // An inaccessible outer constructor cannot supply construction even with
+    // a live argument conversion. Sema can still consume that conversion's
+    // signature and defaults before checking access, so retain them below.
     if (Candidate->isInvalidDecl() || Candidate->isVariadic() ||
         Candidate->isInheritingConstructor() ||
-        (Candidate->getNumParams() != 0 &&
+        (Inaccessible && Candidate->getExplicitSpecifier().getExpr()) ||
+        (!Inaccessible && Candidate->getNumParams() != 0 &&
          !Candidate->isCopyOrMoveConstructor() &&
          !Candidate->getCanonicalDecl()->isDeletedAsWritten() &&
          !utilityConditionalMoveExplicitArgumentConstructor(Candidate) &&
@@ -3597,7 +3621,10 @@ static bool utilityLazyConditionalMoveSignatureSource(
   // constructors. Their written signatures need no hypothetical construction.
   const bool DefaultConstructor = Constructor && !Constructor->isVariadic() &&
                                   Constructor->getNumParams() == 0;
+  const bool NonpublicValueConstructor =
+      utilityConditionalMoveNonpublicValueConstructor(A, Constructor);
   const bool ValueConstructor =
+      NonpublicValueConstructor ||
       utilityConditionalMoveValueConstructor(A, Constructor);
   const bool ExplicitArgumentConstructor =
       utilityConditionalMoveExplicitArgumentConstructor(Constructor);
@@ -3632,6 +3659,9 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const auto *Pattern = Origin->getType()->getAs<FunctionProtoType>();
   const auto *PatternWritten = OriginInfo->getType()->getAs<FunctionProtoType>();
   const auto *OriginConstructor = dyn_cast<CXXConstructorDecl>(Origin);
+  if (NonpublicValueConstructor &&
+      !utilityConditionalMoveNonpublicValueConstructor(A, OriginConstructor))
+    return false;
   if (ExplicitArgumentConstructor &&
       !utilityConditionalMoveExplicitArgumentConstructor(OriginConstructor))
     return false;
@@ -3687,14 +3717,15 @@ static bool utilityLazyConditionalMoveSignatureSource(
 }
 
 static bool utilityMutableCopyConditionalMoveSource(
-    Adapter &A, const CXXRecordDecl *Record,
+    Adapter &A, const CXXRecordDecl *Record, bool UnrelatedAccess,
     std::vector<const CXXMethodDecl *> *Signatures) {
   // An exact mutable-only copy cannot consume a const source. Exclude other
   // conversion paths. An ordinary constructor requiring two arguments cannot
   // consume this record alone, even through a converting temporary. Written
-  // deletion also excludes successful construction. Otherwise require a first
-  // parameter that cannot consume this record without a conversion function,
-  // even if later parameters have defaults. Retain every written signature,
+  // deletion or nonpublic access in an unrelated context also excludes
+  // successful construction. Otherwise require a first parameter that cannot
+  // consume this record without a conversion function, even if later
+  // parameters have defaults. Retain every written signature,
   // including each nonviable constructor's parameter types; callers separately
   // check copy/move overloads and sources.
   if (Record->getNumBases() != 0)
@@ -3711,7 +3742,8 @@ static bool utilityMutableCopyConditionalMoveSource(
     if (Constructor->isCopyOrMoveConstructor() ||
         (Constructor->getNumParams() == 0 && !Constructor->isVariadic()))
       continue;
-    if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures) ||
+    if (!utilityConditionalMoveValueConstructor(A, Constructor, Signatures,
+                                               UnrelatedAccess) ||
         !utilityConditionalMoveSignatureSource(A, Constructor, Signatures))
       return false;
   }
@@ -3811,7 +3843,8 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // causes keep their own proof. No hypothetical declaration or body is made.
   if (FoundExplicitCopy || FoundInaccessibleCopy || FoundUnavailableDestructor ||
       (MutableCopyOnly && FoundMutableCopy &&
-       utilityMutableCopyConditionalMoveSource(A, Record, Signatures)))
+       utilityMutableCopyConditionalMoveSource(
+           A, Record, /*UnrelatedAccess=*/true, Signatures)))
     return true;
   if (!FoundImplicitCopy || Record->hasUserDeclaredCopyConstructor())
     return false;
@@ -3983,7 +4016,8 @@ static bool utilityRecordConditionalMoveSource(
     if (!HasCopy)
       return false;
     if (!HasConstCopy &&
-        !utilityMutableCopyConditionalMoveSource(A, Record, Signatures))
+        !utilityMutableCopyConditionalMoveSource(A, Record, UnrelatedAccess,
+                                                 Signatures))
       return false;
     // A mutable-only copy set or deletion of every exact const copy excludes
     // const copying at the root. Extra owned defaults cannot restore it.

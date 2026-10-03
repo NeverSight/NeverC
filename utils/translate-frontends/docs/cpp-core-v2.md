@@ -1506,6 +1506,29 @@ deleted constructor remains a C++ source error. Constructor templates, inherited
 and variadic constructors retain their separate restrictions. Mutable-copy nodes
 in owned records and fixed arrays use the same written-deletion proof.
 
+An ordinary nonvariadic private or protected constructor also cannot supply
+construction when access checking is enabled and the constructing context has
+no access privileges. The pinned root traits use an unrelated context even
+when the query appears inside a member or friend. For mutable-copy nodes in
+owned records and arrays, this proof checks the actual owner's enclosing,
+friend and base contexts using the access proof above. A related owner cannot
+use access alone to exclude the constructor. Every other overload must still
+independently satisfy its proof, and the queried record keeps the no-base and
+no-conversion-function requirements.
+
+This access proof admits a completed source-owned parameter record with live
+converting constructors, retaining all their written signatures and defaults
+under the existing parameter-record shape restrictions. Clang can instantiate
+the argument conversion's defaults and the inaccessible constructor's own
+defaults before checking access; these consumed sources keep their ordinary
+checks, including native errors from invalid defaults. Unused bodies and
+unselected defaults stay lazy. Parameter aliases, redeclarations, completion
+and exception sources remain checked. A dependent exception specification
+already resolved by the trait uses the ordinary written/resolved source checks;
+this proof does not request resolution itself. Actual construction through an
+authorized member or friend checks and evaluates the selected defaults, body and lifetime
+operations; actual construction without access remains a C++ source error.
+
 Each parameter-record constructor retains its original signature and every
 redeclaration, including aliases and exception sources. Unused class-template
 constructors can retain an exact nondependent written
