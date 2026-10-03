@@ -1095,7 +1095,11 @@ primary and the exact templated function; this proof does not instantiate a body
 A free function's semantic and lexical contexts must both be namespaces.
 An ordinary method follows its semantic parent class, whether defined inside
 that class or at namespace scope. This includes static methods and supported
-nonstatic methods with cv/ref qualifiers. A method of a local class may lead to
+nonstatic methods with cv/ref qualifiers, as well as supported constructors,
+destructors and conversion functions. Constructors and conversions instantiated
+from member templates retain the same exact-primary checks. Their signatures,
+initializers, selected defaults, bodies and destruction epilogues still pass
+ordinary source traversal. A method of a local class may lead to
 further enclosing functions and classes; every actual context is retained for
 access checks, including enclosing class-template primary, partial and full
 specializations.
@@ -1142,10 +1146,10 @@ selected friend methods keep their access and body checks. Each ownership edge
 is checked even if another owner already used the same member type.
 A friend naming the actual owner or any enclosing class, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
-specialization friends and unsupported dependent class-template grants), enclosing
-constructors, destructors or conversion functions, dependent or incomplete
-function-template contexts, class-defined friend functions, and inheritance in
-any enclosing scope require their own access proof. Each member/owner pair is checked independently,
+specialization friends and unsupported dependent class-template grants), dependent
+or incomplete function-template contexts, class-defined friend functions, and
+inheritance in any enclosing scope require their own access proof.
+Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
 initializing a member through another constructor. The member's unavailable

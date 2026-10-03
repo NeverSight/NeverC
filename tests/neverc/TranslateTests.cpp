@@ -79031,6 +79031,338 @@ struct Reader{static int outer(){struct C{M<int>value[2];};static_assert(__is_sa
   }
 }
 
+TEST_F(TranslateTest, CoreV2LifecycleAndConversionOwnerMoveIfNoexceptQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("lifecycle-owner-move-if-noexcept.cpp");
+  const auto Output = tmpFile("lifecycle-owner-move-if-noexcept.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+int made,member_moves,copies,moves,cleanups,sum,referent=11,calls,defaults,friend_calls;
+template<class T>T&source(T&v,int=(++defaults,1)) noexcept { ++calls; return v; }
+template<class Result,class T>bool queries(T&v) {
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(v)),Result));
+  static_assert(__is_same(decltype((Imported::move_if_noexcept)(v)),Result));
+  static_assert(__is_same(decltype(move_if_noexcept<T>(v)),Result));
+  static_assert(sizeof(move_if_noexcept(v))==sizeof(T));
+  static_assert(alignof(decltype(move_if_noexcept(v)))==alignof(T));
+  static_assert(noexcept(move_if_noexcept(v)));
+  Result alias=move_if_noexcept(std::forward<T&>(v));
+  return &alias==&v;
+}
+int unrelated(int n){return n;}
+struct First {};
+using FriendAlias=int*;
+template<class T>struct Private {
+  friend int unrelated(int);
+  template<class U>friend struct Reader;
+  T value;
+  Private(T n=5) noexcept:value(n) { ++made; }
+  Private(Private&&o) noexcept:value(o.value+3) { o.value=-o.value; ++member_moves; }
+  ~Private() noexcept { ++cleanups; sum+=value; }
+private:
+  static constexpr int secret=17;
+  Private(const Private&,T=(sizeof(long double),T::missing)) noexcept {
+    static_assert(sizeof(T)==0);
+  }
+};
+template<class T>struct Protected {
+  friend struct First;
+  friend FriendAlias;
+  template<class U>friend struct Reader;
+  T value;
+  Protected(T n=5) noexcept:value(n) { ++made; }
+  Protected(Protected&&o) noexcept:value(o.value+3) { o.value=-o.value; ++member_moves; }
+  ~Protected() noexcept { ++cleanups; sum+=value; }
+protected:
+  static constexpr int secret=17;
+  Protected(const Protected&,T=T::missing) noexcept { static_assert(sizeof(T)==0); }
+};
+template<class T>struct LockedMove {
+  template<class U>friend struct Reader;
+  T value;
+  LockedMove(T n=7) noexcept:value(n) { ++made; }
+  LockedMove(const LockedMove&o) noexcept(false):value(o.value+2) { ++copies; }
+  ~LockedMove() noexcept { ++cleanups; sum+=value; }
+private:
+  static constexpr int secret=19;
+  LockedMove(LockedMove&&,T=T::missing) noexcept { static_assert(sizeof(T)==0); }
+};
+template<class U>struct Reader{
+  template<class M>static int observe(const M&o) noexcept { ++friend_calls; return o.secret; }
+  template<class M>static int add(const M&o,int n) noexcept { ++friend_calls; return o.secret+n; }
+};
+template<class U>struct Reader<U*>{
+  template<class M>static int observe(const M&o) noexcept { ++friend_calls; return o.secret; }
+  template<class M>static int add(const M&o,int n) noexcept { ++friend_calls; return o.secret+n; }
+};
+template<>struct Reader<bool>{
+  template<class M>static int observe(const M&o) noexcept { ++friend_calls; return o.secret; }
+  template<class M>static int add(const M&o,int n) noexcept { ++friend_calls; return o.secret+n; }
+};
+int failures;
+template<class Scope>struct Exercise{
+  bool ok;
+  template<class Input>explicit Exercise(Input):ok(false){
+  made=member_moves=copies=moves=cleanups=sum=0;
+  using M=Private<int>;
+  struct C {
+  M value;
+  int&link=referent;
+  C(int n=5) noexcept:value(n) {}
+  C(const C&o) noexcept:value(o.value.value+10),link(o.link) { ++copies; }
+  C(C&&o) noexcept(false):value(std::move(o.value)),link(o.link) { ++moves; }
+};
+
+  int prior_friend_calls=friend_calls;
+  {
+    C original;
+    if(!queries<const C&>(original)||!queries<const C&&>(std::as_const(original))) { ok=false; return; }
+    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(original))),const C&));
+    if(made!=1||member_moves||copies||moves||cleanups||friend_calls!=prior_friend_calls) { ok=false; return; }
+    if(Reader<int>::observe(original.value)!=17||Reader<int*>::observe(original.value)!=17||
+       Reader<bool>::observe(original.value)!=17||friend_calls!=prior_friend_calls+3) { ok=false; return; }
+    const C&alias=Alias::move_if_noexcept(source(original));
+    if(&alias!=&original) { ok=false; return; }
+    C copied(Alias::move_if_noexcept(original));
+    C const_copied(Alias::move_if_noexcept(std::as_const(original)));
+    C moved(std::move(original));
+    if(original.value.value!=-5||copied.value.value!=15||const_copied.value.value!=15||
+       moved.value.value!=8||made!=3||member_moves!=1||copies!=2||moves!=1||cleanups||
+       &copied.link!=&referent||&const_copied.link!=&referent||&moved.link!=&referent) { ok=false; return; }
+  }
+  ok=cleanups==4&&sum==33;
+  }
+  template<class Result>operator Result()const{
+  made=member_moves=copies=moves=cleanups=sum=0;
+  using M=Protected<int>;
+  struct C {
+  M value;
+  int&link=referent;
+  C(int n=5) noexcept:value(n) {}
+  C(const C&o) noexcept:value(o.value.value+10),link(o.link) { ++copies; }
+  C(C&&o) noexcept(false):value(std::move(o.value)),link(o.link) { ++moves; }
+};
+
+  int prior_friend_calls=friend_calls;
+  {
+    C original;
+    if(!queries<const C&>(original)||!queries<const C&&>(std::as_const(original))) return Result(0);
+    static_assert(__is_same(decltype(Alias::move_if_noexcept(source(original))),const C&));
+    if(made!=1||member_moves||copies||moves||cleanups||friend_calls!=prior_friend_calls) return Result(0);
+    if(Reader<int>::observe(original.value)!=17||Reader<int*>::observe(original.value)!=17||
+       Reader<bool>::observe(original.value)!=17||friend_calls!=prior_friend_calls+3) return Result(0);
+    const C&alias=Alias::move_if_noexcept(source(original));
+    if(&alias!=&original) return Result(0);
+    C copied(Alias::move_if_noexcept(original));
+    C const_copied(Alias::move_if_noexcept(std::as_const(original)));
+    C moved(std::move(original));
+    if(original.value.value!=-5||copied.value.value!=15||const_copied.value.value!=15||
+       moved.value.value!=8||made!=3||member_moves!=1||copies!=2||moves!=1||cleanups||
+       &copied.link!=&referent||&const_copied.link!=&referent||&moved.link!=&referent) return Result(0);
+  }
+  return Result(cleanups==4&&sum==33 ? 41 : 0);
+  }
+  ~Exercise(){
+  struct LockedOwner { LockedMove<int> value[2]; };
+  int prior_friend_calls=friend_calls;
+  made=member_moves=copies=moves=cleanups=sum=0;
+  {
+    LockedOwner original;
+    if(!queries<const LockedOwner&>(original)||
+       !queries<const LockedOwner&>(std::as_const(original))) { ++failures; return; }
+    if(made!=2||copies||cleanups||friend_calls!=prior_friend_calls) { ++failures; return; }
+    if(Reader<int>::add(original.value[0],3)!=22||Reader<int*>::add(original.value[0],3)!=22||
+       Reader<bool>::add(original.value[0],3)!=22||friend_calls!=prior_friend_calls+3) { ++failures; return; }
+    LockedOwner copied(Alias::move_if_noexcept(source(original)));
+    LockedOwner fallback(std::move(original));
+    if(copied.value[0].value!=9||fallback.value[1].value!=9||
+       original.value[0].value!=7||copies!=4||member_moves||cleanups) { ++failures; return; }
+  }
+  if(cleanups!=6||sum!=50) ++failures;
+  }
+};
+int main(){
+  {
+    Exercise<int>first(3);
+    if(!first.ok||calls!=1||defaults!=1||friend_calls!=3) return 1;
+    if(int(first)!=41||long(first)!=41) return 2;
+    if(calls!=3||defaults!=3||friend_calls!=9) return 3;
+  }
+  if(failures||calls!=4||defaults!=4||friend_calls!=12) return 4;
+  {
+    Exercise<bool>second(false);
+    if(!second.ok||!bool(second)) return 5;
+  }
+  return failures==0&&calls==7&&defaults==7&&friend_calls==21&&cleanups==6&&sum==50 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("lifecycle-owner" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LifecycleAndConversionOwnerMoveIfNoexceptQueriesRetainSourceAndAccessBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"enclosing-constructor-class-grant", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{friend struct Host;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+)cpp", "TR0201"},
+      {"enclosing-destructor-class-primary-grant", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{template<class U>friend struct Host;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class U>struct Host{~Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+int g(){Host<int>h;return 0;}
+)cpp", "TR0201"},
+      {"enclosing-destructor-class-partial-grant", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{template<class U>friend struct Host;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class U>struct Host;template<class U>struct Host<U*>{~Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+int g(){Host<int*>h;return 0;}
+)cpp", "TR0201"},
+      {"enclosing-conversion-class-full-grant", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{template<class U>friend struct Host;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class U>struct Host;template<>struct Host<bool>{template<class U>operator U()const{struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));return 1;}};
+int g(){Host<bool>h;return int(h);}
+)cpp", "TR0201"},
+      {"local-destructor-outer-function-grant", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+int outer();
+template<class T>struct M{friend int outer();T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+int outer(){struct Middle{~Middle(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};Middle middle;return 0;}
+)cpp", "TR0201"},
+      {"local-constructor-outer-template-grant", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class Scope>int outer();
+template<class T>struct M{template<class Scope>friend int outer();T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class Scope>int outer(){struct Middle{Middle(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};Middle middle;return 0;}
+int g(){return outer<int>();}
+)cpp", "TR0201"},
+      {"repeated-owner-context", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{friend struct Granted;T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+struct Granted{~Granted(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+)cpp", "TR0201"},
+      {"member-signature-source", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,long double=T::missing)noexcept{}};
+struct Host{Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+)cpp", "TR0201"},
+      {"selected-copy-default", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class U>U next()noexcept{long double hidden=0;return 1;}
+template<class T>struct M{friend void inspect(M&){}T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&o,T n=next<T>())noexcept:value(o.value+n){}public:static M clone(const M&o){return M(o);}};
+struct Reader{template<class U>operator U()const{struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};C* source=nullptr;static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));M<int>copy=M<int>::clone(source->value);return copy.value;}
+};
+int g(){Reader r;return int(r);}
+)cpp", "TR0201"},
+      {"missing-friend-definition", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{friend int inspect(const M&);T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{operator int()const{struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));C* source=nullptr;return inspect(source->value);}};
+)cpp", "TR0203"},
+      {"ungranted-owner-access", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{M()=default;private:M(const M&,int=0){}};
+struct Host{Host(){struct C{M<int>value;C()=default;C(const C&o):value(o.value){}};C original;C copy(std::move_if_noexcept(original));}};
+int main(){Host h;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("lifecycle-owner-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("lifecycle-owner-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LifecycleAndConversionOwnerMoveIfNoexceptQueriesAdmitUnrelatedFriends) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"ordinary-constructor", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+)cpp"},
+      {"out-of-line-destructor", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{~Host();};
+Host::~Host(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}
+)cpp"},
+      {"out-of-line-conversion", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{operator int()const &;};
+Host::operator int()const &{struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));return 1;}
+)cpp"},
+      {"instantiated-class-lifecycle", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class U>struct Host{Host(){struct C{M<U>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}~Host(){struct C{M<U>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}operator int()const{struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));return 1;}};
+int g(){Host<int>h;return h;}
+)cpp"},
+      {"copied-constructor-template", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class Scope>struct Host{template<class U>explicit Host(U){struct C{M<U>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};
+int g(){Host<bool>h(3);return 0;}
+)cpp"},
+      {"copied-conversion-template", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class Scope>struct Host{template<class U>operator U()const{struct C{M<U>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));return 1;}};
+int g(){Host<bool>h;return int(h);}
+)cpp"},
+      {"explicit-conversion-specialization", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+struct Host{template<class U>operator U()const;};
+template<>Host::operator int()const{struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));return 1;}
+int g(){Host h;return int(h);}
+)cpp"},
+      {"nested-local-destructor", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M(T n)noexcept:value(n){}M(M&&o)noexcept(false):value(o.value){}private:M(const M&,T=T::missing)noexcept{}};
+template<class Scope>int outer(){struct Middle{~Middle(){struct C{M<int>value;C(const C&o)noexcept:value(o.value.value){}C(C&&o)noexcept(false):value(o.value.value){}};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&&));}};Middle middle;return 0;}
+int g(){return outer<int>();}
+)cpp"},
+      {"protected-move-arrays", R"cpp(#include <utility>
+namespace Alias { using std::move_if_noexcept; }
+template<class T>struct M{T value;M()=default;M(const M&o)noexcept(false):value(o.value){}protected:M(M&&,T=T::missing)noexcept{static_assert(sizeof(T)==0);}};
+struct Reader{~Reader(){struct C{M<int>value[2];};static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<C*>(nullptr))),const C&));static_assert(__is_same(decltype(Alias::move_if_noexcept(*static_cast<const C*>(nullptr))),const C&));}
+};
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("lifecycle-owner-accept-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("lifecycle-owner-accept-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RootMutableCopyMoveIfNoexceptQueriesRunAtBothOptimizations) {
   const auto Source = tmpFile("root-mutable-copy-move-if-noexcept.cpp");
   const auto Output = tmpFile("root-mutable-copy-move-if-noexcept.nc");

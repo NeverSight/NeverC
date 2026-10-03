@@ -3188,8 +3188,9 @@ static bool utilityConditionalMoveUnrelatedAccess(
   while (!Context->isFileContext()) {
     if (const auto *Function = dyn_cast<FunctionDecl>(Context)) {
       // An inline friend can carry its lexical class's privileges even though
-      // its semantic context is a namespace. Ordinary methods instead inherit
-      // their actual semantic class context, including out-of-line definitions.
+      // its semantic context is a namespace. Members, including constructors,
+      // destructors and conversions, inherit their actual semantic class
+      // context, including out-of-line definitions.
       const auto *Method = dyn_cast<CXXMethodDecl>(Function);
       if (Function->isInvalidDecl() || OwnerFunctions.size() >= 64 ||
           Function->isDependentContext() || Function->getType().isNull() ||
@@ -3201,8 +3202,8 @@ static bool utilityConditionalMoveUnrelatedAccess(
           !A.S.owns(A.Sources, Function->getLocation()))
         return false;
       if (Method) {
-        if (Method->getKind() != Decl::CXXMethod ||
-            !ordinaryMemberTemplateName(Method) ||
+        if ((!ordinaryMemberTemplateName(Method) &&
+             !isa<CXXDestructorDecl>(Method)) ||
             (Method->getLexicalDeclContext() != Method->getParent() &&
              !Method->getLexicalDeclContext()->isFileContext()))
           return false;
