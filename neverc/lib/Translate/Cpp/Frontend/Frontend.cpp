@@ -3698,8 +3698,9 @@ static bool utilityRecordConditionalMoveSource(
     // elements and nontrivial value members. Reference/pointer fields retain
     // their written types and bindings without owning a referent graph.
     // A defaulted copy or move preserves a declared const field's qualifiers,
-    // including every fixed-array element. Its exact mutable rvalue move
-    // cannot bind that source. User-written owning operations need a separate
+    // including every fixed-array element. A non-mutable field also inherits
+    // a const owner's qualification. Its exact mutable rvalue move cannot
+    // bind that source. User-written owning operations need a separate
     // argument-source proof; never infer their member bindings from storage.
     const bool DefaultedOwner =
         Copy->isDefaulted() && (!Move || Move->isDefaulted());
@@ -3709,9 +3710,12 @@ static bool utilityRecordConditionalMoveSource(
         return false;
     for (const auto *Field : Record->fields()) {
       const auto Element = A.Context.getBaseElementType(Field->getType());
+      const bool ConstMember =
+          DefaultedOwner && (Element.isConstQualified() ||
+                             (ConstObject && !Field->isMutable()));
       if (const auto *Member = Element->getAsCXXRecordDecl();
           Member && !Self(Self, Member, Depth + 1, RootConstCopyUnavailable,
-                          Record, DefaultedOwner && Element.isConstQualified()))
+                          Record, ConstMember))
         return false;
     }
     return true;

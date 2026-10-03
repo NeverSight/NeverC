@@ -1030,8 +1030,8 @@ argument, including an explicit `const Record` argument; a mutable query's
 The pinned construction traits still choose between `const Record&`
 and `const Record&&`. Every original prototype parameter, type, alias, bound,
 exception source and redeclaration remains checked, and already-resolved
-defaults retain their usual checks. This exception applies to the queried root;
-owned records still need their own default and access proofs. It does not
+defaults retain their usual checks. Owned records need the defaulted-owner
+binding proof below or their own default and access proofs. This does not
 cover a `const Record&&` move, which can bind the const object. Query-only
 defaults and bodies remain lazy; actual selected copies evaluate and check
 their defaults and bodies, including temporary and object destruction.
@@ -1040,14 +1040,20 @@ Owned fields declared const have the same binding proof when their immediate
 owner's copy and move constructors are already defaulted, whether implicit or
 explicit. An absent move is allowed. A defaulted owning operation preserves
 the source field's declared const qualification, including fixed-array elements
-and qualifiers introduced by aliases. The member's exact mutable rvalue move
+and qualifiers introduced by aliases. Non-mutable fields also inherit a proven
+const source owner's qualification. This propagates through nested defaulted
+owners and arrays, starting from either the adapter's const object argument or
+a declared const field. Each intermediate owner needs the same defaulted-copy
+and absent-or-defaulted-move proof. The member's exact mutable rvalue move
 therefore cannot bind, even if it is public or accessible through friendship.
 Its uninstantiated extra defaults remain lazy under the same prototype and
-signature checks. This applies to nested owners and arrays of owners when each
-const member edge has that defaulted-owner proof. Each record/owner/const-binding
+signature checks. Each record/owner/const-binding
 combination is checked independently: an earlier const member never exempts a
-mutable member of the same type. Root constness alone, a mutable field, or a
-user-written owning copy/move body requires a separate member-argument proof.
+mutable member of the same type. A `mutable` field does not inherit constness
+from its owner. Mutable sources and user-written owning copy/move bodies
+require a separate member-argument proof; a mutable root's const-reference
+copy-fallback result alone does not establish a const source. Base subobjects
+retain their existing source and layout requirements.
 This does not exempt member copy defaults: if a query leaves an extra copy
 default uninstantiated, the available-copy default proof still rejects it.
 An actual selected copy may resolve that default through ordinary Sema and
