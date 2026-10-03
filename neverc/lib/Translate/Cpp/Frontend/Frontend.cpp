@@ -3848,7 +3848,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
   bool HasUsableArrayConversion = false;
-  bool HasUsableRecordLvalueConversion = false;
+  bool HasUsableMutableRecordLvalueConversion = false;
   for (const auto *Declaration : Record->decls()) {
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
@@ -3864,8 +3864,9 @@ static bool utilityMutableCopyConditionalMoveSource(
         const auto Result = ConversionType.getNonReferenceType();
         HasUsableNonrecordConversion |= !Result->isRecordType();
         HasUsableArrayConversion |= Result->isArrayType();
-        HasUsableRecordLvalueConversion |=
-            ConversionType->isLValueReferenceType() && Result->isRecordType();
+        HasUsableMutableRecordLvalueConversion |=
+            ConversionType->isLValueReferenceType() && Result->isRecordType() &&
+            !Result.isConstQualified();
       }
     }
   }
@@ -3893,10 +3894,13 @@ static bool utilityMutableCopyConditionalMoveSource(
     // another user-defined conversion. An available array result keeps its
     // separate binding requirements even if the bounds or qualifiers differ.
     // A mutable record lvalue reference cannot bind record prvalues or xvalues;
-    // a nonrecord result would need another user-defined conversion. Any
-    // available record lvalue result keeps its separate binding requirements,
-    // including const or distinct record lvalues. Do not inspect result-record
-    // bases or conversion functions to decide their reference compatibility.
+    // a nonrecord result would need another user-defined conversion. A const
+    // record lvalue cannot discard const during reference binding, even when
+    // its own conversion could return a mutable reference: that would require
+    // another user-defined conversion. Any available non-const record lvalue
+    // keeps its separate binding requirements, including distinct records.
+    // Do not inspect result-record bases or conversion functions to decide
+    // their reference compatibility.
     // Retain every original signature below, including
     // argument-conversion sources consumed before an access failure.
     // A later redeclaration can add defaults, so use its current minimum arity
@@ -3916,7 +3920,7 @@ static bool utilityMutableCopyConditionalMoveSource(
            (!HasUsableArrayConversion &&
             utilityConditionalMoveArrayReferenceParameter(
                 A, Constructor->getParamDecl(0)->getType())) ||
-           (!HasUsableRecordLvalueConversion &&
+           (!HasUsableMutableRecordLvalueConversion &&
             utilityConditionalMoveMutableRecordReferenceParameter(
                 Constructor->getParamDecl(0)->getType())));
       RequireUnavailableDestruction =

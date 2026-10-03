@@ -1592,7 +1592,7 @@ owning graph. Actual construction evaluates selected defaults, preserves the
 original record binding and retains mutations made through it.
 
 A mutable record lvalue-reference parameter also excludes ordinary live source
-conversions when none returns a record lvalue reference. For example,
+conversions when none returns a non-const record lvalue reference. For example,
 `C(Argument&)` cannot consume `const C&` through `operator Argument() const`
 or `operator Argument&&() const`: record prvalues and xvalues cannot bind that
 mutable lvalue reference. Scalar, pointer and array-reference results cannot
@@ -1601,10 +1601,18 @@ user-defined conversion. Const record values and rvalue references follow the
 same exclusion. Const lvalue-reference, rvalue-reference and by-value record
 parameters keep their separate requirements.
 
-Every constructor independently needs an admitted exclusion. Any usable record
-lvalue-reference conversion prevents this proof, including const or distinct
-record results; their reference compatibility needs a separate proof. Excluded
-conversions retain their receiver, deletion, explicitness and access checks.
+A const record lvalue result is also excluded: `operator const Argument&() const`
+cannot supply `C(Argument&)` because binding cannot discard the result's `const`.
+This includes aliases and const references to distinct records, even if such a
+record has its own conversion to `Argument&`; that would require another
+user-defined conversion. The check reads the existing result's qualification
+without inspecting its base graph or conversion set or instantiating a body.
+Other unsupported result qualifiers retain their ordinary type-source checks.
+
+Every constructor independently needs an admitted exclusion. Any usable
+non-const record lvalue-reference conversion prevents this proof, including
+distinct record results; their reference compatibility needs a separate proof.
+Excluded conversions retain their receiver, deletion, explicitness and access checks.
 Owned records and fixed arrays check the actual owner, including friendship that
 makes a private record-lvalue conversion available. All parameter/result aliases,
 completed record definitions, redeclarations, defaults and exception sources
@@ -1615,6 +1623,13 @@ defaults and preserves the bound record and mutations. Initializing a named
 argument object from a converted value first allows that object's lvalue to
 bind the reference. Temporary destruction and selected conversion bodies
 retain their usual checks.
+
+Binding a const-reference conversion result preserves the original referenced
+object without adding a copy or temporary. A subsequent value copy and an
+explicitly selected mutable-reference conversion retain their calls, mutations and
+cleanup. A friend that can access a const-reference conversion still cannot
+use its result to bind a mutable reference; access to a non-const record
+lvalue conversion keeps that separate binding path available.
 
 A completed source-owned record with no bases or an admitted empty single-base
 chain can also be the first parameter by value, by const lvalue reference, or by
