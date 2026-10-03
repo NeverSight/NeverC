@@ -3176,7 +3176,7 @@ static bool utilityConditionalMoveSignatureSource(
 
 static bool utilityConditionalMoveDefaultsSource(
     Adapter &A, const CXXConstructorDecl *Constructor, bool UnrelatedAccess,
-    bool ConstObject) {
+    bool ConstObject, bool IsQueryRoot) {
   if (Constructor->getNumParams() == 1)
     return true;
   // With an available const-copy, extra defaults can change nothrow
@@ -3192,8 +3192,15 @@ static bool utilityConditionalMoveDefaultsSource(
           Constructor->isCopyConstructor()
               ? A.Context.getLValueReferenceType(Object)
               : A.Context.getRValueReferenceType(Object));
+  // The root traits use T&& and const T&, neither of which can bind T&.
+  // An owning constructor may pass a mutable member lvalue, so this proof
+  // applies only to the directly queried record, not its owned graph.
+  const bool CannotBindRootArgument =
+      IsQueryRoot && Constructor->isCopyConstructor() &&
+      A.Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                            A.Context.getLValueReferenceType(Object));
   const bool UnavailableConstructor =
-      CannotBindConst || Constructor->isDeleted() ||
+      CannotBindConst || CannotBindRootArgument || Constructor->isDeleted() ||
       (UnrelatedAccess && (Constructor->getAccess() == AS_private ||
                            Constructor->getAccess() == AS_protected));
   for (const auto *Declaration : Constructor->redecls()) {
@@ -3660,7 +3667,8 @@ static bool utilityRecordConditionalMoveSource(
           (!RootConstCopyUnavailable &&
            !utilityConditionalMoveDefaultsSource(A, Constructor,
                                                  UnrelatedAccess,
-                                                 ConstObject)))
+                                                 ConstObject,
+                                                 /*IsQueryRoot=*/Depth == 0)))
         return false;
       const auto Parameter = Constructor->getParamDecl(0)->getType();
       const auto ConstParameter =

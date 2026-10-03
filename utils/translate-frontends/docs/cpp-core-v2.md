@@ -1100,6 +1100,18 @@ Sema can still instantiate defaults during other queries, including direct
 queries on inaccessible copies or moves;
 this proof does not suppress those diagnostics.
 
+For the directly queried object record, an exact mutable lvalue copy's
+uninstantiated extra defaults may also stay lazy for a mutable query. The
+SDK checks construction from `T&&` and `const T&`; neither can bind the
+constructor's `T&` parameter. This includes multiple mutable-copy overloads
+and inherited defaults on redeclarations. The pinned traits still select
+the copy-fallback or rvalue result using the available const copies and moves.
+Every signature and already-resolved default retains its source checks, and
+an actual mutable-lvalue copy still validates and executes its own defaults
+and body. This proof applies only to the directly queried record: an owning
+operation can supply a mutable member lvalue, so its members retain their
+own const-binding, default and access requirements.
+
 A const object query also keeps uninstantiated extra defaults of the queried
 record's exact mutable lvalue copy or mutable rvalue move lazy, including
 public constructors. Neither can bind a const object. The proof uses the
