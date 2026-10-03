@@ -1,5 +1,136 @@
 # NeverC Progress
 
+This document tracks repository issues, pull requests, bounded static code-review findings, observed CI, and actionable next gates. The latest snapshot is below; the full previous report is retained in the historical section.
+
+## Current snapshot — 2026-10-03
+
+- Snapshot: **2026-10-03 01:14 UTC** / **2026-10-03 09:14 Asia/Shanghai (UTC+08:00)**
+- Source branch: `dev`
+- Reviewed source revision: [2d65e5b1d9ac9654b22becbbc40eb65dbad44e91](https://github.com/NeverSight/NeverC/commit/2d65e5b1d9ac9654b22becbbc40eb65dbad44e91), “[translate] Support const-rvalue conditional move constructors”
+- Review interval: [8d48d8b…2d65e5b1](https://github.com/NeverSight/NeverC/compare/8d48d8baa12a8c97a071ad5baa65d466bece3437...2d65e5b1d9ac9654b22becbbc40eb65dbad44e91); **283 commits, 153 changed files**, including yesterday's report and excluding this report-only update
+- Today's result: **no new statically proven defect in the bounded reviewed scope; progress-document update only**
+- Scope: static source, diff, caller, test-source, configuration and existing-log review only. No builds, tests, repository scripts, program execution, workflow dispatch or rerun by this review. Existing automatic CI is separate evidence. Priorities are recommendations, not assigned deadlines or release commitments.
+
+### Status and changes
+
+| Measure | Observed value | Qualification |
+| --- | --- | --- |
+| Open issues | 9; delta 0 | #7–#12 and #16–#18; all have zero comments |
+| Open pull requests | 0; delta 0 | Latest PR #20 remains merged; no new review queue |
+| Issues with assignees / milestones | 0 / 0 | No ownership or delivery dates inferred |
+| Priority labels | None | #16–#18 retain enhancement/roadmap labels; #16 also has area:translate |
+| Navigation parity | Passing on the reviewed SHA | Yesterday's 90 diagnostics across 10 guides are cleared in current CI |
+| Documentation-layout regressions | 16 passed in existing CI | Includes the previously committed parser regressions |
+| Documentation inventory | 736 pages, 11 locales, 1,201 resolving reference definitions | 82 translations remain unfinished; navigability is not translation completeness |
+| Source workflows | 11 | 2 successful, 8 in progress, 1 queued |
+| Source check runs | 22 | 7 successful, 11 in progress, 4 queued; zero legacy commit-status contexts |
+| New code fixes | 0 | No speculative compiler, archive, or fixture changes |
+
+The branch advanced once during this review, from 4c09e189 to 2d65e5b1. The additional conditional-move commit was inspected, and CI was refreshed for the new SHA. No failure or cancellation from the earlier SHA is presented as the new SHA's result.
+
+### Today's top three priorities
+
+1. **Resolve the Windows ARM64 cmath witness blocker with actual SDK evidence.** The latest completed [prior-source run](https://github.com/NeverSight/NeverC/actions/runs/37083034592/job/111087484113) at 4c09e189 ran 24 tests and failed four configurations (MSVC/Clang, O0/O2): the fixture expects exactly one `_GENERIC_MATH2(pow)` line, while the consumed MSVC 14.51.36231 `cmath` gives zero matches. Its compiler build/tests were skipped, and postbuild evidence failure was downstream. The [current-source run](https://github.com/NeverSight/NeverC/actions/runs/37085138008/job/111093723178) is still in progress at this snapshot.
+   - Next action: inspect the actual consumed SDK's pow declaration and select a provenance-preserving witness; do not guess a replacement from an unrelated SDK tag or remove the source checks.
+   - Acceptance: the SDK difference is explained and all four witness configurations pass with exact-revision native evidence, followed by the previously blocked compiler gates.
+   - Dependency/owner: actual SDK declaration evidence and completed CI; unassigned.
+
+2. **Establish completed native evidence for the expanded translator and standard-library changes.** The 283-commit interval includes conditional-move/apply query work and broad std changes. The static coverage below is meaningful but bounded. Current [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/37085137970) succeeds across its three archive-audit jobs; that does not certify the compiler, std runtime, relocation or installed-package matrix.
+   - Next action: reconcile final exact-SHA platform results and the affected ZIP64/Deflate/bzip2 and conditional-move regression cases; keep cancellation, skip, execution and pass states separate.
+   - Acceptance: advertised platform/runtime behavior has completed matching-revision evidence and unresolved gates are explicitly documented. Any broader execution needs separate authorization from this static-only review.
+   - Dependency/owner: eight source workflows are still running and one is queued; unassigned.
+
+3. **Reconcile translation roadmap acceptance with implementation and documentation.** [Issue #16](https://github.com/NeverSight/NeverC/issues/16) remains open with its acceptance checklists. Navigation synchronization is now complete for the current checker, following [98003d8](https://github.com/NeverSight/NeverC/commit/98003d8153c7f70e1a8e0a8b3198f33ad66cdc69) and [3b8771c](https://github.com/NeverSight/NeverC/commit/3b8771c129ab478466b7285fa01e8f44f50d8bd2), but 82 unfinished translations remain.
+   - Next action: map P0–P3 gates to implementing SHAs, positive/negative fixtures, completed platform execution and installed-package evidence; prioritize unfinished translations by usage rather than adding filler links.
+   - Acceptance: completion claims cite exact evidence and retain explicit unsupported boundaries. E Language follows the bounded C++ P3 baseline; passing navigation is not full C++/STL or translation completeness.
+   - Dependency/owner: roadmap and native/install acceptance reconciliation; unassigned.
+
+## Open work and dependencies
+
+| Issue | Workstream | Evidence-backed tracking state | Next gate or dependency |
+| --- | --- | --- | --- |
+| [#7](https://github.com/NeverSight/NeverC/issues/7) | UI architecture | Open architecture proposal | Core/draw and HAL/host contracts with minimal verified implementation |
+| [#8](https://github.com/NeverSight/NeverC/issues/8) | Immediate-mode UI | Open proposal | #7; widget/demo and input-capture validation |
+| [#9](https://github.com/NeverSight/NeverC/issues/9) | Renderer HAL | Open proposal | #7; null tests and first real renderer |
+| [#10](https://github.com/NeverSight/NeverC/issues/10) | Owned-process overlay host | Open proposal | #7, #8, #9; frame/input integration |
+| [#11](https://github.com/NeverSight/NeverC/issues/11) | Retained NXML UI | Open proposal | #7; stable tree identity and inspector contract |
+| [#12](https://github.com/NeverSight/NeverC/issues/12) | Desktop HTML/CSS host | Open proposal | #7; desktop-only runtime boundary |
+| [#16](https://github.com/NeverSight/NeverC/issues/16) | Source translation | Open roadmap; implementation documentation has advanced beyond issue wording | Reconcile acceptance evidence before declaring phases complete |
+| [#17](https://github.com/NeverSight/NeverC/issues/17) | NeverC Studio | Open RFC | Bounded shell prototype and shared language/build/diagnostic services |
+| [#18](https://github.com/NeverSight/NeverC/issues/18) | NeverC Engine | Open RFC | M0: one platform/backend and an animated, controllable sprite with debug panel |
+
+The UI, Studio, and Engine entries describe issue/RFC status; this report does not independently certify whether every proposed component exists in the source tree. Studio's basic editing/building need not wait for the complete UI runtime. Engine translation is optional, and its 2D milestone need not wait for 3D.
+
+
+## Static review coverage — 2026-10-03
+
+- Read root `AGENTS.md`, `docs/local-dev.md`, relevant compiler-development guidance, and `.github/ci-policy.md`. Scoped root/.github inventories and complete recursive `neverc`, `std`, and `tests` trees found no applicable nested AGENTS or separate CONTRIBUTING guide. The optional Brooks review skill's three shared reference files return 404; review proceeded from repository guidance and actual source, without inventing a score.
+- Inspected all changes to `MathSDK.cpp` in the interval, from [a6d6b2d](https://github.com/NeverSight/NeverC/commit/a6d6b2da4b60cd53a75bb1e2170636ba3e852633) and [5ed2aba](https://github.com/NeverSight/NeverC/commit/5ed2abadb8be5de7a35843d102293ac723e5feca): nested member-pointer initializer adapters and source-owned `apply` call parameter proof. Traced [source identity, cycle/type checks and adapter collection](https://github.com/NeverSight/NeverC/blob/4c09e18980792b53a7aba78962f3e850fdb79ef6/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L10740-L10889), [selected user-operator argument flow](https://github.com/NeverSight/NeverC/blob/4c09e18980792b53a7aba78962f3e850fdb79ef6/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L12601-L12696), and [tuple apply admission](https://github.com/NeverSight/NeverC/blob/4c09e18980792b53a7aba78962f3e850fdb79ef6/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L28777-L28895).
+- Inspected the corresponding `Frontend.h` descriptor and `Frontend.cpp` patches/callers: original apply result/method retention (4270–4326), written adapter arguments (12212–12244), invocation dependencies (12350–12440), explicit local-type/initializer traversal (13125–13146), and erased member-pointer initializer traversal (18460–18489), at 4c09e189. Read both added positive/negative fixture pairs in `TranslateTests.cpp` and their profile contracts. This includes unused-local source checks, redeclarations, selected bodies, adjusted parameters, temporary lifetimes and unevaluated effects; fixture source is not execution evidence.
+- Reviewed the latest four conditional-move commits [f893d74f](https://github.com/NeverSight/NeverC/commit/f893d74f49d1d7e781d8d80fb03f6ef6270fe8a4), [856b671e](https://github.com/NeverSight/NeverC/commit/856b671eda4f684efe3031f1d1e6346653e479dd), [4c09e189](https://github.com/NeverSight/NeverC/commit/4c09e18980792b53a7aba78962f3e850fdb79ef6), and [2d65e5b1](https://github.com/NeverSight/NeverC/commit/2d65e5b1d9ac9654b22becbbc40eb65dbad44e91), their signature/default and ownership consumers, regression-test source, and `utils/translate-frontends/docs/cpp-core-v2.md`. Const ownership, mutable fields, visited-state separation, exact mutable/const rvalue constructors, and default-argument laziness were the focus.
+- Compared the complete changed `std/src/archive/zip/zip.c` and `std/src/compress/bzip2/bzip2.c` implementations with 8d48d8b. Traced ZIP64 directory/local bounds, data descriptors, overlapping records, Deflate paths, aliased writer inputs, failure cleanup and close bookkeeping; traced bzip2 surplus-selector validation, stream-boundary accounting, concatenated-output bounds and CRC/error paths. Read public headers, manifest dependencies, method/test registrations, relevant ZIP/bzip2 test sources and flate callees. These files are unchanged between 4c09e189 and 2d65e5b1.
+- Inspected both ELF fast-link compatibility hunks in [161a051](https://github.com/NeverSight/NeverC/commit/161a051e919e65e26cd800699c81086175dbb5f3). Rechecked the exact Windows witness source at `tests/neverc/CppFrontendToolchainTests.py:2710–2810`, current navigation workflow/checker contract, translation synchronization commit metadata and zh-CN patches, and existing job logs.
+- **Finding:** no new statically proven defect in this bounded scope. No code fix or new test was authored. No unsupported-target-only concern or unresolved hypothesis was promoted into a fix.
+- **Limits:** not a whole-repository audit or approval of the full 283-commit interval. TAR, crypto, networking, OS, regexp and other standard-library changes, earlier translator changes, and the full large `TranslateTests.cpp` remain outside exhaustive review. Builds, tests, repository scripts, program execution and active CI operations were not performed. Dependencies, security settings, issue states, merges and deployments were not changed.
+
+### Inventory and retrieval limits
+
+The all-state issue collection returned 18 issue/PR records and the all-state pull-request collection returned 8 PRs, each with an empty second page at page size 100. Pull requests are excluded from issue totals. PR #20 has zero review submissions, inline review comments and conversation comments in the checked collections.
+
+Three 100-item commit pages reached the exact prior baseline, enumerating all 282 commits through 4c09e189; the additional one-commit comparison accounts for the full 283-commit interval through 2d65e5b1. The compare endpoint returned 153 changed-file records. Filename/commit enumeration does not imply every patch was inspected.
+
+Exact-source workflows and checks were read at page size 100 with empty second pages; the latest first-page refresh has 11 runs and 22 checks. The completed prior-source Windows and navigation job collections were also exhausted. The whole-repository recursive tree request failed with a transport error; scoped recursive trees succeeded without truncation (neverc: 2,582 entries; std: 621; tests: 1,046). Files above 1 MB returned empty content or fetch errors through contents/raw paths; the exact Git blob API successfully supplied full Frontend.cpp and MathSDK.cpp before selected source review. No whole-repository or broad historical-CI completeness is claimed.
+
+## CI snapshot — reviewed source only
+
+Observed at **2026-10-03 01:14 UTC** for `2d65e5b1d9ac9654b22becbbc40eb65dbad44e91`, before the report-only commit.
+
+| Workflow | State |
+| --- | --- |
+| [windows-arm64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/37085138008) | in progress |
+| [windows-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37085137979) | in progress |
+| [macos-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37085137989) | in progress |
+| [linux-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37085138092) | in progress |
+| [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/37085137942) | in progress |
+| [windows-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37085137916) | in progress |
+| [windows-x64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/37085138005) | in progress |
+| [linux-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37085138014) | in progress |
+| [python-plugin-bindings](https://github.com/NeverSight/NeverC/actions/runs/37085137981) | queued |
+| [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/37085137992) | success |
+| [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/37085137970) | success |
+
+The current [navigation job](https://github.com/NeverSight/NeverC/actions/runs/37085137992/job/111093723510) explicitly reports 16 successful layout regressions and a successful full navigation check: 736 pages across 11 locales, 1,201 resolving reference definitions, and 82 unfinished translations. The current [docs-facts job](https://github.com/NeverSight/NeverC/actions/runs/37085137992/job/111093723360) also passed.
+
+At the earlier 4c09e189 revision, the final observed snapshot was 11 workflows (2 successful, 1 failed, 8 cancelled) and 24 checks (7 successful, 1 failed, 15 cancelled, 1 skipped). The one failure was the Windows witness described above. Those cancelled runs are not passes and are not the status of 2d65e5b1.
+
+Running/queued states are inconclusive. Branch `dev` is writable and unprotected at the publication precheck; the visible ruleset remains disabled. This review changed no CI or security configuration. The repository's [CI scheduling policy](.github/ci-policy.md) now documents Markdown-only build exclusions and bounded auxiliary matrices. The report-only commit uses `[skip ci]`; any automatically created checks are not manually triggered validation. Refresh exact-SHA CI before release decisions.
+
+## Daily log — 2026-10-03
+
+- Issue/PR counts remain 9/0, without new comments or reviews.
+- Reviewed a bounded selection of the 283-commit, 153-file interval, including every MathSDK change, nested member-pointer/apply consumers, four latest conditional-move commits, ZIP/bzip2 boundaries and relevant regression sources.
+- Found no new statically proven defect; no code or tests changed.
+- Verified the previous 90 navigation-parity diagnostics are cleared on today's exact SHA. All 16 layout regressions pass; 82 unfinished translations remain explicitly tracked.
+- Kept the prior-source Windows SDK witness failure distinct from the current run, whose result is still pending.
+- Preserved the previous report and daily history below. No build/test/script execution, active CI action, dependency/security change, issue-state change, merge or deployment was performed.
+
+## Reporting rules
+
+- Refresh the timestamp, inspected SHA, issue/PR state, and exact-revision CI together.
+- Keep completed history and append a dated daily entry; preserve contributor edits.
+- Distinguish GitHub metadata, documented capabilities, author-reported test results, and independently observed CI.
+- Record unknowns and blockers explicitly. Do not infer completion percentages, deadlines, owners, or universal platform support.
+- Use the latest relevant evidence when a branch advances; do not carry forward an old failure as a new revision's result.
+- This workflow is static-only: minimal evidence-backed fixes may be committed, but builds, tests, repository scripts, active CI actions, issue-state changes, merges, and deployments are outside this daily review.
+
+
+## Historical snapshot — 2026-10-02
+
+The previous report is retained verbatim inside this section. Its “current” and “today” statements refer to October 2 and are superseded by the October 3 snapshot above.
+
+<details>
+<summary>October 2 report, including September 30–October 2 history</summary>
+
 This document tracks repository issues, pull requests, static code-review findings, observed CI, and the next actionable work. The immediate priorities are to diagnose the Windows ARM64 COFF witness failure, synchronize translated-guide navigation, and reconcile the translation roadmap with implementation evidence.
 
 - Snapshot: **2026-10-02 09:08 Asia/Shanghai (UTC+08:00)** / **2026-10-02 01:08 UTC**
@@ -155,3 +286,5 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Existing CI now confirms all 16 docs-layout regressions pass. Full navigation still fails on 90 parity diagnostics across 10 translated guides; English/zh-CN source confirms the missing or differing destinations.
 - Current Windows ARM64 Clang + LTO still fails all four cmath witness configurations on the expected pow macro line; compiler build/tests were skipped. No witness was weakened or guessed.
 - Exact-source snapshot: 12 workflows (2 successful, 2 failed, 7 running, 1 queued); 23 checks (7 successful, 2 failed, 12 running, 2 queued). No build/test/script execution or active CI action by this review.
+
+</details>
