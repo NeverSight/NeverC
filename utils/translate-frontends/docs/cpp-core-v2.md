@@ -1086,9 +1086,13 @@ const queries on inaccessible moves, and inaccessible member moves that
 delete an enclosing defaulted move. For an owned member's inaccessible copy/move,
 its immediate owner and every enclosing class must have a concrete, source-owned
 definition with no bases. The bounded actual declaration-context chain must end
-at namespace scope, optionally through one source-owned ordinary non-template
-free function's actual definition. That function's semantic and lexical contexts
-must both be namespaces; its canonical identity is retained for access checks.
+at namespace scope, optionally through one source-owned free function's actual
+definition. This includes ordinary non-template functions and completed concrete
+function-template specializations, including explicit specializations and
+instantiation definitions. A specialization retains its source-owned primary
+and the exact templated function; this proof does not instantiate a body.
+That function's semantic and lexical contexts must both be namespaces;
+its canonical identity is retained for access checks.
 None of these classes may be the member class itself, since
 nesting in that class grants access. The member may have ordinary class-type
 friends when every friend resolves to a different canonical class from every
@@ -1111,10 +1115,13 @@ checks, and required definitions still need to be present. Such friends may be
 mixed with the unrelated class and nonclass friends above.
 The same access proof covers a source-owned free function-template friend whose
 exact primary and templated function belong to a namespace. This includes copied
-hidden primaries, supported operator templates and namespace redeclarations:
-none of their specializations can be an owning class's constructor. The ordinary
-friend-template source events, template parameters, signatures, selected defaults
-and bodies remain checked. Unused generic bodies remain lazy. Friendship still
+hidden primaries, supported operator templates and namespace redeclarations.
+A friend primary must differ from the enclosing function's canonical primary,
+if any: its grant includes every specialization, even a full specialization
+with its own body, and extends to the local classes there. Unrelated overloads
+and same-spelling primaries in different namespaces grant no access.
+The ordinary friend-template source events, template parameters, signatures,
+selected defaults and bodies remain checked. Unused generic bodies remain lazy. Friendship still
 grants the free function's own specializations their normal access; a copy or move
 actually selected there checks its defaults and body as usual.
 An ordinary class-template friend is also unrelated when its resolved canonical
@@ -1130,8 +1137,8 @@ is checked even if another owner already used the same member type.
 A friend naming the actual owner or any enclosing class, unresolved or other friend shapes
 (including member functions and their templates, individual function-template
 specialization friends and unsupported dependent class-template grants), local
-classes in member/template functions or class-defined friend functions, and
-inheritance in any enclosing scope require
+classes in member functions, dependent or incomplete function-template contexts,
+or class-defined friend functions, and inheritance in any enclosing scope require
 their own access proof. Each member/owner pair is checked independently,
 including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by

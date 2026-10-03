@@ -3184,20 +3184,35 @@ static bool utilityConditionalMoveUnrelatedAccess(
   // inherit an enclosing function's grants; keep that actual definition too.
   std::vector<const CXXRecordDecl *> OwnerContexts;
   const FunctionDecl *EnclosingFunction = nullptr;
+  const FunctionTemplateDecl *EnclosingTemplate = nullptr;
   const DeclContext *Context = Owner;
   while (!Context->isFileContext()) {
     if (const auto *Function = dyn_cast<FunctionDecl>(Context)) {
       // An inline friend can carry its lexical class's privileges even though
-      // its semantic context is a namespace. Member/template functions and
+      // its semantic context is a namespace. Member functions and
       // class-defined friends need their own effective-context proof.
       if (Function->getKind() != Decl::Function || Function->isInvalidDecl() ||
-          Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+          (Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+           !concreteFreeFunctionTemplate(Function)) ||
           !Function->doesThisDeclarationHaveABody() ||
           !Function->getDeclContext()->isFileContext() ||
           !Function->getLexicalDeclContext()->isFileContext() ||
           !A.S.owns(A.Sources, Function->getLocation()))
         return false;
       A.chargeExpansion(1, Function->getLocation());
+      if (const auto *Primary = Function->getPrimaryTemplate()) {
+        const auto *Pattern = Primary->getTemplatedDecl();
+        if (Primary->isInvalidDecl() || Pattern->isInvalidDecl() ||
+            !A.S.owns(A.Sources, Primary->getLocation()) ||
+            !A.S.owns(A.Sources, Pattern->getLocation()) ||
+            !ordinaryFreeFunctionName(Pattern) ||
+            !Primary->getDeclContext()->isFileContext() ||
+            Pattern->getDescribedFunctionTemplate() != Primary ||
+            Pattern->getDeclContext() != Primary->getDeclContext())
+          return false;
+        A.chargeExpansion(1, Primary->getLocation());
+        EnclosingTemplate = Primary;
+      }
       EnclosingFunction = Function;
       Context = Function->getDeclContext();
       continue;
@@ -3260,15 +3275,19 @@ static bool utilityConditionalMoveUnrelatedAccess(
       if (EnclosingFunction && Function->getCanonicalDecl() ==
                                    EnclosingFunction->getCanonicalDecl())
         return false;
-      // A namespace free-function primary and all of its specializations remain
-      // unrelated to the owner's constructors. Require the exact primary pair;
-      // ordinary traversal retains its written and copied friend source events.
+      // A grant to a primary includes every enclosing function specialization,
+      // even a full specialization with its own body. Require exact primary
+      // pairs before comparing canonical identities; ordinary traversal keeps
+      // their written and copied friend source events.
       if (Template) {
         if (Template->isInvalidDecl() || Template->hasAttrs() ||
             !A.S.owns(A.Sources, Template->getLocation()) ||
             Template->getDeclContext() != Function->getDeclContext() ||
             Function->getDescribedFunctionTemplate() != Template ||
             Function->getTemplatedKind() != FunctionDecl::TK_FunctionTemplate)
+          return false;
+        if (EnclosingTemplate && EnclosingTemplate->getCanonicalDecl() ==
+                                     Template->getCanonicalDecl())
           return false;
       } else if (Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
                  (Function->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
