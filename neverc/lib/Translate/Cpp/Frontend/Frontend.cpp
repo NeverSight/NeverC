@@ -3464,6 +3464,38 @@ static bool utilityConditionalMoveArrayReferenceParameter(
          A.Context.getAsConstantArrayType(Type);
 }
 
+static bool utilityConditionalMoveArrayReferenceResults(
+    Adapter &A, QualType ParameterType,
+    const std::vector<const CXXConversionDecl *> &Conversions) {
+  if (!utilityConditionalMoveArrayReferenceParameter(A, ParameterType))
+    return false;
+  // Non-array results cannot bind this reference. Each usable array result
+  // must differ in a corresponding fixed dimension: a standard conversion
+  // cannot resize an array. Compare already-resolved bounds without examining
+  // element conversions or instantiating any signature, default or body.
+  for (const auto *Conversion : Conversions) {
+    auto Parameter = ParameterType.getNonReferenceType();
+    auto Result = Conversion->getConversionType().getNonReferenceType();
+    bool DifferentBound = false;
+    while (const auto *ParameterArray =
+               A.Context.getAsConstantArrayType(Parameter)) {
+      A.chargeExpansion(1, Conversion->getLocation());
+      const auto *ResultArray = A.Context.getAsConstantArrayType(Result);
+      if (!ResultArray)
+        return false;
+      if (ParameterArray->getSize() != ResultArray->getSize()) {
+        DifferentBound = true;
+        break;
+      }
+      Parameter = ParameterArray->getElementType();
+      Result = ResultArray->getElementType();
+    }
+    if (!DifferentBound)
+      return false;
+  }
+  return true;
+}
+
 static bool utilityConditionalMoveMutableRecordReferenceParameter(
     QualType ParameterType) {
   const auto Type = ParameterType.getNonReferenceType();
@@ -3915,7 +3947,7 @@ static bool utilityMutableCopyConditionalMoveSource(
     return false;
   bool HasUsableConversion = false;
   bool HasUsableNonrecordConversion = false;
-  bool HasUsableArrayConversion = false;
+  std::vector<const CXXConversionDecl *> ArrayConversions;
   std::vector<const CXXRecordDecl *> RecordResults;
   std::vector<const CXXRecordDecl *> MutableRecordLvalueResults;
   std::vector<const CXXRecordDecl *> RecordRvalueResults;
@@ -3934,7 +3966,8 @@ static bool utilityMutableCopyConditionalMoveSource(
         const auto ConversionType = Conversion->getConversionType();
         const auto Result = ConversionType.getNonReferenceType();
         HasUsableNonrecordConversion |= !Result->isRecordType();
-        HasUsableArrayConversion |= Result->isArrayType();
+        if (Result->isArrayType())
+          ArrayConversions.push_back(Conversion);
         if (Result->isRecordType())
           RecordResults.push_back(Result->getAsCXXRecordDecl());
         if (Result->isRecordType() && !ConversionType->isLValueReferenceType()) {
@@ -3969,8 +4002,11 @@ static bool utilityMutableCopyConditionalMoveSource(
     // this exclusion. A fixed-array reference parameter cannot bind any
     // non-array conversion result: pointers do not implicitly dereference,
     // scalars do not initialize individual elements, and a record would need
-    // another user-defined conversion. An available array result keeps its
-    // separate binding requirements even if the bounds or qualifiers differ.
+    // another user-defined conversion. An array result is also excluded when
+    // at least one corresponding fixed dimension has a different bound.
+    // Compare every usable array result for each constructor; matching bounds,
+    // unknown bounds or differences only in elements, qualifiers or rank
+    // retain their separate binding requirements.
     // A mutable record lvalue reference cannot bind record prvalues or xvalues;
     // a nonrecord result would need another user-defined conversion. A const
     // record lvalue cannot discard const during reference binding, even when
@@ -4011,9 +4047,8 @@ static bool utilityMutableCopyConditionalMoveSource(
           ((!HasUsableNonrecordConversion &&
             utilityConditionalMoveScalarParameter(
                 A, Constructor->getParamDecl(0)->getType())) ||
-           (!HasUsableArrayConversion &&
-            utilityConditionalMoveArrayReferenceParameter(
-                A, Constructor->getParamDecl(0)->getType())) ||
+           utilityConditionalMoveArrayReferenceResults(
+               A, Constructor->getParamDecl(0)->getType(), ArrayConversions) ||
            utilityConditionalMoveMutableRecordReferenceResults(
                A, Constructor->getParamDecl(0)->getType(),
                MutableRecordLvalueResults) ||

@@ -1562,13 +1562,26 @@ and const lvalue/rvalue array references, multidimensional arrays, arrays of
 admitted records or pointers, and aliases. An array value parameter decays to
 a pointer and does not use this reference proof.
 
-Every constructor independently needs an admitted exclusion. Any usable array
-conversion result prevents this proof, including results with different
-bounds or qualifiers; their compatibility keeps its separate requirements.
+An array conversion result is also excluded when at least one corresponding
+fixed dimension has a different bound from the parameter. For example,
+`C(int (&)[2])` cannot consume a conversion to `int (&)[3]`, and a parameter
+`int (&)[2][3]` cannot bind a result `int (&)[2][4]`. This includes const arrays,
+lvalue/rvalue references, deeper dimensions, record/pointer elements and
+aliases. The proof compares already-resolved bounds; it does not resize arrays
+or consult element conversions.
+
+Every constructor independently needs an admitted exclusion for every usable
+array result. One result with matching bounds keeps its separate binding
+requirements, as do unknown bounds and differences only in element type,
+qualification or rank. Equal bounds written through different aliases or
+constant expressions remain equal. Each compared dimension consumes the
+existing expansion budget, and all written dimensions retain their source
+checks even when an earlier dimension already proves a mismatch.
 Excluded conversions retain their existing receiver, deletion, explicitness
 and access checks. Each mutable-copy node in an owned record or fixed array
 uses its actual owner context, including friendship that makes a nonpublic
-array conversion available.
+array conversion available. The bound comparison applies to that available
+conversion in the owning context too.
 
 All original signatures, array bounds, element/result aliases, defaults and
 exception sources stay checked. Unused template defaults and bodies remain
@@ -1577,8 +1590,10 @@ dependent exception sources, unknown bounds, unsupported elements, variadic
 constructors and constructor/conversion templates retain their existing
 limits. Actual construction from an existing array or a separately converted
 array reference checks the selected calls and defaults, preserves the original
-array binding and mutations, and performs required temporary cleanup. Actual
-attempts to chain two implicit user-defined conversions remain source errors.
+array binding and mutations, and performs required temporary cleanup. A
+separately selected conversion to an array with a different bound still
+returns the original array reference. Actual attempts to bind an incompatible
+array or chain two implicit user-defined conversions remain source errors.
 
 A first parameter that is a non-const lvalue reference to an admitted record
 also excludes `const Record&` under the same base and conversion restrictions.
