@@ -3174,6 +3174,38 @@ static bool utilityConditionalMoveSignatureSource(
   return true;
 }
 
+static bool utilityConditionalMoveUnrelatedAccess(
+    Adapter &A, const CXXRecordDecl *Record, const CXXRecordDecl *Owner) {
+  if (!Owner)
+    return true; // The root SDK traits have unrelated access.
+  if (Owner->getNumBases() != 0 || !Owner->getDeclContext()->isFileContext())
+    return false;
+  // A namespace-scope owner with no bases cannot acquire class-friend access
+  // through a distinct record. Use resolved canonical identities, including
+  // aliases and substituted friend types; other friend shapes need their own
+  // access proof. Ordinary traversal still checks each written friend source.
+  for (const auto *Friend : Record->friends()) {
+    A.chargeExpansion(1, Friend->getLocation());
+    if (Friend->isInvalidDecl() || Friend->hasAttrs() ||
+        Friend->isUnsupportedFriend() || Friend->isPackExpansion() ||
+        Friend->getFriendTypeNumTemplateParameterLists() ||
+        Friend->getFriendDecl() ||
+        !A.S.owns(A.Sources, Friend->getLocation()))
+      return false;
+    const auto *Info = Friend->getFriendType();
+    if (!Info || Info->getType().isNull() ||
+        Info->getType()->isDependentType() ||
+        Info->getType()->isInstantiationDependentType() ||
+        !A.S.owns(A.Sources, Info->getTypeLoc().getBeginLoc()))
+      return false;
+    const auto *FriendRecord = Info->getType()->getAsCXXRecordDecl();
+    if (!FriendRecord || FriendRecord->isInvalidDecl() ||
+        FriendRecord->getCanonicalDecl() == Owner->getCanonicalDecl())
+      return false;
+  }
+  return true;
+}
+
 static bool utilityConditionalMoveDefaultsSource(
     Adapter &A, const CXXConstructorDecl *Constructor, bool UnrelatedAccess,
     bool ConstObject, bool IsQueryRoot) {
@@ -3652,8 +3684,7 @@ static bool utilityRecordConditionalMoveSource(
     // friendship, enclosing-class or derived-class access to its member's
     // copy or move, so retain an unrelated-access proof for each edge.
     const bool UnrelatedAccess =
-        !Owner || (!Record->hasFriends() && Owner->getNumBases() == 0 &&
-                   Owner->getDeclContext()->isFileContext());
+        utilityConditionalMoveUnrelatedAccess(A, Record, Owner);
     bool HasCopy = false, HasConstCopy = false, AllConstCopiesDeleted = true;
     bool DefaultedOwner = true;
     for (const auto *Constructor : Record->ctors()) {

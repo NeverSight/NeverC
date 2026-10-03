@@ -1084,10 +1084,15 @@ exception specifications and redeclarations remain checked. Already-resolved
 defaults use the ordinary source checks above. This covers deleted copies/moves,
 const queries on inaccessible moves, and inaccessible member moves that
 delete an enclosing defaulted move. For an owned member's inaccessible copy/move,
-the member must have no friends and its immediate owner must be declared at
-namespace scope with no bases. Friend, nested or derived owners require their
-own access proof. Each member/owner pair is checked independently, including
-when the same member type appears in several ownership contexts.
+its immediate owner must be declared at namespace scope with no bases. The
+member may have ordinary class-type friends when every friend resolves to a
+different canonical class from that owner, including aliases and substituted
+friend types. Each written friend declaration and type keeps its ordinary source
+checks, including the requirement for a supported complete friend record.
+A friend naming the actual owner, unresolved or other friend shapes
+(including function and class-template friends), and nested or derived owners
+require their own access proof. Each member/owner pair is checked independently,
+including when the same member type appears in several ownership contexts.
 An owner with user-written constructors can retain an available const copy by
 initializing a member through another constructor. The member's unavailable
 copy defaults may then remain uninstantiated, including mutable-copy overloads,
