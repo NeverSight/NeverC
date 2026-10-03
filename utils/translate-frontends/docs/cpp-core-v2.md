@@ -984,14 +984,25 @@ Actual construction still requires valid access and checks the selected body,
 defaults and cleanup. Private or protected access alone does not exempt an
 owned copy's uninstantiated default arguments from their source requirements.
 
-This record proof accepts implicit, defaulted or ordinary public, non-deleted
-destruction. Its bounded owning graph also includes nontrivial source-owned
+This record proof accepts implicit, defaulted, ordinary or deleted destruction
+at any access level. Its bounded owning graph also includes nontrivial source-owned
 value members, nested records and fixed-array elements. Every nontrivial node
 must satisfy the same exact copy/move/destructor declaration requirements;
 trivial nodes keep the proof above. Every consumed signature retains its own
 written parameter and exception sources. The graph supplies inferred exception
 and defaulted-deletion sources, including an inaccessible member move that
 deletes an enclosing defaulted move and permits a copy instead.
+
+An inaccessible or deleted member destructor can delete an unrelated owner's
+implicit or defaulted copy, move and destructor. Friend and nested owners keep
+their original access and may still construct and destroy that same member
+type. The pinned traits retain these owning-context decisions, including through
+nested members and fixed arrays. An accessible but potentially throwing member
+destructor can cause copy fallback even when its move constructor is `noexcept`.
+The query performs no destruction and leaves unused destructor bodies lazy;
+actual cleanup still requires valid access and checks the selected body or each
+generated member cleanup. Destructor access or deletion alone does not exempt
+copy/move default arguments from their source requirements.
 
 A nontrivial member's explicitly deleted `const Member&` copy can delete
 enclosing implicit or defaulted copies through nested members and fixed arrays.
@@ -1032,7 +1043,7 @@ and fixed arrays retain the pinned rvalue-reference result. This includes
 const-copy or deleted-const-copy members alongside the mutable-copy member,
 and members whose move is deleted or inaccessible. Every nontrivial node still
 has exact const or mutable copies,
-exact mutable or const rvalue moves, and an accessible nondeleted destructor.
+exact mutable or const rvalue moves, and an admitted destructor signature.
 All parameter types, aliases, array bounds,
 exception specifications and redeclarations remain source dependencies.
 Unused template defaults and bodies stay lazy. Actual generated copies and
@@ -1137,8 +1148,7 @@ reference mutations and parameter-temporary cleanup. The same requirements
 apply through implicit/defaulted operations, nested members and fixed arrays.
 
 Non-owning pointer/reference fields keep their original bindings. Constructor
-templates, inherited constructors, volatile copy/move parameters and nontrivial
-members with inaccessible or deleted destructors
+templates, inherited constructors and volatile copy/move parameters
 retain separate requirements. SDK members and
 nontrivial bases retain their existing source and layout requirements. Mutable
 and const operands preserve the pinned `T&&` or `const T&` result, including
@@ -1168,8 +1178,9 @@ operands therefore retain `Record&&` and `const Record&&` respectively, includin
 inside a member allowed to destroy the object. An inaccessible destructor may
 be ordinary or defaulted. Its written exception source and all copy/move
 signatures remain checked; no hypothetical constructor or destructor body is
-instantiated. A public defaulted destructor deleted because of a member retains
-separate owning-graph requirements. Actual destruction from an accessible
+instantiated. A public defaulted destructor deleted because of a member uses
+the bounded owning-graph proof above, including the member's original sources.
+Actual destruction from an accessible
 context still checks the selected destructor or every generated member cleanup.
 The same proof admits an already-declared implicit, defaulted, deleted
 `const Record&` copy when the record has a source-owned user-declared move

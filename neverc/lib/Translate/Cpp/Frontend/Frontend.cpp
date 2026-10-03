@@ -3700,8 +3700,10 @@ static bool utilityRecordConditionalMoveSource(
       RootConstCopyUnavailable = true;
     const auto *Destructor = Record->getDestructor();
     if (Destructor) {
-      if (Destructor->isInvalidDecl() || Destructor->isDeleted() ||
-          Destructor->getAccess() != AS_public ||
+      // The pinned traits retain access and deletion in the original owning
+      // context, including friend/nested owners and defaulted deletion. A
+      // query performs no cleanup; actual destruction checks its own sources.
+      if (Destructor->isInvalidDecl() ||
           !utilityConditionalMoveSignatureSource(A, Destructor, Signatures))
         return false;
     } else if (Record->hasUserDeclaredDestructor() ||
