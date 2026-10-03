@@ -3455,8 +3455,8 @@ static bool utilityConditionalMoveDirectConstructor(
   A.chargeExpansion(Latest->getNumParams(), Latest->getLocation());
   if (Latest->getMinRequiredArguments() > 1)
     return true;
-  // With no bases or conversion functions on the queried record, a scalar,
-  // fixed-array reference or mutable record lvalue reference first parameter
+  // With no bases or implicit conversion functions on the queried record,
+  // a scalar, fixed-array reference or mutable record lvalue reference parameter
   // excludes a const-record argument regardless of later defaults. Array
   // elements cannot convert to the array, and a converting record temporary
   // cannot bind a mutable lvalue reference.
@@ -3510,7 +3510,7 @@ static bool utilityConditionalMoveRecordArgumentConstructor(
       Type.getAddressSpace() != LangAS::Default)
     return false;
   const auto *ParameterRecord = Type->getAsCXXRecordDecl();
-  // The queried source has no bases or conversion functions. A distinct
+  // The queried source has no bases or implicit conversion functions. A distinct
   // record cannot consume it by standard conversion, and converting to this
   // constructor's parameter before invoking the constructor would require
   // two user-defined conversions. A record rvalue reference also cannot bind
@@ -3640,6 +3640,25 @@ static bool utilityConditionalMoveValueConstructor(
   return true;
 }
 
+static bool utilityConditionalMoveExplicitConversion(
+    const CXXConversionDecl *Conversion) {
+  if (!Conversion || Conversion->isInvalidDecl() || Conversion->isImplicit() ||
+      Conversion->isVirtual() || Conversion->isStatic() ||
+      Conversion->isExplicitObjectMemberFunction() || Conversion->isVariadic() ||
+      Conversion->getNumParams() || Conversion->isDefaulted() ||
+      Conversion->isConsteval() || Conversion->getDescribedFunctionTemplate() ||
+      Conversion->getPrimaryTemplate() ||
+      Conversion->getMethodQualifiers().hasVolatile() ||
+      Conversion->getMethodQualifiers().hasRestrict())
+    return false;
+  // Constructor arguments use implicit conversion. A plain explicit operator
+  // cannot supply that conversion, even when direct initialization selects
+  // the outer constructor. Read the original declaration for out-of-line
+  // definitions; conditional explicit and conversion templates stay separate.
+  const auto Specifier = Conversion->getCanonicalDecl()->getExplicitSpecifier();
+  return Specifier.isExplicit() && !Specifier.getExpr();
+}
+
 static bool utilityLazyConditionalMoveSignatureSource(
     Adapter &A, const CXXMethodDecl *Method) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
@@ -3664,8 +3683,10 @@ static bool utilityLazyConditionalMoveSignatureSource(
       RecordArgumentConstructor;
   const bool Assignment = Method && Method->isMoveAssignmentOperator();
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
+  const bool ExplicitConversion = utilityConditionalMoveExplicitConversion(
+      dyn_cast_or_null<CXXConversionDecl>(Method));
   if (!Method ||
-      !(Assignment || Destructor || OrdinaryConstructor ||
+      !(Assignment || Destructor || ExplicitConversion || OrdinaryConstructor ||
         (Constructor && Constructor->isCopyOrMoveConstructor())) ||
       Method->isImplicit() || Method->isInvalidDecl() ||
       Method->isUsed(/*CheckUsedAttr=*/false) || Method->hasBody() ||
@@ -3694,6 +3715,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool MatchingOrigin =
       Assignment ? Origin->isMoveAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
+      : ExplicitConversion ? utilityConditionalMoveExplicitConversion(
+                                 dyn_cast<CXXConversionDecl>(Origin))
       : OrdinaryConstructor ? OriginConstructor &&
                                   !OriginConstructor->isCopyOrMoveConstructor() &&
                                   !OriginConstructor->isVariadic() &&
@@ -3760,7 +3783,7 @@ static bool utilityMutableCopyConditionalMoveSource(
   // consume this record alone, even through a converting temporary. Written
   // deletion or nonpublic access in an unrelated context also excludes
   // successful construction. Otherwise require a first parameter that cannot
-  // consume this record without a conversion function, even if later
+  // consume this record without an implicit conversion function, even if later
   // parameters have defaults. Retain every written signature,
   // including each nonviable constructor's parameter types; callers separately
   // check copy/move overloads and sources.
@@ -3770,8 +3793,10 @@ static bool utilityMutableCopyConditionalMoveSource(
     if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration)) {
       if (isa<CXXConversionDecl>(Template->getTemplatedDecl()))
         return false;
-    } else if (isa<CXXConversionDecl>(Declaration)) {
-      return false;
+    } else if (const auto *Conversion = dyn_cast<CXXConversionDecl>(Declaration)) {
+      if (!utilityConditionalMoveExplicitConversion(Conversion) ||
+          !utilityConditionalMoveSignatureSource(A, Conversion, Signatures))
+        return false;
     }
   }
   for (const auto *Constructor : Record->ctors()) {
@@ -3871,7 +3896,7 @@ static bool utilityUnavailableCopyConditionalMoveSource(
   // makes construction traits false, even in a caller allowed to destroy it.
   // Defaulted deletion through a member retains its separate graph proof.
   // A written mutable-only copy cannot bind a const source. With no other
-  // viable constructor, base or conversion function, the copy trait is
+  // viable constructor, base or implicit conversion function, the copy trait is
   // false independently of member lifetimes and hypothetical copy bodies.
   // Besides those declarations, a user-declared move operation deletes
   // the implicit copy independently of the owning graph. Require that exact
@@ -12839,7 +12864,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 for (const auto *Signature : ConditionalMoveSignatures) {
                   operationTypeDependency(Signature->getTypeSourceInfo());
                   // The exact adapter proof consumes written special-member
-                  // and nonconverting constructor signatures.
+                  // and nonconverting constructor/explicit conversion signatures.
                   // Check a resolved signature or its retained written source
                   // without resolving inferred exceptions or generating a body.
                   // Actual operations keep their ordinary/generated proof.

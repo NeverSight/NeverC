@@ -1013,9 +1013,9 @@ reference; actual construction from it requires a viable selected constructor.
 
 The owning graph also admits copies taking exactly mutable
 `Record&` at a nontrivial node. These copies may be implicit, defaulted, ordinary
-or deleted. A node with only exact mutable copies has no bases or conversion
-functions. Besides its
-exact moves, it may have nonvariadic zero-parameter default constructors or
+or deleted. A node with only exact mutable copies has no bases or implicit
+conversion functions; ordinary plain `explicit` conversions retain the signature
+checks described below. Besides its exact moves, it may have nonvariadic zero-parameter default constructors or
 ordinary nonvariadic constructors whose first parameter is an admitted scalar
 by value or reference, a reference to an admitted fixed array, or a mutable
 lvalue reference to an admitted record. A source-owned record parameter by
@@ -1031,7 +1031,8 @@ Mutable and const queries on these owners preserve `Record&&` and
 `const Record&&`, including owners whose member move is unavailable. Mixed
 graphs can contain const-copy nodes; an enclosing ordinary const-copy retains
 the pinned copy-fallback result when appropriate. Every node still supplies
-its written copy/move/destructor and admitted value-constructor sources.
+its written copy/move/destructor, admitted value-constructor and explicit
+conversion-function sources.
 Every actual generated copy, move, assignment or cleanup checks its selected member
 operations. Queries alone leave hypothetical member bodies uninstantiated.
 
@@ -1340,8 +1341,24 @@ A separate bounded proof admits source-owned records whose only copy
 declaration has exactly mutable `Record&` as its first parameter, optionally
 followed by defaulted parameters. The copy must be written, including
 ordinary, defaulted, deleted or inaccessible copies; implicit mutable copies
-use the owning-graph proof above. These records have no bases or conversion
-functions. Other constructors may be a move, a nonvariadic zero-parameter
+use the owning-graph proof above. These records have no bases. Every conversion
+function must be an ordinary non-template function with a plain C++17 `explicit`
+specifier. Explicit conversion functions cannot supply the implicit conversion
+of a constructor argument, including when the outer constructor is selected by
+direct initialization. This includes admitted scalar, pointer, enum, record and
+reference results, const/ref-qualified receivers, private or explicitly deleted
+conversions, and out-of-line definitions using the canonical explicit status.
+Every original signature and redeclaration retains its type, alias and exception
+source checks. Unused class-template conversion bodies stay uninstantiated;
+an exact nondependent written exception source can be checked without resolving
+the unused exception result. Already-resolved dependent exception specifications
+keep their ordinary source checks. Unresolved dependent specifications, implicit
+conversions, conversion templates and conditional `explicit(expression)` remain
+outside this proof. Actual explicit conversions check and execute their selected
+bodies, preserving reference bindings, object results and cleanup. Mutable-copy
+nodes in owned records and fixed arrays use the same exclusion proof.
+
+Other constructors may be a move, a nonvariadic zero-parameter
 default constructor, or an ordinary nonvariadic constructor whose first parameter
 is an admitted scalar, by value or by lvalue/rvalue reference. The scalar
 type includes integers and enums up to 64 bits, `float`, `double`, pointers and
@@ -1354,12 +1371,13 @@ such as `C(int, Argument = {})` and `C(int&, const Argument& = Argument{})`.
 Multiple such overloads, private
 or deleted constructors, required arguments and default arguments are included.
 All parameters may have defaults. The first scalar parameter cannot consume
-`const Record&` without a conversion function, regardless of later defaults.
+`const Record&` without an implicit conversion function, regardless of later
+defaults.
 
 A first parameter that is an lvalue or rvalue reference to an admitted fixed
-array also cannot consume `const Record&` without a conversion function on the
-queried record. This includes const arrays, multidimensional arrays and arrays
-of admitted records or pointers, for example `C(int (&)[2], Argument = {})`.
+array also cannot consume `const Record&` without an implicit conversion
+function on the queried record. This includes const arrays, multidimensional
+arrays and arrays of admitted records or pointers, for example `C(int (&)[2], Argument = {})`.
 Array elements cannot introduce a conversion to the array itself. Element
 types, every written dimension and parameter aliases keep their original
 source checks and the profile's ordinary extent/storage limits. Unknown-bound
@@ -1368,9 +1386,9 @@ queries; actual construction preserves the bound array and any element changes.
 This form also applies at mutable-copy nodes in the owning graph.
 
 A first parameter that is a non-const lvalue reference to an admitted record
-also excludes `const Record&` under the same no-base/no-conversion-function
-requirements. A converting constructor on the parameter record would create
-a temporary, which cannot bind this mutable lvalue reference. For example,
+also excludes `const Record&` under the same requirements: no bases or
+implicit conversion functions. A converting constructor on the parameter record
+would create a temporary, which cannot bind this mutable lvalue reference. For example,
 `C(Argument&, int = 0)` qualifies even if `Argument(const C&)` exists. The
 parameter record must already meet the ordinary completion and source checks;
 no hypothetical conversion constructor or unused default/body is instantiated.
@@ -1385,16 +1403,16 @@ reference when each constructor is a nonvariadic zero-parameter constructor,
 a copy/move constructor (including extra defaulted parameters), or one of the
 ordinary constructors described below. Zero-parameter
 constructors cannot consume an argument; copy/move constructors cannot convert
-a distinct `const Record&` when the queried record has no bases or conversion
-functions. This includes constructor-free aggregates, non-aggregates, empty
-records, private fields, reference members and nontrivial destruction. Explicitly
+a distinct `const Record&` when the queried record has no bases or implicit
+conversion functions. This includes constructor-free aggregates, non-aggregates,
+empty records, private fields, reference members and nontrivial destruction. Explicitly
 defaulted, deleted, inaccessible and user-provided constructors can satisfy
 this shape. Their ordinary type, field and selected lifetime checks still apply.
 For an empty base chain, every node retains the existing completed-definition,
-storage and written base-type checks. The queried record still has no bases or
-conversion functions, so it cannot convert to the parameter record through a
-base. A base's converting constructor is not inherited implicitly; inherited
-constructors remain excluded. Actual parameter construction, copying, moving
+storage and written base-type checks. The queried record still has no bases
+or implicit conversion functions, so it cannot convert to the parameter record
+through a base. A base's converting constructor is not inherited implicitly;
+inherited constructors remain excluded. Actual parameter construction, copying, moving
 and destruction retain the selected base operations and their source checks.
 
 For example, a parameter record's `Argument(const Argument&, int = 0)` or
@@ -1414,8 +1432,8 @@ The parameter record may also have ordinary nonvariadic constructors that
 require at least two arguments, or whose first parameter is an admitted scalar
 by value/reference, a fixed-array reference or a mutable record lvalue
 reference. These forms cannot consume the queried `const Record&` when that
-queried record has no bases or conversion functions. Later parameters retain
-their ordinary type requirements and may have defaults. The argument count
+queried record has no bases or implicit conversion functions. Later parameters
+retain their ordinary type requirements and may have defaults. The argument count
 includes defaults accumulated on the latest redeclaration: adding a default
 that leaves only one required argument removes that arity proof. This admits
 common parameter classes such as `Argument(int = 3)` without requiring a
@@ -1428,8 +1446,8 @@ first parameter.
 An ordinary nonvariadic parameter-record constructor can also take a distinct
 admitted record as its first parameter, by value or reference. For example,
 `Argument(const Other&)` cannot convert the queried `const C&` when `Other`
-and `C` are different canonical record types and `C` has no bases or conversion
-functions. Even if `Other(const C&)` exists, implicitly converting `C` to
+and `C` are different canonical record types and `C` has no bases or implicit
+conversion functions. Even if `Other(const C&)` exists, implicitly converting `C` to
 `Argument` through it would require two user-defined conversions. A single
 implicit conversion sequence cannot perform both. This check compares the
 existing record identities without inspecting `Other`'s constructors or
@@ -1517,8 +1535,8 @@ also cannot provide the converted temporary needed by these constructors. For
 example, live `Argument(const C&)` together with `~Argument() = delete` cannot
 make `C(Argument)`, `C(const Argument&)`, `C(Argument&&)` or
 `C(const Argument&&)` constructible from the distinct `const C&`. The queried
-record still has no bases or conversion functions. This proof reads only the
-existing destructor's canonical written deletion, without inferring defaulted
+record still has no bases or implicit conversion functions. This proof reads
+only the existing destructor's canonical written deletion, without inferring defaulted
 deletion or requesting a body or exception-specification instantiation. Deletion
 applies in every access context, including related owners and friends. Every
 other constructor of the queried record must independently satisfy its proof.
@@ -1569,8 +1587,9 @@ live converting constructor. This includes value and mutable/const reference
 parameters, aliases, extra defaulted parameters, private deleted constructors
 and completed class-template records. The proof reads only canonical written
 deletion; it does not infer defaulted deletion or inspect the parameter record's
-constructor set. The queried record still has no bases or conversion functions,
-and every other constructor must independently satisfy its existing proof.
+constructor set. The queried record still has no bases or implicit conversion
+functions, and every other constructor must independently satisfy its existing
+proof.
 All written parameter types, aliases, completion requirements and exception
 sources remain checked. Unused template defaults and bodies stay lazy; selected
 live operations retain their ordinary checks and evaluation. Actual use of a
@@ -1585,8 +1604,8 @@ when the query appears inside a member or friend. For mutable-copy nodes in
 owned records and arrays, this proof checks the actual owner's enclosing,
 friend and base contexts using the access proof above. A related owner cannot
 use access alone to exclude the constructor. Every other overload must still
-independently satisfy its proof, and the queried record keeps the no-base and
-no-conversion-function requirements.
+independently satisfy its proof, and the queried record still has no bases or
+implicit conversion functions.
 
 This access proof admits a completed source-owned parameter record with live
 converting constructors, retaining all their written signatures and defaults
