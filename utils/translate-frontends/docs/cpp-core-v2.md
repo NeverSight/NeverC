@@ -1570,13 +1570,32 @@ lvalue/rvalue references, deeper dimensions, record/pointer elements and
 aliases. The proof compares already-resolved bounds; it does not resize arrays
 or consult element conversions.
 
+Fixed-array results can also be excluded by reference binding, even when the
+bounds match:
+
+- An rvalue array reference parameter, including a const one, cannot bind an
+  lvalue array result.
+- A non-const lvalue array reference parameter cannot bind an rvalue array
+  result.
+- A non-const array reference parameter cannot discard const from the result
+  array, for either reference kind.
+
+Const lvalue array references retain both value categories; const rvalue array
+references retain mutable and const rvalue results. Const qualification applies
+to the array elements, including pointer elements themselves. Const on a
+pointer element's pointee does not make the array const. These exclusions also
+cover multidimensional arrays, aliases, record/pointer elements and available
+nonpublic conversions in the actual owning context. Result arrays must still
+have a known fixed bound before using the binding proof.
+
 Every constructor independently needs an admitted exclusion for every usable
-array result. One result with matching bounds keeps its separate binding
-requirements, as do unknown bounds and differences only in element type,
-qualification or rank. Equal bounds written through different aliases or
-constant expressions remain equal. Each compared dimension consumes the
-existing expansion budget, and all written dimensions retain their source
-checks even when an earlier dimension already proves a mismatch.
+array result. One result with a retained reference binding and matching bounds
+keeps its separate requirements, as do unknown bounds and other differences
+in element type, qualification or rank. Equal bounds written through different
+aliases or constant expressions remain equal. Each result's binding check and
+each compared dimension consume the existing expansion budget. All written
+dimensions retain their source checks even when reference binding or an
+earlier dimension already excludes the result.
 Excluded conversions retain their existing receiver, deletion, explicitness
 and access checks. Each mutable-copy node in an owned record or fixed array
 uses its actual owner context, including friendship that makes a nonpublic
@@ -1591,9 +1610,11 @@ constructors and constructor/conversion templates retain their existing
 limits. Actual construction from an existing array or a separately converted
 array reference checks the selected calls and defaults, preserves the original
 array binding and mutations, and performs required temporary cleanup. A
-separately selected conversion to an array with a different bound still
-returns the original array reference. Actual attempts to bind an incompatible
-array or chain two implicit user-defined conversions remain source errors.
+separately selected conversion still returns the original array reference,
+with its declared value category and const qualification. References to arrays
+that outlive a temporary conversion object remain valid after that object's
+cleanup. Actual attempts to bind an incompatible array, discard const or
+chain two implicit user-defined conversions remain source errors.
 
 A first parameter that is a non-const lvalue reference to an admitted record
 also excludes `const Record&` under the same base and conversion restrictions.

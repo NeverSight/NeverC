@@ -3469,13 +3469,25 @@ static bool utilityConditionalMoveArrayReferenceResults(
     const std::vector<const CXXConversionDecl *> &Conversions) {
   if (!utilityConditionalMoveArrayReferenceParameter(A, ParameterType))
     return false;
-  // Non-array results cannot bind this reference. Each usable array result
-  // must differ in a corresponding fixed dimension: a standard conversion
-  // cannot resize an array. Compare already-resolved bounds without examining
-  // element conversions or instantiating any signature, default or body.
+  // Non-array results cannot bind this reference. Exclude incompatible value
+  // categories and bindings that discard array const qualification. Remaining
+  // array results must differ in a corresponding fixed dimension: a standard
+  // conversion cannot resize an array. Do not examine element conversions or
+  // instantiate any signature, default or body.
   for (const auto *Conversion : Conversions) {
     auto Parameter = ParameterType.getNonReferenceType();
-    auto Result = Conversion->getConversionType().getNonReferenceType();
+    const auto ConversionType = Conversion->getConversionType();
+    auto Result = ConversionType.getNonReferenceType();
+    if (!A.Context.getAsConstantArrayType(Result))
+      return false;
+    A.chargeExpansion(1, Conversion->getLocation());
+    if ((ParameterType->isRValueReferenceType() &&
+         ConversionType->isLValueReferenceType()) ||
+        (ParameterType->isLValueReferenceType() &&
+         !Parameter.isConstQualified() &&
+         ConversionType->isRValueReferenceType()) ||
+        (!Parameter.isConstQualified() && Result.isConstQualified()))
+      continue;
     bool DifferentBound = false;
     while (const auto *ParameterArray =
                A.Context.getAsConstantArrayType(Parameter)) {
@@ -4002,11 +4014,14 @@ static bool utilityMutableCopyConditionalMoveSource(
     // this exclusion. A fixed-array reference parameter cannot bind any
     // non-array conversion result: pointers do not implicitly dereference,
     // scalars do not initialize individual elements, and a record would need
-    // another user-defined conversion. An array result is also excluded when
-    // at least one corresponding fixed dimension has a different bound.
-    // Compare every usable array result for each constructor; matching bounds,
-    // unknown bounds or differences only in elements, qualifiers or rank
-    // retain their separate binding requirements.
+    // another user-defined conversion. A fixed-array rvalue reference cannot
+    // bind an array lvalue result; a mutable array lvalue reference cannot bind
+    // an array rvalue result. A non-const array reference also cannot discard
+    // const from the result array. Each remaining array result needs a
+    // different bound in at least one corresponding fixed dimension. Compare
+    // every usable result for each constructor; matching bounds, unknown bounds
+    // or other element/qualification/rank differences retain their separate
+    // binding requirements.
     // A mutable record lvalue reference cannot bind record prvalues or xvalues;
     // a nonrecord result would need another user-defined conversion. A const
     // record lvalue cannot discard const during reference binding, even when
