@@ -1707,12 +1707,23 @@ bases. An `Other::operator Argument&()` would require another user-defined
 conversion in the same implicit sequence. Aliases preserve record identity;
 different completed specializations of the same class template are distinct
 records. This proof does not complete an incomplete result specialization,
-inspect its conversion functions or traverse a base graph.
+inspect its conversion functions or traverse an unproved base graph.
+
+A result with bases may use the existing empty single-base-chain contract:
+every node is already complete, source-owned, field-empty, standard-layout and
+one byte in size and alignment, with nonvirtual zero-offset bases and at most
+64 nodes. The proof compares the parameter's canonical record against the
+result and every base, following C++17's
+[reference-related types](https://timsong-cpp.github.io/cppwp/n4659/dcl.init.ref#4).
+Any matching node retains its binding requirements, including private and
+protected bases. Distinct leaves sharing a base, or a parameter derived from
+the result, do not establish a result-to-parameter binding. Both the existing
+shape checks and each identity comparison charge the expansion budget.
 
 Every constructor independently needs an admitted exclusion for every usable
 conversion result. A same-record non-const lvalue result still prevents this
-proof. Results with bases, incomplete definitions, SDK definitions or union
-types also keep their separate requirements, even when a native trait is false.
+proof. Other base layouts, incomplete definitions, SDK definitions or union
+types keep their separate requirements, even when a native trait is false.
 Multiple constructors and multiple results are checked against each other;
 one matching result prevents this proof for that constructor.
 Excluded conversions retain their receiver, deletion, explicitness and access checks.
@@ -1758,8 +1769,9 @@ examining a base graph or conversion set. A `const Argument&&` parameter
 retains these results for the record-identity check below.
 
 A remaining record value or rvalue-reference result is also excluded when
-its class already has a complete source-owned non-union definition without
-bases and differs canonically from the parameter record. Thus a result from
+its class already has a complete source-owned non-union definition, differs
+canonically from the parameter record, and has either no bases or an admitted
+empty base chain with no matching node as above. Thus a result from
 `operator Other() const` or `operator Other&&() const` cannot bind
 `C(Argument&&)` or `C(const Argument&&)` under those conditions. This also
 covers const-qualified `Other` results binding a const parameter. Aliases
@@ -1767,20 +1779,26 @@ preserve identity, and distinct completed template specializations remain
 different records. The proof checks every usable result against each
 constructor parameter and charges each comparison to the expansion budget.
 It does not complete result definitions, inspect conversion functions or
-walk bases. A matching result, or an otherwise unproven result with bases,
-an incomplete/SDK definition or a union type, keeps its separate requirements.
+walk unproved bases. A matching result or base, or an otherwise unproven result
+with bases, an incomplete/SDK definition or a union type, keeps its separate
+requirements.
 
 A const, non-volatile record lvalue-reference parameter uses this same
 distinct-record proof for every usable record conversion result. For example,
 `C(const Argument&)` cannot consume a result from `operator Other&() const`,
 `operator Other&&() const` or `operator Other() const` when that result already
 has the completed, source-owned, non-union definition without bases described
-above and differs canonically from `Argument`. Const-qualified results have
+above and differs canonically from `Argument`, or has an admitted empty chain
+with no matching node. Const-qualified results have
 the same identity requirement: this parameter can bind all value categories,
 so a same-record result of any category prevents this proof. Scalar, pointer
 and array-reference results would require another user-defined conversion.
 Every constructor needs its own proof for all usable results; aliases,
 redeclarations, access, exceptions and lazy template sources remain checked.
+Queries involving admitted empty result chains leave unselected base lifecycle
+bodies lazy. Selected result conversions preserve reference identity and value
+category, copy/move operations, base and complete-object cleanup, and references
+to external objects surviving a temporary conversion object's destruction.
 
 This result check does not by itself exclude construction: an
 `Argument(const C&)` could create a temporary directly from the source and
@@ -12362,6 +12380,12 @@ through an alias. The embedded frontend replaces the generic name metadata copie
 from the definition with that definition's concrete substitution. Its original
 type expressions still undergo source checks; unused dependent definitions remain
 lazy. Native CI covers conversion results and object lifetime at O0 and O2.
+
+Generated core v2 conversion-function identities also include the canonical
+target type. Distinct template record results retain separate names even when
+the source index's declaration identity omits their template arguments.
+Aliases and redeclarations of the same conversion keep one identity; target
+qualification and nested `noexcept` function types remain distinct.
 
 ## User-defined conversion functions
 

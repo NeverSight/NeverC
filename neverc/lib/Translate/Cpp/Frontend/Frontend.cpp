@@ -3582,21 +3582,32 @@ static bool utilityConditionalMoveDistinctRecordResults(
     const std::vector<const CXXRecordDecl *> &Results) {
   if (!ParameterRecord)
     return false;
-  // A completed result class without bases cannot bind a different record's
-  // reference through a standard conversion. Its own conversion would
-  // require a second user-defined conversion. Compare canonical records,
-  // preserving aliases and distinct concrete template specializations; do not
-  // complete a result class, walk bases or inspect its conversion functions.
+  // A completed result class cannot bind an unrelated record's reference
+  // through a standard conversion. Its own conversion would require a second
+  // user-defined conversion. An admitted empty single-base chain is bounded
+  // and already complete: compare every canonical record on that path. A
+  // matching base retains its binding requirements regardless of access.
+  // Preserve aliases and concrete specializations without completing a result
+  // class or inspecting its conversion functions.
   for (const auto *Result : Results) {
     const auto *Definition = Result ? Result->getDefinition() : nullptr;
     if (!Definition || Definition->isInvalidDecl() ||
         Definition->isDependentContext() || Definition->isUnion() ||
-        Definition->getNumBases() != 0 ||
+        (Definition->getNumBases() != 0 &&
+         !A.emptyBaseChainShape(Definition)) ||
         !A.S.owns(A.Sources, Definition->getLocation()))
       return false;
-    A.chargeExpansion(1, Definition->getLocation());
-    if (Definition->getCanonicalDecl() == ParameterRecord->getCanonicalDecl())
-      return false;
+    for (;;) {
+      A.chargeExpansion(1, Definition->getLocation());
+      if (Definition->getCanonicalDecl() == ParameterRecord->getCanonicalDecl())
+        return false;
+      if (!Definition->getNumBases())
+        break;
+      Definition = Definition->bases_begin()
+                       ->getType()
+                       ->getAsCXXRecordDecl()
+                       ->getDefinition();
+    }
   }
   return true;
 }

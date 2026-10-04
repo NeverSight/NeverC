@@ -191,6 +191,24 @@ std::string Adapter::identity(const NamedDecl *D) {
   }
   auto Identity = USR.str().str();
   if (S.coreV2()) {
+    // The declaration USR prints conversion names with template arguments
+    // suppressed, so distinct record-valued conversions can share one name.
+    // Retain the canonical target type independently of its written alias.
+    if (const auto *Conversion =
+            dyn_cast<CXXConversionDecl>(D->getCanonicalDecl())) {
+      const auto Type = Conversion->getConversionType().getCanonicalType();
+      llvm::SmallString<128> TypeUSR;
+      if (index::generateUSRForType(Type, Context, TypeUSR)) {
+        reject(D->getLocation(), "conversion identity",
+               "No stable semantic conversion target identity.");
+        throw Failure{};
+      }
+      Identity += ":conversion-type:" + digest(TypeUSR.str());
+      // Type USRs also omit noexcept inside function-pointer targets and
+      // template arguments. Preserve the same distinction as record names.
+      if (hasNoexceptFunctionType(Type))
+        Identity += ":noexcept-type:" + digest(Type.getAsString());
+    }
     // Clang's specialization USR can omit noexcept in function-pointer
     // template arguments. Distinct C++ records may then share one IR name.
     if (const auto *Specialization =
