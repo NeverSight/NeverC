@@ -188,23 +188,29 @@ uses the pinned generic overload after checking its instantiated move calls;
 qualified calls retain that overload even when the callback signature has an
 associated user swap. Callback-pointer `std::exchange` checks the selected
 pinned move and forward calls before returning the old pointer. It accepts
-same-type lvalue and rvalue replacements, const callback-pointer lvalues with
-the selected lvalue-to-rvalue conversion, `nullptr`, and mutable or const
-`nullptr_t` lvalues with the selected null-to-pointer conversion. A named
+same-type lvalue and rvalue replacements, const callback-pointer lvalues/xvalues
+with the selected lvalue-to-rvalue conversion, `nullptr`, and mutable or const
+`nullptr_t` lvalues/xvalues with the selected null-to-pointer conversion. A named
 function of the exact callback signature is also accepted when the selected
 assignment uses function-to-pointer decay. A matching `noexcept` function is
 accepted when that decay is followed by the selected conversion to a possibly
 throwing callback pointer. Matching mutable or const `noexcept` callback-pointer
-lvalues and unqualified rvalues use a checked pointer read and the same pointer
-conversion. Source specializations remain rejected.
+lvalues/xvalues and unqualified prvalues use a checked pointer read and the same
+pointer conversion. Explicit rvalue-reference replacement template arguments
+are accepted for these callback-pointer and `nullptr_t` values. Source
+specializations remain rejected.
 
 Object-pointer `std::exchange` also accepts fixed-array replacements when
 the selected assignment decays the array to a pointer to its complete element
 type, optionally adding `const` to that pointee. Mutable and const lvalue/xvalue
 arrays, string literals, multidimensional arrays and arrays of admitted records
 or pointers retain their existing type and lifetime checks. Deduced replacement
-types and explicit array or lvalue-reference template arguments qualify. The
-completed pinned body must select the exact `move`, `forward`, array decay and
+types and explicit array, lvalue-reference or rvalue-reference template arguments
+qualify. The selected `forward<U>` retains that exact template argument while
+the exchange parameter follows C++17's [reference collapsing rules](https://timsong-cpp.github.io/cppwp/n4659/dcl.ref#6).
+Explicit rvalue-reference arguments still require a valid native reference
+binding and do not copy or move array elements. The completed pinned body must
+select the exact `move`, `forward`, array decay and
 qualification conversion; source replacements of any selected helper are
 rejected. This follows C++17's [exchange operation](https://timsong-cpp.github.io/cppwp/n4659/utility.exchange)
 and [array-to-pointer conversion](https://timsong-cpp.github.io/cppwp/n4659/conv.array).
@@ -218,8 +224,8 @@ evaluating either operand. They authenticate the exact resolved pointer-move
 and array-assignment trait sources in its exception specification; substituted
 traits do not gain an exemption for returning the same boolean. Unknown-bound
 arrays, unrelated pointee conversions
-(including array-to-`void*` or derived-to-base pointers), explicit replacement
-rvalue-reference template arguments and uncompleted query-only bodies retain
+(including array-to-`void*` or derived-to-base pointers), replacement
+rvalue references to function types and uncompleted query-only bodies retain
 their separate requirements. Volatile or unsupported element types, indirect
 callees and hidden unsupported source remain rejected.
 

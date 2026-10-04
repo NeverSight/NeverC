@@ -26161,6 +26161,203 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ExchangeReferenceArgumentsRunAtBothOptimizations) {
+  const auto Control = tmpFile("reference-exchange-control.cpp");
+  const auto ControlOutput = tmpFile("reference-exchange-control.nc");
+  writeFile(Control, R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,Row&r){return std::exchange<int*,Row&&>(p,std::move(r));}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto Source = tmpFile("reference-exchange.cpp");
+  const auto Output = tmpFile("reference-exchange.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace Imported { using std::exchange; }
+namespace Reexport { using Imported::exchange; }
+namespace Alias = Reexport;
+using Row = int[2];
+using LRow = Row&;
+using RRow = Row&&;
+int initial=1, changed=9, values[2]={2,3};
+int *slot=&initial;
+int destinations, replacements, defaults;
+RRow replacement(int=(++defaults,1))noexcept {
+  ++replacements;
+  slot=&changed;
+  return static_cast<RRow>(values);
+}
+int live, destroyed, copies, moves;
+struct Item {
+  int n;
+  Item(int v)noexcept:n(v){++live;}
+  Item(const Item&v)noexcept:n(v.n){++live;++copies;}
+  Item(Item&&v)noexcept:n(v.n){++live;++moves;}
+  ~Item()noexcept{--live;++destroyed;}
+};
+struct Temporary { Item items[2]{{11},{13}}; };
+Item *items;
+bool check_items(Item*old)noexcept {
+  return old==nullptr&&live==2&&destroyed==0&&items[0].n==11&&items[1].n==13;
+}
+int one(int v){return v+1;}
+int two(int v){return v+2;}
+int three(int v)noexcept{return v+3;}
+using Callback=int(*)(int);
+using NoexceptCallback=int(*)(int)noexcept;
+using Null=decltype(nullptr);
+Callback callback=one;
+int callback_calls, callback_destructions;
+Callback replacement_callback()noexcept {
+  ++callback_calls;
+  callback=two;
+  return three;
+}
+struct CallbackTemporary {
+  Callback value=two;
+  ~CallbackTemporary()noexcept{++callback_destructions;}
+};
+bool check_callback(Callback old)noexcept {
+  return old==one&&callback==two&&callback_destructions==0;
+}
+int main(){
+  using Alias::exchange;
+  static_assert(__is_same(decltype(exchange<int*,RRow>(slot,replacement())),int*));
+  static_assert(noexcept(exchange<int*,RRow>(slot,replacement())));
+  static_assert(sizeof(exchange<int*,RRow>(slot,replacement()))==sizeof(int*));
+  if(destinations||replacements||defaults)return 1;
+  int*old=exchange<int*,RRow>((++destinations,slot),replacement());
+  if(old!=&changed||slot!=values||slot[1]!=3||destinations!=1||replacements!=1||defaults!=1)return 2;
+  int more[2]={5,7};
+  if((Reexport::exchange<int*,Row&&>)(slot,std::move(more))!=values||slot!=more)return 3;
+  if(exchange<int*,LRow&&>(slot,values)!=more||slot!=values)return 4;
+  const int frozen[2]={8,10};
+  const int*view=&initial;
+  if(exchange<const int*,RRow>(view,std::move(more))!=&initial||view!=more)return 5;
+  if(exchange<const int*,const Row&&>(view,std::move(frozen))!=more||view!=frozen)return 6;
+  int matrix[2][2]={{1,2},{3,4}};
+  using Matrix=int[2][2];
+  int(*rows)[2]=nullptr;
+  if(exchange<int(*)[2],Matrix&&>(rows,std::move(matrix))!=nullptr||rows!=matrix||rows[1][1]!=4)return 7;
+  const int(*read_rows)[2]=nullptr;
+  if(exchange<const int(*)[2],Matrix&&>(read_rows,std::move(matrix))!=nullptr||read_rows!=matrix)return 8;
+  using Items=Item[2];
+  if(!check_items(exchange<Item*,Items&&>(items,Temporary{}.items)))return 9;
+  if(live||destroyed!=2||copies||moves)return 10;
+  Callback next=two;
+  if(exchange<Callback,Callback&&>(callback,std::move(next))!=one||callback!=two||next!=two)return 11;
+  if(exchange<Callback,Callback&&>(callback,Callback{one})!=two||callback!=one)return 12;
+  if(exchange<Callback,Callback&&>(callback,std::move(callback))!=one||callback!=one)return 13;
+  const Callback immutable=two;
+  if(exchange<Callback,const Callback&&>(callback,std::move(immutable))!=one||callback!=two||immutable!=two)return 14;
+  callback=one;
+  if(exchange(callback,std::move(immutable))!=one||callback!=two)return 15;
+  const NoexceptCallback safe=three;
+  if(exchange<Callback,const NoexceptCallback&&>(callback,std::move(safe))!=two||callback!=three||safe!=three)return 16;
+  callback=one;
+  if(exchange(callback,std::move(safe))!=one||callback!=three)return 17;
+  if(exchange<Callback,NoexceptCallback&&>(callback,NoexceptCallback{three})!=three||callback(1)!=4)return 18;
+  if(exchange<Callback,Null&&>(callback,nullptr)!=three||callback!=nullptr)return 19;
+  const Null empty=nullptr;
+  callback=one;
+  if(exchange<Callback,const Null&&>(callback,std::move(empty))!=one||callback!=nullptr)return 20;
+  callback=two;
+  if(exchange(callback,std::move(empty))!=two||callback!=nullptr)return 21;
+  callback=one;
+  if(exchange<Callback,Callback&&>(callback,replacement_callback())!=two||callback!=three||callback_calls!=1)return 22;
+  callback=one;
+  if(!check_callback(exchange<Callback,Callback&&>(callback,CallbackTemporary{}.value)))return 23;
+  if(callback_destructions!=1)return 24;
+  using CallbackRef=Callback&;
+  if(exchange<Callback,CallbackRef&&>(callback,next)!=two||callback!=two)return 25;
+  return copies==0&&moves==0&&live==0&&destroyed==2?0:26;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("reference-exchange" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangeReferenceArgumentsRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"array-forward-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>constexpr Row&&forward<Row&&>(Row&v)noexcept{return static_cast<Row&&>(v);}}}int*f(int*&p,Row&r){return std::exchange<int*,Row&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"const-array-forward-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>constexpr const Row&&forward<const Row&&>(const Row&v)noexcept{return static_cast<const Row&&>(v);}}}const int*f(const int*&p,const Row&r){return std::exchange<const int*,const Row&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"callback-forward-specialization", R"cpp(#include <utility>
+using F=int(*)();namespace std{inline namespace __1{template<>constexpr F&&forward<F&&>(F&v)noexcept{return static_cast<F&&>(v);}}}F f(F&p,F&r){return std::exchange<F,F&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"const-callback-forward-specialization", R"cpp(#include <utility>
+using F=int(*)();namespace std{inline namespace __1{template<>constexpr const F&&forward<const F&&>(const F&v)noexcept{return static_cast<const F&&>(v);}}}F f(F&p,const F&r){return std::exchange<F,const F&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"null-forward-specialization", R"cpp(#include <utility>
+using N=decltype(nullptr);using F=int(*)();namespace std{inline namespace __1{template<>constexpr N&&forward<N&&>(N&v)noexcept{return static_cast<N&&>(v);}}}F f(F&p){return std::exchange<F,N&&>(p,nullptr);}
+)cpp", "TR0201"},
+      {"noexcept-forward-specialization", R"cpp(#include <utility>
+using F=int(*)();using N=int(*)()noexcept;namespace std{inline namespace __1{template<>constexpr N&&forward<N&&>(N&v)noexcept{return static_cast<N&&>(v);}}}F f(F&p,N&r){return std::exchange<F,N&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"exchange-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>int*exchange<int*,Row&&>(int*&p,Row&&r)noexcept{return p;}}}int*f(int*&p,Row&r){return std::exchange<int*,Row&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"erased-reference-argument", R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,Row&r){return std::exchange<int*,decltype((sizeof(long double),std::move(r)))>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"independent-address", R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,Row&r){auto call=&std::exchange<int*,Row&&>;return call(p,std::move(r));}
+)cpp", "TR0201"},
+      {"unknown-bound", R"cpp(#include <utility>
+extern int values[];int*f(int*&p){return std::exchange<int*,int(&&)[]>(p,std::move(values));}
+)cpp", "TR0201"},
+      {"unsupported-callback", R"cpp(#include <utility>
+using F=long double(*)();F f(F&p,F&r){return std::exchange<F,F&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"uninstantiated-query", R"cpp(#include <utility>
+using Row=int[2];int f(int*&p,Row&r){static_assert(__is_same(decltype(std::exchange<int*,Row&&>(p,std::move(r))),int*));return 0;}
+)cpp", "TR0201"},
+      {"rvalue-function-reference", R"cpp(#include <utility>
+using F=int();using P=int(*)();P f(P&p,F&r){return std::exchange<P,F&&>(p,r);}
+)cpp", "TR0201"},
+      {"volatile-callback", R"cpp(#include <utility>
+using F=int(*)();F f(F&p,volatile F&r){return std::exchange<F,volatile F&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"array-lvalue-binding", R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,Row&r){return std::exchange<int*,Row&&>(p,r);}
+)cpp", "TR0202"},
+      {"callback-lvalue-binding", R"cpp(#include <utility>
+using F=int(*)();F f(F&p,F&r){return std::exchange<F,F&&>(p,r);}
+)cpp", "TR0202"},
+      {"array-const-discard", R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,const Row&r){return std::exchange<int*,const Row&&>(p,std::move(r));}
+)cpp", "TR0202"},
+      {"throwing-to-noexcept", R"cpp(#include <utility>
+using F=int(*)();using N=int(*)()noexcept;N f(N&p,F&r){return std::exchange<N,F&&>(p,std::move(r));}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("reference-exchange-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("reference-exchange-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayExchangeRunsAtBothOptimizations) {
   const auto Source = tmpFile("array-exchange.cpp");
   const auto Output = tmpFile("array-exchange.nc");
@@ -26312,9 +26509,6 @@ void*f(void*&p,int(&r)[2]){return std::exchange(p,r);}
 )cpp", "TR0201"},
       {"base-pointer-conversion", R"cpp(#include <utility>
 struct Base{};struct Derived:Base{};Base*f(Base*&p,Derived(&r)[2]){return std::exchange(p,r);}
-)cpp", "TR0201"},
-      {"explicit-rvalue-reference-argument", R"cpp(#include <utility>
-using Row=int[2];int*f(int*&p,Row&r){return std::exchange<int*,Row&&>(p,std::move(r));}
 )cpp", "TR0201"},
       {"uninstantiated-result-query", R"cpp(#include <utility>
 int f(int*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(p,r)),int*));return 0;}

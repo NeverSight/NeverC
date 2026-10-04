@@ -14124,11 +14124,9 @@ static bool approvedUtilityPointerExchange(const State &S,
       !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference))
     return false;
   const auto Replacement = Arguments->get(1).getAsType();
-  if (Replacement->isRValueReferenceType())
-    return false;
-  const auto ReplacementType = Replacement->isLValueReferenceType()
-                                   ? Replacement->getPointeeType()
-                                   : Replacement;
+  // Keep the exact template argument for the selected forward call, while
+  // checking its referred-to value and the collapsed exchange parameter.
+  const auto ReplacementType = Replacement.getNonReferenceType();
   const auto *Array = Context.getAsConstantArrayType(ReplacementType);
   const auto ArrayPointer =
       Array ? Context.getPointerType(Array->getElementType()) : QualType();
@@ -14148,10 +14146,8 @@ static bool approvedUtilityPointerExchange(const State &S,
   const bool ArrayQualification =
       ArrayReplacement && !Context.hasSameType(Type, ArrayPointer);
   const bool ConstPointerReplacement =
-      Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type.withConst());
   const bool ConstNullReplacement =
-      Replacement->isLValueReferenceType() &&
       ReplacementType->isNullPtrType() &&
       Context.hasSameType(ReplacementType,
                           ReplacementType.getUnqualifiedType().withConst());
@@ -14163,7 +14159,6 @@ static bool approvedUtilityPointerExchange(const State &S,
       utilityNoexceptCallbackFunction(Type, ReplacementType, Context);
   const auto UnqualifiedReplacement = ReplacementType.getUnqualifiedType();
   const bool ConstNoexceptPointerReplacement =
-      Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType,
                           UnqualifiedReplacement.withConst()) &&
       utilityNoexceptCallbackPointer(Type, UnqualifiedReplacement, Context);
