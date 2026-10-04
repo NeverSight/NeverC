@@ -51023,6 +51023,212 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionAddressofRunsAtBothOptimizations) {
+  const auto Direct = tmpFile("function-addressof-direct.cpp");
+  const auto DirectOutput = tmpFile("function-addressof-direct.nc");
+  writeFile(Direct, R"cpp(#include <memory>
+int one(int v){return v;}auto address(){return std::addressof(one);}
+)cpp");
+  auto DirectResult = translate(
+      Direct, {"--profile", "cpp-core-v2", "-o", DirectOutput.string()});
+  ASSERT_EQ(DirectResult.exitCode, 0) << DirectResult.out << DirectResult.err;
+
+  const auto Control = tmpFile("function-addressof-control.cpp");
+  const auto ControlOutput = tmpFile("function-addressof-control.nc");
+  writeFile(Control, R"cpp(#include <memory>
+#include <utility>
+namespace Imported{using std::addressof;}
+using F=int(int);using N=int(int)noexcept;
+int one(int v){return v;}int two(int v)noexcept{return v;}
+static_assert(__is_same(decltype(Imported::addressof(one)),F*));
+static_assert(__is_same(decltype(Imported::addressof<N>(two)),N*));
+static_assert(noexcept(Imported::addressof(one)));
+static_assert(__is_same(decltype(Imported::addressof(std::move(one))),F*));
+static_assert(__is_same(decltype(Imported::addressof(static_cast<F&&>(one))),F*));
+int main(){return 0;}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto Source = tmpFile("function-addressof.cpp");
+  const auto Output = tmpFile("function-addressof.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+#include <functional>
+namespace Imported { using std::addressof; }
+namespace Reexport { using Imported::addressof; }
+namespace Alias = Reexport;
+using F = int(int);
+using N = int(int) noexcept;
+using P = int(*)(int);
+using NP = int(*)(int) noexcept;
+int calls, effects, constructed, destroyed;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int overloaded(int n) { ++calls; return n + 4; }
+long overloaded(long n) { return n + 5; }
+P selected() { ++effects; return two; }
+P address() { return std::addressof(one); }
+struct Temporary {
+  Temporary() { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  static int function(int n) noexcept { ++calls; return n + 6; }
+};
+bool check(P p) noexcept {
+  return constructed == 1 && destroyed == 0 && calls == 0 && p == Temporary::function;
+}
+int main() {
+  using Alias::addressof;
+  static_assert(__is_same(decltype(addressof(one)), P));
+  static_assert(__is_same(decltype(addressof<F>(one)), P));
+  static_assert(__is_same(decltype((addressof)(safe)), NP));
+  static_assert(noexcept(addressof((++effects, one))));
+  static_assert(noexcept(addressof(safe)(0)));
+  static_assert(!noexcept(addressof(one)(0)));
+  static_assert(__is_same(decltype(addressof(std::move(one))), P));
+  static_assert(__is_same(decltype(addressof(static_cast<F &&>(safe))), P));
+  if (calls || effects || constructed || destroyed) return 1;
+  P p = addressof(one);
+  NP q = addressof<N>(safe);
+  if (p != one || q != safe || address() != one || calls) return 2;
+  if ((addressof)(one)(2) != 3 || calls != 1) return 3;
+  if (addressof<F>(overloaded)(2) != 6 || calls != 2) return 4;
+  if (addressof((++effects, effects == 1 ? two : one))(2) != 4 || effects != 1 || calls != 3) return 5;
+  if (addressof((++effects, effects == 1 ? two : one))(2) != 3 || effects != 2 || calls != 4) return 6;
+  if (addressof(*selected()) != two || effects != 3 || calls != 4) return 7;
+  auto wrapped = std::ref(one);
+  if (addressof(wrapped.get())(2) != 3 || calls != 5) return 8;
+  if (addressof(std::as_const(one)) != one || addressof(std::move(two)) != two ||
+      addressof(std::forward<F &&>(one)) != one ||
+      addressof(std::move_if_noexcept(safe)) != safe) return 9;
+  if (addressof(static_cast<F &&>(one)) != one ||
+      addressof(static_cast<F &>(two)) != two ||
+      addressof(static_cast<F &&>(safe)) != safe) return 10;
+  if (std::exchange(p, addressof((p = two, ++effects, one))) != two ||
+      p != one || effects != 4 || calls != 5) return 11;
+  calls = 0;
+  if (!check(addressof(Temporary{}.function))) return 12;
+  if (constructed != 1 || destroyed != 1 || calls) return 13;
+  if (addressof(Temporary{}.function)(1) != 7 || destroyed != 1 || calls != 1) return 14;
+  if (constructed != 2 || destroyed != 2) return 15;
+  (void)addressof((++effects, Temporary{}.function));
+  if (constructed != 3 || destroyed != 3 || effects != 5 || calls != 1) return 16;
+  int value = 4;
+  P callback = one;
+  int *object_address = addressof(value);
+  P *callback_address = addressof(callback);
+  if (object_address != &value || callback_address != &callback) return 17;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-addressof" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressofRetainsSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"specialization", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&v)noexcept{return &v;}}}auto f(){return std::addressof(one);}
+)cpp", "TR0201"},
+      {"query-specialization", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&v)noexcept{return &v;}}}static_assert(__is_same(decltype(std::addressof(one)),F*));int main(){return 0;}
+)cpp", "TR0201"},
+      {"redeclaration", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}int one(int v){return v;}auto f(){return std::addressof(one);}
+)cpp", "TR0201"},
+      {"source-overload", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{F*addressof(F&v)noexcept{return &v;}}}auto f(){return std::addressof(one);}
+)cpp", "TR0201"},
+      {"indirect-adapter", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}auto f(){using A=F*(*)(F&)noexcept;A adapter=&std::addressof<F>;return adapter(one);}
+)cpp", "TR0201"},
+      {"casted-callee", R"cpp(#include <memory>
+using F=int(int);using A=F*(*)(F&);int one(int v){return v;}auto f(){return static_cast<A>(std::addressof<F>)(one);}
+)cpp", "TR0201"},
+      {"long-double-signature", R"cpp(#include <memory>
+long double one(long double v){return v;}auto f(){return std::addressof(one);}
+)cpp", "TR0201"},
+      {"variadic-signature", R"cpp(#include <memory>
+int one(int v,...){return v;}auto f(){return std::addressof(one);}
+)cpp", "TR0201"},
+      {"hidden-query-operand", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(std::addressof((sizeof(long double),one))),F*));int main(){return 0;}
+)cpp", "TR0201"},
+      {"hidden-exception-source", R"cpp(#include <memory>
+int one(int v)noexcept{return v;}static_assert(__is_same(decltype(std::addressof<int(int)noexcept(sizeof(long double)>0)>(one)),int(*)(int)noexcept));int main(){return 0;}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <memory>
+template<class>using F=int(int);int one(int v){return v;}auto f(){return std::addressof<F<long double>>(one);}
+)cpp", "TR0201"},
+      {"missing-target", R"cpp(#include <memory>
+int one(int);auto f(){return std::addressof(one);}
+)cpp", "TR0203"},
+      {"reference-storage", R"cpp(#include <memory>
+int one(int v){return v;}int main(){auto&ref=one;return std::addressof(ref)(0);}
+)cpp", "TR0201"},
+      {"reference-parameter", R"cpp(#include <memory>
+using F=int(int);F*address(F&ref){return std::addressof(ref);}
+)cpp", "TR0201"},
+      {"receiver-source", R"cpp(#include <memory>
+struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::addressof(T{}.call);}
+)cpp", "TR0201"},
+      {"move-specialization", R"cpp(#include <memory>
+#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&move<F&>(F&v)noexcept{return static_cast<F&&>(v);}}}auto f(){return std::addressof(std::move(one));}
+)cpp", "TR0201"},
+      {"explicit-lvalue-reference", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}auto f(){return std::addressof<F&>(one);}
+)cpp", "TR0202"},
+      {"explicit-rvalue-reference", R"cpp(#include <memory>
+using F=int(int);int one(int v){return v;}auto f(){return std::addressof<F&&>(one);}
+)cpp", "TR0202"},
+      {"deleted-object-rvalue", R"cpp(#include <memory>
+int main(){return *std::addressof(3);}
+)cpp", "TR0202"},
+      {"imported-primary-redeclaration", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}namespace Imported{using std::addressof;}int main(){return 0;}
+)cpp", "TR0201"},
+      {"imported-deleted-redeclaration", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<class T>T*addressof(const T&&)noexcept;}}namespace Imported{using std::addressof;}int main(){return 0;}
+)cpp", "TR0201"},
+      {"imported-query-specialization", R"cpp(#include <memory>
+namespace Imported{using std::addressof;}using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&v)noexcept{return &v;}}}static_assert(__is_same(decltype(Imported::addressof(one)),F*));int main(){return 0;}
+)cpp", "TR0201"},
+      {"imported-indirect-adapter", R"cpp(#include <memory>
+namespace Imported{using std::addressof;}using F=int(int);int one(int v){return v;}auto f(){using A=F*(*)(F&)noexcept;A adapter=&Imported::addressof<F>;return adapter(one);}
+)cpp", "TR0201"},
+      {"imported-deleted-rvalue", R"cpp(#include <memory>
+namespace Imported{using std::addressof;}int main(){return *Imported::addressof(3);}
+)cpp", "TR0202"},
+      {"object-query-remains-separate", R"cpp(#include <memory>
+int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));return v;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-addressof-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-addressof-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAddressOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("memory-address.cpp");
   const auto Output = tmpFile("memory-address.nc");

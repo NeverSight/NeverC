@@ -23821,7 +23821,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Result = Function->getReturnType();
     if (Prototype && Prototype->isNothrow() &&
         Parameter->isLValueReferenceType() &&
-        utilityObjectPointer(Context, Result) &&
+        (utilityObjectPointer(Context, Result) ||
+         Result->isFunctionPointerType()) &&
         Same(Call->getType(), Result) &&
         Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
         Same(Parameter->getPointeeType(), Result->getPointeeType()))

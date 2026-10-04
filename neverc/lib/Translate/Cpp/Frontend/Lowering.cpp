@@ -4025,6 +4025,10 @@ class FunctionLowering {
       lvalue(Call->getArg(1));
       return boolean(Operation == UtilityOperation::MemoryAllocatorEqual, L);
     case UtilityOperation::MemoryAddressof:
+      if (Call->getArg(0)->getType()->isFunctionType())
+        return snapshot(cast(functionValue(Call->getArg(0)),
+                             type(Call->getType(), L), L), L);
+      [[fallthrough]];
     case UtilityOperation::MemoryPointerTo:
       // Both operations bypass an overloaded operator& and return the address
       // of the already-bound object. Keep the argument as a storage designator

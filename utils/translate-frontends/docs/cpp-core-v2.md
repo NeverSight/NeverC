@@ -297,9 +297,9 @@ callees and hidden unsupported source remain rejected.
 
 Resolved namespace and nondependent block using-declarations may import the
 pinned `std::move`, `std::forward`, `std::as_const`, `std::move_if_noexcept`,
-`std::swap`, `std::exchange`, `std::make_pair`, `std::get`, `std::ref` and
-`std::cref` names, including repeated/comma imports and source-owned namespace
-reexports.
+`std::swap`, `std::exchange`, `std::make_pair`, `std::get`, `std::ref`,
+`std::cref`, and `std::addressof` names, including repeated/comma imports and
+source-owned namespace reexports.
 These names retain Clang's selected overload, reference category and cv
 qualification; they create no wrapper or extra move. Each actual call still
 requires its existing operation descriptor and source proof. When `<algorithm>`
@@ -311,6 +311,9 @@ library function names are not admitted by this lookup exception. The
 deleted `as_const` rvalue overload retains its lookup metadata; unused overload
 signatures and bodies are not instantiated or emitted by the import proof.
 `exchange` imports pin every primary/redeclaration to `__utility/exchange.h`.
+`addressof` imports pin every primary/redeclaration to `__memory/addressof.h`,
+including the deleted rvalue overload as lookup metadata. Actual object and
+function calls still require their respective address-operation proof.
 `swap` imports retain the pinned SDK overload set from all admitted headers,
 including its generic/native-array, pair, `std::array` and `unique_ptr`
 overloads. Each selected swap still needs its existing scalar, element,
@@ -3537,6 +3540,26 @@ top-level pointee `const`, accept scalar, pointer, array and source-record
 objects, evaluate the bound argument once, and bypass an overloaded
 `operator&`. Their result is an ordinary checked raw object pointer; they do not
 call libc++ at runtime.
+
+`std::addressof` also accepts an admitted ordinary function lvalue and returns
+its function pointer, preserving the signature and `noexcept`. This follows
+the C++17 [address-of operation](https://timsong-cpp.github.io/cppwp/n4659/specialized.addressof).
+Direct named functions, static members, checked reference casts, comma and
+conditional expressions, dereferenced callbacks, `reference_wrapper::get()`
+and the supported `move`, `forward`, `as_const` and `move_if_noexcept`
+function adapters use the existing function-value lowering. The operand is
+evaluated once, including static-member receiver effects and full-expression
+temporary cleanup; taking the address does not call the target function.
+Exact SDK name imports and explicit function template arguments retain the
+same proof. Function-pointer objects still use ordinary object addressing.
+
+Function `addressof` calls also retain their exact builtin/signature proof in
+unevaluated `decltype` and `noexcept` queries without instantiating a body.
+Original written types, exception expressions and operands remain checked.
+Source overloads, redeclarations or specializations, indirect adapter calls,
+unsupported function signatures, and missing runtime targets remain rejected.
+This does not add function-reference storage or function `pointer_to` support.
+Object `addressof` queries retain their separate source requirements.
 
 The exact C++17 `std::destroy_at`, `std::destroy` and `std::destroy_n`
 templates also lower for raw pointers to admitted scalar objects and complete

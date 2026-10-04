@@ -4539,6 +4539,33 @@ static bool utilityRecordConditionalMoveSource(
                /*Owner=*/nullptr, RootConstObject);
 }
 
+static bool utilityFunctionAddressofSource(Adapter &A, const CallExpr *Call) {
+  if (!Call || !Call->getType()->isFunctionPointerType() ||
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
+          UtilityOperation::MemoryAddressof)
+    return false;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Builtin = Function->getAttr<BuiltinAttr>();
+  // The exact library builtin supplies a pointer to the unchanged function.
+  // It need not instantiate a body for a query; original signature, operand
+  // and lifetime sources still close independently, without Sema synthesis.
+  return Builtin && Builtin->isImplicit() &&
+         Builtin->getID() == Builtin::BIaddressof &&
+         Function->getBuiltinID() == Builtin::BIaddressof &&
+         Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !Prototype->getNoexceptExpr() &&
+         operationCalleePrototype(Call) == Prototype &&
+         !Function->getParamDecl(0)->hasDefaultArg() && Arguments &&
+         Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         A.Context.hasSameType(Arguments->get(0).getAsType(),
+                              Call->getArg(0)->getType()) &&
+         utilitySDKFunctionSource(A, Function, "__memory/addressof.h",
+                                  /*RequireDefinition=*/false);
+}
+
 static bool utilityValueAdapterSource(
     Adapter &A, const CallExpr *Call,
     std::vector<const CXXMethodDecl *> *ConditionalSignatures = nullptr) {
@@ -7603,6 +7630,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullComparisonSource(A, Call) ||
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
+        utilityFunctionAddressofSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -12211,6 +12239,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return false;
       if (Name->getName() == "as_const")
         ExpectedPath = "__utility/as_const.h";
+      else if (Name->getName() == "addressof")
+        ExpectedPath = "__memory/addressof.h";
       else if (Name->getName() == "move_if_noexcept")
         ExpectedPath = "__utility/move.h";
       else if (Name->getName() == "exchange")
@@ -12266,8 +12296,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     // Import the pinned overload set for lookup only. Unused dependent SDK
     // signatures and bodies are not instantiated or admitted by this proof.
-    // Deleted as_const/ref/cref overloads remain lookup metadata, not callable
-    // sources; every actual reference still needs its source descriptor.
+    // Deleted as_const/addressof/ref/cref overloads remain lookup metadata, not
+    // callable sources; each actual reference still needs its source descriptor.
     return true;
   }
   void usingTarget(const UsingShadowDecl *D) {
@@ -13345,6 +13375,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             utilityUniquePtrNullComparisonSource(A, Call) ||
             utilityUniquePtrNullOrderingSource(A, Call) ||
             utilityUniquePtrOwnerComparisonSource(A, Call) ||
+            utilityFunctionAddressofSource(A, Call) ||
             ValueAdapter || utilityArrayExchangeSource(A, Call) ||
             functionalReferenceFactorySource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
@@ -20206,6 +20237,11 @@ public:
             U && U->getOpcode() == UO_AddrOf &&
             U->getSubExpr()->getType()->isFunctionType())
           FunctionValueDesignators.insert(U->getSubExpr());
+        if (const auto *Call = dyn_cast<CallExpr>(E);
+            Call && Call->getType()->isFunctionPointerType() &&
+            approvedUtilityOperation(A.S, A.Sources, Call, A.Context) ==
+                UtilityOperation::MemoryAddressof)
+          FunctionValueDesignators.insert(Call->getArg(0));
         if (FunctionValueDesignators.count(E)) {
           if (const auto *P = dyn_cast<ParenExpr>(E))
             FunctionValueDesignators.insert(P->getSubExpr());
