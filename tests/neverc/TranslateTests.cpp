@@ -37376,6 +37376,348 @@ int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayElementQueriesRunAtBothOptimizations) {
+  const auto QuerySource = tmpFile("array-element-queries-query.cpp");
+  const auto QueryOutput = tmpFile("array-element-queries-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+using Row = array<int, 3>;
+struct Element { int value; int extent[2]; };
+using Callback = int (*)(int) noexcept;
+void query_only(Row& row, const Row& constant, array<const int, 2>& qualified,
+                array<Row, 2>& grid, const array<Row, 2>& constant_grid,
+                array<Element, 2>& records, const array<Element, 2>& constant_records,
+                array<Callback, 2>& callbacks, const array<Callback, 2>& constant_callbacks,
+                Row::size_type index) {
+  static_assert(noexcept(row.front()));
+  static_assert(__is_same(decltype(row.front()), int&));
+  static_assert(noexcept(row.back()));
+  static_assert(__is_same(decltype(row.back()), int&));
+  static_assert(noexcept(row[index]));
+  static_assert(__is_same(decltype(row[index]), int&));
+  static_assert(noexcept(row.operator[](index)));
+  static_assert(__is_same(decltype(row.operator[](index)), int&));
+  static_assert(noexcept(constant.front()));
+  static_assert(__is_same(decltype(constant.front()), const int&));
+  static_assert(noexcept(constant.back()));
+  static_assert(__is_same(decltype(constant.back()), const int&));
+  static_assert(noexcept(constant[index]));
+  static_assert(__is_same(decltype(constant[index]), const int&));
+  static_assert(noexcept(constant.operator[](index)));
+  static_assert(__is_same(decltype(constant.operator[](index)), const int&));
+  static_assert(noexcept(qualified.front()));
+  static_assert(__is_same(decltype(qualified.front()), const int&));
+  static_assert(noexcept(qualified.back()));
+  static_assert(__is_same(decltype(qualified.back()), const int&));
+  static_assert(noexcept(qualified[index]));
+  static_assert(__is_same(decltype(qualified[index]), const int&));
+  static_assert(noexcept(qualified.operator[](index)));
+  static_assert(__is_same(decltype(qualified.operator[](index)), const int&));
+  static_assert(noexcept(grid.front()));
+  static_assert(__is_same(decltype(grid.front()), Row&));
+  static_assert(noexcept(grid.back()));
+  static_assert(__is_same(decltype(grid.back()), Row&));
+  static_assert(noexcept(grid[index]));
+  static_assert(__is_same(decltype(grid[index]), Row&));
+  static_assert(noexcept(grid.operator[](index)));
+  static_assert(__is_same(decltype(grid.operator[](index)), Row&));
+  static_assert(noexcept(constant_grid.front()));
+  static_assert(__is_same(decltype(constant_grid.front()), const Row&));
+  static_assert(noexcept(constant_grid.back()));
+  static_assert(__is_same(decltype(constant_grid.back()), const Row&));
+  static_assert(noexcept(constant_grid[index]));
+  static_assert(__is_same(decltype(constant_grid[index]), const Row&));
+  static_assert(noexcept(constant_grid.operator[](index)));
+  static_assert(__is_same(decltype(constant_grid.operator[](index)), const Row&));
+  static_assert(noexcept(records.front()));
+  static_assert(__is_same(decltype(records.front()), Element&));
+  static_assert(noexcept(records.back()));
+  static_assert(__is_same(decltype(records.back()), Element&));
+  static_assert(noexcept(records[index]));
+  static_assert(__is_same(decltype(records[index]), Element&));
+  static_assert(noexcept(records.operator[](index)));
+  static_assert(__is_same(decltype(records.operator[](index)), Element&));
+  static_assert(noexcept(constant_records.front()));
+  static_assert(__is_same(decltype(constant_records.front()), const Element&));
+  static_assert(noexcept(constant_records.back()));
+  static_assert(__is_same(decltype(constant_records.back()), const Element&));
+  static_assert(noexcept(constant_records[index]));
+  static_assert(__is_same(decltype(constant_records[index]), const Element&));
+  static_assert(noexcept(constant_records.operator[](index)));
+  static_assert(__is_same(decltype(constant_records.operator[](index)), const Element&));
+  static_assert(noexcept(callbacks.front()));
+  static_assert(__is_same(decltype(callbacks.front()), Callback&));
+  static_assert(noexcept(callbacks.back()));
+  static_assert(__is_same(decltype(callbacks.back()), Callback&));
+  static_assert(noexcept(callbacks[index]));
+  static_assert(__is_same(decltype(callbacks[index]), Callback&));
+  static_assert(noexcept(callbacks.operator[](index)));
+  static_assert(__is_same(decltype(callbacks.operator[](index)), Callback&));
+  static_assert(noexcept(constant_callbacks.front()));
+  static_assert(__is_same(decltype(constant_callbacks.front()), const Callback&));
+  static_assert(noexcept(constant_callbacks.back()));
+  static_assert(__is_same(decltype(constant_callbacks.back()), const Callback&));
+  static_assert(noexcept(constant_callbacks[index]));
+  static_assert(__is_same(decltype(constant_callbacks[index]), const Callback&));
+  static_assert(noexcept(constant_callbacks.operator[](index)));
+  static_assert(__is_same(decltype(constant_callbacks.operator[](index)), const Callback&));
+  static_assert(noexcept((row.front)()));
+  static_assert(noexcept((constant.back)()));
+  static_assert(noexcept((row.operator[])(index)));
+  static_assert(__is_same(decltype(std::move(row).front()), int&));
+  static_assert(__is_same(decltype(std::move(constant).back()), const int&));
+  static_assert(__is_same(decltype(std::as_const(row)[index]), const int&));
+  static_assert(__is_same(decltype(std::forward<Row>(row).operator[](index)), int&));
+  static_assert(sizeof(row.front()) == sizeof(int));
+  static_assert(sizeof(records[index]) == sizeof(Element));
+  static_assert(alignof(decltype(grid.back())) == alignof(Row));
+  static_assert(noexcept(grid.front().back()));
+  static_assert(__is_same(decltype(constant_grid[0][1]), const int&));
+}
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+
+  // Preserve the former capacity-query rejection as an accepted control.
+  const auto FormerSource = tmpFile("array-element-queries-former-front.cpp");
+  const auto FormerOutput = tmpFile("array-element-queries-former-front.nc");
+  writeFile(FormerSource, R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept(a.front()));}
+)cpp");
+  auto FormerResult = translate(
+      FormerSource, {"--profile", "cpp-core-v2", "-o", FormerOutput.string()});
+  ASSERT_EQ(FormerResult.exitCode, 0) << FormerResult.out << FormerResult.err;
+
+  const auto Source = tmpFile("array-element-queries.cpp");
+  const auto Output = tmpFile("array-element-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+namespace Imported { using std::array; }
+namespace Again { using Imported::array; }
+using Row = Again::array<int, 2>;
+int receivers, indices, defaults, live, destroyed;
+Row& source(Row& row, int n = (++defaults, 1)) noexcept {
+  ++receivers; return row;
+}
+Row& may_throw(Row& row) { ++receivers; return row; }
+Row::size_type position(int n = (++defaults, 1)) noexcept {
+  ++indices; return n;
+}
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept { --live; ++destroyed; }
+};
+Row& keep(Row& row, const Guard& guard = Guard()) noexcept {
+  receivers += live == 1 ? 1 : 100; return row;
+}
+struct Index {
+  operator Row::size_type() const noexcept { ++indices; return 1; }
+};
+struct Element {
+  int value;
+  Element(int n) noexcept : value(n) { ++live; }
+  ~Element() noexcept { --live; ++destroyed; }
+};
+int increment(int n) noexcept { return n + 1; }
+int main() {
+  Row row{{3, 5}};
+  const Row constant{{7, 11}};
+  Again::array<const int, 2> qualified{{13, 17}};
+  Again::array<unsigned, 3> lazy{{1, 2, 3}};
+  static_assert(noexcept(lazy.front()) && noexcept(lazy.back()));
+  static_assert(noexcept(lazy[position()]) && noexcept(lazy.operator[](Index{})));
+  static_assert(noexcept(source(row).front()));
+  static_assert(!noexcept(may_throw(row).back()));
+  static_assert(noexcept(keep(row)[position()]));
+  static_assert(__is_same(decltype((source(row).operator[])(position())), int&));
+  static_assert(sizeof(keep(row).back()) == sizeof(int));
+  static_assert(__is_same(decltype(Again::array<int, 3>{{++receivers}}.front()), int&));
+  static_assert(__is_same(decltype(Again::array<Element, 2>{{3, 5}}[position()]), Element&));
+  static_assert(Again::array<int, 2>{{2, 3}}.front() == 2);
+  static_assert(Again::array<int, 2>{{2, 3}}.back() == 3);
+  static_assert(Again::array<int, 2>{{2, 3}}[1] == 3);
+  if (receivers || indices || defaults || live || destroyed) return 1;
+  int& first = source(row).front();
+  int& last = source(row).back();
+  if (&first != &row[0] || &last != &row[1] || receivers != 2 || defaults != 2) return 2;
+  first = 19; last = 23;
+  source(row)[position()] += 2;
+  (source(row).operator[])(position(0)) += 3;
+  source(row).operator[](Index{}) += 4;
+  if (row[0] != 22 || row[1] != 29 || receivers != 5 || indices != 3 || defaults != 6) return 3;
+  if (constant.front() != 7 || constant.back() != 11 || constant[1] != 11 ||
+      constant.operator[](0) != 7 || qualified.front() != 13 || qualified.back() != 17 ||
+      qualified[1] != 17 || qualified.operator[](0) != 13) return 4;
+  int value = keep(row).front();
+  value += keep(row).back();
+  value += keep(row)[position()];
+  if (value != 80 || receivers != 8 || indices != 4 || defaults != 7 || live || destroyed != 3) return 5;
+  std::move(row).front() = 31;
+  std::forward<Row>(row).operator[](1) = 37;
+  if (std::as_const(row).back() != 37 || row[0] != 31) return 6;
+  Again::array<Row, 2> grid{{row, constant}};
+  grid.front().back() = 41;
+  grid[1].operator[](0) = 43;
+  if (grid[0][1] != 41 || grid.back().front() != 43) return 7;
+  value = Again::array<Element, 2>{{47, 53}}.back().value;
+  if (value != 53 || live || destroyed != 5) return 8;
+  value = Again::array<Element, 2>{{59, 61}}[position(0)].value;
+  if (value != 59 || live || destroyed != 7 || indices != 5) return 9;
+  using Callback = int (*)(int) noexcept;
+  Again::array<Callback, 2> callbacks{{increment, increment}};
+  const auto& readonly = callbacks;
+  auto& callback = callbacks.front();
+  callback = readonly.back();
+  return callbacks.operator[](0)(67) == 68 && readonly[1](71) == 72 ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-element-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayElementQueriesRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"element-front", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<long double,2>&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0201"},
+      {"erased-element-back", R"cpp(#include <array>
+using Row=std::array<int,2>;
+template<class>using Erased=int;void f(std::array<Erased<long double>,2>&a){static_assert(noexcept(a.back()));}
+)cpp", "TR0201"},
+      {"extent-subscript", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),2)>&a){static_assert(noexcept(a[0]));}
+)cpp", "TR0201"},
+      {"receiver-expression-front", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept((sizeof(long double),a).front()));}
+)cpp", "TR0201"},
+      {"element-field-source-back", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value[(sizeof(long double),1)];};void f(std::array<E,2>&a){static_assert(noexcept(a.back()));}
+)cpp", "TR0201"},
+      {"index-expression", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept(a[(sizeof(long double),0)]));}
+)cpp", "TR0201"},
+      {"index-decltype", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){using T=decltype(a.operator[]((sizeof(long double),0)));}
+)cpp", "TR0201"},
+      {"index-default", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row::size_type index(int n=(sizeof(long double),0))noexcept{return 0;}void f(Row&a){static_assert(noexcept(a[index()]));}
+)cpp", "TR0201"},
+      {"index-body", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row::size_type index()noexcept{(void)sizeof(long double);return 0;}void f(Row&a){static_assert(noexcept(a[index()]));}
+)cpp", "TR0201"},
+      {"index-conversion", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct I{operator Row::size_type()const noexcept{(void)sizeof(long double);return 0;}};void f(Row&a){static_assert(noexcept(a[I{}]));}
+)cpp", "TR0201"},
+      {"temporary-initializer", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(){static_assert(noexcept(Row{{(sizeof(long double),1),2}}.front()));}
+)cpp", "TR0201"},
+      {"receiver-default", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){static_assert(noexcept(source(a).back()));}
+)cpp", "TR0201"},
+      {"receiver-body", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a)[0]));}
+)cpp", "TR0201"},
+      {"receiver-declaration", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).front()));}
+)cpp", "TR0203"},
+      {"index-declaration", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row::size_type index()noexcept;void f(Row&a){static_assert(noexcept(a[index()]));}
+)cpp", "TR0203"},
+      {"receiver-exception", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept(sizeof(long double)>0){return a;}void f(Row&a){static_assert(noexcept(source(a).back()));}
+)cpp", "TR0201"},
+      {"temporary-destructor", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct Guard{~Guard()noexcept{(void)sizeof(long double);}};Row&keep(Row&a,const Guard&)noexcept{return a;}void f(Row&a){static_assert(noexcept(keep(a,Guard{})[0]));}
+)cpp", "TR0201"},
+      {"front-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::reference array<int,2>::front()noexcept{return __elems_[1];}}}void f(Row&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0201"},
+      {"back-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::const_reference array<int,2>::back()const noexcept{return __elems_[0];}}}int f(const Row&a){return a.back();}
+)cpp", "TR0201"},
+      {"subscript-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::reference array<int,2>::operator[](size_type n)noexcept{return __elems_[1-n];}}}void f(Row&a){static_assert(noexcept(a[0]));}
+)cpp", "TR0201"},
+      {"forwarded-subscript-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::reference array<int,2>::operator[](size_type n)noexcept{return __elems_[1-n];}}}int f(Row&a){return a.front()+a.back();}
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>struct array<unsigned,2>{unsigned values[2];constexpr unsigned& front()noexcept{return values[0];}};}}void f(std::array<unsigned,2>&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0201"},
+      {"member-address", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int f(Row&a){auto n=a.front();using Method=int&(Row::*)()noexcept;Method method=&Row::front;return n+(a.*method)();}
+)cpp", "TR0201"},
+      {"empty-front", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,0>&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0203"},
+      {"empty-back", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(const std::array<int,0>&a){static_assert(noexcept(a.back()));}
+)cpp", "TR0203"},
+      {"empty-subscript", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,0>&a){static_assert(noexcept(a[0]));}
+)cpp", "TR0203"},
+      {"query-only-at", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(!noexcept(a.at(0)));}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("array-element-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("array-element-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayCapacityQueriesRunAtBothOptimizations) {
   const auto QuerySource = tmpFile("array-capacity-queries-query.cpp");
   const auto QueryOutput = tmpFile("array-capacity-queries-query.nc");
@@ -37616,10 +37958,6 @@ namespace std{inline namespace __1{template<>struct array<unsigned,2>{constexpr 
 using Row=std::array<int,2>;
 Row::size_type f(Row&a){auto n=a.size();using Method=Row::size_type(Row::*)()const noexcept;Method method=&Row::size;return n+(a.*method)();}
 )cpp", "TR0201"},
-      {"query-only-front-stays-separate", R"cpp(#include <array>
-using Row=std::array<int,2>;
-void f(Row&a){static_assert(noexcept(a.front()));}
-)cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

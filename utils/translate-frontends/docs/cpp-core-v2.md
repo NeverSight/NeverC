@@ -2470,6 +2470,23 @@ still evaluate their receiver once and complete temporary cleanup, even though
 their result depends only on the array extent. Source replacements and
 independent method addresses remain rejected.
 
+Nonempty arrays also admit `front()`, `back()` and `operator[]` in `noexcept`,
+`decltype` and size/alignment queries without instantiating their SDK bodies.
+Both bracket syntax and direct explicit member calls, including parenthesized
+member names, use the same proof. The pinned constexpr, fixed-noexcept
+signature returns exactly `T&` or `const T&` for the selected receiver and
+element qualifications; even an rvalue array returns an lvalue reference.
+This includes admitted record, nested-array and function-pointer elements.
+An instantiated subscript body must read the exact size-type parameter from
+the verified array field. Instantiated `front/back` bodies must forward
+`*this` to that pinned subscript with index zero or the exact extent minus one.
+User replacements of either the accessor or its selected subscript are rejected.
+Receiver and index expressions, conversions, defaults and temporary lifetimes
+retain their original source checks. Queries produce no effects; evaluated
+calls preserve reference identity, evaluate the receiver and index once, and
+complete temporary cleanup. Empty-array element access, independent method
+addresses and the separate query/runtime restrictions on `at()` remain unchanged.
+
 Authenticated array objects also qualify as referents in the checked utility
 and functional operations. Direct reference or mixed-reference tuple and pair
 construction, `tie`, `forward_as_tuple`, and `make_tuple`/`make_pair` unwrapping of

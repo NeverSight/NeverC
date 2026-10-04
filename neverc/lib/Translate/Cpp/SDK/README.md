@@ -119,6 +119,15 @@ literal zero/true; queries never instantiate a body or substitute arbitrary
 constant evaluation for source proof. Receiver types, extents, defaults and
 lifetimes remain checked, and evaluated capacity calls retain receiver effects
 and temporary cleanup through the existing lowering.
+Nonempty array `front/back/operator[]` queries likewise use exact pinned
+constexpr fixed-noexcept signatures and const-correct lvalue-reference results,
+including explicit/parenthesized subscript member calls. Instantiated bodies
+must access the verified field through the exact size-type parameter, or
+forward `*this` to that pinned subscript at zero or extent minus one.
+Receiver and index sources, conversions, defaults and temporary cleanup remain
+checked; evaluated accesses preserve single evaluation and reference identity.
+Empty-array element access, method addresses and `at` retain their separate
+boundaries.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

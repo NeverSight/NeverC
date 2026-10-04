@@ -4576,12 +4576,15 @@ static bool utilityArrayAccessorSource(Adapter &A, const CallExpr *Call) {
                      *Operation != UtilityOperation::ArrayREnd &&
                      *Operation != UtilityOperation::ArraySize &&
                      *Operation != UtilityOperation::ArrayMaxSize &&
-                     *Operation != UtilityOperation::ArrayEmpty))
+                     *Operation != UtilityOperation::ArrayEmpty &&
+                     *Operation != UtilityOperation::ArrayFront &&
+                     *Operation != UtilityOperation::ArrayBack &&
+                     *Operation != UtilityOperation::ArraySubscript))
     return false;
   const auto *Function = Call->getDirectCallee();
   // Only the exact direct member call consumes this SDK signature. The
-  // receiver's written types, expression, defaults and lifetimes remain source
-  // dependencies; an independent method address gains no such proof.
+  // receiver and index's written types, expressions, defaults and lifetimes
+  // remain source dependencies; an independent method address gains no proof.
   return operationCalleePrototype(Call) ==
              Function->getType()->getAs<FunctionProtoType>() &&
          utilitySDKFunctionSource(A, Function, "array",

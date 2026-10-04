@@ -18216,7 +18216,8 @@ class FunctionLowering {
       auto Base = lvalue(Object);
       Expression Position;
       if (Operation == UtilityOperation::ArraySubscript)
-        Position = expression(Call->getArg(1));
+        Position = expression(
+            Call->getArg(isa<CXXOperatorCallExpr>(Call) ? 1 : 0));
       else if (Operation == UtilityOperation::ArrayAt)
         Position = expression(Call->getArg(0));
       else

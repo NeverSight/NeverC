@@ -20850,9 +20850,13 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
 static bool utilityArrayAccessorSignature(const State &S,
                                           const SourceManager &SM,
                                           const CXXMethodDecl *Method,
-                                          const UtilityArrayRecord &Array) {
-  if (!Method || !Method->getIdentifier() || Method->isStatic() ||
-      Method->isVariadic() || Method->getNumParams() ||
+                                          const UtilityArrayRecord &Array,
+                                          unsigned Parameters = 0) {
+  if (!Method ||
+      (!Method->getIdentifier() &&
+       Method->getOverloadedOperator() != OO_Subscript) ||
+      Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != Parameters ||
       Method->getParent()->getCanonicalDecl() !=
           Array.Record->getCanonicalDecl())
     return false;
@@ -20877,6 +20881,106 @@ static bool utilityArrayAccessorSignature(const State &S,
   const auto *Pattern =
       Method->getTemplateInstantiationPattern(/*ForDefinition=*/true);
   return Pinned(Method) && Pinned(Pattern) && Pattern->hasBody();
+}
+
+static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
+                                    const CXXMethodDecl *Method,
+                                    const UtilityArrayRecord &Array,
+                                    const ASTContext &Context) {
+  const bool Subscript =
+      Method && Method->getOverloadedOperator() == OO_Subscript;
+  if (!Array.Size ||
+      !utilityArrayAccessorSignature(S, SM, Method, Array, Subscript ? 1 : 0) ||
+      !Method->isConstexpr())
+    return false;
+  const auto Name = Method->getIdentifier() ? Method->getIdentifier()->getName()
+                                          : llvm::StringRef();
+  const auto Element =
+      Method->isConst() ? Array.ElementType.withConst() : Array.ElementType;
+  const auto SizeType = Context.getSizeType();
+  if ((!Subscript && Name != "front" && Name != "back") ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Context.getLValueReferenceType(Element)) ||
+      (Subscript &&
+       (!Context.hasSameType(Method->getParamDecl(0)->getType(), SizeType) ||
+        Method->getParamDecl(0)->hasDefaultArg())))
+    return false;
+  // The pinned signature suffices for an unevaluated reference result. When
+  // a body exists, prove the actual storage access and forwarding index too.
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != (Subscript ? 2u : 1u))
+    return false;
+  auto Statement = Body->body_begin();
+  if (Subscript) {
+    const auto *Noop = dyn_cast<Expr>(*Statement++);
+    const auto *Cast =
+        Noop ? dyn_cast<CStyleCastExpr>(Noop->IgnoreParens()) : nullptr;
+    const auto *Zero =
+        Cast ? dyn_cast<IntegerLiteral>(Cast->getSubExpr()) : nullptr;
+    if (!Cast || Cast->getCastKind() != CK_ToVoid || !Zero ||
+        Zero->getValue() != 0 ||
+        !Context.hasSameType(Zero->getType(), Context.IntTy))
+      return false;
+  }
+  const auto *Result = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Returned = Result ? Result->getRetValue() : nullptr;
+  if (!Returned || !Returned->isLValue() ||
+      !Context.hasSameType(Returned->getType(), Element))
+    return false;
+  if (Subscript) {
+    const auto *Access = dyn_cast<ArraySubscriptExpr>(Returned);
+    const auto *Decay =
+        Access ? dyn_cast<ImplicitCastExpr>(Access->getBase()) : nullptr;
+    const auto *Storage =
+        Decay ? dyn_cast<MemberExpr>(Decay->getSubExpr()) : nullptr;
+    const auto *Read =
+        Access ? dyn_cast<ImplicitCastExpr>(Access->getIdx()) : nullptr;
+    const auto *Parameter =
+        Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
+    return Decay && Decay->getCastKind() == CK_ArrayToPointerDecay && Storage &&
+           Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
+           isa<CXXThisExpr>(Storage->getBase()) && Read &&
+           Read->getCastKind() == CK_LValueToRValue && Parameter &&
+           Parameter->getDecl() == Method->getParamDecl(0);
+  }
+  const auto *Delegate = dyn_cast<CXXOperatorCallExpr>(Returned);
+  const auto *Target = Delegate
+                           ? dyn_cast_or_null<CXXMethodDecl>(
+                                 Delegate->getDirectCallee())
+                           : nullptr;
+  if (!Delegate || Delegate->getOperator() != OO_Subscript ||
+      Delegate->getNumArgs() != 2 || !directMethodReference(Delegate) ||
+      !Target || Target->isConst() != Method->isConst() ||
+      !utilityArrayElementBody(S, SM, Target, Array, Context))
+    return false;
+  const auto *Object =
+      dyn_cast<UnaryOperator>(Delegate->getArg(0)->IgnoreParens());
+  if (!Object || Object->getOpcode() != UO_Deref ||
+      !isa<CXXThisExpr>(Object->getSubExpr()))
+    return false;
+  auto Literal = [&](const Expr *Expression, unsigned Value) {
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression);
+    const auto *Integer =
+        Cast ? dyn_cast<IntegerLiteral>(Cast->getSubExpr()) : nullptr;
+    return Cast && Cast->getCastKind() == CK_IntegralCast && Integer &&
+           Integer->getValue() == Value &&
+           Context.hasSameType(Cast->getType(), SizeType) &&
+           Context.hasSameType(Integer->getType(), Context.IntTy);
+  };
+  const auto *Index = Delegate->getArg(1);
+  if (Name == "front")
+    return Literal(Index, 0);
+  const auto *Last = dyn_cast<BinaryOperator>(Index);
+  const auto *Extent =
+      Last ? dyn_cast<SubstNonTypeTemplateParmExpr>(Last->getLHS()) : nullptr;
+  const auto *Size =
+      Extent ? dyn_cast<IntegerLiteral>(Extent->getReplacement()) : nullptr;
+  return Last && Last->getOpcode() == BO_Sub && Size &&
+         Size->getValue() == Array.Size &&
+         Context.hasSameType(Extent->getType(), SizeType) &&
+         Literal(Last->getRHS(), 1);
 }
 
 static bool utilityArrayCapacityBody(const State &S, const SourceManager &SM,
@@ -23427,6 +23531,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                Name == "crbegin" || Name == "crend";
     const bool CapacityMember = Name == "size" || Name == "max_size" ||
                                 Name == "empty";
+    const bool SubscriptMember = Method->getOverloadedOperator() == OO_Subscript;
+    const bool ElementMember =
+        SubscriptMember || Name == "front" || Name == "back";
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23436,7 +23543,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
         !S.owns(SM, Reference->getExprLoc()) ||
         (!Method->hasBody() && !PointerMember && !ReverseMember &&
-         !CapacityMember))
+         !CapacityMember && !ElementMember))
       return std::nullopt;
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
       if (CapacityMember && Call->isPRValue() &&
@@ -23461,15 +23568,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                    ? UtilityOperation::ArrayREnd
                    : UtilityOperation::ArrayRBegin;
       if (Array->Size && (Name == "front" || Name == "back") &&
-          ReferenceResult())
+          ReferenceResult() &&
+          utilityArrayElementBody(S, SM, Method, *Array, Context))
         return Name == "front" ? UtilityOperation::ArrayFront
                                : UtilityOperation::ArrayBack;
     }
-    if (Array->Size && Operator && Operator->getOperator() == OO_Subscript &&
-        Method->getNumParams() == 1 && Call->getNumArgs() == 2 &&
-        Method->getParamDecl(0)->getType()->isIntegralType(Context) &&
-        Call->getArg(1)->getType()->isIntegralType(Context) &&
-        ReferenceResult())
+    if (Array->Size && SubscriptMember && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 + Offset &&
+        Same(Call->getArg(Offset)->getType(), Context.getSizeType()) &&
+        ReferenceResult() &&
+        utilityArrayElementBody(S, SM, Method, *Array, Context))
       return UtilityOperation::ArraySubscript;
     if (!Operator && Name == "at" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 &&
