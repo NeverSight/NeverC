@@ -14102,6 +14102,51 @@ static bool utilityNoexceptCallbackPointer(QualType Pointer, QualType Source,
                                          Context);
 }
 
+static bool utilityArrayPointerQualification(QualType Destination,
+                                             QualType Source,
+                                             const ASTContext &Context) {
+  if (Destination.isNull() || Source.isNull() ||
+      !Destination->isPointerType() || !Source->isPointerType())
+    return false;
+  Destination = Destination->getPointeeType();
+  Source = Source->getPointeeType();
+  const auto ConstOnly = [&](QualType Type) {
+    return !Type.hasQualifiers() ||
+           Context.hasSameType(Type, Type.getUnqualifiedType().withConst());
+  };
+  // C++17 qualification conversion preserves each pointer/array component.
+  // A deeper const addition requires const on every preceding destination
+  // component after the outer pointer; array qualifiers follow their elements.
+  bool ConstPrefix = true;
+  for (unsigned Depth = 0; Depth != 64; ++Depth) {
+    if (!ConstOnly(Destination) || !ConstOnly(Source))
+      return false;
+    const bool DestinationConst = Destination.isConstQualified();
+    const bool SourceConst = Source.isConstQualified();
+    if ((SourceConst && !DestinationConst) ||
+        (DestinationConst && !SourceConst && !ConstPrefix))
+      return false;
+    if (Context.hasSameUnqualifiedType(Destination, Source))
+      return true;
+    ConstPrefix &= DestinationConst;
+    const auto *DestinationPointer = Destination->getAs<PointerType>();
+    const auto *SourcePointer = Source->getAs<PointerType>();
+    if (DestinationPointer && SourcePointer) {
+      Destination = DestinationPointer->getPointeeType();
+      Source = SourcePointer->getPointeeType();
+      continue;
+    }
+    const auto *DestinationArray = Context.getAsConstantArrayType(Destination);
+    const auto *SourceArray = Context.getAsConstantArrayType(Source);
+    if (!DestinationArray || !SourceArray ||
+        DestinationArray->getSize() != SourceArray->getSize())
+      return false;
+    Destination = DestinationArray->getElementType();
+    Source = SourceArray->getElementType();
+  }
+  return false;
+}
+
 // The pinned exchange body selects move and forward independently; prove both
 // instantiated calls before replacing them with a direct pointer-value write.
 static bool approvedUtilityPointerExchange(const State &S,
@@ -14142,9 +14187,7 @@ static bool approvedUtilityPointerExchange(const State &S,
       (!ReplacementType.hasQualifiers() ||
        Context.hasSameType(ReplacementType,
                            ReplacementType.getUnqualifiedType().withConst())) &&
-      (Context.hasSameType(Type, ArrayPointer) ||
-       Context.hasSameType(
-           Type, Context.getPointerType(Array->getElementType().withConst())) ||
+      (utilityArrayPointerQualification(Type, ArrayPointer, Context) ||
        ArrayVoidConversion);
   // Fixed arrays decay once to their complete element type before an optional
   // const addition or object-to-void pointer conversion. Other pointee

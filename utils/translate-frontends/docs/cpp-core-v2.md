@@ -259,8 +259,14 @@ or results remain unsupported.
 
 Object-pointer `std::exchange` also accepts fixed-array replacements when
 the selected assignment decays the array to a pointer to its complete element
-type, optionally adding `const` to that pointee or converting it to `void*` or
-`const void*`. The object-to-void conversion preserves the pointer value and
+type, optionally adding `const` through matching pointer and fixed-array
+components or converting it to `void*` or `const void*`. Qualification changes
+retain array bounds and the terminal type, never discard `const`, and require
+`const` on every preceding destination component after the outer pointer when
+adding it deeper in the type. For example, an `int*` array can replace a
+`const int* const*` destination, following C++17's
+[qualification conversion rules](https://timsong-cpp.github.io/cppwp/n4659/conv.qual#3).
+The object-to-void conversion preserves the pointer value and
 cannot discard `const` on the array element, following C++17's
 [pointer conversion rule](https://timsong-cpp.github.io/cppwp/n4659/conv.ptr#2).
 Mutable and const lvalue/xvalue arrays, string literals, multidimensional arrays
