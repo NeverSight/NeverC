@@ -281,10 +281,14 @@ object lvalues and admitted ordinary function lvalues. Function signatures,
 operand evaluation and temporary cleanup are preserved; unevaluated queries
 retain original source dependencies without instantiating an SDK body.
 Instantiated `pointer_to` bodies must select the exact SDK `addressof` builtin.
-Resolved `using std::pointer_traits` imports authenticate the primary definition
-and all template/record redeclarations in `__memory/pointer_traits.h`. Imports
-and owned namespace reexports supply lookup identity without instantiating
-dependent members; each selected type, metadata query and `pointer_to` call
+Resolved using-declarations admit `pointer_traits`, `allocator`, `allocator_traits`,
+`uses_allocator`, `default_delete` and `unique_ptr` names from `std`. The primary
+definition and all template/record redeclarations must remain in their exact
+pinned component header. `allocator` also admits its pinned forward declarations
+in `__fwd/memory.h` and `__memory/allocator_traits.h`, with its definition still
+required in `__memory/allocator.h`. Imports and owned namespace reexports supply
+lookup identity without instantiating dependent members. Each selected type,
+metadata query, allocation/deletion, ownership operation and `pointer_to` call
 keeps its existing source and operation checks.
 `std::destroy_at`, `std::destroy` and `std::destroy_n`
 additionally lower for scalar and complete source-owned non-union record object

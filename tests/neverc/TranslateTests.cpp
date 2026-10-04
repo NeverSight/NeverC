@@ -48792,10 +48792,6 @@ TEST_F(TranslateTest, CoreV2SDKValueAdapterNameImportsRetainSourceBoundaries) {
 using std::declval;
 )cpp",
        "TR0201"},
-      {"sdk-class-template", R"cpp(
-using std::unique_ptr;
-)cpp",
-       "TR0201"},
       {"sdk-typedef", R"cpp(
 using std::nullptr_t;
 )cpp",
@@ -49110,10 +49106,6 @@ void materialize_default_deleters() {
   } Cases[] = {
       {"other-sdk-function", R"cpp(
 using std::declval;
-)cpp",
-       "TR0201"},
-      {"sdk-class-template", R"cpp(
-using std::unique_ptr;
 )cpp",
        "TR0201"},
       {"sdk-typedef", R"cpp(
@@ -51264,6 +51256,379 @@ int f(const int&v){static_assert(__is_same(decltype(std::addressof<int>(v)),int*
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryTemplateNameImportsRunAtBothOptimizations) {
+  const struct { const char *Name; const char *Source; } Controls[] = {
+      {"value-adapter-control", R"cpp(#include <memory>
+#include <utility>
+#include <algorithm>
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+void operator delete(void *p,Size)noexcept{free(p);}
+namespace Imported{using std::move,std::forward;}
+namespace Reexport{using Imported::move,Imported::forward;}
+
+using std::unique_ptr;
+
+void materialize_default_deleter(){std::default_delete<int>{}(nullptr);}
+)cpp"},
+      {"comparison-control", R"cpp(#include <memory>
+using Size = decltype(sizeof(0)); using Null = decltype(nullptr);
+extern "C" void *malloc(Size); extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void *operator new[](Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+void operator delete(void *p, Size) noexcept { free(p); }
+void operator delete[](void *p) noexcept { free(p); }
+void operator delete[](void *p, Size) noexcept { free(p); }
+namespace Imported {
+using std::operator==, std::operator!=, std::operator<;
+using std::operator>, std::operator<=, std::operator>=;
+}
+namespace Reexport {
+using Imported::operator==, Imported::operator!=, Imported::operator<;
+using Imported::operator>, Imported::operator<=, Imported::operator>=;
+}
+
+using std::unique_ptr;
+
+void materialize_default_deleters() {
+  std::default_delete<int>{}(nullptr);
+  std::default_delete<int[]>{}(static_cast<int *>(nullptr));
+  std::default_delete<const int>{}(nullptr);
+}
+)cpp"},
+      {"allocator-control", R"cpp(#include <memory>
+using std::allocator;
+)cpp"},
+  };
+  for (const auto &Control : Controls) {
+    SCOPED_TRACE(Control.Name);
+    const auto Source = tmpFile(
+        std::string("memory-template-imports-") + Control.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("memory-template-imports-") + Control.Name + ".nc");
+    writeFile(Source, Control.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+
+  const auto UnusedSource = tmpFile("memory-template-imports-unused.cpp");
+  const auto UnusedOutput = tmpFile("memory-template-imports-unused.nc");
+  writeFile(UnusedSource, R"cpp(#include <memory>
+namespace Imported {
+using std::allocator, std::allocator_traits, std::uses_allocator;
+using std::default_delete, std::unique_ptr;
+}
+int main() { return 0; }
+)cpp");
+  auto UnusedResult = translate(
+      UnusedSource, {"--profile", "cpp-core-v2", "-o", UnusedOutput.string()});
+  ASSERT_EQ(UnusedResult.exitCode, 0)
+      << UnusedResult.out << UnusedResult.err;
+
+  const auto MetadataSource = tmpFile("memory-template-imports-metadata.cpp");
+  const auto MetadataOutput = tmpFile("memory-template-imports-metadata.nc");
+  writeFile(MetadataSource, R"cpp(
+#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator; }
+namespace Reexport { using Imported::allocator, Imported::allocator_traits, Imported::uses_allocator; }
+namespace Alias = Reexport;
+struct Forward;
+using PointerTraits = std::pointer_traits<int *>;
+using ForwardAllocator = Alias::allocator<Forward>;
+using ReboundPointer = PointerTraits::rebind<double>;
+using IntAllocator = ForwardAllocator::rebind<int>::other;
+using Traits = Alias::allocator_traits<IntAllocator>;
+using DoubleAllocator = Traits::rebind_alloc<double>;
+using DoubleTraits = Traits::rebind_traits<double>;
+using VoidAllocator = Alias::allocator<void>;
+using AllocatorPointer = IntAllocator *;
+using AllocatorReference = IntAllocator &;
+using AllocatorArray = IntAllocator[2];
+struct Plain {};
+struct Aware { using allocator_type = IntAllocator; };
+using PlainUsesAllocator = Alias::uses_allocator<Plain, IntAllocator>;
+using AwareUsesAllocator = Alias::uses_allocator<Aware, IntAllocator>;
+using PlainUsesAllocatorType = PlainUsesAllocator::type;
+using AwareUsesAllocatorType = AwareUsesAllocator::type;
+static_assert(__is_same(PointerTraits, std::pointer_traits<int *>));
+static_assert(__is_same(PointerTraits::pointer, int *));
+static_assert(__is_same(PointerTraits::element_type, int));
+static_assert(sizeof(PointerTraits::difference_type) == sizeof(void *));
+static_assert(__is_same(ReboundPointer, double *));
+static_assert(__is_same(ForwardAllocator, Alias::allocator<Forward>));
+static_assert(__is_same(ForwardAllocator::value_type, Forward));
+static_assert(__is_same(IntAllocator::value_type, int));
+static_assert(__is_same(IntAllocator::pointer, int *));
+static_assert(__is_same(IntAllocator::const_pointer, const int *));
+static_assert(__is_same(IntAllocator::reference, int &));
+static_assert(__is_same(IntAllocator::const_reference, const int &));
+static_assert(__is_same(Traits, Alias::allocator_traits<IntAllocator>));
+static_assert(__is_same(Traits::allocator_type, IntAllocator));
+static_assert(__is_same(Traits::value_type, int));
+static_assert(__is_same(Traits::pointer, int *));
+static_assert(__is_same(Traits::const_pointer, const int *));
+static_assert(__is_same(Traits::void_pointer, void *));
+static_assert(__is_same(Traits::const_void_pointer, const void *));
+static_assert(__is_same(DoubleAllocator, Alias::allocator<double>));
+static_assert(__is_same(
+    DoubleTraits, Alias::allocator_traits<Alias::allocator<double>>));
+static_assert(__is_same(VoidAllocator, Alias::allocator<void>));
+static_assert(__is_same(AllocatorPointer, Alias::allocator<int> *));
+static_assert(__is_same(AllocatorReference, Alias::allocator<int> &));
+static_assert(__is_same(AllocatorArray, Alias::allocator<int>[2]));
+static_assert(__is_same(
+    PlainUsesAllocator, Alias::uses_allocator<Plain, Alias::allocator<int>>));
+static_assert(__is_same(
+    AwareUsesAllocator, Alias::uses_allocator<Aware, Alias::allocator<int>>));
+static_assert(__is_same(PlainUsesAllocator::value_type, bool));
+static_assert(__is_same(
+    PlainUsesAllocatorType, std::integral_constant<bool, false>));
+static_assert(__is_same(
+    AwareUsesAllocatorType, std::integral_constant<bool, true>));
+static_assert(!Alias::uses_allocator<Plain, IntAllocator>::value);
+static_assert(!std::uses_allocator_v<Plain, IntAllocator>);
+static_assert(Alias::uses_allocator<Aware, IntAllocator>::value);
+static_assert(std::uses_allocator_v<Aware, IntAllocator>);
+int main() {
+  return Traits::propagate_on_container_copy_assignment::value ||
+                 !Traits::propagate_on_container_move_assignment::value ||
+                 Traits::propagate_on_container_swap::value ||
+                 !Traits::is_always_equal::value
+             ? 1
+             : 0;
+}
+)cpp");
+  auto MetadataResult = translate(
+      MetadataSource, {"--profile", "cpp-core-v2", "-o", MetadataOutput.string()});
+  ASSERT_EQ(MetadataResult.exitCode, 0)
+      << MetadataResult.out << MetadataResult.err;
+
+  const auto Source = tmpFile("memory-template-imports.cpp");
+  const auto Output = tmpFile("memory-template-imports.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+namespace Imported {
+using std::allocator, std::allocator_traits, std::uses_allocator;
+using std::default_delete, std::unique_ptr, std::move;
+}
+namespace Reexport {
+using Imported::allocator, Imported::allocator_traits, Imported::uses_allocator;
+using Imported::default_delete, Imported::unique_ptr;
+using Imported::unique_ptr;
+}
+namespace Alias = Reexport;
+namespace Directed { using namespace Alias; }
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations, releases, arrays, array_releases;
+int effects, defaults, live, destroyed, custom;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void *operator new[](Size n) { ++arrays; return malloc(n); }
+void operator delete(void *p) noexcept { if (p) ++releases; free(p); }
+void operator delete(void *p, Size) noexcept { if (p) ++releases; free(p); }
+void operator delete[](void *p) noexcept { if (p) ++array_releases; free(p); }
+void operator delete[](void *p, Size) noexcept { if (p) ++array_releases; free(p); }
+int initial(int n = (++defaults, 7)) noexcept { return n; }
+struct Record {
+  using allocator_type = Alias::allocator<int>;
+  int value;
+  Record(int n = initial()) noexcept : value(n) { ++live; }
+  ~Record() noexcept { --live; destroyed += value; }
+};
+struct Deleter {
+  void operator()(Record *p) const noexcept { ++custom; delete p; }
+};
+Alias::allocator<int> &select(Alias::allocator<int> &a) noexcept { ++effects; return a; }
+Alias::unique_ptr<Record> &select(Alias::unique_ptr<Record> &p) noexcept { ++effects; return p; }
+int main() {
+  using Alias::allocator, Alias::allocator_traits, Alias::uses_allocator;
+  using Alias::unique_ptr, Alias::default_delete;
+  using Alias::unique_ptr;
+  using A = allocator<int>;
+  using Traits = allocator_traits<A>;
+  static_assert(__is_same(Traits::allocator_type, std::allocator<int>));
+  static_assert(__is_same(Traits::rebind_alloc<long>, allocator<long>));
+  static_assert(__is_same(unique_ptr<Record>::deleter_type, default_delete<Record>));
+  static_assert(uses_allocator<Record, A>::value);
+  static_assert(!uses_allocator<int, A>::value);
+  A a;
+  A copied(select(a));
+  if (effects != 1 || copied != a) return 1;
+  int *raw = Traits::allocate(select(a), 2);
+  Traits::construct(a, raw, 3);
+  a.construct(raw + 1, 4);
+  if (effects != 2 || raw[0] != 3 || raw[1] != 4 || allocations != 1) return 2;
+  a.destroy(raw);
+  Traits::destroy(a, raw + 1);
+  Traits::deallocate(select(a), raw, 2);
+  if (effects != 3 || releases != 1) return 3;
+  {
+    allocator<Record> objects;
+    using ObjectTraits = allocator_traits<allocator<Record>>;
+    Record *r = ObjectTraits::allocate(objects, 1);
+    ObjectTraits::construct(objects, r);
+    if (r->value != 7 || live != 1 || defaults != 1) return 4;
+    ObjectTraits::destroy(objects, r);
+    ObjectTraits::deallocate(objects, r, 1);
+    if (live || destroyed != 7 || allocations != 2 || releases != 2) return 5;
+  }
+  {
+    default_delete<Record> deleter;
+    unique_ptr<Record> first(new Record(2), deleter);
+    unique_ptr<Record> second(Imported::move(select(first)));
+    if (effects != 4 || first || second->value != 2 || live != 1) return 6;
+    second.reset(new Record(3));
+    if (destroyed != 9 || live != 1 || releases != 3) return 7;
+    Record *r = second.release();
+    if (second || r->value != 3) return 8;
+    Directed::default_delete<Record>{}(r);
+    if (destroyed != 12 || live || releases != 4) return 9;
+  }
+  {
+    Directed::unique_ptr<int[]> array(new int[3]{4, 5, 6});
+    unique_ptr<int[]> moved(Imported::move(array));
+    if (array || moved[1] != 5 || arrays != 1 || array_releases) return 10;
+    moved[2] = 8;
+    if (moved[2] != 8) return 11;
+  }
+  if (array_releases != 1) return 12;
+  {
+    unique_ptr<Record, Deleter> custom_owner(new Record(5), Deleter{});
+    if (custom_owner->value != 5 || live != 1) return 13;
+  }
+  if (custom != 1 || destroyed != 17 || live || allocations != 5 || releases != 5) return 14;
+  default_delete<const int> constant(default_delete<int>{});
+  constant(new int(9));
+  return allocations == 6 && releases == 6 ? 0 : 15;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-template-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryTemplateNameImportsRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"allocator-redeclaration", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<class T>class allocator;}}
+)cpp", "TR0201"},
+      {"allocator_traits-redeclaration", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<class T>struct allocator_traits;}}
+)cpp", "TR0201"},
+      {"uses_allocator-redeclaration", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<class T,class A>struct uses_allocator;}}
+)cpp", "TR0201"},
+      {"default_delete-redeclaration", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<class T>struct default_delete;}}
+)cpp", "TR0201"},
+      {"unique_ptr-redeclaration", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<class T,class D>class unique_ptr;}}
+)cpp", "TR0201"},
+      {"deleter-specialization", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<>struct default_delete<int>{void operator()(int*)const noexcept{}};}}Imported::default_delete<int>d;
+)cpp", "TR0201"},
+      {"deleter-partial-specialization", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<class T>struct default_delete<T*>{void operator()(T**)const noexcept{}};}}Imported::default_delete<int*>d;
+)cpp", "TR0201"},
+      {"allocator-traits-specialization", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<>struct allocator_traits<allocator<int>>{using value_type=int;};}}static_assert(__is_same(Imported::allocator_traits<Imported::allocator<int>>::value_type,int));
+)cpp", "TR0201"},
+      {"uses-allocator-specialization", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+struct R{};namespace std{inline namespace __1{template<>struct uses_allocator<R,allocator<int>>:true_type{};}}static_assert(Imported::uses_allocator<R,Imported::allocator<int>>::value);
+)cpp", "TR0201"},
+      {"owner-get-specialization", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}int*f(Imported::unique_ptr<int>&p){return p.get();}
+)cpp", "TR0201"},
+      {"custom-allocator-traits", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+struct A{using value_type=int;};static_assert(__is_same(Imported::allocator_traits<A>,Imported::allocator_traits<A>));
+)cpp", "TR0201"},
+      {"custom-uses-allocator", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+struct A{using value_type=int;};static_assert(__is_same(Imported::uses_allocator<int,A>,Imported::uses_allocator<int,A>));
+)cpp", "TR0201"},
+      {"allocate-missing-new", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+int main(){Imported::allocator<int>a;int*p=a.allocate(1);a.deallocate(p,1);}
+)cpp", "TR0203"},
+      {"owner-missing-delete", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+int main(){Imported::unique_ptr<int>p;}
+)cpp", "TR0203"},
+      {"allocate-runtime-count", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+using Size=decltype(sizeof(0));unsigned char bytes[64];void*operator new(Size){return bytes;}void operator delete(void*)noexcept{}int*f(Imported::allocator<int>&a,Size n){return a.allocate(n);}
+)cpp", "TR0203"},
+      {"overaligned-allocation", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+using Size=decltype(sizeof(0));unsigned char bytes[128];void*operator new(Size){return bytes;}void operator delete(void*)noexcept{}struct alignas(64)R{int n;};R*f(Imported::allocator<R>&a){return a.allocate(1);}
+)cpp", "TR0201"},
+      {"stateful-deleter", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+struct D{int state;void operator()(int*)const noexcept{}};Imported::unique_ptr<int,D>p;
+)cpp", "TR0203"},
+      {"erased-owner-template-argument", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+template<class>using Element=int;using P=Imported::unique_ptr<Element<long double>>;static_assert(__is_same(P::pointer,int*));
+)cpp", "TR0201"},
+      {"hidden-query-element", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+using A=Imported::allocator<int[sizeof(long double)]>;static_assert(__is_same(A::value_type,int[sizeof(long double)]));
+)cpp", "TR0201"},
+      {"deleter-member-address", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+auto f(){return &Imported::default_delete<int>::operator();}
+)cpp", "TR0201"},
+      {"owner-member-address", R"cpp(#include <memory>
+namespace Imported { using std::allocator, std::allocator_traits, std::uses_allocator, std::default_delete, std::unique_ptr; }
+auto f(){return &Imported::unique_ptr<int>::get;}
+)cpp", "TR0201"},
+      {"other-sdk-class", R"cpp(#include <memory>
+using std::shared_ptr;
+)cpp", "TR0201"},
+      {"sdk-variable-template", R"cpp(#include <memory>
+using std::uses_allocator_v;
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("memory-template-imports-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("memory-template-imports-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PointerTraitsNameImportsRunAtBothOptimizations) {
   const auto UnusedSource = tmpFile("pointer-traits-imports-unused.cpp");
   const auto UnusedOutput = tmpFile("pointer-traits-imports-unused.nc");
@@ -51446,9 +51811,6 @@ auto f(volatile int&v){return Imported::pointer_traits<volatile int*>::pointer_t
       {"owned-hidden-type", R"cpp(#include <memory>
 namespace Imported { using std::pointer_traits; }
 namespace Owned{template<class T>struct pointer_traits{long double unsupported;};}int f(){using Owned::pointer_traits;return sizeof(pointer_traits<int>);}
-)cpp", "TR0201"},
-      {"other-sdk-class", R"cpp(#include <memory>
-using std::allocator;
 )cpp", "TR0201"},
       {"other-sdk-alias", R"cpp(#include <type_traits>
 using std::remove_pointer_t;

@@ -12242,20 +12242,36 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
-  bool sdkPointerTraitsUsingTarget(const NamedDecl *Target, SourceLocation L) {
+  bool sdkMemoryTemplateUsingTarget(const NamedDecl *Target, SourceLocation L) {
     const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Target);
     const auto *Pattern = Template ? Template->getTemplatedDecl() : nullptr;
-    if (!Template || !Template->getIdentifier() ||
-        Template->getName() != "pointer_traits" || !Pattern ||
-        !Pattern->getDefinition() ||
+    if (!Template || !Template->getIdentifier() || !Pattern ||
+        !Pattern->getDefinition())
+      return false;
+    const auto Name = Template->getName();
+    llvm::StringRef DefinitionPath;
+    if (Name == "pointer_traits")
+      DefinitionPath = "__memory/pointer_traits.h";
+    else if (Name == "allocator")
+      DefinitionPath = "__memory/allocator.h";
+    else if (Name == "allocator_traits")
+      DefinitionPath = "__memory/allocator_traits.h";
+    else if (Name == "uses_allocator")
+      DefinitionPath = "__memory/uses_allocator.h";
+    else if (Name == "default_delete" || Name == "unique_ptr")
+      DefinitionPath = "__memory/unique_ptr.h";
+    if (DefinitionPath.empty() ||
         !sdkUsingNamespace(Template->getDeclContext(), L))
       return false;
-    auto Pinned = [&](const Decl *Declaration) {
+    auto Pinned = [&](const Decl *Declaration, bool Definition = false) {
       A.chargeExpansion(1, L);
       const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
       return !Declaration->isInvalidDecl() && Origin &&
              Origin->Root == "libcxx" &&
-             Origin->Path == "__memory/pointer_traits.h" &&
+             (Origin->Path == DefinitionPath ||
+              (!Definition && Name == "allocator" &&
+               (Origin->Path == "__fwd/memory.h" ||
+                Origin->Path == "__memory/allocator_traits.h"))) &&
              approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
     };
     for (const auto *Redeclaration : Template->redecls()) {
@@ -12268,7 +12284,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // This proves the primary's lookup identity only. Do not instantiate its
     // dependent base or members; each selected type, specialization and call
     // keeps its existing argument, operation and original-source checks.
-    return Pinned(Pattern->getDefinition());
+    return Pinned(Pattern->getDefinition(), /*Definition=*/true);
   }
   bool sdkFunctionUsingTarget(const NamedDecl *Target, SourceLocation L) {
     const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(Target);
@@ -12378,13 +12394,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     if (!Supported)
       Supported = sdkFunctionUsingTarget(Target, D->getLocation()) ||
-                  sdkPointerTraitsUsingTarget(Target, D->getLocation());
+                  sdkMemoryTemplateUsingTarget(Target, D->getLocation());
     if (!Supported) {
       A.reject(
           D->getLocation(), "using target",
           "Expected an owned namespace or block declaration, an unscoped "
           "non-member enumerator, an admitted pinned SDK free function, or "
-          "the pinned SDK pointer_traits template.");
+          "an admitted pinned SDK memory template.");
       return;
     }
     A.chargeExpansion(1, D->getLocation());

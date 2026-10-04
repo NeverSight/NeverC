@@ -11348,17 +11348,30 @@ operations and existing query boundaries. Other SDK function imports,
 source replacements and
 independent SDK function addresses remain excluded.
 
-Resolved using-declarations also admit the `std::pointer_traits` class-template
-name. The primary definition and every template/record redeclaration must come
-from the pinned libc++ `__memory/pointer_traits.h` in `std` or its inline
-namespaces. Namespace/block imports, repeated/comma imports, and source-owned
-reexports retain Clang's template identity and ordinary local hiding. The import
-does not instantiate the dependent primary base or members. Selected aliases,
-metadata queries, and object/function `pointer_to` calls retain their existing
-type, original template-argument, operation and lifetime checks. User
-redeclarations/specializations, fancy-pointer runtime operations and independent
-member addresses retain their rejection; other SDK class/typedef imports remain
-excluded.
+Resolved using-declarations also admit these pinned memory class-template names
+from `std` or its inline namespaces:
+
+| Template names | Primary definition header |
+| --- | --- |
+| `pointer_traits` | `__memory/pointer_traits.h` |
+| `allocator` | `__memory/allocator.h` |
+| `allocator_traits` | `__memory/allocator_traits.h` |
+| `uses_allocator` | `__memory/uses_allocator.h` |
+| `default_delete`, `unique_ptr` | `__memory/unique_ptr.h` |
+
+Every template/record redeclaration must remain in its pinned definition header,
+except that `allocator` also retains its SDK forward declarations from
+`__fwd/memory.h` and `__memory/allocator_traits.h`. Its primary definition must
+still come from `__memory/allocator.h`. Namespace/block imports, repeated/comma
+imports, and source-owned reexports retain Clang's template identity and ordinary
+local hiding. Imports do not instantiate dependent bases or members. Selected
+aliases, metadata queries, allocation/deletion operations, ownership operations
+and object/function `pointer_to` calls retain their existing type, original
+template-argument, operation and lifetime checks. User redeclarations and
+specializations, unsupported allocator/deleter forms, unproven allocation counts,
+missing allocation/deletion definitions, fancy-pointer runtime operations and
+independent member addresses retain their rejection. Other SDK class, typedef
+and variable-template imports remain excluded.
 
 Lookup declarations add no runtime storage, initialization or cleanup. Imported
 and qualified names address the same object, preserve const permissions, and
