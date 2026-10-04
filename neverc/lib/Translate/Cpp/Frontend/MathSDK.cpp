@@ -20847,10 +20847,21 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
-static bool utilityArrayDataBody(const State &S, const SourceManager &SM,
-                                 const CXXMethodDecl *Method,
-                                 const UtilityArrayRecord &Array,
-                                 const ASTContext &Context) {
+static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
+                                    const CXXMethodDecl *Method,
+                                    const UtilityArrayRecord &Array,
+                                    const ASTContext &Context) {
+  if (!Method || !Method->getIdentifier() || Method->isStatic() ||
+      Method->isVariadic() || Method->getNumParams() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Array.Record->getCanonicalDecl())
+    return false;
+  const auto Name = Method->getIdentifier()->getName();
+  if (Name != "data" && Name != "begin" && Name != "end" &&
+      Name != "cbegin" && Name != "cend")
+    return false;
+  if ((Name == "cbegin" || Name == "cend") && !Method->isConst())
+    return false;
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
   const auto Pointer = Context.getPointerType(
       Method->isConst() ? Array.ElementType.withConst() : Array.ElementType);
@@ -20877,27 +20888,62 @@ static bool utilityArrayDataBody(const State &S, const SourceManager &SM,
   if (!Pinned(Method) || !Pinned(Pattern) || !Pattern->hasBody())
     return false;
   // Queries consume the exact pinned signature without instantiating a body.
-  // An already instantiated body must still return this array's storage (or
-  // the pinned zero-extent null pointer), never a source replacement.
+  // Instantiated endpoints must follow the pinned forwarding chain to data(),
+  // including the exact nonzero end offset, never a source replacement.
   if (!Method->hasBody())
     return true;
   const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
   const auto *Result = Body && Body->size() == 1
                            ? dyn_cast<ReturnStmt>(*Body->body_begin())
                            : nullptr;
-  const auto *Cast =
-      Result ? dyn_cast_or_null<ImplicitCastExpr>(Result->getRetValue())
-             : nullptr;
-  if (!Cast)
+  const auto *Returned = Result ? Result->getRetValue() : nullptr;
+  if (!Returned || !Context.hasSameType(Returned->getType(), Pointer))
     return false;
-  if (!Array.Size)
-    return Cast->getCastKind() == CK_NullToPointer &&
-           isa<CXXNullPtrLiteralExpr>(Cast->getSubExpr());
-  const auto *Storage = dyn_cast<MemberExpr>(Cast->getSubExpr());
-  return Cast->getCastKind() == CK_ArrayToPointerDecay && Storage &&
-         Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
+  if (Name == "data") {
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Returned);
+    if (!Cast)
+      return false;
+    if (!Array.Size)
+      return Cast->getCastKind() == CK_NullToPointer &&
+             isa<CXXNullPtrLiteralExpr>(Cast->getSubExpr());
+    const auto *Storage = dyn_cast<MemberExpr>(Cast->getSubExpr());
+    return Cast->getCastKind() == CK_ArrayToPointerDecay && Storage &&
+           Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
+           isa<CXXThisExpr>(
+               functionalInvokeStrippedExpression(Storage->getBase()));
+  }
+  if (Name == "begin" || Name == "end") {
+    const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Returned);
+    if (!Cast || Cast->getCastKind() != CK_NoOp)
+      return false;
+    Returned = Cast->getSubExpr();
+    if (Name == "end" && Array.Size) {
+      const auto *End = dyn_cast<BinaryOperator>(Returned);
+      const auto *Extent =
+          End ? dyn_cast<SubstNonTypeTemplateParmExpr>(End->getRHS()) : nullptr;
+      const auto *Size =
+          Extent ? dyn_cast<IntegerLiteral>(Extent->getReplacement()) : nullptr;
+      if (!End || End->getOpcode() != BO_Add || !Size ||
+          Size->getValue() != Array.Size ||
+          !Context.hasSameType(Extent->getType(), Context.getSizeType()))
+        return false;
+      Returned = End->getLHS();
+    }
+  }
+  const auto *Delegate = dyn_cast<CXXMemberCallExpr>(Returned);
+  const auto *Reference =
+      Delegate ? dyn_cast<MemberExpr>(Delegate->getCallee()) : nullptr;
+  const auto *Target = Delegate ? Delegate->getMethodDecl() : nullptr;
+  const llvm::StringRef TargetName =
+      Name == "cbegin" ? "begin" : Name == "cend" ? "end" : "data";
+  return Delegate && Delegate->getNumArgs() == 0 && Delegate->isPRValue() &&
+         Context.hasSameType(Delegate->getType(), Pointer) && Reference &&
+         Reference->isArrow() && Target && Target->getIdentifier() &&
+         Target->getIdentifier()->getName() == TargetName &&
+         Target->isConst() == Method->isConst() &&
          isa<CXXThisExpr>(
-             functionalInvokeStrippedExpression(Storage->getBase()));
+             functionalInvokeStrippedExpression(Reference->getBase())) &&
+         utilityArrayPointerBody(S, SM, Target, Array, Context);
 }
 
 static bool utilityPointerToBody(const State &S, const SourceManager &SM,
@@ -23185,6 +23231,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const llvm::StringRef Name = Method->getIdentifier()
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
+    const bool PointerMember = Name == "data" || Name == "begin" ||
+                               Name == "cbegin" || Name == "end" ||
+                               Name == "cend";
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23193,7 +23242,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
         !S.owns(SM, Reference->getExprLoc()) ||
-        (!Method->hasBody() && Name != "data"))
+        (!Method->hasBody() && !PointerMember))
       return std::nullopt;
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
       if ((Name == "size" || Name == "max_size") &&
@@ -23206,16 +23255,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Method->getReturnType()->isBooleanType() &&
           Same(Call->getType(), Method->getReturnType()))
         return UtilityOperation::ArrayEmpty;
-      if (Name == "data" && Call->isPRValue() &&
+      if (PointerMember && Call->isPRValue() &&
           Same(Call->getType(), Method->getReturnType()) &&
-          utilityArrayDataBody(S, SM, Method, *Array, Context))
-        return UtilityOperation::ArrayData;
-      if ((Name == "begin" || Name == "cbegin" ||
-           Name == "end" || Name == "cend") &&
-          Call->isPRValue() && Method->getReturnType()->isPointerType() &&
-          Context.hasSameUnqualifiedType(
-              Method->getReturnType()->getPointeeType(), Array->ElementType) &&
-          Same(Call->getType(), Method->getReturnType())) {
+          utilityArrayPointerBody(S, SM, Method, *Array, Context)) {
+        if (Name == "data")
+          return UtilityOperation::ArrayData;
         if (Name == "begin" || Name == "cbegin")
           return UtilityOperation::ArrayBegin;
         return UtilityOperation::ArrayEnd;

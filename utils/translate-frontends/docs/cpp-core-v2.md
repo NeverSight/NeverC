@@ -2422,14 +2422,18 @@ are false. This rule composes through nonempty arrays whose nested leaves all
 have zero extent. Element access remains rejected because no valid index,
 `front`, `back`, `at` or `get` operation exists.
 
-Direct `array::data()` calls also support unevaluated `noexcept`, `decltype`
-and size/alignment queries before the selected SDK method body is instantiated.
+Direct `array::data()`, `begin()`, `end()`, `cbegin()` and `cend()` calls also
+support unevaluated `noexcept`, `decltype` and size/alignment queries before
+the selected SDK method body is instantiated.
 The exact pinned method and template pattern supply its fixed `noexcept`
 signature and element pointer type, including const receivers, const elements,
 zero extents, admitted record elements and nested arrays. Parenthesized member
 calls and checked utility reference casts preserve that identity. An already
 instantiated body must return the authenticated array storage or the pinned
-zero-extent null pointer. Queries do not instantiate SDK bodies or evaluate
+zero-extent null pointer, or follow the pinned endpoint forwarding chain to
+`data()`. Nonempty `end()` uses the exact array extent as its pointer offset;
+empty endpoints retain the null pointer without arithmetic.
+Queries do not instantiate SDK bodies or evaluate
 receiver expressions, defaults or temporary cleanup; those expressions still
 require their original type, extent, declaration, body and lifetime sources.
 Source replacements and independent method addresses remain rejected. Other

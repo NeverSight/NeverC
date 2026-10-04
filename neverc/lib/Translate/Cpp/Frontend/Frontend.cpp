@@ -4566,9 +4566,12 @@ static bool utilityAddressofSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
-static bool utilityArrayDataSource(Adapter &A, const CallExpr *Call) {
-  if (!Call || approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
-                   UtilityOperation::ArrayData)
+static bool utilityArrayPointerSource(Adapter &A, const CallExpr *Call) {
+  const auto Operation =
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+  if (!Operation || (*Operation != UtilityOperation::ArrayData &&
+                     *Operation != UtilityOperation::ArrayBegin &&
+                     *Operation != UtilityOperation::ArrayEnd))
     return false;
   const auto *Function = Call->getDirectCallee();
   // Only the exact direct member call consumes this SDK signature. The
@@ -7659,7 +7662,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
-        utilityArrayDataSource(A, Call) ||
+        utilityArrayPointerSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -13377,7 +13380,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             if (Entry->second == Call)
               AuthenticatedVectorEndpoint = Method;
           }
-        if (utilityArrayDataSource(A, Call))
+        if (utilityArrayPointerSource(A, Call))
           if (const auto *Reference = directMethodReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
