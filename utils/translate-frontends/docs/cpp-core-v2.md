@@ -11348,21 +11348,24 @@ operations and existing query boundaries. Other SDK function imports,
 source replacements and
 independent SDK function addresses remain excluded.
 
-Resolved using-declarations also admit these pinned memory class-template names
+Resolved using-declarations also admit these pinned standard class-template names
 from `std` or its inline namespaces:
 
-| Template names | Primary definition header |
-| --- | --- |
-| `pointer_traits` | `__memory/pointer_traits.h` |
-| `allocator` | `__memory/allocator.h` |
-| `allocator_traits` | `__memory/allocator_traits.h` |
-| `uses_allocator` | `__memory/uses_allocator.h` |
-| `default_delete`, `unique_ptr` | `__memory/unique_ptr.h` |
+| Template names | Primary definition header | Additional forward declaration headers |
+| --- | --- | --- |
+| `pointer_traits` | `__memory/pointer_traits.h` | none |
+| `allocator` | `__memory/allocator.h` | `__fwd/memory.h`, `__memory/allocator_traits.h` |
+| `allocator_traits` | `__memory/allocator_traits.h` | none |
+| `uses_allocator` | `__memory/uses_allocator.h` | none |
+| `default_delete`, `unique_ptr` | `__memory/unique_ptr.h` | none |
+| `pair` | `__utility/pair.h` | `__fwd/pair.h` |
+| `tuple` | `tuple` | `__fwd/tuple.h` |
+| `array` | `array` | `__fwd/array.h` |
 
-Every template/record redeclaration must remain in its pinned definition header,
-except that `allocator` also retains its SDK forward declarations from
-`__fwd/memory.h` and `__memory/allocator_traits.h`. Its primary definition must
-still come from `__memory/allocator.h`. Namespace/block imports, repeated/comma
+Every template/record redeclaration must remain in its listed pinned definition
+or forward declaration headers. A primary definition must be available in its
+definition header; a forward declaration alone is insufficient.
+Namespace/block imports, repeated/comma
 imports, and source-owned reexports retain Clang's template identity and ordinary
 local hiding. Imports do not instantiate dependent bases or members. Selected
 aliases, metadata queries, allocation/deletion operations, ownership operations
@@ -11372,6 +11375,17 @@ specializations, unsupported allocator/deleter forms, unproven allocation counts
 missing allocation/deletion definitions, fancy-pointer runtime operations and
 independent member addresses retain their rejection. Other SDK class, typedef
 and variable-template imports remain excluded.
+
+For `pair`, `tuple` and `array`, scalar, reference and recursively
+composite elements, empty tuples, zero-length arrays, metadata, conversions,
+access, swaps, structured bindings and tuple concatenation retain their existing
+type, source, layout and lifetime rules. Imports preserve canonical type
+identity and do not add runtime entities. Unsupported written element types or
+array extents, erased template arguments, source replacements and independent
+member addresses remain rejected.
+The existing query-only `noexcept(array::data())` definition requirement and
+source checks for type queries of `auto` results initialized by `tuple_cat`
+also remain in force.
 
 Lookup declarations add no runtime storage, initialization or cleanup. Imported
 and qualified names address the same object, preserve const permissions, and

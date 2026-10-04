@@ -12242,24 +12242,35 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
-  bool sdkMemoryTemplateUsingTarget(const NamedDecl *Target, SourceLocation L) {
+  bool sdkClassTemplateUsingTarget(const NamedDecl *Target, SourceLocation L) {
     const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Target);
     const auto *Pattern = Template ? Template->getTemplatedDecl() : nullptr;
     if (!Template || !Template->getIdentifier() || !Pattern ||
         !Pattern->getDefinition())
       return false;
     const auto Name = Template->getName();
-    llvm::StringRef DefinitionPath;
+    llvm::StringRef DefinitionPath, ForwardPath;
     if (Name == "pointer_traits")
       DefinitionPath = "__memory/pointer_traits.h";
-    else if (Name == "allocator")
+    else if (Name == "allocator") {
       DefinitionPath = "__memory/allocator.h";
-    else if (Name == "allocator_traits")
+      ForwardPath = "__fwd/memory.h";
+    } else if (Name == "allocator_traits")
       DefinitionPath = "__memory/allocator_traits.h";
     else if (Name == "uses_allocator")
       DefinitionPath = "__memory/uses_allocator.h";
     else if (Name == "default_delete" || Name == "unique_ptr")
       DefinitionPath = "__memory/unique_ptr.h";
+    else if (Name == "pair") {
+      DefinitionPath = "__utility/pair.h";
+      ForwardPath = "__fwd/pair.h";
+    } else if (Name == "tuple") {
+      DefinitionPath = "tuple";
+      ForwardPath = "__fwd/tuple.h";
+    } else if (Name == "array") {
+      DefinitionPath = "array";
+      ForwardPath = "__fwd/array.h";
+    }
     if (DefinitionPath.empty() ||
         !sdkUsingNamespace(Template->getDeclContext(), L))
       return false;
@@ -12269,9 +12280,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return !Declaration->isInvalidDecl() && Origin &&
              Origin->Root == "libcxx" &&
              (Origin->Path == DefinitionPath ||
-              (!Definition && Name == "allocator" &&
-               (Origin->Path == "__fwd/memory.h" ||
-                Origin->Path == "__memory/allocator_traits.h"))) &&
+              (!Definition &&
+               ((!ForwardPath.empty() && Origin->Path == ForwardPath) ||
+                (Name == "allocator" &&
+                 Origin->Path == "__memory/allocator_traits.h")))) &&
              approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
     };
     for (const auto *Redeclaration : Template->redecls()) {
@@ -12394,13 +12406,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     if (!Supported)
       Supported = sdkFunctionUsingTarget(Target, D->getLocation()) ||
-                  sdkMemoryTemplateUsingTarget(Target, D->getLocation());
+                  sdkClassTemplateUsingTarget(Target, D->getLocation());
     if (!Supported) {
       A.reject(
           D->getLocation(), "using target",
           "Expected an owned namespace or block declaration, an unscoped "
           "non-member enumerator, an admitted pinned SDK free function, or "
-          "an admitted pinned SDK memory template.");
+          "an admitted pinned SDK class template.");
       return;
     }
     A.chargeExpansion(1, D->getLocation());

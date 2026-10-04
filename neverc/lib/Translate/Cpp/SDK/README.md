@@ -87,6 +87,14 @@ assignability. Programs using scalar pair
 conversion include both `<tuple>` and `<utility>` and have a 108-file union
 closure. The array-plus-tuple-plus-utility composite fixture has a 231-file
 union closure on every core-v2 target.
+Resolved using-declarations may import `pair`, `tuple` and `array` names from
+`std`, including namespace/block imports and source-owned reexports. Each
+primary definition must remain in its pinned `__utility/pair.h`, `tuple` or
+`array` header; redeclarations may also use the corresponding `__fwd` header.
+Forward declarations alone do not admit an import. Lookup does not instantiate
+dependent members, and selected metadata, elements, construction, mutation,
+structured bindings and other operations retain their source, layout and
+lifetime checks.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

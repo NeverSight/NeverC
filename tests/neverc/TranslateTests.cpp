@@ -51256,6 +51256,340 @@ int f(const int&v){static_assert(__is_same(decltype(std::addressof<int>(v)),int*
   }
 }
 
+TEST_F(TranslateTest, CoreV2CompositeTemplateNameImportsRunAtBothOptimizations) {
+  const struct {
+    const char *Name;
+    const char *Source;
+  } Controls[] = {
+      {"unused-pair", R"cpp(#include <utility>
+namespace Imported { using std::pair; }
+int main(){return 0;}
+)cpp"},
+      {"unused-tuple", R"cpp(#include <tuple>
+namespace Imported { using std::tuple; }
+int main(){return 0;}
+)cpp"},
+      {"unused-array", R"cpp(#include <array>
+namespace Imported { using std::array; }
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Control : Controls) {
+    SCOPED_TRACE(Control.Name);
+    const auto Source = tmpFile(
+        std::string("composite-template-imports-") + Control.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("composite-template-imports-") + Control.Name + ".nc");
+    writeFile(Source, Control.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+
+  const auto QuerySource = tmpFile("composite-template-imports-query.cpp");
+  const auto QueryOutput = tmpFile("composite-template-imports-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace Reexport { using Imported::array, Imported::pair, Imported::tuple; }
+namespace Alias = Reexport;
+using Row = Alias::array<int, 3>;
+using Pair = Alias::pair<int &, const long &>;
+using Tuple = Alias::tuple<int &&, double &>;
+using PairPointer = Pair *;
+using TupleReference = Tuple &;
+static_assert(__is_same(Row, std::array<int, 3>));
+static_assert(std::tuple_size<Row>::value == 3);
+static_assert(__is_same(std::tuple_element<1, Row>::type, int));
+static_assert(__is_same(PairPointer, std::pair<int &, const long &> *));
+static_assert(__is_same(TupleReference, std::tuple<int &&, double &> &));
+static_assert(__is_same(Pair::first_type, int &));
+static_assert(__is_same(Pair::second_type, const long &));
+static_assert(std::tuple_size<Pair>::value == 2);
+static_assert(std::tuple_size<Tuple>::value == 2);
+static_assert(std::tuple_size<Alias::tuple<>>::value == 0);
+int queries(Row &row, Pair &pair, Tuple &tuple) {
+  static_assert(__is_same(decltype(std::get<0>(row)), int &));
+  static_assert(__is_same(decltype(std::get<0>(pair)), int &));
+  static_assert(__is_same(decltype(std::get<1>(tuple)), double &));
+  static_assert(sizeof(row) == sizeof(int) * 3);
+  return 0;
+}
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("composite-template-imports.cpp");
+  const auto Output = tmpFile("composite-template-imports.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple, std::get, std::swap, std::move; }
+namespace Reexport {
+using Imported::array, Imported::pair, Imported::tuple;
+using Imported::tuple;
+}
+namespace Alias = Reexport;
+namespace Directed { using namespace Alias; }
+template <class T> using RowOf = Alias::array<T, 2>;
+using Row = RowOf<int>;
+using Pair = Alias::pair<int, int>;
+using Tuple = Alias::tuple<int, double>;
+struct Point { int x, y; };
+int calls, defaults, live, destroyed;
+int mark(int n = (++defaults, 1)) noexcept { ++calls; return n; }
+struct Ticket {
+  Ticket(int) noexcept { ++live; }
+  ~Ticket() noexcept { --live; ++destroyed; }
+};
+Tuple &select(Tuple &value, Ticket ticket = Ticket(mark())) noexcept { ++calls; return value; }
+int hidden() { using Alias::pair; { int pair = 19; return pair; } }
+int main() {
+  using Alias::array, Alias::pair, Alias::tuple;
+  using Alias::tuple;
+  using Imported::get, Imported::swap, Imported::move;
+  static_assert(__is_same(pair<int, int>, std::pair<int, int>));
+  static_assert(__is_same(tuple<int, double>, std::tuple<int, double>));
+  static_assert(__is_same(array<int, 2>, std::array<int, 2>));
+  static_assert(std::tuple_size<tuple<Pair, Row, Tuple>>::value == 3);
+  static_assert(__is_same(std::tuple_element<1, pair<int, double>>::type, double));
+  Row row{{1, 2}}, other{{3, 4}};
+  array<int, 0> empty{};
+  tuple<> empty_tuple;
+  if (!empty.empty() || empty.size() || std::tuple_size<decltype(empty_tuple)>::value) return 1;
+  row.fill(5);
+  swap(row, other);
+  if (row.front() != 3 || row.back() != 4 || other[0] != 5 || other[1] != 5) return 2;
+  const Row &constant = row;
+  if (constant.data() != row.data() || constant.begin() != row.begin() || *row.rbegin() != 4) return 3;
+  Directed::pair<Point, Row> points(Point{6, 7}, row);
+  auto points_copy = points;
+  points_copy.first.x = 8;
+  points_copy.second[1] = 9;
+  points.swap(points_copy);
+  if (points.first.x != 8 || points.second[1] != 9 || points_copy.first.x != 6) return 4;
+  pair<short, float> narrow(short(2), 3.5f);
+  pair<int, double> wide(narrow), assigned;
+  assigned = narrow;
+  if (wide.first != 2 || wide.second != 3.5 || assigned != wide) return 5;
+  Tuple value(mark(10), 11.5);
+  Tuple copied(value), moved(move(copied)), tuple_assigned;
+  tuple_assigned = value;
+  static_assert(__is_same(decltype(get<0>(select(moved))), int &));
+  static_assert(sizeof(select(moved)) == sizeof(Tuple));
+  static_assert(noexcept(select(moved)));
+  if (calls != 1 || defaults || live || destroyed) return 6;
+  get<0>(select(moved)) = 12;
+  if (calls != 3 || defaults != 1 || live || destroyed != 1 || get<int>(moved) != 12 || get<double>(tuple_assigned) != 11.5) return 7;
+  tuple<short, float> small(short(13), 14.5f);
+  tuple<int, double> converted(small), converted_assignment;
+  converted_assignment = small;
+  if (converted != converted_assignment || get<0>(converted) != 13 || get<1>(converted) != 14.5) return 8;
+  using Nested = tuple<Pair, Row, Tuple>;
+  Nested nested(Pair(15, 16), Row{{17, 18}}, Tuple(19, 20.5));
+  Nested nested_copy(nested);
+  get<1>(get<0>(nested_copy)) = 21;
+  get<0>(get<1>(nested_copy)) = 22;
+  get<0>(get<2>(nested_copy)) = 23;
+  swap(nested, nested_copy);
+  if (get<1>(get<0>(nested)) != 21 || get<0>(get<1>(nested)) != 22 || get<0>(get<2>(nested)) != 23) return 9;
+  int target = 24;
+  long second = 25;
+  pair<int &, long &> refs(target, second);
+  tuple<int &, long &> tuple_refs(target, second);
+  get<0>(refs) = 26;
+  get<1>(tuple_refs) = 27;
+  if (&get<0>(refs) != &target || &get<1>(tuple_refs) != &second || target != 26 || second != 27) return 10;
+  auto &[point, coordinates] = points;
+  point.y = 28;
+  coordinates[0] = 29;
+  auto &[scalar, real] = moved;
+  scalar = 30;
+  real = 31.5;
+  auto &[a, b] = row;
+  a = 32;
+  b = 33;
+  auto made = std::make_pair(34, 35);
+  auto cat = std::tuple_cat(made, row, tuple<>{});
+  return points.first.y == 28 && points.second[0] == 29 && get<0>(moved) == 30 && get<1>(moved) == 31.5 && get<0>(cat) == 34 && get<1>(cat) == 35 && get<2>(cat) == 32 && get<3>(cat) == 33 && hidden() == 19 && calls == 3 && defaults == 1 && live == 0 && destroyed == 1 ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("composite-template-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CompositeTemplateNameImportsRetainSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"pair-redeclaration", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<class A,class B>struct pair;}}
+)cpp", "TR0201"},
+      {"tuple-redeclaration", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<class...T>class tuple;}}
+)cpp", "TR0201"},
+      {"array-redeclaration", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<class T,decltype(sizeof(0))N>struct array;}}
+)cpp", "TR0201"},
+      {"pair-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<>struct pair<int,int>{int first,second;};}}Imported::pair<int,int>p;
+)cpp", "TR0201"},
+      {"tuple-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<>class tuple<int>{public:int value;};}}Imported::tuple<int>t;
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<>struct array<int,1>{int value;};}}Imported::array<int,1>a;
+)cpp", "TR0201"},
+      {"pair-partial-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<class T>struct pair<T,int>{T first;int second;};}}Imported::pair<int,int>p;
+)cpp", "TR0201"},
+      {"tuple-partial-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<class T>class tuple<T*>{public:T*value;};}}Imported::tuple<int*>t;
+)cpp", "TR0201"},
+      {"array-partial-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<class T>struct array<T,1>{T value;};}}Imported::array<int,1>a;
+)cpp", "TR0201"},
+      {"pair-swap-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<>void pair<int,int>::swap(pair&)noexcept{}}}void f(Imported::pair<int,int>&a,Imported::pair<int,int>&b){a.swap(b);}
+)cpp", "TR0201"},
+      {"tuple-swap-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<>void tuple<int>::swap(tuple&)noexcept{}}}void f(Imported::tuple<int>&a,Imported::tuple<int>&b){a.swap(b);}
+)cpp", "TR0201"},
+      {"array-data-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+namespace std{inline namespace __1{template<>constexpr int*array<int,1>::data()noexcept{return nullptr;}}}int*f(Imported::array<int,1>&a){return a.data();}
+)cpp", "TR0201"},
+      {"erased-pair-argument", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+template<class>using Element=int;using P=Imported::pair<Element<long double>,int>;static_assert(__is_same(P::first_type,int));
+)cpp", "TR0201"},
+      {"erased-tuple-argument", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+template<class>using Element=int;using T=Imported::tuple<Element<long double>>;static_assert(std::tuple_size<T>::value==1);
+)cpp", "TR0201"},
+      {"hidden-array-extent", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+using A=Imported::array<int,sizeof(long double)>;static_assert(std::tuple_size<A>::value==sizeof(long double));
+)cpp", "TR0201"},
+      {"pair-element", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+using P=Imported::pair<long double,int>;static_assert(__is_same(P::second_type,int));
+)cpp", "TR0201"},
+      {"tuple-element", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+using T=Imported::tuple<long double>;static_assert(std::tuple_size<T>::value==1);
+)cpp", "TR0201"},
+      {"array-element", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+using A=Imported::array<long double,1>;static_assert(std::tuple_size<A>::value==1);
+)cpp", "TR0201"},
+      {"query-only-data", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+void f(Imported::array<int,3>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0203"},
+      {"concatenated-result-query", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+void f(){auto cat=std::tuple_cat(Imported::pair<int,int>(1,2),Imported::array<int,2>{{3,4}},Imported::tuple<>{});static_assert(__is_same(decltype(cat),Imported::tuple<int,int,int,int>));}
+)cpp", "TR0201"},
+      {"pair-member-address", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+auto f(){return &Imported::pair<int,int>::swap;}
+)cpp", "TR0201"},
+      {"tuple-member-address", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+auto f(){return &Imported::tuple<int>::swap;}
+)cpp", "TR0201"},
+      {"undefined-primary", R"cpp(#include <utility>
+using std::tuple;
+)cpp", "TR0201"},
+      {"other-sdk-class", R"cpp(#include <optional>
+using std::optional;
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("composite-template-imports-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("composite-template-imports-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryTemplateNameImportsRunAtBothOptimizations) {
   const struct { const char *Name; const char *Source; } Controls[] = {
       {"value-adapter-control", R"cpp(#include <memory>
