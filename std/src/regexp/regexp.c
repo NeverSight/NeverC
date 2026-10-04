@@ -563,7 +563,7 @@ static int class_read_utf8_atom(parser_t *par, int *out) {
     const unsigned char *s = (const unsigned char *)par->p;
     size_t n = 0;
     int r, k;
-    while (s[n]) n++;
+    while (n < 4 && s[n]) n++;
     k = utf8_decode(s, n, &r);
     if (k < 1) {
         par->err = "invalid UTF-8";
@@ -585,9 +585,13 @@ static int class_add_range(parser_t *par, charclass_t *cc, rune_ranges_t *rs,
         lo = 0x80;
     }
     if (rs->n == rs->cap) {
+        if (rs->cap > INT_MAX / 2) {
+            par->err = "out of memory";
+            par->re->oom = 1;
+            return 0;
+        }
         int nc = rs->cap ? rs->cap * 2 : 8;
-        if (rs->cap > INT_MAX / 2 ||
-            (size_t)nc > SIZE_MAX / sizeof(*rs->v)) {
+        if ((size_t)nc > SIZE_MAX / sizeof(*rs->v)) {
             par->err = "out of memory";
             par->re->oom = 1;
             return 0;

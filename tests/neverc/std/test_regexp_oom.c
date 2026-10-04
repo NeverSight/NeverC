@@ -87,6 +87,25 @@ static int valid_submatch(int found, const neverc_regexp_match_t *m,
 }
 
 int main(void) {
+    /* Reject an unrepresentable range capacity before evaluating its doubled
+     * value. Inspect only the guard; no large allocation is needed. */
+    {
+        neverc_regexp_t boundary_re = {0};
+        parser_t boundary_parser = { "", &boundary_re, NULL, 0, 0 };
+        charclass_t boundary_class = {0};
+        const int capacity = INT_MAX / 2 + 1;
+        rune_ranges_t ranges = { NULL, capacity, capacity };
+        reset_allocator(0);
+        CHECK(!class_add_range(&boundary_parser, &boundary_class, &ranges,
+                              0x80, 0x80));
+        CHECK(boundary_parser.err != NULL);
+        CHECK(strcmp(boundary_parser.err, "out of memory") == 0);
+        CHECK(boundary_re.oom == 1);
+        CHECK(allocation_count == 0);
+        CHECK(ranges.v == NULL && ranges.n == capacity &&
+              ranges.cap == capacity);
+    }
+
     static const char find_text[] =
         "a b c d e f g h i j k l m n o p q r s t u v w x";
     static const char split_text[] = ",,,,,,,,,,,,,,,,,,,,";
