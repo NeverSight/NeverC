@@ -1576,8 +1576,9 @@ dimension has the same bound. For example, `int (&)[2][3]` cannot bind
 when one side reaches a non-array element while the other still has a fixed
 array dimension. It works in either direction and after multiple matching
 dimensions, for the admitted const and lvalue/rvalue reference forms. It does
-not flatten arrays, insert dimensions or follow pointer elements into their
-pointee types. Unknown array bounds do not establish a rank difference.
+not flatten arrays or insert dimensions. This rank comparison follows directly
+nested arrays; the pointer-element comparison below handles pointee types.
+Unknown array bounds do not establish a rank difference.
 
 For matching ranks and bounds, different builtin, enumeration or record
 element types also exclude an array result. For example, `int (&)[2]` cannot
@@ -1585,10 +1586,22 @@ bind `long (&)[2]`, and `A (&)[2]` cannot bind `B (&)[2]` when `A` and `B` name
 different records, even if `B` provides a conversion to `A`. Array reference
 binding does not convert individual elements. The comparison uses canonical
 unqualified element types, so aliases of the same type and added top-level
-const do not establish this exclusion. Both terminal element types must be
-in these admitted nonpointer categories; pointer elements retain their
-separate qualification requirements. No element conversion is inspected or
+const do not establish this exclusion. No element conversion is inspected or
 instantiated, and all element types still pass their ordinary source checks.
+
+Pointer elements extend this comparison through already-resolved ordinary
+pointer and fixed-array components. A different component kind, a different
+fixed array bound, or different terminal builtin, enumeration or record types
+excludes the result. Examples include `int*[2]` versus `long*[2]`, `int*[2]`
+versus `int**[2]`, and arrays of pointers to `int[3]` versus `int[4]`. Alternating
+pointer and array components are compared in order. Pointer/nonpointer element
+differences also qualify. Individual pointer conversions do not apply to the
+whole array reference: even `int*[2]` cannot bind a reference to `void*[2]`.
+Matching structures and unqualified terminal types keep their separate
+qualification requirements, including const at intermediate pointer levels.
+An unknown bound, dependent type, function or member-pointer component reached
+by this comparison retains its existing limits. All original type sources
+still pass their checks even when an earlier component excludes the result.
 
 Fixed-array results can also be excluded by reference binding, even when the
 bounds match:
@@ -1611,12 +1624,14 @@ have a known fixed bound before using the binding proof.
 Every constructor independently needs an admitted exclusion for every usable
 array result. One result with a retained reference binding, matching rank and
 bounds, and the same unqualified element type keeps its separate requirements,
-as do unknown bounds and remaining pointer element or qualification cases.
+as do unknown bounds and remaining function/member-pointer or qualification
+cases.
 Equal bounds written through different aliases or constant expressions remain
 equal. Each result's binding check, each compared dimension (including a
-dimension present on only one side), and each element identity comparison
-consume the existing expansion budget. All written dimensions and element
-aliases retain their source checks even when an earlier exclusion succeeds.
+dimension present on only one side), and each compared element type component
+or terminal identity consume the existing expansion budget. All written
+dimensions and element aliases retain their source checks even when an earlier
+exclusion succeeds.
 Excluded conversions retain their existing receiver, deletion, explicitness
 and access checks. Each mutable-copy node in an owned record or fixed array
 uses its actual owner context, including friendship that makes a nonpublic
