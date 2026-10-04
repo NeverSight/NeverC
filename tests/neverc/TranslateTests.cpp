@@ -37376,6 +37376,309 @@ int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayReverseQueriesRunAtBothOptimizations) {
+  const auto PromotedSource = tmpFile("array-reverse-queries-promoted.cpp");
+  const auto PromotedOutput = tmpFile("array-reverse-queries-promoted.nc");
+  writeFile(PromotedSource, R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept(a.rbegin()));}
+)cpp");
+  auto PromotedResult = translate(
+      PromotedSource, {"--profile", "cpp-core-v2", "-o", PromotedOutput.string()});
+  ASSERT_EQ(PromotedResult.exitCode, 0)
+      << PromotedResult.out << PromotedResult.err;
+
+  const auto MetadataSource = tmpFile("array-reverse-queries-metadata.cpp");
+  const auto MetadataOutput = tmpFile("array-reverse-queries-metadata.nc");
+  writeFile(MetadataSource, R"cpp(#include <array>
+void metadata_only(std::array<short, 3>& row, const std::array<short, 3>& constant) {
+  static_assert(__is_same(decltype(row.rbegin()), std::reverse_iterator<short*>));
+  static_assert(__is_same(decltype(row.rend()), std::reverse_iterator<short*>));
+  static_assert(__is_same(decltype(row.crbegin()), std::reverse_iterator<const short*>));
+  static_assert(__is_same(decltype(constant.crend()), std::reverse_iterator<const short*>));
+}
+)cpp");
+  auto MetadataResult = translate(
+      MetadataSource, {"--profile", "cpp-core-v2", "-o", MetadataOutput.string()});
+  ASSERT_EQ(MetadataResult.exitCode, 0)
+      << MetadataResult.out << MetadataResult.err;
+
+  const auto QuerySource = tmpFile("array-reverse-queries-query.cpp");
+  const auto QueryOutput = tmpFile("array-reverse-queries-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+struct Element { int value; int extent[2]; };
+using Row = array<int, 3>;
+using Empty = array<int, 0>;
+using Grid = array<Row, 2>;
+using Records = array<Element, 2>;
+void query_only(Row& row, const Row& constant, Empty& empty,
+                const Empty& constant_empty, Grid& grid, Records& records,
+                array<const int, 2>& qualified) {
+  static_assert(noexcept(row.rbegin()));
+  static_assert(__is_same(decltype(row.rbegin()), std::reverse_iterator<int*>));
+  static_assert(noexcept(constant.rbegin()));
+  static_assert(__is_same(decltype(constant.rbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(empty.rbegin()));
+  static_assert(__is_same(decltype(empty.rbegin()), std::reverse_iterator<int*>));
+  static_assert(noexcept(constant_empty.rbegin()));
+  static_assert(__is_same(decltype(constant_empty.rbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(grid.rbegin()));
+  static_assert(__is_same(decltype(grid.rbegin()), std::reverse_iterator<Row*>));
+  static_assert(noexcept(records.rbegin()));
+  static_assert(__is_same(decltype(records.rbegin()), std::reverse_iterator<Element*>));
+  static_assert(noexcept(qualified.rbegin()));
+  static_assert(__is_same(decltype(qualified.rbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(row.rend()));
+  static_assert(__is_same(decltype(row.rend()), std::reverse_iterator<int*>));
+  static_assert(noexcept(constant.rend()));
+  static_assert(__is_same(decltype(constant.rend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(empty.rend()));
+  static_assert(__is_same(decltype(empty.rend()), std::reverse_iterator<int*>));
+  static_assert(noexcept(constant_empty.rend()));
+  static_assert(__is_same(decltype(constant_empty.rend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(grid.rend()));
+  static_assert(__is_same(decltype(grid.rend()), std::reverse_iterator<Row*>));
+  static_assert(noexcept(records.rend()));
+  static_assert(__is_same(decltype(records.rend()), std::reverse_iterator<Element*>));
+  static_assert(noexcept(qualified.rend()));
+  static_assert(__is_same(decltype(qualified.rend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(row.crbegin()));
+  static_assert(__is_same(decltype(row.crbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(constant.crbegin()));
+  static_assert(__is_same(decltype(constant.crbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(empty.crbegin()));
+  static_assert(__is_same(decltype(empty.crbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(constant_empty.crbegin()));
+  static_assert(__is_same(decltype(constant_empty.crbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(grid.crbegin()));
+  static_assert(__is_same(decltype(grid.crbegin()), std::reverse_iterator<const Row*>));
+  static_assert(noexcept(records.crbegin()));
+  static_assert(__is_same(decltype(records.crbegin()), std::reverse_iterator<const Element*>));
+  static_assert(noexcept(qualified.crbegin()));
+  static_assert(__is_same(decltype(qualified.crbegin()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(row.crend()));
+  static_assert(__is_same(decltype(row.crend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(constant.crend()));
+  static_assert(__is_same(decltype(constant.crend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(empty.crend()));
+  static_assert(__is_same(decltype(empty.crend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(constant_empty.crend()));
+  static_assert(__is_same(decltype(constant_empty.crend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept(grid.crend()));
+  static_assert(__is_same(decltype(grid.crend()), std::reverse_iterator<const Row*>));
+  static_assert(noexcept(records.crend()));
+  static_assert(__is_same(decltype(records.crend()), std::reverse_iterator<const Element*>));
+  static_assert(noexcept(qualified.crend()));
+  static_assert(__is_same(decltype(qualified.crend()), std::reverse_iterator<const int*>));
+  static_assert(noexcept((constant.rbegin)()));
+  static_assert(__is_same(decltype((row.rend)()), Row::reverse_iterator));
+  static_assert(__is_same(decltype(std::move(row).rbegin()), Row::reverse_iterator));
+  static_assert(__is_same(decltype(std::as_const(row).rend()), Row::const_reverse_iterator));
+  static_assert(noexcept(std::move(constant).crend()));
+  static_assert(sizeof(row.rbegin()) == sizeof(Row::reverse_iterator));
+  static_assert(alignof(decltype(grid.crend())) == alignof(Grid::const_reverse_iterator));
+}
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0)
+      << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("array-reverse-queries.cpp");
+  const auto Output = tmpFile("array-reverse-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+namespace Imported { using std::array; }
+namespace Again { using Imported::array; }
+using Row = Again::array<int, 2>;
+using Empty = Again::array<int, 0>;
+int effects, defaults, live, destroyed;
+Row& source(Row& row, int n = (++defaults, 1)) noexcept {
+  ++effects; return row;
+}
+Row& may_throw(Row& row) { ++effects; return row; }
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept { --live; ++destroyed; }
+};
+Row& keep(Row& row, const Guard& guard = Guard()) noexcept {
+  effects += live == 1 ? 1 : 100; return row;
+}
+int main() {
+  Row row{{3, 5}};
+  const Row constant{{7, 11}};
+  Again::array<const int, 2> qualified{{13, 17}};
+  Empty empty{};
+  const Empty constant_empty{};
+  Again::array<unsigned, 4> lazy{{1, 2, 3, 4}};
+  static_assert(noexcept(lazy.rbegin()) && noexcept(lazy.rend()));
+  static_assert(noexcept(lazy.crbegin()) && noexcept(lazy.crend()));
+  static_assert(__is_same(decltype(lazy.rbegin()), std::reverse_iterator<unsigned*>));
+  static_assert(__is_same(decltype(lazy.crend()), std::reverse_iterator<const unsigned*>));
+  static_assert(noexcept(source(row).rbegin()));
+  static_assert(!noexcept(may_throw(row).rend()));
+  static_assert(noexcept(keep(row).crbegin()));
+  static_assert(__is_same(decltype((source(row).rend)()), Row::reverse_iterator));
+  static_assert(sizeof(keep(row).crend()) == sizeof(Row::const_reverse_iterator));
+  static_assert(__is_same(decltype((++effects, lazy).rbegin()), std::reverse_iterator<unsigned*>));
+  static_assert(__is_same(decltype(Again::array<int, 5>{{++effects}}.rend()), Row::reverse_iterator));
+  if (effects || defaults || live || destroyed) return 1;
+  auto first = source(row).rbegin();
+  auto last = source(row).rend();
+  if (effects != 2 || defaults != 2 || first.base() != row.end() ||
+      last.base() != row.begin() || *first != 5 || last - first != 2) return 2;
+  *first = 19;
+  if (row[1] != 19 || row.crbegin().base() != first.base() ||
+      row.crend().base() != last.base()) return 3;
+  if (constant.rbegin().base() != constant.end() ||
+      constant.rend().base() != constant.begin() || *constant.crbegin() != 11 ||
+      constant.crend().base() != constant.rend().base()) return 4;
+  if (empty.rbegin().base() != nullptr || empty.rend().base() != nullptr ||
+      empty.crbegin().base() != nullptr || empty.crend().base() != nullptr ||
+      constant_empty.rbegin().base() != nullptr || constant_empty.rend().base() != nullptr ||
+      constant_empty.crbegin().base() != nullptr || constant_empty.crend().base() != nullptr) return 5;
+  int value = *keep(row).crbegin();
+  if (value != 19 || effects != 3 || defaults != 2 || live || destroyed != 1) return 6;
+  if (*qualified.rbegin() != 17 || qualified.rend().base() != qualified.begin() ||
+      *qualified.crbegin() != 17 || qualified.crend().base() != qualified.begin()) return 7;
+  int sum = 0;
+  for (auto it = row.rbegin(); it != row.rend(); ++it) sum += *it;
+  return sum == 22 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-reverse-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayReverseQueriesRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"element-rbegin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<long double,2>&a){static_assert(noexcept(a.rbegin()));}
+)cpp", "TR0201"},
+      {"erased-element-rend", R"cpp(#include <array>
+using Row=std::array<int,2>;
+template<class>using Erased=int;void f(std::array<Erased<long double>,2>&a){static_assert(noexcept(a.rend()));}
+)cpp", "TR0201"},
+      {"extent-crbegin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),2)>&a){static_assert(noexcept(a.crbegin()));}
+)cpp", "TR0201"},
+      {"zero-extent-crend", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),0)>&a){static_assert(noexcept(a.crend()));}
+)cpp", "TR0201"},
+      {"receiver-expression-rbegin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept((sizeof(long double),a).rbegin()));}
+)cpp", "TR0201"},
+      {"element-field-source-rend", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value[(sizeof(long double),1)];};void f(std::array<E,2>&a){static_assert(noexcept(a.rend()));}
+)cpp", "TR0201"},
+      {"temporary-initializer-crbegin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(){static_assert(noexcept(std::array<int,2>{{(sizeof(long double),1),2}}.crbegin()));}
+)cpp", "TR0201"},
+      {"receiver-default-crend", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){static_assert(noexcept(source(a).crend()));}
+)cpp", "TR0201"},
+      {"receiver-body-rbegin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).rbegin()));}
+)cpp", "TR0201"},
+      {"receiver-declaration-rend", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).rend()));}
+)cpp", "TR0203"},
+      {"receiver-exception-crbegin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept(sizeof(long double)>0){return a;}void f(Row&a){static_assert(noexcept(source(a).crbegin()));}
+)cpp", "TR0201"},
+      {"temporary-destructor-crend", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct Guard{~Guard()noexcept{(void)sizeof(long double);}};Row&keep(Row&a,const Guard&)noexcept{return a;}void f(Row&a){static_assert(noexcept(keep(a,Guard{}).crend()));}
+)cpp", "TR0201"},
+      {"rbegin-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::reverse_iterator array<int,2>::rbegin()noexcept{return {};}}}void f(Row&a){static_assert(noexcept(a.rbegin()));}
+)cpp", "TR0201"},
+      {"rend-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::const_reverse_iterator array<int,2>::rend()const noexcept{return {};}}}void f(const Row&a){static_assert(noexcept(a.rend()));}
+)cpp", "TR0201"},
+      {"crbegin-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::const_reverse_iterator array<int,2>::crbegin()const noexcept{return {};}}}void f(const Row&a){static_assert(noexcept(a.crbegin()));}
+)cpp", "TR0201"},
+      {"crend-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::const_reverse_iterator array<int,2>::crend()const noexcept{return {};}}}void f(const Row&a){static_assert(noexcept(a.crend()));}
+)cpp", "TR0201"},
+      {"rbegin-end-replacement", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr int*array<int,2>::end()noexcept{return nullptr;}}}Row::reverse_iterator f(Row&a){return a.rbegin();}
+)cpp", "TR0201"},
+      {"crend-rend-replacement", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::const_reverse_iterator array<int,2>::rend()const noexcept{return {};}}}Row::const_reverse_iterator f(const Row&a){return a.crend();}
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>struct array<unsigned,2>{reverse_iterator<unsigned*>rbegin()noexcept{return {};}};}}void f(std::array<unsigned,2>&a){static_assert(noexcept(a.rbegin()));}
+)cpp", "TR0201"},
+      {"member-address", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row::reverse_iterator f(Row&a){auto p=a.rbegin();using Method=Row::reverse_iterator(Row::*)()noexcept;Method method=static_cast<Method>(&Row::rbegin);return (a.*method)();}
+)cpp", "TR0201"},
+      {"reverse-constructor-replacement", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr reverse_iterator<int*>::reverse_iterator(int*p):__t_(p),current(p+1){}}}Row::reverse_iterator f(Row&a){return a.rbegin();}
+)cpp", "TR0201"},
+      {"reverse-class-replacement", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>class reverse_iterator<unsigned*>{public:unsigned*current;constexpr reverse_iterator(unsigned*p=nullptr):current(p){}};}}void f(std::array<unsigned,3>&a){static_assert(noexcept(a.rbegin()));}
+)cpp", "TR0201"},
+      {"reverse-class-decltype", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>class reverse_iterator<unsigned*>{public:unsigned*current;constexpr reverse_iterator(unsigned*p=nullptr):current(p){}};}}void f(std::array<unsigned,3>&a){static_assert(__is_same(decltype(a.rbegin()),std::reverse_iterator<unsigned*>));}
+)cpp", "TR0201"},
+      {"query-only-reverse-base", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(__is_same(decltype(a.rbegin().base()),int*));}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("array-reverse-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("array-reverse-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayEndpointQueriesRunAtBothOptimizations) {
   const auto PromotedSource = tmpFile("array-endpoint-queries-promoted.cpp");
   const auto PromotedOutput = tmpFile("array-endpoint-queries-promoted.nc");
@@ -37627,10 +37930,6 @@ namespace std{inline namespace __1{template<>struct array<unsigned,2>{unsigned*b
 using Row=std::array<int,2>;
 int*f(Row&a){int*p=a.begin();using Method=int*(Row::*)()noexcept;Method method=static_cast<Method>(&Row::begin);return (a.*method)();}
 )cpp", "TR0201"},
-      {"query-only-rbegin", R"cpp(#include <array>
-using Row=std::array<int,2>;
-void f(Row&a){static_assert(noexcept(a.rbegin()));}
-)cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

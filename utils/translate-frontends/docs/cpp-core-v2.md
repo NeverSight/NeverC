@@ -2439,6 +2439,23 @@ require their original type, extent, declaration, body and lifetime sources.
 Source replacements and independent method addresses remain rejected. Other
 array members retain their existing query and runtime boundaries.
 
+Direct `array::rbegin()`, `rend()`, `crbegin()` and `crend()` queries use the
+same signature and receiver-source checks. A `decltype` identity query may
+name an incomplete `reverse_iterator<T*>` specialization: its template must
+be the pinned SDK family and its pointer argument must match the array's
+element and receiver qualifications. Completed results additionally require
+the existing two-pointer reverse-iterator layout. Queries never instantiate
+that record or an SDK method body to obtain this proof.
+An instantiated reverse endpoint must construct the pinned pointer iterator
+from the matching `this->end()` or `this->begin()` call; its constructor must
+copy that pointer into both verified fields and trivially initialize the empty
+base. `crbegin()` and `crend()` must forward to the corresponding const reverse
+endpoint. This includes const element arrays and zero extents, whose reverse
+iterator bases remain null. Original receiver effects, default arguments and
+temporary cleanup retain their ordinary runtime behavior and independent
+source checks. Queries on returned iterator members, including query-only
+`base()` calls, retain their existing method-body requirements.
+
 Authenticated array objects also qualify as referents in the checked utility
 and functional operations. Direct reference or mixed-reference tuple and pair
 construction, `tie`, `forward_as_tuple`, and `make_tuple`/`make_pair` unwrapping of

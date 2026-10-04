@@ -104,6 +104,14 @@ exact nonempty end offset and no empty-array pointer arithmetic.
 Receiver types, written extents, expressions,
 defaults and temporary lifetimes retain their independent source checks;
 source replacements and independent method addresses remain excluded.
+Array `rbegin/rend/crbegin/crend` queries also authenticate the exact fixed
+signature and const-correct `reverse_iterator<T*>` result. Incomplete results
+may supply decltype identity through their pinned template and pointer
+argument; completed results must satisfy the existing reverse-iterator layout.
+Instantiated bodies must follow the matching array endpoint and pinned pointer
+constructor, preserving both stored pointers and trivial empty-base
+initialization. Const element arrays and empty null bases are included.
+Queries on returned iterator members retain their existing body requirements.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

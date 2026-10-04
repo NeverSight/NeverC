@@ -4566,12 +4566,14 @@ static bool utilityAddressofSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
-static bool utilityArrayPointerSource(Adapter &A, const CallExpr *Call) {
+static bool utilityArrayAccessorSource(Adapter &A, const CallExpr *Call) {
   const auto Operation =
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
   if (!Operation || (*Operation != UtilityOperation::ArrayData &&
                      *Operation != UtilityOperation::ArrayBegin &&
-                     *Operation != UtilityOperation::ArrayEnd))
+                     *Operation != UtilityOperation::ArrayEnd &&
+                     *Operation != UtilityOperation::ArrayRBegin &&
+                     *Operation != UtilityOperation::ArrayREnd))
     return false;
   const auto *Function = Call->getDirectCallee();
   // Only the exact direct member call consumes this SDK signature. The
@@ -7662,7 +7664,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
-        utilityArrayPointerSource(A, Call) ||
+        utilityArrayAccessorSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -10299,6 +10301,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
   std::set<const Stmt *> OperationValueRoots;
   std::set<const Expr *> DecltypeCallResults;
+  std::set<const Expr *> ArrayReverseDecltypeResults;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::map<const UnresolvedLookupExpr *, const DeclRefExpr *> InitializerLookups;
   std::set<const Stmt *> InitializerLookupWrappers;
@@ -12904,8 +12907,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // ActOnDecltypeExpression removes the terminal call's temporary binding
         // through these exact wrappers. Arguments and comma-left temporaries
         // keep their own source dependencies; no other expression is peeled.
-        if (isa<CallExpr>(Expression))
+        if (const auto *Call = dyn_cast<CallExpr>(Expression)) {
           DecltypeCallResults.insert(Path.begin(), Path.end());
+          // A direct array reverse endpoint can name an incomplete iterator
+          // in decltype. Only its authenticated signature supplies that result
+          // identity; receiver and comma-left sources still traverse normally.
+          if (utilityArrayAccessorSource(A, Call)) {
+            const auto Operation =
+                approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+            if (Operation == UtilityOperation::ArrayRBegin ||
+                Operation == UtilityOperation::ArrayREnd)
+              ArrayReverseDecltypeResults.insert(Path.begin(), Path.end());
+          }
+        }
         return;
       }
     }
@@ -13117,6 +13131,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // The pinned one-pointer layout supplies its private field source.
           // Keep the original pointer type without requiring referent layout.
           Self(Self, Iterator->IteratorType, false, Depth + 1);
+          return;
+        }
+        if (const auto Iterator = approvedUtilityReverseIteratorRecord(
+                A.S, A.Sources, Declaration, A.Context)) {
+          // Its checked iterator fields and empty base supply the SDK layout.
+          // Retain the stored iterator's source without borrowing private
+          // field/base TypeLocs or consuming the pointed-to object's layout.
+          Self(Self, Iterator->IteratorType, true, Depth + 1);
           return;
         }
         if (const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -13380,7 +13402,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             if (Entry->second == Call)
               AuthenticatedVectorEndpoint = Method;
           }
-        if (utilityArrayPointerSource(A, Call))
+        if (utilityArrayAccessorSource(A, Call))
           if (const auto *Reference = directMethodReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
@@ -20397,7 +20419,10 @@ public:
                          A.S, A.Sources, dyn_cast<CastExpr>(E), A.Context)) &&
                    !E->getType()->isFunctionType() &&
                    (A.S.coreV2() || !FunctionDecay)) {
-          A.type(E->getType(), E->getExprLoc(), true);
+          if (A.S.coreV2() && ArrayReverseDecltypeResults.count(E))
+            A.checkTypeOnly(E->getType(), E->getExprLoc());
+          else
+            A.type(E->getType(), E->getExprLoc(), true);
         }
       }
     }

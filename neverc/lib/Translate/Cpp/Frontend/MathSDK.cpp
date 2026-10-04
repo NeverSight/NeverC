@@ -20847,31 +20847,22 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
-static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
-                                    const CXXMethodDecl *Method,
-                                    const UtilityArrayRecord &Array,
-                                    const ASTContext &Context) {
+static bool utilityArrayAccessorSignature(const State &S,
+                                          const SourceManager &SM,
+                                          const CXXMethodDecl *Method,
+                                          const UtilityArrayRecord &Array) {
   if (!Method || !Method->getIdentifier() || Method->isStatic() ||
       Method->isVariadic() || Method->getNumParams() ||
       Method->getParent()->getCanonicalDecl() !=
           Array.Record->getCanonicalDecl())
     return false;
-  const auto Name = Method->getIdentifier()->getName();
-  if (Name != "data" && Name != "begin" && Name != "end" &&
-      Name != "cbegin" && Name != "cend")
-    return false;
-  if ((Name == "cbegin" || Name == "cend") && !Method->isConst())
-    return false;
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
-  const auto Pointer = Context.getPointerType(
-      Method->isConst() ? Array.ElementType.withConst() : Array.ElementType);
   if (Method->isInvalidDecl() || Method->isDeleted() ||
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None ||
       Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
-      Prototype->getNoexceptExpr() ||
-      !Context.hasSameType(Method->getReturnType(), Pointer))
+      Prototype->getNoexceptExpr())
     return false;
   auto Pinned = [&](const FunctionDecl *Function) {
     if (!Function || Function->getTemplateSpecializationKind() ==
@@ -20885,7 +20876,22 @@ static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
   };
   const auto *Pattern =
       Method->getTemplateInstantiationPattern(/*ForDefinition=*/true);
-  if (!Pinned(Method) || !Pinned(Pattern) || !Pattern->hasBody())
+  return Pinned(Method) && Pinned(Pattern) && Pattern->hasBody();
+}
+
+static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
+                                    const CXXMethodDecl *Method,
+                                    const UtilityArrayRecord &Array,
+                                    const ASTContext &Context) {
+  if (!utilityArrayAccessorSignature(S, SM, Method, Array))
+    return false;
+  const auto Name = Method->getIdentifier()->getName();
+  const auto Pointer = Context.getPointerType(
+      Method->isConst() ? Array.ElementType.withConst() : Array.ElementType);
+  if ((Name != "data" && Name != "begin" && Name != "end" &&
+       Name != "cbegin" && Name != "cend") ||
+      ((Name == "cbegin" || Name == "cend") && !Method->isConst()) ||
+      !Context.hasSameType(Method->getReturnType(), Pointer))
     return false;
   // Queries consume the exact pinned signature without instantiating a body.
   // Instantiated endpoints must follow the pinned forwarding chain to data(),
@@ -20944,6 +20950,132 @@ static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
          isa<CXXThisExpr>(
              functionalInvokeStrippedExpression(Reference->getBase())) &&
          utilityArrayPointerBody(S, SM, Target, Array, Context);
+}
+
+static bool utilityArrayReverseConstruction(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction,
+    const UtilityReverseIteratorRecord &Reverse, const ASTContext &Context) {
+  if (approvedUtilityReverseIteratorConstruction(S, SM, Construction, Context) !=
+      UtilityReverseIteratorConstruction::Iterator)
+    return false;
+  const auto *Constructor = Construction->getConstructor();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+  if (!Body || !Body->body_empty() || Constructor->getNumCtorInitializers() != 3 ||
+      Constructor->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return false;
+  const FunctionDecl *Pattern =
+      Constructor->getTemplateInstantiationPattern(/*ForDefinition=*/true);
+  const FunctionDecl *Functions[] = {Constructor, Pattern};
+  for (const auto *Function : Functions) {
+    if (!Function || !Function->hasBody())
+      return false;
+    for (const auto *Declaration : Function->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                         "__iterator/reverse_iterator.h"))
+        return false;
+  }
+  auto It = Constructor->init_begin();
+  const auto *Base = *It++;
+  const auto *BaseConstruction = dyn_cast<CXXConstructExpr>(Base->getInit());
+  if (!Base->isBaseInitializer() || !BaseConstruction ||
+      BaseConstruction->getNumArgs() ||
+      !BaseConstruction->getConstructor()->isImplicit() ||
+      !BaseConstruction->getConstructor()->isTrivial() ||
+      !Context.hasSameType(BaseConstruction->getType(),
+                           Reverse.Record->bases_begin()->getType()))
+    return false;
+  for (const auto *Field : {Reverse.Legacy, Reverse.Current}) {
+    const auto *Initializer = *It++;
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Initializer->getInit());
+    const auto *Parameter =
+        Cast ? dyn_cast<DeclRefExpr>(Cast->getSubExpr()) : nullptr;
+    if (!Initializer->isMemberInitializer() ||
+        Initializer->getMember() != Field || !Cast ||
+        Cast->getCastKind() != CK_LValueToRValue || !Parameter ||
+        Parameter->getDecl() != Constructor->getParamDecl(0))
+      return false;
+  }
+  return true;
+}
+
+static bool utilityArrayReverseBody(const State &S, const SourceManager &SM,
+                                    const CXXMethodDecl *Method,
+                                    const UtilityArrayRecord &Array,
+                                    const ASTContext &Context) {
+  if (!utilityArrayAccessorSignature(S, SM, Method, Array))
+    return false;
+  const auto Name = Method->getIdentifier()->getName();
+  const bool ConstForwarder = Name == "crbegin" || Name == "crend";
+  if ((Name != "rbegin" && Name != "rend" && !ConstForwarder) ||
+      (ConstForwarder && !Method->isConst()))
+    return false;
+  const auto Pointer = Context.getPointerType(
+      Method->isConst() ? Array.ElementType.withConst() : Array.ElementType);
+  const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method->getReturnType()->getAsCXXRecordDecl());
+  if (!approvedUtilityReverseIteratorMetadata(S, SM, Record) ||
+      (Record->getSpecializationKind() != TSK_Undeclared &&
+       Record->getSpecializationKind() != TSK_ImplicitInstantiation) ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Context.getRecordType(Record)) ||
+      !Context.hasSameType(Record->getTemplateArgs().get(0).getAsType(),
+                           Pointer))
+    return false;
+  for (const auto *Declaration : Record->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                       "__iterator/reverse_iterator.h"))
+      return false;
+  const auto Reverse =
+      approvedUtilityReverseIteratorRecord(S, SM, Record, Context);
+  // A decltype-only result may still be an incomplete specialization. Its exact
+  // pinned template and pointer argument suffice for identity; any completed
+  // result must satisfy the full record layout without instantiating it here.
+  if (Record->getDefinition() && !Reverse)
+    return false;
+  if (!Method->hasBody())
+    return true;
+  if (!Reverse || Reverse->WrappedCurrent)
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Result = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Returned = Result ? Result->getRetValue() : nullptr;
+  if (!Returned ||
+      !Context.hasSameType(Returned->getType(), Method->getReturnType()))
+    return false;
+  if (!ConstForwarder) {
+    const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Returned);
+    const auto *Construction =
+        Cast ? dyn_cast<CXXConstructExpr>(Cast->getSubExpr()) : nullptr;
+    if (!Cast || Cast->getCastKind() != CK_ConstructorConversion ||
+        !Construction ||
+        !utilityArrayReverseConstruction(S, SM, Construction, *Reverse, Context))
+      return false;
+    Returned = Construction->getArg(0);
+  }
+  const auto *Delegate = dyn_cast<CXXMemberCallExpr>(Returned);
+  const auto *Reference =
+      Delegate ? dyn_cast<MemberExpr>(Delegate->getCallee()) : nullptr;
+  const auto *Target = Delegate ? Delegate->getMethodDecl() : nullptr;
+  const llvm::StringRef TargetName = Name == "crbegin" ? "rbegin"
+                                   : Name == "crend" ? "rend"
+                                   : Name == "rbegin" ? "end"
+                                                      : "begin";
+  return Delegate && Delegate->getNumArgs() == 0 && Delegate->isPRValue() &&
+         Context.hasSameType(
+             Delegate->getType(),
+             ConstForwarder ? Method->getReturnType() : Pointer) &&
+         Reference && Reference->isArrow() && Target && Target->getIdentifier() &&
+         Target->getIdentifier()->getName() == TargetName &&
+         Target->isConst() == Method->isConst() &&
+         isa<CXXThisExpr>(
+             functionalInvokeStrippedExpression(Reference->getBase())) &&
+         (ConstForwarder ? utilityArrayReverseBody(S, SM, Target, Array, Context)
+                         : utilityArrayPointerBody(S, SM, Target, Array, Context));
 }
 
 static bool utilityPointerToBody(const State &S, const SourceManager &SM,
@@ -23234,6 +23366,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool PointerMember = Name == "data" || Name == "begin" ||
                                Name == "cbegin" || Name == "end" ||
                                Name == "cend";
+    const bool ReverseMember = Name == "rbegin" || Name == "rend" ||
+                               Name == "crbegin" || Name == "crend";
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23242,7 +23376,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
         !S.owns(SM, Reference->getExprLoc()) ||
-        (!Method->hasBody() && !PointerMember))
+        (!Method->hasBody() && !PointerMember && !ReverseMember))
       return std::nullopt;
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
       if ((Name == "size" || Name == "max_size") &&
@@ -23264,20 +23398,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::ArrayBegin;
         return UtilityOperation::ArrayEnd;
       }
-      if ((Name == "rbegin" || Name == "crbegin" || Name == "rend" ||
-           Name == "crend") &&
-          Call->isPRValue() && Same(Call->getType(), Method->getReturnType())) {
-        const auto Reverse = approvedUtilityReverseIteratorRecord(
-            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
-        if (Reverse &&
-            Context.hasSameUnqualifiedType(
-                Reverse->IteratorType->getPointeeType(), Array->ElementType) &&
-            Reverse->IteratorType->getPointeeType().isConstQualified() ==
-                Method->isConst())
-          return Name == "rend" || Name == "crend"
-                     ? UtilityOperation::ArrayREnd
-                     : UtilityOperation::ArrayRBegin;
-      }
+      if (ReverseMember && Call->isPRValue() &&
+          Same(Call->getType(), Method->getReturnType()) &&
+          utilityArrayReverseBody(S, SM, Method, *Array, Context))
+        return Name == "rend" || Name == "crend"
+                   ? UtilityOperation::ArrayREnd
+                   : UtilityOperation::ArrayRBegin;
       if (Array->Size && (Name == "front" || Name == "back") &&
           ReferenceResult())
         return Name == "front" ? UtilityOperation::ArrayFront
