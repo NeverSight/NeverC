@@ -4566,6 +4566,20 @@ static bool utilityAddressofSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
+static bool utilityArrayDataSource(Adapter &A, const CallExpr *Call) {
+  if (!Call || approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
+                   UtilityOperation::ArrayData)
+    return false;
+  const auto *Function = Call->getDirectCallee();
+  // Only the exact direct member call consumes this SDK signature. The
+  // receiver's written types, expression, defaults and lifetimes remain source
+  // dependencies; an independent method address gains no such proof.
+  return operationCalleePrototype(Call) ==
+             Function->getType()->getAs<FunctionProtoType>() &&
+         utilitySDKFunctionSource(A, Function, "array",
+                                  /*RequireDefinition=*/false);
+}
+
 static bool utilityPointerToSource(Adapter &A, const CallExpr *Call) {
   if (!Call || approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
                    UtilityOperation::MemoryPointerTo)
@@ -7645,6 +7659,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
+        utilityArrayDataSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -13361,6 +13376,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               A.chargeExpansion(1, Call->getExprLoc());
             if (Entry->second == Call)
               AuthenticatedVectorEndpoint = Method;
+          }
+        if (utilityArrayDataSource(A, Call))
+          if (const auto *Reference = directMethodReference(Call)) {
+            auto [Entry, Inserted] =
+                AuthenticatedUtilityReferences.emplace(Reference, Call);
+            if (Inserted)
+              A.chargeExpansion(1, Call->getExprLoc());
+            if (Entry->second == Call)
+              AuthenticatedUtilityCall = Call;
           }
         if (const auto Info = utilityUniquePtrMemberSource(A, Call))
           if (const auto *Reference = directMethodReference(Call)) {

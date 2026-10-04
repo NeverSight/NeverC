@@ -20847,6 +20847,59 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
+static bool utilityArrayDataBody(const State &S, const SourceManager &SM,
+                                 const CXXMethodDecl *Method,
+                                 const UtilityArrayRecord &Array,
+                                 const ASTContext &Context) {
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  const auto Pointer = Context.getPointerType(
+      Method->isConst() ? Array.ElementType.withConst() : Array.ElementType);
+  if (Method->isInvalidDecl() || Method->isDeleted() ||
+      Method->getAccess() != AS_public || Method->isVolatile() ||
+      Method->getRefQualifier() != RQ_None ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      !Context.hasSameType(Method->getReturnType(), Pointer))
+    return false;
+  auto Pinned = [&](const FunctionDecl *Function) {
+    if (!Function || Function->getTemplateSpecializationKind() ==
+                         TSK_ExplicitSpecialization)
+      return false;
+    for (const auto *Declaration : Function->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "array"))
+        return false;
+    return true;
+  };
+  const auto *Pattern =
+      Method->getTemplateInstantiationPattern(/*ForDefinition=*/true);
+  if (!Pinned(Method) || !Pinned(Pattern) || !Pattern->hasBody())
+    return false;
+  // Queries consume the exact pinned signature without instantiating a body.
+  // An already instantiated body must still return this array's storage (or
+  // the pinned zero-extent null pointer), never a source replacement.
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Result = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Cast =
+      Result ? dyn_cast_or_null<ImplicitCastExpr>(Result->getRetValue())
+             : nullptr;
+  if (!Cast)
+    return false;
+  if (!Array.Size)
+    return Cast->getCastKind() == CK_NullToPointer &&
+           isa<CXXNullPtrLiteralExpr>(Cast->getSubExpr());
+  const auto *Storage = dyn_cast<MemberExpr>(Cast->getSubExpr());
+  return Cast->getCastKind() == CK_ArrayToPointerDecay && Storage &&
+         Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
+         isa<CXXThisExpr>(
+             functionalInvokeStrippedExpression(Storage->getBase()));
+}
+
 static bool utilityPointerToBody(const State &S, const SourceManager &SM,
                                  const CXXMethodDecl *Method,
                                  const ASTContext &Context) {
@@ -23129,6 +23182,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              (Result->isLValueReferenceType() ? Call->isLValue()
                                               : Call->isXValue());
     };
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23136,11 +23192,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !SameArray(Object->getType()) ||
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
-        !S.owns(SM, Reference->getExprLoc()) || !Method->hasBody())
+        !S.owns(SM, Reference->getExprLoc()) ||
+        (!Method->hasBody() && Name != "data"))
       return std::nullopt;
-    const llvm::StringRef Name = Method->getIdentifier()
-                                     ? Method->getIdentifier()->getName()
-                                     : llvm::StringRef();
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
       if ((Name == "size" || Name == "max_size") &&
           Method->isConstexpr() && Call->isPRValue() &&
@@ -23152,14 +23206,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Method->getReturnType()->isBooleanType() &&
           Same(Call->getType(), Method->getReturnType()))
         return UtilityOperation::ArrayEmpty;
-      if ((Name == "data" || Name == "begin" || Name == "cbegin" ||
+      if (Name == "data" && Call->isPRValue() &&
+          Same(Call->getType(), Method->getReturnType()) &&
+          utilityArrayDataBody(S, SM, Method, *Array, Context))
+        return UtilityOperation::ArrayData;
+      if ((Name == "begin" || Name == "cbegin" ||
            Name == "end" || Name == "cend") &&
           Call->isPRValue() && Method->getReturnType()->isPointerType() &&
           Context.hasSameUnqualifiedType(
               Method->getReturnType()->getPointeeType(), Array->ElementType) &&
           Same(Call->getType(), Method->getReturnType())) {
-        if (Name == "data")
-          return UtilityOperation::ArrayData;
         if (Name == "begin" || Name == "cbegin")
           return UtilityOperation::ArrayBegin;
         return UtilityOperation::ArrayEnd;

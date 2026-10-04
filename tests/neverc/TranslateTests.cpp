@@ -37360,15 +37360,6 @@ struct Guard { ~Guard(){(void)sizeof(long double);} };
 const Row& keep(const Row& row,const Guard&){return row;}
 int main(){static_assert(__is_same(decltype(keep(Row{{1,2}},Guard{})),const Row&));return 0;}
 )cpp", "TR0201"},
-      {"nontrivial-array-element", R"cpp(#include <array>
-struct Element { int value; ~Element(){} };
-using Row=std::array<Element,1>;
-Row& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
-)cpp", "TR0203"},
-      {"local-copy-construction-stays-separate", R"cpp(#include <array>
-using Row=std::array<int,2>; Row& identity(Row& row){return row;}
-int main(){Row row{{1,2}};Row copy(row);static_assert(__is_same(decltype(identity(copy)),Row&));return 0;}
-)cpp", "TR0201"},
       {"sdk-nothrow-destruction-query-stays-separate", R"cpp(#include <array>
 using Row=std::array<int,2>;
 int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}
@@ -37382,6 +37373,253 @@ int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0
     expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
                Case.Code);
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayDataQueriesRunAtBothOptimizations) {
+  const auto PromotedSource = tmpFile("array-data-queries-promoted.cpp");
+  const auto PromotedOutput = tmpFile("array-data-queries-promoted.nc");
+  writeFile(PromotedSource, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+namespace Imported { using std::array, std::pair, std::tuple; }
+void f(Imported::array<int,3>&a){static_assert(noexcept(a.data()));}
+)cpp");
+  auto PromotedResult = translate(
+      PromotedSource, {"--profile", "cpp-core-v2", "-o", PromotedOutput.string()});
+  ASSERT_EQ(PromotedResult.exitCode, 0)
+      << PromotedResult.out << PromotedResult.err;
+
+  const auto QuerySource = tmpFile("array-data-queries-query.cpp");
+  const auto QueryOutput = tmpFile("array-data-queries-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+struct Element { int value; int extent[2]; };
+using Row = array<int, 3>;
+using Empty = array<int, 0>;
+using Grid = array<Row, 2>;
+using Records = array<Element, 2>;
+void query_only(Row& row, const Row& constant, Empty& empty,
+                const Empty& constant_empty, Grid& grid, Records& records,
+                array<const int, 2>& qualified) {
+  static_assert(noexcept(row.data()));
+  static_assert(noexcept((constant.data)()));
+  static_assert(noexcept(empty.data()));
+  static_assert(noexcept(constant_empty.data()));
+  static_assert(noexcept(grid.data()));
+  static_assert(noexcept(records.data()));
+  static_assert(noexcept(qualified.data()));
+  static_assert(__is_same(decltype(row.data()), int*));
+  static_assert(__is_same(decltype(constant.data()), const int*));
+  static_assert(__is_same(decltype(empty.data()), int*));
+  static_assert(__is_same(decltype(constant_empty.data()), const int*));
+  static_assert(__is_same(decltype(grid.data()), Row*));
+  static_assert(__is_same(decltype(records.data()), Element*));
+  static_assert(__is_same(decltype(qualified.data()), const int*));
+  static_assert(__is_same(decltype(std::move(row).data()), int*));
+  static_assert(__is_same(decltype(std::as_const(row).data()), const int*));
+  static_assert(noexcept(std::move(constant).data()));
+  static_assert(sizeof(row.data()) == sizeof(int*));
+  static_assert(alignof(decltype(grid.data())) == alignof(Row*));
+}
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0)
+      << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("array-data-queries.cpp");
+  const auto Output = tmpFile("array-data-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+namespace Imported { using std::array; }
+namespace Again { using Imported::array; }
+using Row = Again::array<int, 2>;
+using Empty = Again::array<int, 0>;
+int effects, defaults, live, destroyed;
+Row& source(Row& row, int value = (++defaults, 1)) noexcept {
+  ++effects; return row;
+}
+Row& may_throw(Row& row) { ++effects; return row; }
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept { --live; ++destroyed; }
+};
+Row& keep(Row& row, const Guard& guard = Guard()) noexcept {
+  effects += live == 1 ? 1 : 100; return row;
+}
+int main() {
+  Row row{{3, 5}};
+  const Row constant{{7, 11}};
+  Empty empty{};
+  const Empty constant_empty{};
+  Again::array<unsigned, 4> lazy{{1, 2, 3, 4}};
+  const Again::array<unsigned, 4>& const_lazy = lazy;
+  static_assert(noexcept(lazy.data()));
+  static_assert(noexcept(const_lazy.data()));
+  static_assert(__is_same(decltype(lazy.data()), unsigned*));
+  static_assert(__is_same(decltype(const_lazy.data()), const unsigned*));
+  static_assert(noexcept(source(row).data()));
+  static_assert(!noexcept(may_throw(row).data()));
+  static_assert(noexcept(keep(row).data()));
+  static_assert(__is_same(decltype((source(row).data)()), int*));
+  static_assert(sizeof(keep(row).data()) == sizeof(int*));
+  static_assert(__is_same(decltype((++effects, lazy).data()), unsigned*));
+  static_assert(__is_same(decltype(Again::array<int, 5>{{++effects}}.data()), int*));
+  if (effects || defaults || live || destroyed) return 1;
+  int* pointer = source(row).data();
+  if (effects != 1 || defaults != 1 || pointer != &row[0]) return 2;
+  pointer[1] = 13;
+  if (row[1] != 13 || constant.data()[1] != 11) return 3;
+  if (empty.data() != nullptr || constant_empty.data() != nullptr) return 4;
+  int value = keep(row).data()[0];
+  if (value != 3 || effects != 2 || defaults != 1 || live || destroyed != 1) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-data-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayDataQueriesRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"element", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<long double,2>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"erased-element", R"cpp(#include <array>
+using Row=std::array<int,2>;
+template<class>using Erased=int;void f(std::array<Erased<long double>,2>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"extent", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),2)>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"zero-extent", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),0)>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept((sizeof(long double),a).data()));}
+)cpp", "TR0201"},
+      {"element-field-source", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value[(sizeof(long double),1)];};void f(std::array<E,2>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"temporary-initializer", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(){static_assert(noexcept(std::array<int,2>{{(sizeof(long double),1),2}}.data()));}
+)cpp", "TR0201"},
+      {"receiver-default", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){static_assert(noexcept(source(a).data()));}
+)cpp", "TR0201"},
+      {"receiver-body", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).data()));}
+)cpp", "TR0201"},
+      {"receiver-declaration", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).data()));}
+)cpp", "TR0203"},
+      {"receiver-exception", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept(sizeof(long double)>0){return a;}void f(Row&a){static_assert(noexcept(source(a).data()));}
+)cpp", "TR0201"},
+      {"temporary-destructor", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct Guard{~Guard()noexcept{(void)sizeof(long double);}};Row&keep(Row&a,const Guard&)noexcept{return a;}void f(Row&a){static_assert(noexcept(keep(a,Guard{}).data()));}
+)cpp", "TR0201"},
+      {"data-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr int*array<int,2>::data()noexcept{return nullptr;}}}void f(Row&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"const-data-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr const int*array<int,2>::data()const noexcept{return nullptr;}}}void f(const Row&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"empty-data-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr int*array<int,0>::data()noexcept{return nullptr;}}}void f(std::array<int,0>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>struct array<unsigned,2>{unsigned*data()noexcept{return nullptr;}};}}void f(std::array<unsigned,2>&a){static_assert(noexcept(a.data()));}
+)cpp", "TR0201"},
+      {"member-address", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int*f(Row&a){int*p=a.data();using Method=int*(Row::*)()noexcept;Method method=static_cast<Method>(&Row::data);return (a.*method)();}
+)cpp", "TR0201"},
+      {"query-only-begin", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept(a.begin()));}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("array-data-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("array-data-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayInitializerQueriesPreserveSupportedControls) {
+  // Both inputs were already admitted before the array::data query extension.
+  const struct {
+    const char *Name;
+    const char *Source;
+  } Controls[] = {
+      {"nontrivial-array-element", R"cpp(#include <array>
+struct Element { int value; ~Element(){} };
+using Row=std::array<Element,1>;
+Row& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+)cpp"},
+      {"local-copy-construction-stays-separate", R"cpp(#include <array>
+using Row=std::array<int,2>; Row& identity(Row& row){return row;}
+int main(){Row row{{1,2}};Row copy(row);static_assert(__is_same(decltype(identity(copy)),Row&));return 0;}
+)cpp"},
+  };
+  for (const auto &Control : Controls) {
+    SCOPED_TRACE(Control.Name);
+    const auto Stem = std::string("array-initializer-control-") + Control.Name;
+    const auto Source = tmpFile(Stem + ".cpp");
+    const auto Output = tmpFile(Stem + ".nc");
+    writeFile(Source, Control.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Stem + Optimization);
+      auto Compile =
+          compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
   }
 }
 
@@ -51545,12 +51783,6 @@ using T=Imported::tuple<long double>;static_assert(std::tuple_size<T>::value==1)
 namespace Imported { using std::array, std::pair, std::tuple; }
 using A=Imported::array<long double,1>;static_assert(std::tuple_size<A>::value==1);
 )cpp", "TR0201"},
-      {"query-only-data", R"cpp(#include <array>
-#include <tuple>
-#include <utility>
-namespace Imported { using std::array, std::pair, std::tuple; }
-void f(Imported::array<int,3>&a){static_assert(noexcept(a.data()));}
-)cpp", "TR0203"},
       {"concatenated-result-query", R"cpp(#include <array>
 #include <tuple>
 #include <utility>

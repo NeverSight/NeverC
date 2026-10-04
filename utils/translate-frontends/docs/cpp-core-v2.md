@@ -2422,6 +2422,19 @@ are false. This rule composes through nonempty arrays whose nested leaves all
 have zero extent. Element access remains rejected because no valid index,
 `front`, `back`, `at` or `get` operation exists.
 
+Direct `array::data()` calls also support unevaluated `noexcept`, `decltype`
+and size/alignment queries before the selected SDK method body is instantiated.
+The exact pinned method and template pattern supply its fixed `noexcept`
+signature and element pointer type, including const receivers, const elements,
+zero extents, admitted record elements and nested arrays. Parenthesized member
+calls and checked utility reference casts preserve that identity. An already
+instantiated body must return the authenticated array storage or the pinned
+zero-extent null pointer. Queries do not instantiate SDK bodies or evaluate
+receiver expressions, defaults or temporary cleanup; those expressions still
+require their original type, extent, declaration, body and lifetime sources.
+Source replacements and independent method addresses remain rejected. Other
+array members retain their existing query and runtime boundaries.
+
 Authenticated array objects also qualify as referents in the checked utility
 and functional operations. Direct reference or mixed-reference tuple and pair
 construction, `tie`, `forward_as_tuple`, and `make_tuple`/`make_pair` unwrapping of
@@ -11383,9 +11396,8 @@ type, source, layout and lifetime rules. Imports preserve canonical type
 identity and do not add runtime entities. Unsupported written element types or
 array extents, erased template arguments, source replacements and independent
 member addresses remain rejected.
-The existing query-only `noexcept(array::data())` definition requirement and
-source checks for type queries of `auto` results initialized by `tuple_cat`
-also remain in force.
+The source checks for type queries of `auto` results initialized by `tuple_cat`
+remain in force.
 
 Lookup declarations add no runtime storage, initialization or cleanup. Imported
 and qualified names address the same object, preserve const permissions, and

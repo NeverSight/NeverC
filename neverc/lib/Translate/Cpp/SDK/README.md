@@ -95,6 +95,12 @@ Forward declarations alone do not admit an import. Lookup does not instantiate
 dependent members, and selected metadata, elements, construction, mutation,
 structured bindings and other operations retain their source, layout and
 lifetime checks.
+Exact `array::data()` queries authenticate the pinned method/template pattern,
+fixed `noexcept` signature and const-correct element pointer without demanding
+an instantiated SDK body. Instantiated bodies must return the verified storage
+or the zero-extent null pointer. Receiver types, written extents, expressions,
+defaults and temporary lifetimes retain their independent source checks;
+source replacements and independent method addresses remain excluded.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move
