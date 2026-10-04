@@ -1597,8 +1597,15 @@ versus `int**[2]`, and arrays of pointers to `int[3]` versus `int[4]`. Alternati
 pointer and array components are compared in order. Pointer/nonpointer element
 differences also qualify. Individual pointer conversions do not apply to the
 whole array reference: even `int*[2]` cannot bind a reference to `void*[2]`.
-Matching structures and unqualified terminal types keep their separate
-qualification requirements, including const at intermediate pointer levels.
+Corresponding admitted components also exclude a result when its `const`
+would be discarded by the constructor parameter. This follows the
+[C++17 const-preservation condition](https://timsong-cpp.github.io/cppwp/n4659/conv.qual#3.2).
+For example, `const int*[2]` cannot bind `int* (&)[2]`, nor can
+`int* const*[2]` bind `int** (&)[2]`. The comparison also reaches const on a
+pointed-to array and pointers within that array. Adding const at one component
+does not compensate for discarding it at another. Matching structures with
+only retained or added qualifications keep their separate requirements,
+including required const at intermediate pointer levels.
 An unknown bound, dependent type, function or member-pointer component reached
 by this comparison retains its existing limits. All original type sources
 still pass their checks even when an earlier component excludes the result.
@@ -1623,15 +1630,15 @@ have a known fixed bound before using the binding proof.
 
 Every constructor independently needs an admitted exclusion for every usable
 array result. One result with a retained reference binding, matching rank and
-bounds, and the same unqualified element type keeps its separate requirements,
-as do unknown bounds and remaining function/member-pointer or qualification
-cases.
+bounds, the same unqualified element type, and no discarded const keeps its
+separate requirements, as do unknown bounds and remaining function/member-pointer
+or qualification cases.
 Equal bounds written through different aliases or constant expressions remain
 equal. Each result's binding check, each compared dimension (including a
 dimension present on only one side), and each compared element type component
-or terminal identity consume the existing expansion budget. All written
-dimensions and element aliases retain their source checks even when an earlier
-exclusion succeeds.
+(including its const check) or terminal identity consume the existing expansion
+budget. All written dimensions and element aliases retain their source checks
+even when an earlier exclusion succeeds.
 Excluded conversions retain their existing receiver, deletion, explicitness
 and access checks. Each mutable-copy node in an owned record or fixed array
 uses its actual owner context, including friendship that makes a nonpublic
