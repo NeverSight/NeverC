@@ -3473,8 +3473,10 @@ static bool utilityConditionalMoveIncompatibleArrayElements(
   // Array reference binding permits qualification conversions, not elementwise
   // pointer conversions. Compare known pointer/array components and terminal
   // identities without resolving a dependent type or consulting conversions.
-  // No corresponding component can discard const. Added qualifications and
-  // their intermediate const requirements remain separate checks.
+  // No corresponding component can discard const. Adding it requires const
+  // on every outer parameter component. Stripped enclosing arrays share the
+  // first element's qualifiers. Compatible additions keep their own checks.
+  bool ConstPrefix = true;
   for (;;) {
     if (Parameter->isDependentType() || Result->isDependentType())
       return false;
@@ -3486,8 +3488,12 @@ static bool utilityConditionalMoveIncompatibleArrayElements(
         (!ResultPointer && !ResultArray && !IsTerminalType(Result)))
       return false; // Unknown bounds, function and member-pointer components.
     A.chargeExpansion(1, Location);
-    if (Result.isConstQualified() && !Parameter.isConstQualified())
+    const bool ParameterConst = Parameter.isConstQualified();
+    const bool ResultConst = Result.isConstQualified();
+    if ((ResultConst && !ParameterConst) ||
+        (ParameterConst && !ResultConst && !ConstPrefix))
       return true;
+    ConstPrefix &= ParameterConst;
     if ((ParameterPointer != nullptr) != (ResultPointer != nullptr) ||
         (ParameterArray != nullptr) != (ResultArray != nullptr))
       return true;
@@ -3503,7 +3509,7 @@ static bool utilityConditionalMoveIncompatibleArrayElements(
       Result = ResultArray->getElementType();
       continue;
     }
-    // Aliases and added const on the same terminal type do not prove exclusion.
+    // Aliases and compatible const additions do not prove exclusion.
     return !A.Context.hasSameUnqualifiedType(Parameter, Result);
   }
 }
@@ -3517,9 +3523,9 @@ static bool utilityConditionalMoveArrayReferenceResults(
   // categories and bindings that discard array const qualification. Remaining
   // array results can differ in rank or a corresponding fixed bound: a
   // standard conversion cannot reshape an array. Matching shapes also exclude
-  // distinct element type structures, discarded const or terminal identities
-  // through the proof above. Do not instantiate any signature, element
-  // conversion, default or body.
+  // distinct element type structures, incompatible const qualifications or
+  // terminal identities through the proof above. Do not instantiate any
+  // signature, element conversion, default or body.
   for (const auto *Conversion : Conversions) {
     auto Parameter = ParameterType.getNonReferenceType();
     const auto ConversionType = Conversion->getConversionType();
@@ -4073,11 +4079,11 @@ static bool utilityMutableCopyConditionalMoveSource(
     // an array rvalue result. A non-const array reference also cannot discard
     // const from the result array. Each remaining array result can be excluded
     // by a different rank or bound in a corresponding fixed dimension.
-    // Matching shapes can exclude distinct element type structures, discarded
-    // const and terminal identities without considering element conversions.
-    // Compare every usable result for each constructor; retained bindings,
-    // unknown bounds, function/member pointers or added qualifications retain
-    // their separate requirements.
+    // Matching shapes can exclude distinct element type structures,
+    // incompatible const qualifications and terminal identities without
+    // considering element conversions. Compare every usable result for each
+    // constructor; retained bindings, unknown bounds, function/member pointers
+    // or compatible qualification changes retain their separate requirements.
     // A mutable record lvalue reference cannot bind record prvalues or xvalues;
     // a nonrecord result would need another user-defined conversion. A const
     // record lvalue cannot discard const during reference binding, even when

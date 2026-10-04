@@ -1603,9 +1603,20 @@ would be discarded by the constructor parameter. This follows the
 For example, `const int*[2]` cannot bind `int* (&)[2]`, nor can
 `int* const*[2]` bind `int** (&)[2]`. The comparison also reaches const on a
 pointed-to array and pointers within that array. Adding const at one component
-does not compensate for discarding it at another. Matching structures with
-only retained or added qualifications keep their separate requirements,
-including required const at intermediate pointer levels.
+does not compensate for discarding it at another.
+
+Adding `const` at a deeper component also excludes a result if any preceding
+parameter component lacks `const`, following the
+[C++17 intermediate-const condition](https://timsong-cpp.github.io/cppwp/n4659/conv.qual#3.3).
+For example, `int**[2]` cannot bind `const int** const (&)[2]`: the outer pointer
+is const but the inner pointer is not. Adding const later in the type does not
+repair that earlier gap. The comparison follows pointer and fixed-array
+components, including pointers within pointed-to arrays. Stripped enclosing
+arrays have the same qualifiers as their element. An unchanged const component
+does not require a const prefix; only a newly added const does. Matching types
+and const additions with all required preceding const qualifiers keep their
+separate construction requirements.
+
 An unknown bound, dependent type, function or member-pointer component reached
 by this comparison retains its existing limits. All original type sources
 still pass their checks even when an earlier component excludes the result.
@@ -1630,9 +1641,9 @@ have a known fixed bound before using the binding proof.
 
 Every constructor independently needs an admitted exclusion for every usable
 array result. One result with a retained reference binding, matching rank and
-bounds, the same unqualified element type, and no discarded const keeps its
-separate requirements, as do unknown bounds and remaining function/member-pointer
-or qualification cases.
+bounds, the same unqualified element type, and no discarded or missing required
+const keeps its separate requirements, as do unknown bounds and remaining
+function/member-pointer or qualification cases.
 Equal bounds written through different aliases or constant expressions remain
 equal. Each result's binding check, each compared dimension (including a
 dimension present on only one side), and each compared element type component
