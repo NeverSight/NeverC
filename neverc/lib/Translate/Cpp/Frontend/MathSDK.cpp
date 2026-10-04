@@ -14075,8 +14075,9 @@ static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
          Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) &&
          Context.hasSameType(Function->getReturnType(), Result) &&
          Context.hasSameType(Call->getType(), Pointer) &&
-         (Result->isLValueReferenceType() ? Call->isLValue()
-                                          : Call->isXValue()) &&
+         (Result->isLValueReferenceType() || Pointer->isFunctionType()
+              ? Call->isLValue()
+              : Call->isXValue()) &&
          functionalInvokeParameterReference(Call->getArg(0), Parameter);
 }
 
@@ -14152,10 +14153,8 @@ static bool approvedUtilityPointerExchange(const State &S,
       Context.hasSameType(ReplacementType,
                           ReplacementType.getUnqualifiedType().withConst());
   const bool FunctionReplacement =
-      Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type->getPointeeType());
   const bool NoexceptFunctionReplacement =
-      Replacement->isLValueReferenceType() &&
       utilityNoexceptCallbackFunction(Type, ReplacementType, Context);
   const auto UnqualifiedReplacement = ReplacementType.getUnqualifiedType();
   const bool ConstNoexceptPointerReplacement =
@@ -29111,10 +29110,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   auto ReferenceResult = [&] {
     auto Result = Function->getReturnType();
+    const bool FunctionReference =
+        (Name == "move" || Name == "forward") &&
+        Call->getType()->isFunctionType();
     if (!Result->isReferenceType() ||
         !Same(Call->getType(), Result->getPointeeType()) ||
-        (Result->isLValueReferenceType() ? !Call->isLValue()
-                                         : !Call->isXValue()))
+        (Result->isLValueReferenceType() || FunctionReference
+             ? !Call->isLValue()
+             : !Call->isXValue()))
       return false;
     auto Parameter = Function->getParamDecl(0)->getType();
     return Parameter->isReferenceType() &&

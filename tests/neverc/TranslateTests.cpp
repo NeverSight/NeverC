@@ -26358,6 +26358,165 @@ using F=int(*)();using N=int(*)()noexcept;N f(N&p,F&r){return std::exchange<N,F&
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionReferenceAdaptersRunAtBothOptimizations) {
+  const auto Control = tmpFile("function-forwarding-control.cpp");
+  const auto ControlOutput = tmpFile("function-forwarding-control.nc");
+  writeFile(Control, R"cpp(#include <utility>
+using F=int(int);using N=int(int)noexcept;
+int one(int v){return v;}int two(int v)noexcept{return v;}
+static_assert(__is_same(decltype(std::move(one)),F&));
+static_assert(__is_same(decltype(std::forward<F>(one)),F&));
+static_assert(__is_same(decltype(std::forward<F&>(one)),F&));
+static_assert(__is_same(decltype(std::forward<F&&>(one)),F&));
+static_assert(__is_same(decltype(std::move(two)),N&));
+static_assert(noexcept(std::forward<N&&>(two)));
+int main(){return 0;}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto Source = tmpFile("function-forwarding.cpp");
+  const auto Output = tmpFile("function-forwarding.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace Imported { using std::move; using std::forward; using std::exchange; }
+namespace Reexport { using Imported::move; using Imported::forward; using Imported::exchange; }
+namespace Alias=Reexport;
+using Function=int(int);
+using SafeFunction=int(int)noexcept;
+using Callback=int(*)(int);
+using SafeCallback=int(*)(int)noexcept;
+using LFunction=Function&;
+using RFunction=Function&&;
+int calls, effects, destroyed;
+int one(int n){++calls;return n+1;}
+int two(int n){++calls;return n+2;}
+int three(int n)noexcept{++calls;return n+3;}
+struct Temporary {
+  ~Temporary()noexcept{++destroyed;}
+  static int function(int n)noexcept{++calls;return n+4;}
+};
+bool check(Callback value)noexcept {
+  return destroyed==0&&calls==0&&value==Temporary::function;
+}
+int main(){
+  using Alias::move;using Alias::forward;using Alias::exchange;
+  static_assert(__is_same(decltype(move(one)),Function&));
+  static_assert(__is_same(decltype(forward<Function>(one)),Function&));
+  static_assert(__is_same(decltype(forward<RFunction>(one)),Function&));
+  static_assert(__is_same(decltype(forward<LFunction>(one)),Function&));
+  static_assert(__is_same(decltype(move(three)),SafeFunction&));
+  static_assert(noexcept(move((++effects,one))));
+  static_assert(noexcept(forward<SafeFunction&&>((++effects,three))));
+  if(effects||calls||destroyed)return 1;
+  Callback first=move(one);
+  Callback second=forward<Function>(two);
+  if(first!=one||second!=two||calls)return 2;
+  Callback third=forward<Function&&>(move(one));
+  if(third!=one||&move(two)!=two||&forward<LFunction&&>(one)!=one)return 3;
+  if(move((++effects,one))(3)!=4||effects!=1||calls!=1)return 4;
+  if(forward<RFunction>((++effects,effects==2?two:one))(3)!=5||effects!=2||calls!=2)return 5;
+  Callback stored=one;
+  Callback loaded=move(*stored);
+  if(loaded!=one||calls!=2)return 6;
+  SafeCallback safe=forward<SafeFunction&&>(three);
+  if(safe!=three||move<SafeFunction&>(three)(3)!=6||calls!=3)return 7;
+  first=one;
+  if(exchange<Callback,Function&&>(first,two)!=one||first!=two)return 8;
+  if(exchange<Callback,RFunction>(first,(first=one,++effects,two))!=one||first!=two||effects!=3)return 9;
+  if(exchange<Callback,Function&&>(first,move(one))!=two||first!=one)return 10;
+  if(exchange<Callback,SafeFunction&&>(first,three)!=one||first!=three)return 11;
+  if(exchange<SafeCallback,SafeFunction&&>(safe,Temporary::function)!=three||safe!=Temporary::function)return 12;
+  if(exchange(first,forward<Function&&>(two))!=three||first!=two)return 13;
+  calls=0;
+  if(!check(move(Temporary{}.function)))return 14;
+  if(destroyed!=1||calls)return 15;
+  if(forward<SafeFunction>(Temporary{}.function)(1)!=5||destroyed!=1||calls!=1)return 16;
+  if(destroyed!=2)return 17;
+  if(&move<Function>(one)!=one||&move<Function&&>(two)!=two)return 18;
+  if(exchange<Callback,Function>(first,one)!=two||first!=one)return 19;
+  if(exchange<Callback,SafeFunction>(first,three)!=one||first!=three)return 20;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-forwarding" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceAdaptersRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"move-specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&move<F&>(F&v)noexcept{return static_cast<F&&>(v);}}}auto f(){return std::move(one);}
+)cpp", "TR0201"},
+      {"forward-specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&forward<F&&>(F&v)noexcept{return static_cast<F&&>(v);}}}auto f(){return std::forward<F&&>(one);}
+)cpp", "TR0201"},
+      {"exchange-forward-specialization", R"cpp(#include <utility>
+using F=int(int);using P=int(*)(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&forward<F&&>(F&v)noexcept{return static_cast<F&&>(v);}}}P f(P&p){return std::exchange<P,F&&>(p,one);}
+)cpp", "TR0201"},
+      {"exchange-noexcept-forward-specialization", R"cpp(#include <utility>
+using F=int(int)noexcept;using P=int(*)(int);int one(int v)noexcept{return v;}namespace std{inline namespace __1{template<>constexpr F&&forward<F&&>(F&v)noexcept{return static_cast<F&&>(v);}}}P f(P&p){return std::exchange<P,F&&>(p,one);}
+)cpp", "TR0201"},
+      {"move-redeclaration", R"cpp(#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&& move(T&&)noexcept;}}int one(int v){return v;}auto f(){return std::move(one);}
+)cpp", "TR0201"},
+      {"forward-redeclaration", R"cpp(#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr T&& forward(typename remove_reference<T>::type&)noexcept;}}int one(int v){return v;}auto f(){return std::forward<int(int)>(one);}
+)cpp", "TR0201"},
+      {"indirect-sdk-address", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}auto f(){auto adapter=&std::move<F&>;return adapter(one);}
+)cpp", "TR0201"},
+      {"long-double-signature", R"cpp(#include <utility>
+long double one(long double v){return v;}auto f(){return std::move(one);}
+)cpp", "TR0201"},
+      {"variadic-signature", R"cpp(#include <utility>
+int one(int v,...){return v;}auto f(){return std::forward<int(int,...)>(one);}
+)cpp", "TR0201"},
+      {"query-operand-source", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(std::move((sizeof(long double),one))),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"query-exception-source", R"cpp(#include <utility>
+int one(int v)noexcept{return v;}using F=int(int)noexcept(sizeof(long double)>0);static_assert(__is_same(decltype(std::forward<F&&>(one)),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"runtime-reference-storage", R"cpp(#include <utility>
+int one(int v){return v;}int main(){int(&&ref)(int)=std::move(one);return ref(0);}
+)cpp", "TR0201"},
+      {"static-member-base-source", R"cpp(#include <utility>
+struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::move(T{}.call);}
+)cpp", "TR0201"},
+      {"missing-function-body", R"cpp(#include <utility>
+int one(int);auto f(){return std::move(one);}
+)cpp", "TR0203"},
+      {"distinct-signatures", R"cpp(#include <utility>
+using P=int(*)(int);using F=int(double);int one(double){return 0;}P f(P&p){return std::exchange<P,F&&>(p,one);}
+)cpp", "TR0202"},
+      {"noexcept-upgrade", R"cpp(#include <utility>
+using P=int(*)(int)noexcept;using F=int(int);int one(int v){return v;}P f(P&p){return std::exchange<P,F&&>(p,one);}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-forwarding-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-forwarding-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayExchangeRunsAtBothOptimizations) {
   const auto Source = tmpFile("array-exchange.cpp");
   const auto Output = tmpFile("array-exchange.nc");

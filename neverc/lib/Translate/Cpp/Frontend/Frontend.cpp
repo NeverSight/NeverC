@@ -2990,8 +2990,14 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
       Arguments->size() == 1 &&
       Arguments->get(0).getKind() == TemplateArgument::Type &&
       Arguments->get(0).getAsType()->isObjectType();
-  const bool RValueResult = !AsConst && Function && Call->isXValue() &&
-                            Function->getReturnType()->isRValueReferenceType();
+  // A call returning an rvalue reference to a function remains an lvalue.
+  const bool FunctionResult =
+      (Operation == UtilityOperation::Move ||
+       Operation == UtilityOperation::Forward) &&
+      Call->getType()->isFunctionType() && Call->isLValue();
+  const bool RValueResult =
+      !AsConst && Function && (Call->isXValue() || FunctionResult) &&
+      Function->getReturnType()->isRValueReferenceType();
   const bool LValueResult =
       Function &&
       (Operation == UtilityOperation::Forward || AsConst || CopyFallback ||
@@ -4509,6 +4515,12 @@ static bool utilityValueAdapterSource(
         utilityArrayConditionalMoveSource(A, Call))) &&
       !Type.isVolatileQualified() &&
       !Type.isRestrictQualified() && Type.getAddressSpace() == LangAS::Default;
+  // Function casts preserve a designator, not object storage. Signature and
+  // original operand sources still pass their ordinary metadata checks.
+  const bool FunctionReference =
+      Type->isFunctionProtoType() && Call->isLValue() &&
+      (*Operation == UtilityOperation::Move ||
+       *Operation == UtilityOperation::Forward);
   // The tuple-like descriptor supplies only authenticated storage. The exact
   // reference cast, element layouts and every original operand/type source
   // still close separately; this proof does not perform container lifecycle.
@@ -4542,7 +4554,8 @@ static bool utilityValueAdapterSource(
   const bool ConditionalOwner =
       Record && *Operation == UtilityOperation::MoveIfNoexcept && !ReferenceCast &&
       utilityUniquePtrConditionalMoveSource(A, Call, Record);
-  return (Scalar || FixedArray || TupleLike || FunctionObject || OwnedRecord ||
+  return (Scalar || FixedArray || FunctionReference || TupleLike ||
+          FunctionObject || OwnedRecord ||
           ConditionalOwner ||
           (ReferenceCast && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
@@ -12422,6 +12435,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
             V && V->isStaticDataMember())
           return false; // Static storage does not inherit its receiver's lifetime.
+      if (A.S.coreV2())
+        if (const auto *Method = dyn_cast<CXXMethodDecl>(M->getMemberDecl());
+            Method && Method->isStatic())
+          return false; // The function outlives its evaluated receiver.
       return M->isArrow() ? temporaryArrayBase(M->getBase(), AllowFullExpression, ExpectedExtender)
                           : temporaryBinding(M->getBase(), AllowFullExpression, ExpectedExtender);
     }
@@ -20132,6 +20149,12 @@ public:
           else if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
             FunctionValueDesignators.insert(C->getTrueExpr());
             FunctionValueDesignators.insert(C->getFalseExpr());
+          } else if (const auto *Call = dyn_cast<CallExpr>(E)) {
+            const auto Operation =
+                approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+            if (Operation == UtilityOperation::Move ||
+                Operation == UtilityOperation::Forward)
+              FunctionValueDesignators.insert(Call->getArg(0));
           }
         }
       }

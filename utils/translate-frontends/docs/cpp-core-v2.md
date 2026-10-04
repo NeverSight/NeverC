@@ -200,6 +200,22 @@ pointer conversion. Explicit rvalue-reference replacement template arguments
 are accepted for these callback-pointer and `nullptr_t` values. Source
 specializations remain rejected.
 
+`std::move` and `std::forward` also preserve admitted fixed-arity function
+designators, including `noexcept` signatures. A result declared as a function
+rvalue reference is still a function lvalue, following C++17's
+[function-call category rule](https://timsong-cpp.github.io/cppwp/n4659/expr.call#11).
+`decltype` and exception queries retain that category and the original
+signature sources. Runtime uses evaluate the operand once and keep its
+function identity without calling the function. Named and static functions,
+dereferenced callbacks, comma/conditional designators and nested adapters use
+the existing function-pointer representation and temporary cleanup.
+`std::exchange` accepts explicit function, function lvalue-reference and
+function rvalue-reference replacement arguments when its selected `forward`
+and function-to-pointer decay match the destination, with the existing optional
+`noexcept` removal. Independent SDK helper addresses, substituted helpers,
+unsupported signatures and ordinary function-reference storage remain outside
+this support.
+
 Object-pointer `std::exchange` also accepts fixed-array replacements when
 the selected assignment decays the array to a pointer to its complete element
 type, optionally adding `const` to that pointee. Mutable and const lvalue/xvalue
@@ -224,8 +240,8 @@ evaluating either operand. They authenticate the exact resolved pointer-move
 and array-assignment trait sources in its exception specification; substituted
 traits do not gain an exemption for returning the same boolean. Unknown-bound
 arrays, unrelated pointee conversions
-(including array-to-`void*` or derived-to-base pointers), replacement
-rvalue references to function types and uncompleted query-only bodies retain
+(including array-to-`void*` or derived-to-base pointers) and uncompleted
+query-only exchange bodies retain
 their separate requirements. Volatile or unsupported element types, indirect
 callees and hidden unsupported source remain rejected.
 

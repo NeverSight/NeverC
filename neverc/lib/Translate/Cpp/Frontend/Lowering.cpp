@@ -548,6 +548,11 @@ class FunctionLowering {
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return functionValue(W->getSubExpr());
     if (const auto *Call = dyn_cast<CallExpr>(E)) {
+      const auto Operation =
+          approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+      if (Operation == UtilityOperation::Move ||
+          Operation == UtilityOperation::Forward)
+        return functionValue(Call->getArg(0));
       const auto Info = approvedFunctionalReferenceAccessCall(
           A.S, A.Sources, Call, A.Context);
       if (Info && Info->Wrapper.ReferentType->isFunctionType()) {
