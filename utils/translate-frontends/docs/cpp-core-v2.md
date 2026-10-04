@@ -2456,6 +2456,20 @@ temporary cleanup retain their ordinary runtime behavior and independent
 source checks. Queries on returned iterator members, including query-only
 `base()` calls, retain their existing method-body requirements.
 
+Direct `array::size()`, `max_size()` and `empty()` calls also admit `noexcept`,
+`decltype` and size/alignment queries. Their pinned const, constexpr, fixed
+`noexcept` signatures return the target `size_type` or `bool`, including for
+empty arrays, const elements, nested arrays and admitted record elements.
+An instantiated body must return the exact array extent or test it against
+zero; the zero-extent specialization must return zero or `true`. The proof
+checks these source expressions without instantiating an SDK body or accepting
+an arbitrary folded result. Constant-expression uses retain these checks.
+Queries preserve the original receiver's type, extent, expression, defaults
+and lifetime dependencies without executing them. Evaluated capacity calls
+still evaluate their receiver once and complete temporary cleanup, even though
+their result depends only on the array extent. Source replacements and
+independent method addresses remain rejected.
+
 Authenticated array objects also qualify as referents in the checked utility
 and functional operations. Direct reference or mixed-reference tuple and pair
 construction, `tie`, `forward_as_tuple`, and `make_tuple`/`make_pair` unwrapping of

@@ -4573,7 +4573,10 @@ static bool utilityArrayAccessorSource(Adapter &A, const CallExpr *Call) {
                      *Operation != UtilityOperation::ArrayBegin &&
                      *Operation != UtilityOperation::ArrayEnd &&
                      *Operation != UtilityOperation::ArrayRBegin &&
-                     *Operation != UtilityOperation::ArrayREnd))
+                     *Operation != UtilityOperation::ArrayREnd &&
+                     *Operation != UtilityOperation::ArraySize &&
+                     *Operation != UtilityOperation::ArrayMaxSize &&
+                     *Operation != UtilityOperation::ArrayEmpty))
     return false;
   const auto *Function = Call->getDirectCallee();
   // Only the exact direct member call consumes this SDK signature. The

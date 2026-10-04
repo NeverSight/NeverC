@@ -112,6 +112,13 @@ Instantiated bodies must follow the matching array endpoint and pinned pointer
 constructor, preserving both stored pointers and trivial empty-base
 initialization. Const element arrays and empty null bases are included.
 Queries on returned iterator members retain their existing body requirements.
+Array `size/max_size/empty` queries authenticate const constexpr fixed-noexcept
+signatures with the exact target size or Boolean result. Existing bodies must
+return the verified extent or its zero comparison, or the zero specialization's
+literal zero/true; queries never instantiate a body or substitute arbitrary
+constant evaluation for source proof. Receiver types, extents, defaults and
+lifetimes remain checked, and evaluated capacity calls retain receiver effects
+and temporary cleanup through the existing lowering.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

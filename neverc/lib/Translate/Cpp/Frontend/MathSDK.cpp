@@ -20879,6 +20879,63 @@ static bool utilityArrayAccessorSignature(const State &S,
   return Pinned(Method) && Pinned(Pattern) && Pattern->hasBody();
 }
 
+static bool utilityArrayCapacityBody(const State &S, const SourceManager &SM,
+                                     const CXXMethodDecl *Method,
+                                     const UtilityArrayRecord &Array,
+                                     const ASTContext &Context) {
+  if (!utilityArrayAccessorSignature(S, SM, Method, Array) ||
+      !Method->isConst() || !Method->isConstexpr())
+    return false;
+  const auto Name = Method->getIdentifier()->getName();
+  const bool Empty = Name == "empty";
+  const auto SizeType = Context.getSizeType();
+  const auto ResultType = Empty ? Context.BoolTy : SizeType;
+  if ((Name != "size" && Name != "max_size" && !Empty) ||
+      !Context.hasSameType(Method->getReturnType(), ResultType))
+    return false;
+  // A query consumes the fixed signature without instantiating the method.
+  // An existing body must have the exact pinned extent/zero-test spelling;
+  // a folded value alone cannot supply callable source evidence.
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Result = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Returned = Result ? Result->getRetValue() : nullptr;
+  if (!Returned || !Context.hasSameType(Returned->getType(), ResultType))
+    return false;
+  auto Extent = [&](const Expr *Expression) {
+    const auto *Substitution =
+        dyn_cast<SubstNonTypeTemplateParmExpr>(Expression);
+    const auto *Value = Substitution
+                            ? dyn_cast<IntegerLiteral>(
+                                  Substitution->getReplacement())
+                            : nullptr;
+    return Value && Value->getValue() == Array.Size &&
+           Context.hasSameType(Substitution->getType(), SizeType) &&
+           Context.hasSameType(Value->getType(), SizeType);
+  };
+  auto Zero = [&](const Expr *Expression) {
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression);
+    const auto *Value =
+        Cast ? dyn_cast<IntegerLiteral>(Cast->getSubExpr()) : nullptr;
+    return Cast && Cast->getCastKind() == CK_IntegralCast && Value &&
+           Value->getValue() == 0 &&
+           Context.hasSameType(Cast->getType(), SizeType) &&
+           Context.hasSameType(Value->getType(), Context.IntTy);
+  };
+  if (!Empty)
+    return Array.Size ? Extent(Returned) : Zero(Returned);
+  if (!Array.Size) {
+    const auto *Value = dyn_cast<CXXBoolLiteralExpr>(Returned);
+    return Value && Value->getValue();
+  }
+  const auto *Comparison = dyn_cast<BinaryOperator>(Returned);
+  return Comparison && Comparison->getOpcode() == BO_EQ &&
+         Extent(Comparison->getLHS()) && Zero(Comparison->getRHS());
+}
+
 static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
                                     const CXXMethodDecl *Method,
                                     const UtilityArrayRecord &Array,
@@ -23368,6 +23425,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                Name == "cend";
     const bool ReverseMember = Name == "rbegin" || Name == "rend" ||
                                Name == "crbegin" || Name == "crend";
+    const bool CapacityMember = Name == "size" || Name == "max_size" ||
+                                Name == "empty";
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23376,19 +23435,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
         !S.owns(SM, Reference->getExprLoc()) ||
-        (!Method->hasBody() && !PointerMember && !ReverseMember))
+        (!Method->hasBody() && !PointerMember && !ReverseMember &&
+         !CapacityMember))
       return std::nullopt;
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
-      if ((Name == "size" || Name == "max_size") &&
-          Method->isConstexpr() && Call->isPRValue() &&
-          Method->getReturnType()->isIntegralType(Context) &&
-          Same(Call->getType(), Method->getReturnType()))
-        return Name == "size" ? UtilityOperation::ArraySize
-                              : UtilityOperation::ArrayMaxSize;
-      if (Name == "empty" && Method->isConstexpr() && Call->isPRValue() &&
-          Method->getReturnType()->isBooleanType() &&
-          Same(Call->getType(), Method->getReturnType()))
-        return UtilityOperation::ArrayEmpty;
+      if (CapacityMember && Call->isPRValue() &&
+          Same(Call->getType(), Method->getReturnType()) &&
+          utilityArrayCapacityBody(S, SM, Method, *Array, Context))
+        return Name == "size"       ? UtilityOperation::ArraySize
+               : Name == "max_size" ? UtilityOperation::ArrayMaxSize
+                                    : UtilityOperation::ArrayEmpty;
       if (PointerMember && Call->isPRValue() &&
           Same(Call->getType(), Method->getReturnType()) &&
           utilityArrayPointerBody(S, SM, Method, *Array, Context)) {

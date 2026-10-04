@@ -37376,6 +37376,265 @@ int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayCapacityQueriesRunAtBothOptimizations) {
+  const auto QuerySource = tmpFile("array-capacity-queries-query.cpp");
+  const auto QueryOutput = tmpFile("array-capacity-queries-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+struct Element { int value; int extent[2]; };
+using Row = array<int, 3>;
+using Empty = array<int, 0>;
+using Grid = array<Row, 2>;
+using Records = array<Element, 2>;
+void query_only(Row& row, const Row& constant, Empty& empty,
+                const Empty& constant_empty, Grid& grid, Records& records,
+                array<const int, 2>& qualified) {
+  static_assert(noexcept(row.size()));
+  static_assert(__is_same(decltype(row.size()), Row::size_type));
+  static_assert(noexcept(row.max_size()));
+  static_assert(__is_same(decltype(row.max_size()), Row::size_type));
+  static_assert(noexcept(row.empty()));
+  static_assert(__is_same(decltype(row.empty()), bool));
+  static_assert(noexcept(constant.size()));
+  static_assert(__is_same(decltype(constant.size()), Row::size_type));
+  static_assert(noexcept(constant.max_size()));
+  static_assert(__is_same(decltype(constant.max_size()), Row::size_type));
+  static_assert(noexcept(constant.empty()));
+  static_assert(__is_same(decltype(constant.empty()), bool));
+  static_assert(noexcept(empty.size()));
+  static_assert(__is_same(decltype(empty.size()), Row::size_type));
+  static_assert(noexcept(empty.max_size()));
+  static_assert(__is_same(decltype(empty.max_size()), Row::size_type));
+  static_assert(noexcept(empty.empty()));
+  static_assert(__is_same(decltype(empty.empty()), bool));
+  static_assert(noexcept(constant_empty.size()));
+  static_assert(__is_same(decltype(constant_empty.size()), Row::size_type));
+  static_assert(noexcept(constant_empty.max_size()));
+  static_assert(__is_same(decltype(constant_empty.max_size()), Row::size_type));
+  static_assert(noexcept(constant_empty.empty()));
+  static_assert(__is_same(decltype(constant_empty.empty()), bool));
+  static_assert(noexcept(grid.size()));
+  static_assert(__is_same(decltype(grid.size()), Row::size_type));
+  static_assert(noexcept(grid.max_size()));
+  static_assert(__is_same(decltype(grid.max_size()), Row::size_type));
+  static_assert(noexcept(grid.empty()));
+  static_assert(__is_same(decltype(grid.empty()), bool));
+  static_assert(noexcept(records.size()));
+  static_assert(__is_same(decltype(records.size()), Row::size_type));
+  static_assert(noexcept(records.max_size()));
+  static_assert(__is_same(decltype(records.max_size()), Row::size_type));
+  static_assert(noexcept(records.empty()));
+  static_assert(__is_same(decltype(records.empty()), bool));
+  static_assert(noexcept(qualified.size()));
+  static_assert(__is_same(decltype(qualified.size()), Row::size_type));
+  static_assert(noexcept(qualified.max_size()));
+  static_assert(__is_same(decltype(qualified.max_size()), Row::size_type));
+  static_assert(noexcept(qualified.empty()));
+  static_assert(__is_same(decltype(qualified.empty()), bool));
+  static_assert(noexcept((constant.size)()));
+  static_assert(__is_same(decltype((row.max_size)()), Row::size_type));
+  static_assert(__is_same(decltype(std::move(row).empty()), bool));
+  static_assert(noexcept(std::as_const(row).max_size()));
+  static_assert(sizeof(row.size()) == sizeof(Row::size_type));
+  static_assert(alignof(decltype(empty.empty())) == alignof(bool));
+}
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0)
+      << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("array-capacity-queries.cpp");
+  const auto Output = tmpFile("array-capacity-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+namespace Imported { using std::array; }
+namespace Again { using Imported::array; }
+using Row = Again::array<int, 2>;
+using Empty = Again::array<int, 0>;
+int effects, defaults, live, destroyed;
+Row& source(Row& row, int n = (++defaults, 1)) noexcept {
+  ++effects; return row;
+}
+Empty& empty_source(Empty& row, int n = (++defaults, 1)) noexcept {
+  ++effects; return row;
+}
+Row& may_throw(Row& row) { ++effects; return row; }
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept { --live; ++destroyed; }
+};
+Row& keep(Row& row, const Guard& guard = Guard()) noexcept {
+  effects += live == 1 ? 1 : 100; return row;
+}
+int main() {
+  Row row{{3, 5}};
+  const Row constant{{7, 11}};
+  Again::array<const int, 2> qualified{{13, 17}};
+  Empty empty{};
+  const Empty constant_empty{};
+  Again::array<unsigned, 4> lazy{{1, 2, 3, 4}};
+  static_assert(noexcept(lazy.size()) && noexcept(lazy.max_size()));
+  static_assert(noexcept(lazy.empty()));
+  static_assert(__is_same(decltype(lazy.size()), Row::size_type));
+  static_assert(__is_same(decltype(lazy.empty()), bool));
+  static_assert(noexcept(source(row).size()));
+  static_assert(!noexcept(may_throw(row).empty()));
+  static_assert(noexcept(keep(row).max_size()));
+  static_assert(__is_same(decltype((source(row).max_size)()), Row::size_type));
+  static_assert(sizeof(keep(row).empty()) == sizeof(bool));
+  static_assert(__is_same(decltype((++effects, lazy).size()), Row::size_type));
+  static_assert(__is_same(decltype(Again::array<int, 5>{{++effects}}.empty()), bool));
+  static_assert(Again::array<int, 3>{}.size() == 3);
+  static_assert(Again::array<int, 3>{}.max_size() == 3);
+  static_assert(!Again::array<int, 3>{}.empty());
+  static_assert(Empty{}.size() == 0 && Empty{}.max_size() == 0);
+  static_assert(Empty{}.empty());
+  if (effects || defaults || live || destroyed) return 1;
+  auto size = source(row).size();
+  auto maximum = source(row).max_size();
+  bool vacant = source(row).empty();
+  if (size != 2 || maximum != 2 || vacant || effects != 3 || defaults != 3) return 2;
+  size = empty_source(empty).size();
+  maximum = empty_source(empty).max_size();
+  vacant = empty_source(empty).empty();
+  if (size || maximum || !vacant || effects != 6 || defaults != 6) return 3;
+  if (constant.size() != 2 || constant.max_size() != 2 || constant.empty() ||
+      constant_empty.size() || constant_empty.max_size() || !constant_empty.empty() ||
+      qualified.size() != 2 || qualified.max_size() != 2 || qualified.empty()) return 4;
+  size = keep(row).size();
+  maximum = keep(row).max_size();
+  vacant = keep(row).empty();
+  if (size != 2 || maximum != 2 || vacant || effects != 9 || defaults != 6 ||
+      live || destroyed != 3) return 5;
+  size = (++effects, Again::array<int, 4>{{1, 2, 3, 4}}).size();
+  if (size != 4 || effects != 10) return 6;
+  maximum = Again::array<Guard, 2>{}.max_size();
+  if (maximum != 2 || live || destroyed != 5) return 7;
+  vacant = Again::array<Guard, 0>{}.empty();
+  return vacant && !live && destroyed == 5 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-capacity-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayCapacityQueriesRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"element-size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<long double,2>&a){static_assert(noexcept(a.size()));}
+)cpp", "TR0201"},
+      {"erased-element-max_size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+template<class>using Erased=int;void f(std::array<Erased<long double>,2>&a){static_assert(noexcept(a.max_size()));}
+)cpp", "TR0201"},
+      {"extent-empty", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),2)>&a){static_assert(noexcept(a.empty()));}
+)cpp", "TR0201"},
+      {"zero-extent-size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),0)>&a){static_assert(noexcept(a.size()));}
+)cpp", "TR0201"},
+      {"receiver-expression-max_size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept((sizeof(long double),a).max_size()));}
+)cpp", "TR0201"},
+      {"element-field-source-empty", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value[(sizeof(long double),1)];};void f(std::array<E,2>&a){static_assert(noexcept(a.empty()));}
+)cpp", "TR0201"},
+      {"temporary-initializer-size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(){static_assert(noexcept(std::array<int,2>{{(sizeof(long double),1),2}}.size()));}
+)cpp", "TR0201"},
+      {"receiver-default-max_size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Row&a){static_assert(noexcept(source(a).max_size()));}
+)cpp", "TR0201"},
+      {"receiver-body-empty", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(noexcept(source(a).empty()));}
+)cpp", "TR0201"},
+      {"receiver-declaration-size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(noexcept(source(a).size()));}
+)cpp", "TR0203"},
+      {"receiver-exception-max_size", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept(sizeof(long double)>0){return a;}void f(Row&a){static_assert(noexcept(source(a).max_size()));}
+)cpp", "TR0201"},
+      {"temporary-destructor-empty", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct Guard{~Guard()noexcept{(void)sizeof(long double);}};Row&keep(Row&a,const Guard&)noexcept{return a;}void f(Row&a){static_assert(noexcept(keep(a,Guard{}).empty()));}
+)cpp", "TR0201"},
+      {"size-query-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::size_type array<int,2>::size()const noexcept{return 17;}}}void f(Row&a){static_assert(noexcept(a.size()));}
+)cpp", "TR0201"},
+      {"size-zero-runtime-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::size_type array<int,0>::size()const noexcept{return 1;}}}int f(std::array<int,0>&a){return a.size();}
+)cpp", "TR0201"},
+      {"max_size-query-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::size_type array<int,2>::max_size()const noexcept{return 17;}}}void f(Row&a){static_assert(noexcept(a.max_size()));}
+)cpp", "TR0201"},
+      {"max_size-zero-runtime-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr Row::size_type array<int,0>::max_size()const noexcept{return 1;}}}int f(std::array<int,0>&a){return a.max_size();}
+)cpp", "TR0201"},
+      {"empty-query-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr bool array<int,2>::empty()const noexcept{return false;}}}void f(Row&a){static_assert(noexcept(a.empty()));}
+)cpp", "TR0201"},
+      {"empty-zero-runtime-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr bool array<int,0>::empty()const noexcept{return false;}}}int f(std::array<int,0>&a){return a.empty();}
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>struct array<unsigned,2>{constexpr bool empty()const noexcept{return true;}};}}void f(std::array<unsigned,2>&a){static_assert(noexcept(a.empty()));}
+)cpp", "TR0201"},
+      {"member-address", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row::size_type f(Row&a){auto n=a.size();using Method=Row::size_type(Row::*)()const noexcept;Method method=&Row::size;return n+(a.*method)();}
+)cpp", "TR0201"},
+      {"query-only-front-stays-separate", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("array-capacity-query-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("array-capacity-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayReverseQueriesRunAtBothOptimizations) {
   const auto PromotedSource = tmpFile("array-reverse-queries-promoted.cpp");
   const auto PromotedOutput = tmpFile("array-reverse-queries-promoted.nc");
