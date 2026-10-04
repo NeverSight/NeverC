@@ -140,6 +140,14 @@ access. All receiver/index/default/lifetime sources remain checked, including
 when `noexcept` is already false. Evaluated calls still require a compile-time
 in-range index; a query cannot authorize runtime access through another call
 or conceal unsupported operations in a queried user definition.
+Array `fill` queries authenticate its non-const C++17 `void(const T&)` signature
+without instantiating assignment. Its absent exception specification makes
+`noexcept` false, including for empty arrays; const or nonassignable elements
+may name this unevaluated signature. Existing bodies must retain the exact
+data/extent/source delegation to pinned `fill_n`, or the empty specialization's
+const-element assertion. Receiver, argument, conversion, default and lifetime
+sources remain checked, and evaluated fill retains selected-assignment proof,
+aliasing and cleanup. Queries never authorize unsupported actual assignments.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

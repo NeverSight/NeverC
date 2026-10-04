@@ -2384,6 +2384,25 @@ assignment are checked. Each element reads the bound source at its assignment,
 so a source aliased to an earlier element observes preceding writes. A temporary
 source lives through the call, and zero-length arrays perform no assignment.
 
+Direct `fill(value)` calls also admit unevaluated `noexcept` and `decltype`
+queries, including parenthesized member names, temporary receivers and
+size/alignment queries of a comma expression with a non-void result. The exact
+pinned C++17 signature is a non-const `void(const T&)` member with no exception
+specification; `noexcept` is false even for an empty array or a nothrow element
+assignment. Queries do not instantiate the SDK body, so const elements and
+elements with deleted or inaccessible assignment can supply the same signature.
+An unused class-template assignment declaration may also remain lazy; ordinary
+member declarations retain their existing definition requirement.
+Their types and original receiver, argument, conversion,
+default and lifetime sources are still checked. No receiver, value construction,
+assignment or destruction runs in the query.
+An existing nonempty body must pass the exact array data, extent and bound
+source reference to the pinned `fill_n` instance. An existing empty body must
+retain the pinned const-element assertion. Evaluated calls retain their
+selected-assignment proof, aliasing behavior and temporary cleanup; a query
+does not authorize an unsupported actual assignment or weaken native C++
+const/access/deletion diagnostics. Independent member addresses remain rejected.
+
 An array can also supply the element pack to `std::apply` through the
 [checked tuple, pair and array callable boundary](#value-tuples-from-tuple).
 Mutable and const lvalues, rvalues, zero-length arrays and nested arrays retain

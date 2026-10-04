@@ -37376,6 +37376,351 @@ int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayFillQueriesRunAtBothOptimizations) {
+  const auto QuerySource = tmpFile("array-fill-query.cpp");
+  const auto QueryOutput = tmpFile("array-fill-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+using Row = array<int, 2>;
+using Empty = array<int, 0>;
+using Callback = int (*)(int) noexcept;
+struct Element { int value; };
+struct Deleted { int value; Deleted& operator=(const Deleted&) = delete; };
+template<class T> struct DeclaredPattern { T value; DeclaredPattern& operator=(const DeclaredPattern&); };
+using Declared = DeclaredPattern<int>;
+struct Private { int value; private: Private& operator=(const Private& other) { value=other.value; return *this; } };
+struct ConstField { const int value; };
+template<class T> using FillResult = decltype(array<T, 0>{}.fill(T{}));
+static_assert(__is_same(FillResult<int>, void));
+static_assert(__is_same(FillResult<const int>, void));
+template<class T, unsigned N>
+void signature(array<T, N>& a, const T& value) noexcept(noexcept(a.fill(value))) {}
+void query_only(Row& row, Empty& empty, array<const int, 2>& qualified,
+                array<const int, 0>& empty_qualified,
+                array<Element, 2>& records, array<Element, 0>& empty_records, const Element& element,
+                array<Row, 2>& grid, array<Row, 0>& empty_grid, const Row& inner,
+                array<Callback, 2>& callbacks, array<Callback, 0>& empty_callbacks, Callback callback,
+                array<Deleted, 2>& deleted, array<Deleted, 0>& empty_deleted, const Deleted& deleted_value,
+                array<Declared, 2>& declared, const Declared& declared_value,
+                array<Private, 2>& private_values, const Private& private_value,
+                array<ConstField, 2>& const_fields, const ConstField& const_value) {
+  static_assert(!noexcept(row.fill(3)));
+  static_assert(__is_same(decltype(row.fill(3)), void));
+  static_assert(!noexcept(empty.fill(3)));
+  static_assert(__is_same(decltype(empty.fill(3)), void));
+  static_assert(!noexcept(qualified.fill(3)));
+  static_assert(__is_same(decltype(qualified.fill(3)), void));
+  static_assert(!noexcept(empty_qualified.fill(3)));
+  static_assert(__is_same(decltype(empty_qualified.fill(3)), void));
+  static_assert(!noexcept(records.fill(element)));
+  static_assert(__is_same(decltype(records.fill(element)), void));
+  static_assert(!noexcept(empty_records.fill(element)));
+  static_assert(__is_same(decltype(empty_records.fill(element)), void));
+  static_assert(!noexcept(grid.fill(inner)));
+  static_assert(__is_same(decltype(grid.fill(inner)), void));
+  static_assert(!noexcept(empty_grid.fill(inner)));
+  static_assert(__is_same(decltype(empty_grid.fill(inner)), void));
+  static_assert(!noexcept(callbacks.fill(callback)));
+  static_assert(__is_same(decltype(callbacks.fill(callback)), void));
+  static_assert(!noexcept(empty_callbacks.fill(callback)));
+  static_assert(__is_same(decltype(empty_callbacks.fill(callback)), void));
+  static_assert(!noexcept(deleted.fill(deleted_value)));
+  static_assert(__is_same(decltype(deleted.fill(deleted_value)), void));
+  static_assert(!noexcept(empty_deleted.fill(deleted_value)));
+  static_assert(__is_same(decltype(empty_deleted.fill(deleted_value)), void));
+  static_assert(!noexcept(declared.fill(declared_value)));
+  static_assert(__is_same(decltype(declared.fill(declared_value)), void));
+  static_assert(!noexcept(private_values.fill(private_value)));
+  static_assert(__is_same(decltype(private_values.fill(private_value)), void));
+  static_assert(!noexcept(const_fields.fill(const_value)));
+  static_assert(__is_same(decltype(const_fields.fill(const_value)), void));
+  static_assert(!noexcept((row.fill)(3)));
+  static_assert(__is_same(decltype((empty.fill)(3)), void));
+  static_assert(!noexcept(std::move(row).fill(3)));
+  static_assert(__is_same(decltype(std::forward<Empty>(empty).fill(3)), void));
+  static_assert(!noexcept(Row{}.fill(3)) && !noexcept(Empty{}.fill(3)));
+  static_assert(__is_same(decltype(array<const int, 0>{}.fill(3)), void));
+  static_assert(sizeof((row.fill(3), 0)) == sizeof(int));
+  static_assert(alignof(decltype((records.fill(element), 0))) == alignof(int));
+  static_assert(!noexcept(signature<int, 2>(row, 3)));
+  static_assert(!noexcept(signature<Deleted, 2>(deleted, deleted_value)));
+}
+)cpp");
+  auto QueryResult = translate(QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+  const auto Source = tmpFile("array-fill-queries.cpp");
+  const auto Output = tmpFile("array-fill-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+using Row = std::array<int, 2>;
+using Empty = std::array<int, 0>;
+int receivers, values, defaults, guards, guard_drops;
+int elements, assignments, element_drops;
+Row& source(Row& row, int n = (++defaults, 1)) noexcept { ++receivers; return row; }
+Empty& source_empty(Empty& row, int n = (++defaults, 1)) noexcept { ++receivers; return row; }
+int value(int n = (++defaults, 7)) noexcept { ++values; return n; }
+struct Guard {
+  Guard() noexcept { ++guards; }
+  ~Guard() noexcept { --guards; ++guard_drops; }
+};
+Row& keep(Row& row, const Guard& guard = Guard()) noexcept {
+  receivers += guards == 1 ? 1 : 100; return row;
+}
+struct Value {
+  operator int() const noexcept { ++values; return 11; }
+};
+struct Element {
+  int value;
+  explicit Element(int n) noexcept : value(n) { ++elements; }
+  Element& operator=(const Element& other) noexcept {
+    ++assignments; value = other.value + 1; return *this;
+  }
+  ~Element() noexcept { --elements; ++element_drops; }
+};
+int increment(int n) noexcept { return n + 1; }
+template<class T, unsigned N>
+void signature(std::array<T, N>& a, const T& value) noexcept(noexcept(a.fill(value))) {}
+int main() {
+  Row row{{1, 2}};
+  Empty empty{};
+  static_assert(!noexcept(source(row).fill(value())));
+  static_assert(!noexcept(keep(row).fill(Value{})));
+  static_assert(__is_same(decltype((source(row).fill)(value())), void));
+  static_assert(sizeof((keep(row).fill(value()), 0)) == sizeof(int));
+  static_assert(__is_same(decltype(Row{{++receivers}}.fill(value())), void));
+  static_assert(!noexcept(source_empty(empty).fill(Value{})));
+  static_assert(!noexcept(std::array<Element, 2>{{Element(3), Element(5)}}.fill(Element(7))));
+  static_assert(__is_same(decltype(std::array<Element, 0>{}.fill(Element(7))), void));
+  static_assert(!noexcept(signature<int, 2>(row, 3)));
+  signature<int, 2>(row, 3);
+  if (receivers || values || defaults || guards || guard_drops ||
+      elements || assignments || element_drops || row[0] != 1 || row[1] != 2) return 1;
+  source(row).fill(value());
+  if (receivers != 1 || values != 1 || defaults != 2 || row[0] != 7 || row[1] != 7) return 2;
+  keep(row).fill(value(5));
+  if (receivers != 2 || values != 2 || defaults != 2 || guards || guard_drops != 1 ||
+      row[0] != 5 || row[1] != 5) return 3;
+  source_empty(empty).fill(value());
+  if (receivers != 3 || values != 3 || defaults != 4 || !empty.empty()) return 4;
+  std::move(row).fill(Value{});
+  if (values != 4 || row[0] != 11 || row[1] != 11) return 5;
+  std::array<Row, 2> grid{};
+  static_assert(!noexcept(grid.fill(row)));
+  grid.fill(Row{{13, 17}});
+  if (grid[0][0] != 13 || grid[1][1] != 17) return 6;
+  using Callback = int (*)(int) noexcept;
+  std::array<Callback, 2> callbacks{};
+  static_assert(!noexcept(callbacks.fill(increment)));
+  callbacks.fill(increment);
+  if (callbacks[0](19) != 20 || callbacks[1](23) != 24) return 7;
+  {
+    std::array<Element, 3> records{{Element(1), Element(2), Element(3)}};
+    static_assert(!noexcept(records.fill(records[0])));
+    records.fill(records[0]);
+    if (assignments != 3 || records[0].value != 2 || records[1].value != 3 || records[2].value != 3) return 8;
+    (records.fill)(Element(8));
+    if (assignments != 6 || elements != 3 || element_drops != 1 || records[0].value != 9) return 9;
+    std::array<Element, 0> no_records{};
+    static_assert(!noexcept(no_records.fill(Element(11))));
+    no_records.fill(Element(11));
+    if (assignments != 6 || elements != 3 || element_drops != 2) return 10;
+  }
+  return elements == 0 && assignments == 6 && element_drops == 5 ? 0 : 11;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-fill-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayFillQueriesRequireSourceAndRuntimeAssignment) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"element", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<long double,2>&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"empty-element", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<long double,0>&a){using T=decltype(a.fill(1));}
+)cpp", "TR0201"},
+      {"erased-element", R"cpp(#include <array>
+using Row=std::array<int,2>;
+template<class>using Erased=int;void f(std::array<Erased<long double>,2>&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"extent", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),2)>&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"empty-extent", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,(sizeof(long double),0)>&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(!noexcept((sizeof(long double),a).fill(1)));}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(!noexcept(a.fill((sizeof(long double),1))));}
+)cpp", "TR0201"},
+      {"argument-decltype", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){using T=decltype(a.fill((sizeof(long double),1)));}
+)cpp", "TR0201"},
+      {"argument-sizeof", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(sizeof((a.fill((sizeof(long double),1)),0))==sizeof(int));}
+)cpp", "TR0201"},
+      {"argument-default", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int value(int n=(sizeof(long double),1))noexcept{return n;}void f(Row&a){static_assert(!noexcept(a.fill(value())));}
+)cpp", "TR0201"},
+      {"argument-body", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int value()noexcept{(void)sizeof(long double);return 1;}void f(Row&a){static_assert(!noexcept(a.fill(value())));}
+)cpp", "TR0201"},
+      {"argument-declaration", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int value()noexcept;void f(Row&a){static_assert(!noexcept(a.fill(value())));}
+)cpp", "TR0203"},
+      {"argument-exception", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int value()noexcept(sizeof(long double)>0){return 1;}void f(Row&a){static_assert(!noexcept(a.fill(value())));}
+)cpp", "TR0201"},
+      {"argument-conversion", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct Value{operator int()const noexcept{(void)sizeof(long double);return 1;}};void f(Row&a){static_assert(!noexcept(a.fill(Value{})));}
+)cpp", "TR0201"},
+      {"receiver-default", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a,int n=(sizeof(long double),1))noexcept{return a;}void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
+)cpp", "TR0201"},
+      {"receiver-body", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept{(void)sizeof(long double);return a;}void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
+)cpp", "TR0201"},
+      {"receiver-declaration", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&)noexcept;void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
+)cpp", "TR0203"},
+      {"receiver-exception", R"cpp(#include <array>
+using Row=std::array<int,2>;
+Row&source(Row&a)noexcept(sizeof(long double)>0){return a;}void f(Row&a){static_assert(!noexcept(source(a).fill(1)));}
+)cpp", "TR0201"},
+      {"temporary-receiver", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(){static_assert(!noexcept(Row{{(sizeof(long double),1)}}.fill(3)));}
+)cpp", "TR0201"},
+      {"temporary-destructor", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct Guard{~Guard()noexcept{(void)sizeof(long double);}};Row&keep(Row&a,const Guard&)noexcept{return a;}void f(Row&a){static_assert(!noexcept(keep(a,Guard{}).fill(1)));}
+)cpp", "TR0201"},
+      {"argument-constructor", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value;E()noexcept{(void)sizeof(long double);}};void f(std::array<E,0>&a){static_assert(!noexcept(a.fill(E{})));}
+)cpp", "TR0201"},
+      {"element-assignment-body", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value;E&operator=(const E&v)noexcept{(void)sizeof(long double);return *this;}};void f(std::array<E,2>&a,const E&v){static_assert(!noexcept(a.fill(v)));}
+)cpp", "TR0201"},
+      {"element-field", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int values[(sizeof(long double),1)];};void f(std::array<E,0>&a,const E&v){static_assert(!noexcept(a.fill(v)));}
+)cpp", "TR0201"},
+      {"fill-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>void array<int,2>::fill(const int&) {}}}void f(Row&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"empty-fill-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>void array<int,0>::fill(const int&) {}}}void f(std::array<int,0>&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>struct array<unsigned,2>{unsigned values[2];void fill(const unsigned&) {}};}}void f(std::array<unsigned,2>&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0201"},
+      {"member-address", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(Row&a){static_assert(!noexcept(a.fill(1)));using Method=void(Row::*)(const int&);Method method=&Row::fill;}
+)cpp", "TR0201"},
+      {"ordinary-assignment-declaration", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value;E&operator=(const E&);};void f(std::array<E,2>&a,const E&v){static_assert(!noexcept(a.fill(v)));}
+)cpp", "TR0203"},
+      {"runtime-declared-assignment", R"cpp(#include <array>
+using Row=std::array<int,2>;
+template<class T>struct Element{T value;Element&operator=(const Element&);};using E=Element<int>;void f(std::array<E,2>&a,const E&v){static_assert(!noexcept(a.fill(v)));a.fill(v);}
+)cpp", "TR0203"},
+      {"runtime-hidden-assignment", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value;E&operator=(const E&v){(void)sizeof(long double);return *this;}};void f(std::array<E,2>&a,const E&v){using T=decltype(a.fill(v));a.fill(v);}
+)cpp", "TR0201"},
+      {"fill-n-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>int*fill_n<int*,size_t,int>(int*p,size_t,const int&){return p;}}}void f(Row&a){static_assert(!noexcept(a.fill(1)));a.fill(1);}
+)cpp", "TR0201"},
+      {"internal-fill-n-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>int*__fill_n<int*,size_t,int>(int*p,size_t,const int&){return p;}}}void f(Row&a){static_assert(!noexcept(a.fill(1)));a.fill(1);}
+)cpp", "TR0201"},
+      {"data-specialization", R"cpp(#include <array>
+using Row=std::array<int,2>;
+namespace std{inline namespace __1{template<>constexpr int*array<int,2>::data()noexcept{return nullptr;}}}void f(Row&a){static_assert(!noexcept(a.fill(1)));a.fill(1);}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("array-fill-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("array-fill-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayFillQueriesRetainLanguageDiagnostics) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"const-receiver", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(const Row&a){static_assert(!noexcept(a.fill(1)));}
+)cpp", "TR0202"},
+      {"const-elements-runtime", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<const int,2>&a){static_assert(!noexcept(a.fill(1)));a.fill(1);}
+)cpp", "TR0202"},
+      {"empty-const-elements-runtime", R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<const int,0>&a){static_assert(!noexcept(a.fill(1)));a.fill(1);}
+)cpp", "TR0202"},
+      {"deleted-assignment-runtime", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value;E&operator=(const E&)=delete;};void f(std::array<E,2>&a,const E&v){static_assert(!noexcept(a.fill(v)));a.fill(v);}
+)cpp", "TR0202"},
+      {"private-assignment-runtime", R"cpp(#include <array>
+using Row=std::array<int,2>;
+struct E{int value;private:E&operator=(const E&);};void f(std::array<E,2>&a,const E&v){static_assert(!noexcept(a.fill(v)));a.fill(v);}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("array-fill-invalid-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("array-fill-invalid-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayAtQueriesRunAtBothOptimizations) {
   const auto QuerySource = tmpFile("array-at-queries-query.cpp");
   const auto QueryOutput = tmpFile("array-at-queries-query.nc");

@@ -20847,7 +20847,7 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
-static bool utilityArrayAccessorSignature(const State &S,
+static bool utilityArrayMethodSignature(const State &S,
                                           const SourceManager &SM,
                                           const CXXMethodDecl *Method,
                                           const UtilityArrayRecord &Array,
@@ -20930,7 +20930,7 @@ static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
                                     const ASTContext &Context) {
   const bool Subscript =
       Method && Method->getOverloadedOperator() == OO_Subscript;
-  if (!utilityArrayAccessorSignature(S, SM, Method, Array, Subscript ? 1 : 0) ||
+  if (!utilityArrayMethodSignature(S, SM, Method, Array, Subscript ? 1 : 0) ||
       !Method->isConstexpr())
     return false;
   const auto Name = Method->getIdentifier() ? Method->getIdentifier()->getName()
@@ -21016,7 +21016,7 @@ static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
                                const CXXMethodDecl *Method,
                                const UtilityArrayRecord &Array,
                                const ASTContext &Context) {
-  if (!utilityArrayAccessorSignature(S, SM, Method, Array, 1, EST_None) ||
+  if (!utilityArrayMethodSignature(S, SM, Method, Array, 1, EST_None) ||
       !Method->getIdentifier() || Method->getIdentifier()->getName() != "at" ||
       !Method->isConstexpr() || Method->getParamDecl(0)->hasDefaultArg())
     return false;
@@ -21079,11 +21079,98 @@ static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
          utilityArrayIndexedStorage(Returned, Method, Array);
 }
 
+static bool utilityArrayFillBody(const State &S, const SourceManager &SM,
+                                 const CXXMethodDecl *Method,
+                                 const UtilityArrayRecord &Array,
+                                 const ASTContext &Context) {
+  const auto Reference =
+      Context.getLValueReferenceType(Array.ElementType.withConst());
+  if (!utilityArrayMethodSignature(S, SM, Method, Array, 1, EST_None) ||
+      !Method->getIdentifier() || Method->getName() != "fill" ||
+      Method->isConst() || Method->isConstexpr() ||
+      !Method->getReturnType()->isVoidType() ||
+      Method->getParamDecl(0)->hasDefaultArg() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Reference))
+    return false;
+  // In C++17 fill has a fixed potentially-throwing void signature. A query
+  // does not instantiate its assignment, even for const or nonassignable T.
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 1)
+    return false;
+  if (!Array.Size) {
+    const auto *Declaration = dyn_cast<DeclStmt>(*Body->body_begin());
+    const auto *Assertion = Declaration && Declaration->isSingleDecl()
+                                ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
+                                : nullptr;
+    const auto *Negation =
+        Assertion ? dyn_cast<UnaryOperator>(Assertion->getAssertExpr()) : nullptr;
+    const auto *Read =
+        Negation ? dyn_cast<ImplicitCastExpr>(Negation->getSubExpr()) : nullptr;
+    const auto *Value = Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
+    const auto *Qualifier = Value ? Value->getQualifier() : nullptr;
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Trait = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Type ? Type->getAsCXXRecordDecl() : nullptr);
+    const auto *Message =
+        Assertion ? dyn_cast_or_null<StringLiteral>(Assertion->getMessage()) : nullptr;
+    if (!Assertion || Assertion->isFailed() || !Negation ||
+        Negation->getOpcode() != UO_LNot || !Read ||
+        Read->getCastKind() != CK_LValueToRValue || !Trait ||
+        Trait->getName() != "is_const" ||
+        Trait->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Trait->getTemplateArgs().size() != 1 ||
+        Trait->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Trait->getTemplateArgs().get(0).getAsType(),
+                             Array.ElementType) ||
+        !Message || Message->getString() !=
+                        "cannot fill zero-sized array of type 'const T'")
+      return false;
+    for (const auto *Redeclaration : Trait->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
+          !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                         "__type_traits/is_const.h"))
+        return false;
+    const auto *Constant = dyn_cast<VarDecl>(Value->getDecl());
+    const auto Result = Constant
+                            ? approvedSDKIntegerConstant(S, SM, Constant, Context)
+                            : std::nullopt;
+    return Result && *Result == 0 && !Array.ElementType.isConstQualified() &&
+           Context.hasSameType(Read->getType(), Context.BoolTy);
+  }
+  const auto *Call = dyn_cast<CallExpr>(*Body->body_begin());
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Pointer = Context.getPointerType(Array.ElementType);
+  const auto SizeType = Context.getSizeType();
+  if (!Call || !directFunctionReference(Call) || Call->getNumArgs() != 3 ||
+      !utilitySwapSDKFunction(S, SM, Function, "fill_n", "__algorithm/fill_n.h") ||
+      Function->getNumParams() != 3 || !Arguments || Arguments->size() != 3 ||
+      !Context.hasSameType(Function->getReturnType(), Pointer) ||
+      !Context.hasSameType(Call->getType(), Pointer))
+    return false;
+  const QualType TemplateTypes[] = {Pointer, SizeType, Array.ElementType};
+  const QualType ParameterTypes[] = {Pointer, SizeType, Reference};
+  for (unsigned I = 0; I < 3; ++I)
+    if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(), TemplateTypes[I]) ||
+        !Context.hasSameType(Function->getParamDecl(I)->getType(), ParameterTypes[I]) ||
+        Function->getParamDecl(I)->hasDefaultArg())
+      return false;
+  const auto *Extent = dyn_cast<SubstNonTypeTemplateParmExpr>(Call->getArg(1));
+  const auto *Size = Extent ? dyn_cast<IntegerLiteral>(Extent->getReplacement()) : nullptr;
+  return Size && Size->getValue() == Array.Size &&
+         Context.hasSameType(Extent->getType(), SizeType) &&
+         utilitySwapArrayData(S, SM, Call->getArg(0), Array, nullptr, Context) &&
+         functionalInvokeParameterReference(Call->getArg(2), Method->getParamDecl(0));
+}
+
 static bool utilityArrayCapacityBody(const State &S, const SourceManager &SM,
                                      const CXXMethodDecl *Method,
                                      const UtilityArrayRecord &Array,
                                      const ASTContext &Context) {
-  if (!utilityArrayAccessorSignature(S, SM, Method, Array) ||
+  if (!utilityArrayMethodSignature(S, SM, Method, Array) ||
       !Method->isConst() || !Method->isConstexpr())
     return false;
   const auto Name = Method->getIdentifier()->getName();
@@ -21140,7 +21227,7 @@ static bool utilityArrayPointerBody(const State &S, const SourceManager &SM,
                                     const CXXMethodDecl *Method,
                                     const UtilityArrayRecord &Array,
                                     const ASTContext &Context) {
-  if (!utilityArrayAccessorSignature(S, SM, Method, Array))
+  if (!utilityArrayMethodSignature(S, SM, Method, Array))
     return false;
   const auto Name = Method->getIdentifier()->getName();
   const auto Pointer = Context.getPointerType(
@@ -21261,7 +21348,7 @@ static bool utilityArrayReverseBody(const State &S, const SourceManager &SM,
                                     const CXXMethodDecl *Method,
                                     const UtilityArrayRecord &Array,
                                     const ASTContext &Context) {
-  if (!utilityArrayAccessorSignature(S, SM, Method, Array))
+  if (!utilityArrayMethodSignature(S, SM, Method, Array))
     return false;
   const auto Name = Method->getIdentifier()->getName();
   const bool ConstForwarder = Name == "crbegin" || Name == "crend";
@@ -23643,7 +23730,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
         !S.owns(SM, Reference->getExprLoc()) ||
         (!Method->hasBody() && !PointerMember && !ReverseMember &&
-         !CapacityMember && !ElementMember))
+         !CapacityMember && !ElementMember && Name != "fill"))
       return std::nullopt;
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
       if (CapacityMember && Call->isPRValue() &&
@@ -23699,19 +23786,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ArrayAt;
     }
     if (!Operator && Name == "fill" && Method->getNumParams() == 1 &&
-        Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
+        Call->getNumArgs() == 1 && Call->getType()->isVoidType() &&
         !Object->getType().isConstQualified() &&
-        (Array->Size
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Array->ElementType) &&
+        utilityArrayFillBody(S, SM, Method, *Array, Context)) {
+      if (MemberReference && MemberReference->isNonOdrUse() == NOUR_Unevaluated)
+        return UtilityOperation::ArrayFill;
+      if (Method->hasBody() &&
+          (Array->Size
              ? (utilityArrayTriviallyAssignable(Context, Array->ElementType) ||
                 utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType))
-             : !Array->ElementType.isConstQualified())) {
-      auto Parameter = Method->getParamDecl(0)->getType();
-      if (Parameter->isLValueReferenceType() &&
-          Parameter->getPointeeType().isConstQualified() &&
-          Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                         Array->ElementType) &&
-          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                         Array->ElementType) &&
+             : !Array->ElementType.isConstQualified()) &&
           (!Array->Size ||
            utilityArrayTriviallyAssignable(Context, Array->ElementType) ||
            approvedUtilityArrayOwnedFill(S, SM, Method, Context)))
