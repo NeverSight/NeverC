@@ -2119,6 +2119,34 @@ static bool ordinaryCallbackPrototype(const FunctionProtoType *P) {
   return true;
 }
 
+bool functionReferenceCast(const CastExpr *Cast, const ASTContext &Context) {
+  if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isLValue() ||
+      Cast->isTypeDependent() || Cast->isValueDependent() ||
+      Cast->isInstantiationDependent() || !Cast->getSubExpr() ||
+      !Cast->getSubExpr()->isLValue() ||
+      !isa<ImplicitCastExpr, CXXStaticCastExpr, CStyleCastExpr,
+           CXXFunctionalCastExpr>(Cast))
+    return false;
+  const auto Target = Cast->getType();
+  const auto Source = Cast->getSubExpr()->getType();
+  if (Target.isNull() || Source.isNull() ||
+      !ordinaryCallbackPrototype(Target->getAs<FunctionProtoType>()) ||
+      !ordinaryCallbackPrototype(Source->getAs<FunctionProtoType>()))
+    return false;
+  if (const auto *Written = dyn_cast<ExplicitCastExpr>(Cast)) {
+    const auto Type = Written->getTypeAsWritten();
+    if (!Type->isReferenceType() ||
+        !Context.hasSameType(Type->getPointeeType(), Target))
+      return false;
+  }
+  // Both F& and F&& casts are function lvalues. The only signature change
+  // admitted here is removal of noexcept; reinterpret casts never qualify.
+  return Context.hasSameType(Target, Source) ||
+         (Source->castAs<FunctionProtoType>()->isNothrow() &&
+          !Target->castAs<FunctionProtoType>()->isNothrow() &&
+          Context.hasSameFunctionTypeIgnoringExceptionSpec(Source, Target));
+}
+
 std::string Adapter::functionPointerType(QualType T, SourceLocation L,
                                          unsigned Depth) {
   const auto *P = T->isFunctionPointerType()
@@ -20059,8 +20087,17 @@ public:
                  "Diagnostic-only source text is not a translatable value.");
         return true;
       }
-      if (const auto *WrittenCast = dyn_cast<ExplicitCastExpr>(E))
-        A.type(WrittenCast->getTypeAsWritten(), E->getExprLoc(), true);
+      if (const auto *WrittenCast = dyn_cast<ExplicitCastExpr>(E)) {
+        if (A.S.coreV2() && functionReferenceCast(WrittenCast, A.Context)) {
+          A.checkTypeOnly(WrittenCast->getTypeAsWritten(), E->getExprLoc());
+          if (!retainFunctionTypeSource(WrittenCast->getTypeAsWritten(),
+                                        WrittenCast->getTypeInfoAsWritten(),
+                                        E->getExprLoc()))
+            return false;
+        } else {
+          A.type(WrittenCast->getTypeAsWritten(), E->getExprLoc(), true);
+        }
+      }
       if (A.S.coreV2())
         if (const auto *C = dyn_cast<CastExpr>(E);
             C && !GeneratedBuiltinCallees.count(C)) {
@@ -20143,6 +20180,9 @@ public:
             FunctionValueDesignators.insert(C->getSubExpr());
           else if (const auto *W = dyn_cast<ExprWithCleanups>(E))
             FunctionValueDesignators.insert(W->getSubExpr());
+          else if (const auto *C = dyn_cast<CastExpr>(E);
+                   functionReferenceCast(C, A.Context))
+            FunctionValueDesignators.insert(C->getSubExpr());
           else if (const auto *B = dyn_cast<BinaryOperator>(E);
                    B && B->getOpcode() == BO_Comma)
             FunctionValueDesignators.insert(B->getRHS());

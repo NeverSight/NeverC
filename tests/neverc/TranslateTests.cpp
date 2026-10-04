@@ -6718,6 +6718,8 @@ TEST_F(TranslateTest, CoreV2BareFunctionMetadataRetainsSignatures) {
       {"checked-alias-source", "struct Mid{int n;};using F=int()noexcept(noexcept(Mid()));static_assert(__is_function(F));"},
       {"checked-default-source", "struct Mid{int n;};template<class F=int()noexcept(noexcept(Mid()))>using I=int;I<> f(){return 3;}"},
       {"unused-dependent", "template<class T>using F=int(typename T::missing);int f(){return 3;}"},
+      {"record-result", "struct R{int n;};template<class T>using I=int;I<R()> f(){return 3;}"},
+      {"record-parameter", "struct R{int n;};template<class T>using I=int;I<int(R)> f(){return 3;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -6745,8 +6747,6 @@ TEST_F(TranslateTest, CoreV2BareFunctionMetadataChecksErasedSource) {
       {"hidden-function-reference", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T>using I=int;I<int(&)()noexcept(noexcept(Mid()))> f(){return 3;}"},
       {"variadic-function-reference", "template<class T>using I=int;I<int(&)(int,...)> f(){return 3;}"},
       {"wide-function-reference", "template<class T>using I=int;I<long double(&)(int)> f(){return 3;}"},
-      {"record-result", "struct R{int n;};template<class T>using I=int;I<R()> f(){return 3;}"},
-      {"record-parameter", "struct R{int n;};template<class T>using I=int;I<int(R)> f(){return 3;}"},
       {"incomplete-signature", "struct R;template<class T>using I=int;I<int(R*)> f(){return 3;}"},
       {"wide-default", "template<class T=int(long double)>using I=int;I<> f(){return 3;}"},
       {"wide-noexcept", "template<class T>using I=int;I<int()noexcept(sizeof(long double)>0)> f(){return 3;}"},
@@ -26350,6 +26350,170 @@ using F=int(*)();using N=int(*)()noexcept;N f(N&p,F&r){return std::exchange<N,F&
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("reference-exchange-reject-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("reference-exchange-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCastsRunAtBothOptimizations) {
+  const auto Control = tmpFile("function-reference-casts-control.cpp");
+  const auto ControlOutput = tmpFile("function-reference-casts-control.nc");
+  writeFile(Control, R"cpp(#include <utility>
+using F=int(int);using N=int(int)noexcept;using R=F&&;
+int one(int v){return v;}int two(int v)noexcept{return v;}
+static_assert(__is_same(decltype(static_cast<F&&>(one)),F&));
+static_assert(__is_same(decltype(static_cast<F&>(two)),F&));
+static_assert(__is_same(decltype(R(one)),F&));
+static_assert(__is_same(decltype((N&&)two),N&));
+static_assert(noexcept(static_cast<N&&>(two)(0)));
+static_assert(!noexcept(static_cast<F&&>(two)(0)));
+static_assert(__is_same(decltype(std::move(static_cast<F&&>(one))),F&));
+int main(){return 0;}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto Source = tmpFile("function-reference-casts.cpp");
+  const auto Output = tmpFile("function-reference-casts.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <functional>
+using Function = int(int);
+using SafeFunction = int(int) noexcept;
+using Callback = int(*)(int);
+using SafeCallback = int(*)(int) noexcept;
+using LFunction = Function &;
+using RFunction = Function &&;
+int calls, effects, constructed, destroyed;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int overloaded(int n) { ++calls; return n + 4; }
+long overloaded(long n) { return n + 5; }
+Callback selected() { ++effects; return two; }
+struct Temporary {
+  Temporary() { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  static int function(int n) noexcept { ++calls; return n + 6; }
+};
+bool check(Callback value) noexcept {
+  return constructed == 1 && destroyed == 0 && calls == 0 &&
+         value == Temporary::function;
+}
+int main() {
+  static_assert(__is_same(decltype(static_cast<Function &>(one)), Function &));
+  static_assert(__is_same(decltype(static_cast<Function &&>(one)), Function &));
+  static_assert(__is_same(decltype(RFunction(one)), Function &));
+  static_assert(__is_same(decltype((Function &&)one), Function &));
+  static_assert(__is_same(decltype(static_cast<SafeFunction &&>(safe)), SafeFunction &));
+  static_assert(__is_same(decltype(static_cast<Function &&>(safe)), Function &));
+  static_assert(noexcept(static_cast<SafeFunction &&>(safe)(1)));
+  static_assert(!noexcept(static_cast<Function &&>(safe)(1)));
+  static_assert(noexcept(static_cast<Function &&>((++effects, one))));
+  if (effects || calls || constructed || destroyed) return 1;
+  Callback a = static_cast<Function &>(one);
+  Callback b = static_cast<Function &&>(one);
+  Callback c = &static_cast<RFunction &>(one);
+  if (a != one || b != a || c != a || calls) return 2;
+  if (&LFunction(one) != one || &RFunction(two) != two ||
+      &(Function &)one != one || &(Function &&)two != two) return 3;
+  if (static_cast<Function &&>(overloaded)(2) != 6 || calls != 1) return 4;
+  if (static_cast<Function &&>(static_cast<Function &>(one))(2) != 3 || calls != 2) return 5;
+  if (static_cast<Function &&>((++effects, effects == 1 ? two : one))(2) != 4 ||
+      effects != 1 || calls != 3) return 6;
+  if (static_cast<Function &>((++effects, effects == 1 ? two : one))(2) != 3 ||
+      effects != 2 || calls != 4) return 7;
+  if (&static_cast<Function &&>(*selected()) != two || effects != 3 || calls != 4) return 8;
+  Callback old = std::exchange<Callback, Function &&>(a, static_cast<Function &&>((a = two, ++effects, one)));
+  if (old != two || a != one || effects != 4 || calls != 4) return 9;
+  if (&std::move(static_cast<Function &&>(one)) != one ||
+      &std::forward<RFunction>(LFunction(two)) != two) return 10;
+  auto wrapper = std::ref(one);
+  if (static_cast<Function &&>(wrapper.get())(2) != 3 || calls != 5) return 11;
+  SafeCallback p = static_cast<SafeFunction &&>(safe);
+  Callback q = static_cast<Function &>(safe);
+  Callback r = static_cast<Function &&>(safe);
+  if (p != safe || q != safe || r != safe || &LFunction(safe) != safe ||
+      &RFunction(safe) != safe || &(Function &)safe != safe || &(Function &&)safe != safe) return 12;
+  if (std::exchange<Callback, Function &&>(a, static_cast<Function &&>(safe)) != one || a != safe) return 13;
+  calls = 0;
+  if (!check(static_cast<SafeFunction &&>(Temporary{}.function))) return 14;
+  if (constructed != 1 || destroyed != 1 || calls) return 15;
+  if (static_cast<Function &>(Temporary{}.function)(1) != 7 || destroyed != 1 || calls != 1) return 16;
+  if (constructed != 2 || destroyed != 2) return 17;
+  static_cast<Function &&>((++effects, Temporary{}.function));
+  if (constructed != 3 || destroyed != 3 || effects != 5 || calls != 1) return 18;
+  (void)LFunction((++effects, one));
+  (void)(Function &&)(++effects, two);
+  if (effects != 7 || calls != 1) return 19;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-reference-casts" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCastsRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"reinterpret-identity", R"cpp(using F=int(int);int one(int v){return v;}auto f(){return &reinterpret_cast<F&>(one);}
+)cpp", "TR0201"},
+      {"reinterpret-signature", R"cpp(using F=int(double);int one(int v){return v;}auto f(){return &reinterpret_cast<F&>(one);}
+)cpp", "TR0201"},
+      {"c-style-signature", R"cpp(using F=int(double);int one(int v){return v;}auto f(){return &(F&&)one;}
+)cpp", "TR0201"},
+      {"noexcept-upgrade", R"cpp(using F=int(int)noexcept;int one(int v){return v;}auto f(){return &(F&)one;}
+)cpp", "TR0201"},
+      {"static-distinct-signatures", R"cpp(using F=int(double);int one(int v){return v;}auto f(){return &static_cast<F&>(one);}
+)cpp", "TR0202"},
+      {"static-noexcept-upgrade", R"cpp(using F=int(int)noexcept;int one(int v){return v;}auto f(){return &static_cast<F&&>(one);}
+)cpp", "TR0202"},
+      {"long-double-signature", R"cpp(long double one(long double v){return v;}auto f(){return &static_cast<long double(&)(long double)>(one);}
+)cpp", "TR0201"},
+      {"variadic-signature", R"cpp(int one(int v,...){return v;}auto f(){return &static_cast<int(&&)(int,...)>(one);}
+)cpp", "TR0201"},
+      {"query-operand-source", R"cpp(using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(static_cast<F&&>((sizeof(long double),one))),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"query-written-exception-source", R"cpp(int one(int v)noexcept{return v;}static_assert(__is_same(decltype(static_cast<int(&&)(int)noexcept(sizeof(long double)>0)>(one)),int(&)(int)noexcept));int main(){return 0;}
+)cpp", "TR0201"},
+      {"runtime-written-exception-source", R"cpp(int one(int v)noexcept{return v;}auto f(){return &static_cast<int(&&)(int)noexcept(sizeof(long double)>0)>(one);}
+)cpp", "TR0201"},
+      {"erased-alias-source", R"cpp(template<class>using F=int(int);int one(int v){return v;}auto f(){return &static_cast<F<long double>&>(one);}
+)cpp", "TR0201"},
+      {"runtime-reference-storage", R"cpp(using F=int(int);int one(int v){return v;}int main(){F&&ref=static_cast<F&&>(one);return ref(0);}
+)cpp", "TR0201"},
+      {"runtime-reference-parameter", R"cpp(using F=int(int);auto f(F&r){return &static_cast<F&&>(r);}
+)cpp", "TR0201"},
+      {"runtime-reference-result", R"cpp(using F=int(int);int one(int v){return v;}F&&f(){return static_cast<F&&>(one);}
+)cpp", "TR0201"},
+      {"receiver-source", R"cpp(using F=int(int);struct T{long double hidden;static int call(int v){return v;}};auto f(){return &static_cast<F&&>(T{}.call);}
+)cpp", "TR0201"},
+      {"missing-function-body", R"cpp(using F=int(int);int one(int);auto f(){return &static_cast<F&&>(one);}
+)cpp", "TR0203"},
+      {"sdk-function-address", R"cpp(#include <utility>
+using F=int&&(int&)noexcept;auto f(){return &static_cast<F&>(std::move<int&>);}
+)cpp", "TR0201"},
+      {"move-specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&move<F&>(F&v)noexcept{return static_cast<F&&>(v);}}}auto f(){return std::move(static_cast<F&&>(one));}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-reference-casts-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-reference-casts-reject-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),

@@ -216,6 +216,21 @@ and function-to-pointer decay match the destination, with the existing optional
 unsupported signatures and ordinary function-reference storage remain outside
 this support.
 
+Function designators also support explicit `static_cast<F&>` and
+`static_cast<F&&>`, equivalent C-style casts, and functional casts through a
+function-reference alias. The checked conversion preserves the signature or
+removes `noexcept`; the latter also accepts Clang's implicit function-reference
+conversion inside the explicit cast. Both reference forms remain function
+lvalues under C++17's [static-cast rule](https://timsong-cpp.github.io/cppwp/n4659/expr.static.cast#1)
+and [cast-notation rule](https://timsong-cpp.github.io/cppwp/n4659/expr.cast#1).
+Address-taking, decay, invocation and `move`/`forward`/`exchange` preserve the
+selected function and evaluate each operand once. Discarded casts retain
+operand effects and full-expression cleanup without invoking the function.
+Written signatures, alias arguments, exception expressions and query operands
+are still checked before erasure. Reinterpretation, signature changes other
+than `noexcept` removal, and runtime function-reference variables, parameters
+or results remain unsupported.
+
 Object-pointer `std::exchange` also accepts fixed-array replacements when
 the selected assignment decays the array to a pointer to its complete element
 type, optionally adding `const` to that pointee. Mutable and const lvalue/xvalue

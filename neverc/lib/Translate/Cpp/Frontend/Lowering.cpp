@@ -547,6 +547,9 @@ class FunctionLowering {
       return functionValue(C->getSubExpr());
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return functionValue(W->getSubExpr());
+    if (const auto *C = dyn_cast<CastExpr>(E);
+        functionReferenceCast(C, A.Context))
+      return functionValue(C->getSubExpr());
     if (const auto *Call = dyn_cast<CallExpr>(E)) {
       const auto Operation =
           approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
@@ -20309,6 +20312,11 @@ class FunctionLowering {
       }
       if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
           C && C->getCastKind() == CK_NoOp && C->isGLValue()) {
+        discard(C->getSubExpr());
+        return;
+      }
+      if (const auto *C = dyn_cast<CastExpr>(E);
+          functionReferenceCast(C, A.Context)) {
         discard(C->getSubExpr());
         return;
       }
