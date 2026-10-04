@@ -2419,8 +2419,9 @@ still evaluate their receiver and arguments but do not read or write the
 synthetic carrier. The six comparisons evaluate both operands and return the
 empty-range results: equality, `<=` and `>=` are true; inequality, `<` and `>`
 are false. This rule composes through nonempty arrays whose nested leaves all
-have zero extent. Element access remains rejected because no valid index,
-`front`, `back`, `at` or `get` operation exists.
+have zero extent. Evaluated element access remains rejected because no valid
+index, `front`, `back`, `at` or `get` operation exists. Unevaluated `at` queries
+have the separate signature-only boundary below.
 
 Direct `array::data()`, `begin()`, `end()`, `cbegin()` and `cend()` calls also
 support unevaluated `noexcept`, `decltype` and size/alignment queries before
@@ -2484,8 +2485,27 @@ User replacements of either the accessor or its selected subscript are rejected.
 Receiver and index expressions, conversions, defaults and temporary lifetimes
 retain their original source checks. Queries produce no effects; evaluated
 calls preserve reference identity, evaluate the receiver and index once, and
-complete temporary cleanup. Empty-array element access, independent method
-addresses and the separate query/runtime restrictions on `at()` remain unchanged.
+complete temporary cleanup. Empty-array element access and independent method
+addresses retain their existing restrictions.
+
+Direct `array::at(index)` calls also admit these unevaluated queries, including
+dynamic, negative and out-of-range indices and zero-extent arrays. The exact
+member reference must carry Clang's unevaluated-use marker; a query of one
+call never authorizes a different evaluated call to the same specialization.
+The pinned constexpr signature has no exception specification, so `noexcept`
+is false, and its lvalue-reference result preserves element and receiver const
+qualification. Queries do not instantiate the SDK body or execute receivers,
+index conversions, defaults, element construction or temporary destruction.
+Those source dependencies are still checked, even though the potentially
+throwing callee already determines the `noexcept` result.
+An existing nonempty body must compare the exact size-type parameter against
+the array extent, select the pinned out-of-range helper, and return that index
+from the authenticated storage. The empty specialization must select its
+pinned failure and unreachable helpers. Evaluated calls retain the existing
+compile-time in-range index requirement; dynamic, negative, out-of-range and
+empty-array execution still requires exception support beyond this boundary.
+Source replacements, method addresses and unsupported operations in queried
+function bodies or default arguments remain rejected.
 
 Authenticated array objects also qualify as referents in the checked utility
 and functional operations. Direct reference or mixed-reference tuple and pair

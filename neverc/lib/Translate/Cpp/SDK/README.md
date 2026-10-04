@@ -126,8 +126,16 @@ must access the verified field through the exact size-type parameter, or
 forward `*this` to that pinned subscript at zero or extent minus one.
 Receiver and index sources, conversions, defaults and temporary cleanup remain
 checked; evaluated accesses preserve single evaluation and reference identity.
-Empty-array element access, method addresses and `at` retain their separate
-boundaries.
+Empty-array element access and method addresses retain their separate boundaries.
+Array `at` queries use the exact member reference's Clang unevaluated-use
+marker to admit dynamic or out-of-range indices and empty arrays without
+executing them. Its pinned constexpr signature has no exception specification
+and returns the const-correct element lvalue reference. Existing bodies must
+retain the exact bound comparison, pinned failure helpers and indexed storage
+access. All receiver/index/default/lifetime sources remain checked, including
+when `noexcept` is already false. Evaluated calls still require a compile-time
+in-range index; a query cannot authorize runtime access through another call
+or conceal unsupported operations in a queried user definition.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

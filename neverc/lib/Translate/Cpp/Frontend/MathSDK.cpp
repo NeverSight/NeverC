@@ -20851,7 +20851,9 @@ static bool utilityArrayAccessorSignature(const State &S,
                                           const SourceManager &SM,
                                           const CXXMethodDecl *Method,
                                           const UtilityArrayRecord &Array,
-                                          unsigned Parameters = 0) {
+                                          unsigned Parameters = 0,
+                                          ExceptionSpecificationType Exception =
+                                              EST_BasicNoexcept) {
   if (!Method ||
       (!Method->getIdentifier() &&
        Method->getOverloadedOperator() != OO_Subscript) ||
@@ -20865,7 +20867,7 @@ static bool utilityArrayAccessorSignature(const State &S,
       Method->getAccess() != AS_public || Method->isVolatile() ||
       Method->getRefQualifier() != RQ_None ||
       Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      !Prototype || Prototype->getExceptionSpecType() != Exception ||
       Prototype->getNoexceptExpr())
     return false;
   auto Pinned = [&](const FunctionDecl *Function) {
@@ -20881,6 +20883,25 @@ static bool utilityArrayAccessorSignature(const State &S,
   const auto *Pattern =
       Method->getTemplateInstantiationPattern(/*ForDefinition=*/true);
   return Pinned(Method) && Pinned(Pattern) && Pattern->hasBody();
+}
+
+static bool utilityArrayIndexedStorage(const Expr *Expression,
+                                       const CXXMethodDecl *Method,
+                                       const UtilityArrayRecord &Array) {
+  const auto *Access = dyn_cast<ArraySubscriptExpr>(Expression);
+  const auto *Decay =
+      Access ? dyn_cast<ImplicitCastExpr>(Access->getBase()) : nullptr;
+  const auto *Storage =
+      Decay ? dyn_cast<MemberExpr>(Decay->getSubExpr()) : nullptr;
+  const auto *Read =
+      Access ? dyn_cast<ImplicitCastExpr>(Access->getIdx()) : nullptr;
+  const auto *Parameter =
+      Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
+  return Decay && Decay->getCastKind() == CK_ArrayToPointerDecay && Storage &&
+         Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
+         isa<CXXThisExpr>(Storage->getBase()) && Read &&
+         Read->getCastKind() == CK_LValueToRValue && Parameter &&
+         Parameter->getDecl() == Method->getParamDecl(0);
 }
 
 static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
@@ -20929,22 +20950,8 @@ static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
   if (!Returned || !Returned->isLValue() ||
       !Context.hasSameType(Returned->getType(), Element))
     return false;
-  if (Subscript) {
-    const auto *Access = dyn_cast<ArraySubscriptExpr>(Returned);
-    const auto *Decay =
-        Access ? dyn_cast<ImplicitCastExpr>(Access->getBase()) : nullptr;
-    const auto *Storage =
-        Decay ? dyn_cast<MemberExpr>(Decay->getSubExpr()) : nullptr;
-    const auto *Read =
-        Access ? dyn_cast<ImplicitCastExpr>(Access->getIdx()) : nullptr;
-    const auto *Parameter =
-        Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
-    return Decay && Decay->getCastKind() == CK_ArrayToPointerDecay && Storage &&
-           Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
-           isa<CXXThisExpr>(Storage->getBase()) && Read &&
-           Read->getCastKind() == CK_LValueToRValue && Parameter &&
-           Parameter->getDecl() == Method->getParamDecl(0);
-  }
+  if (Subscript)
+    return utilityArrayIndexedStorage(Returned, Method, Array);
   const auto *Delegate = dyn_cast<CXXOperatorCallExpr>(Returned);
   const auto *Target = Delegate
                            ? dyn_cast_or_null<CXXMethodDecl>(
@@ -20981,6 +20988,89 @@ static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
          Size->getValue() == Array.Size &&
          Context.hasSameType(Extent->getType(), SizeType) &&
          Literal(Last->getRHS(), 1);
+}
+
+static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
+                               const CXXMethodDecl *Method,
+                               const UtilityArrayRecord &Array,
+                               const ASTContext &Context) {
+  if (!utilityArrayAccessorSignature(S, SM, Method, Array, 1, EST_None) ||
+      !Method->getIdentifier() || Method->getIdentifier()->getName() != "at" ||
+      !Method->isConstexpr() || Method->getParamDecl(0)->hasDefaultArg())
+    return false;
+  const auto SizeType = Context.getSizeType();
+  const auto Element =
+      Method->isConst() ? Array.ElementType.withConst() : Array.ElementType;
+  if (!Context.hasSameType(Method->getParamDecl(0)->getType(), SizeType) ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Context.getLValueReferenceType(Element)))
+    return false;
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  // The throwing path never executes in an admitted evaluated call. Still
+  // authenticate the selected helpers and bound comparison before erasing it.
+  auto Helper = [&](const Stmt *Statement, llvm::StringRef Name,
+                    llvm::StringRef Path, unsigned Arguments) {
+    const auto *Call = dyn_cast_or_null<CallExpr>(Statement);
+    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    if (!Function || !Function->getIdentifier() ||
+        Function->getIdentifier()->getName() != Name ||
+        !directFunctionReference(Call) || Call->getNumArgs() != Arguments ||
+        Function->getNumParams() != Arguments || Function->isVariadic() ||
+        Function->isDeleted() || !Function->isNoReturn() ||
+        !Function->hasBody() || !Function->getReturnType()->isVoidType() ||
+        !Call->getType()->isVoidType())
+      return static_cast<const CallExpr *>(nullptr);
+    for (const auto *Declaration : Function->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path))
+        return static_cast<const CallExpr *>(nullptr);
+    return Call;
+  };
+  const Stmt *Failure = *Body->body_begin();
+  if (Array.Size) {
+    const auto *Branch = dyn_cast<IfStmt>(Failure);
+    if (!Branch || Branch->getInit() || Branch->getConditionVariable() ||
+        Branch->getElse() || Branch->isConstexpr())
+      return false;
+    const auto *Bound = dyn_cast<BinaryOperator>(Branch->getCond());
+    const auto *Read =
+        Bound ? dyn_cast<ImplicitCastExpr>(Bound->getLHS()) : nullptr;
+    const auto *Parameter =
+        Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
+    const auto *Extent =
+        Bound ? dyn_cast<SubstNonTypeTemplateParmExpr>(Bound->getRHS()) : nullptr;
+    const auto *Size =
+        Extent ? dyn_cast<IntegerLiteral>(Extent->getReplacement()) : nullptr;
+    if (!Bound || Bound->getOpcode() != BO_GE || !Read ||
+        Read->getCastKind() != CK_LValueToRValue || !Parameter ||
+        Parameter->getDecl() != Method->getParamDecl(0) || !Size ||
+        Size->getValue() != Array.Size ||
+        !Context.hasSameType(Extent->getType(), SizeType))
+      return false;
+    Failure = Branch->getThen();
+  }
+  const auto *Throw = Helper(Failure, "__throw_out_of_range", "stdexcept", 1);
+  const auto *Decay =
+      Throw ? dyn_cast<ImplicitCastExpr>(Throw->getArg(0)) : nullptr;
+  const auto *Message =
+      Decay ? dyn_cast<StringLiteral>(Decay->getSubExpr()) : nullptr;
+  if (!Decay || Decay->getCastKind() != CK_ArrayToPointerDecay || !Message ||
+      Message->getString() != (Array.Size ? "array::at" : "array<T, 0>::at") ||
+      !Context.hasSameType(Throw->getDirectCallee()->getParamDecl(0)->getType(),
+                           Context.getPointerType(Context.CharTy.withConst())))
+    return false;
+  const auto *Final = *(Body->body_begin() + 1);
+  if (!Array.Size)
+    return Helper(Final, "__libcpp_unreachable", "__utility/unreachable.h", 0);
+  const auto *Result = dyn_cast<ReturnStmt>(Final);
+  const auto *Returned = Result ? Result->getRetValue() : nullptr;
+  return Returned && Returned->isLValue() &&
+         Context.hasSameType(Returned->getType(), Element) &&
+         utilityArrayIndexedStorage(Returned, Method, Array);
 }
 
 static bool utilityArrayCapacityBody(const State &S, const SourceManager &SM,
@@ -23533,7 +23623,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 Name == "empty";
     const bool SubscriptMember = Method->getOverloadedOperator() == OO_Subscript;
     const bool ElementMember =
-        SubscriptMember || Name == "front" || Name == "back";
+        SubscriptMember || Name == "front" || Name == "back" || Name == "at";
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23581,9 +23671,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::ArraySubscript;
     if (!Operator && Name == "at" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 &&
-        Method->getParamDecl(0)->getType()->isIntegralType(Context) &&
-        Call->getArg(0)->getType()->isIntegralType(Context) &&
-        ReferenceResult()) {
+        Same(Call->getArg(0)->getType(), Context.getSizeType()) &&
+        ReferenceResult() &&
+        utilityArrayAtBody(S, SM, Method, *Array, Context)) {
+      // Clang marks this exact member reference, not the whole specialization.
+      // A query may inspect any index and even an empty array without executing
+      // its throwing path; evaluated calls retain the proven in-range bound.
+      if (const auto *Member = dyn_cast<MemberExpr>(Reference);
+          Member && Member->isNonOdrUse() == NOUR_Unevaluated)
+        return UtilityOperation::ArrayAt;
       APValue Index;
       if (Call->getArg(0)->isCXX11ConstantExpr(Context, &Index) &&
           Index.isInt() && !Index.getInt().isNegative() &&
