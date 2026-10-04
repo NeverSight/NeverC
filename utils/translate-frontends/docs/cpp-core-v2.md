@@ -3541,9 +3541,11 @@ objects, evaluate the bound argument once, and bypass an overloaded
 `operator&`. Their result is an ordinary checked raw object pointer; they do not
 call libc++ at runtime.
 
-`std::addressof` also accepts an admitted ordinary function lvalue and returns
-its function pointer, preserving the signature and `noexcept`. This follows
-the C++17 [address-of operation](https://timsong-cpp.github.io/cppwp/n4659/specialized.addressof).
+`std::addressof` and raw-pointer `std::pointer_traits<F *>::pointer_to`
+also accept an admitted ordinary function lvalue and return its function
+pointer, preserving the signature and `noexcept`. This follows the C++17
+[address-of operation](https://timsong-cpp.github.io/cppwp/n4659/specialized.addressof)
+and [pointer-traits member](https://timsong-cpp.github.io/cppwp/n4659/pointer.traits.functions).
 Direct named functions, static members, checked reference casts, comma and
 conditional expressions, dereferenced callbacks, `reference_wrapper::get()`
 and the supported `move`, `forward`, `as_const` and `move_if_noexcept`
@@ -3551,24 +3553,29 @@ function adapters use the existing function-value lowering. The operand is
 evaluated once, including static-member receiver effects and full-expression
 temporary cleanup; taking the address does not call the target function.
 Exact SDK name imports and explicit function template arguments retain the
-same proof. Function-pointer objects still use ordinary object addressing.
+same proof for `addressof`. `pointer_to` accepts checked traits aliases and
+namespace qualification; its typed parameter can select a matching function
+overload. An instantiated `pointer_to` body must return the unchanged
+parameter through the exact SDK `addressof` builtin, including its declaration
+family. Function-pointer objects still use ordinary object addressing.
 
-Object and function `addressof` calls retain their exact builtin/signature proof
-in unevaluated `decltype`, size, alignment and `noexcept` queries without
-instantiating a body. Object queries preserve pointee `const`, fixed array
+Object and function `addressof` and `pointer_to` calls retain their exact
+builtin or SDK method signature proof in unevaluated `decltype`, size,
+alignment and `noexcept` queries without instantiating a body. Object queries
+preserve pointee `const`, fixed array
 dimensions and the distinction between a function and a function-pointer
 object. Supported scalar, pointer, array and source-record lvalues use their
 ordinary type/source checks; no overloaded `operator&` is selected, even when
 that operator is deleted. Queries do not execute operand side effects, selected
 default arguments or temporary construction/cleanup. Exception queries still
 account for the operand's calls and temporary destructors. The same proof
-applies to exact `addressof` calls in selected defaults consumed by supported
+applies to these exact address calls in selected defaults consumed by supported
 construction/exception queries.
 Original written types, array bounds, exception expressions and operands remain
 checked.
 Source overloads, redeclarations or specializations, indirect adapter calls,
 unsupported function signatures, and missing runtime targets remain rejected.
-This does not add function-reference storage or function `pointer_to` support.
+This does not add function-reference storage or fancy-pointer runtime support.
 
 The exact C++17 `std::destroy_at`, `std::destroy` and `std::destroy_n`
 templates also lower for raw pointers to admitted scalar objects and complete

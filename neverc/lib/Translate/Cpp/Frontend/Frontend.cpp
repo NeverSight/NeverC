@@ -4566,6 +4566,20 @@ static bool utilityAddressofSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
+static bool utilityPointerToSource(Adapter &A, const CallExpr *Call) {
+  if (!Call || approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
+                   UtilityOperation::MemoryPointerTo)
+    return false;
+  const auto *Function = Call->getDirectCallee();
+  // The descriptor proves the raw-pointer specialization and its fixed
+  // signature. Queries keep original type/operand/lifetime dependencies and
+  // never instantiate an SDK body to learn a result or exception specification.
+  return operationCalleePrototype(Call) ==
+             Function->getType()->getAs<FunctionProtoType>() &&
+         utilitySDKFunctionSource(A, Function, "__memory/pointer_traits.h",
+                                  /*RequireDefinition=*/false);
+}
+
 static bool utilityValueAdapterSource(
     Adapter &A, const CallExpr *Call,
     std::vector<const CXXMethodDecl *> *ConditionalSignatures = nullptr) {
@@ -7630,7 +7644,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullComparisonSource(A, Call) ||
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
-        utilityAddressofSource(A, Call) ||
+        utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -13375,7 +13389,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             utilityUniquePtrNullComparisonSource(A, Call) ||
             utilityUniquePtrNullOrderingSource(A, Call) ||
             utilityUniquePtrOwnerComparisonSource(A, Call) ||
-            utilityAddressofSource(A, Call) ||
+            utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
             ValueAdapter || utilityArrayExchangeSource(A, Call) ||
             functionalReferenceFactorySource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
@@ -20238,10 +20252,13 @@ public:
             U->getSubExpr()->getType()->isFunctionType())
           FunctionValueDesignators.insert(U->getSubExpr());
         if (const auto *Call = dyn_cast<CallExpr>(E);
-            Call && Call->getType()->isFunctionPointerType() &&
-            approvedUtilityOperation(A.S, A.Sources, Call, A.Context) ==
-                UtilityOperation::MemoryAddressof)
-          FunctionValueDesignators.insert(Call->getArg(0));
+            Call && Call->getType()->isFunctionPointerType()) {
+          const auto Operation =
+              approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+          if (Operation == UtilityOperation::MemoryAddressof ||
+              Operation == UtilityOperation::MemoryPointerTo)
+            FunctionValueDesignators.insert(Call->getArg(0));
+        }
         if (FunctionValueDesignators.count(E)) {
           if (const auto *P = dyn_cast<ParenExpr>(E))
             FunctionValueDesignators.insert(P->getSubExpr());

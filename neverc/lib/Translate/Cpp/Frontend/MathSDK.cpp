@@ -20847,6 +20847,50 @@ approvedCStringOperation(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
+static bool utilityPointerToBody(const State &S, const SourceManager &SM,
+                                 const CXXMethodDecl *Method,
+                                 const ASTContext &Context) {
+  const auto *Pattern = Method->getTemplateInstantiationPattern(
+      /*ForDefinition=*/true);
+  if (!Pattern || !Pattern->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__memory/pointer_traits.h"))
+    return false;
+  // Unevaluated calls only consume the pinned method's exact signature.
+  // If Sema instantiated its body, retain the selected addressof dependency;
+  // a source specialization must not silently become ordinary addressing.
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Returned = Body && Body->size() == 1
+                             ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                             : nullptr;
+  const auto *Delegate =
+      Returned ? dyn_cast_or_null<CallExpr>(Returned->getRetValue()) : nullptr;
+  const auto *Function = Delegate ? Delegate->getDirectCallee() : nullptr;
+  if (!Delegate || Delegate->getNumArgs() != 1 ||
+      !utilitySwapSDKFunction(S, SM, Function, "addressof",
+                              "__memory/addressof.h") ||
+      Function->getNumParams() != 1 ||
+      Function->getParamDecl(0)->hasDefaultArg())
+    return false;
+  const auto *Bound = dyn_cast<DeclRefExpr>(Delegate->getArg(0));
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  const auto *Builtin = Function->getAttr<BuiltinAttr>();
+  return Bound && Bound->getDecl() == Method->getParamDecl(0) &&
+         Builtin && Builtin->isImplicit() &&
+         Builtin->getID() == Builtin::BIaddressof &&
+         Function->getBuiltinID() == Builtin::BIaddressof && Prototype &&
+         Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+         !Prototype->getNoexceptExpr() &&
+         Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             Method->getParamDecl(0)->getType()) &&
+         Context.hasSameType(Function->getReturnType(),
+                             Method->getReturnType()) &&
+         Context.hasSameType(Delegate->getType(), Method->getReturnType());
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
@@ -20986,7 +21030,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Method && Method->isStatic() && Method->getIdentifier() &&
       Method->getName() == "pointer_to" && !Method->isVariadic() &&
       Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
-      Call->isPRValue() && Call->getArg(0)->isLValue() && Method->hasBody() &&
+      Call->isPRValue() && Call->getArg(0)->isLValue() &&
       Method->isInlined() && approvedStandardSDKDeclaration(S, SM, Method) &&
       cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                     "__memory/pointer_traits.h") &&
@@ -21001,7 +21045,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto Result = Method->getReturnType();
     if (Traits && Template && CanonicalTemplate && Prototype &&
-        Prototype->isNothrow() && Arguments && Arguments->size() == 1 &&
+        Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+        !Prototype->getNoexceptExpr() &&
+        !Method->getParamDecl(0)->hasDefaultArg() &&
+        Arguments && Arguments->size() == 1 &&
         Arguments->get(0).getKind() == TemplateArgument::Type &&
         !Traits->isUnion() && !Traits->isDependentContext() &&
         Traits->getName() == "pointer_traits" &&
@@ -21016,13 +21063,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
                       "__memory/pointer_traits.h") &&
         Parameter->isLValueReferenceType() &&
-        utilityObjectPointer(Context, Result) &&
+        (utilityObjectPointer(Context, Result) ||
+         Result->isFunctionPointerType()) &&
         Context.hasSameType(Arguments->get(0).getAsType(), Result) &&
         Context.hasSameType(Call->getType(), Result) &&
         Context.hasSameType(Parameter->getPointeeType(),
                             Result->getPointeeType()) &&
         Context.hasSameType(Call->getArg(0)->getType(),
-                            Parameter->getPointeeType()))
+                            Parameter->getPointeeType()) &&
+        utilityPointerToBody(S, SM, Method, Context))
       return UtilityOperation::MemoryPointerTo;
   }
   if (const auto Heap =

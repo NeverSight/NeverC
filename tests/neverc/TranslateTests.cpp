@@ -51264,6 +51264,238 @@ int f(const int&v){static_assert(__is_same(decltype(std::addressof<int>(v)),int*
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerTraitsFunctionAddressesRunAtBothOptimizations) {
+  const auto Control = tmpFile("function-pointer-to-control.cpp");
+  const auto ControlOutput = tmpFile("function-pointer-to-control.nc");
+  writeFile(Control, R"cpp(#include <memory>
+int f(){return 1;}int main(){return std::pointer_traits<int(*)()>::pointer_to(f)();})cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto QueryControl = tmpFile("function-pointer-to-only.cpp");
+  const auto QueryOutput = tmpFile("function-pointer-to-only.nc");
+  writeFile(QueryControl, R"cpp(#include <memory>
+#include <utility>
+using F = int(int);
+using N = int(int) noexcept;
+int one(int n) { return n; }
+int safe(int n) noexcept { return n; }
+static_assert(__is_same(decltype(std::pointer_traits<F*>::pointer_to(one)), F*));
+static_assert(__is_same(decltype(std::pointer_traits<N*>::pointer_to(safe)), N*));
+static_assert(__is_same(decltype(std::pointer_traits<F*>::pointer_to(std::move(one))), F*));
+static_assert(noexcept(std::pointer_traits<F*>::pointer_to(one)));
+using Row = int[2][3];
+struct Box { int value; Box *operator&() = delete; };
+int query(int &v, const int &c, Row &row, Box &box) {
+  static_assert(__is_same(decltype(std::pointer_traits<int*>::pointer_to(v)), int*));
+  static_assert(__is_same(decltype(std::pointer_traits<const int*>::pointer_to(c)), const int*));
+  static_assert(__is_same(decltype(std::pointer_traits<Row*>::pointer_to(row)), Row*));
+  static_assert(__is_same(decltype(std::pointer_traits<Box*>::pointer_to(box)), Box*));
+  static_assert(noexcept(std::pointer_traits<Box*>::pointer_to(box)));
+  static_assert(sizeof(std::pointer_traits<Row*>::pointer_to(row)) == sizeof(Row*));
+  static_assert(alignof(decltype(std::pointer_traits<Row*>::pointer_to(row))) == alignof(Row*));
+  return v;
+}
+int main() { return 0; }
+)cpp");
+  auto QueryResult = translate(
+      QueryControl, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("function-pointer-to.cpp");
+  const auto Output = tmpFile("function-pointer-to.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+#include <functional>
+using F = int(int);
+using N = int(int) noexcept;
+using P = F *;
+using NP = N *;
+using Traits = std::pointer_traits<P>;
+using SafeTraits = std::pointer_traits<NP>;
+namespace Imported { using Traits = std::pointer_traits<P>; }
+namespace Alias = Imported;
+int calls, effects, defaults, constructed, destroyed;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int overloaded(int n) { ++calls; return n + 4; }
+long overloaded(long n) { return n + 5; }
+P selected(int n = (++defaults, 1)) noexcept { effects += n; return two; }
+P potentially_throwing() { ++effects; return one; }
+P address() { return Traits::pointer_to(one); }
+struct Temporary {
+  Temporary() noexcept { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  static int function(int n) noexcept { ++calls; return n + 6; }
+};
+struct ThrowingCleanup {
+  ThrowingCleanup() noexcept { ++constructed; }
+  ~ThrowingCleanup() noexcept(false) { ++destroyed; }
+  static int function(int n) noexcept { return n; }
+};
+struct WithDefault {
+  P pointer;
+  WithDefault(P p = Traits::pointer_to((++defaults, one))) noexcept : pointer(p) {}
+};
+bool check(NP p) noexcept {
+  return constructed == 1 && destroyed == 0 && calls == 0 && p == Temporary::function;
+}
+int main() {
+  static_assert(__is_same(Traits::pointer, P));
+  static_assert(__is_same(Traits::element_type, F));
+  static_assert(__is_same(Traits::rebind<int>, int *));
+  static_assert(__is_same(SafeTraits::element_type, N));
+  static_assert(sizeof(Traits::difference_type) == sizeof(void *));
+  static_assert(__is_same(decltype(Traits::pointer_to(one)), P));
+  static_assert(__is_same(decltype((SafeTraits::pointer_to)(safe)), NP));
+  static_assert(sizeof(Traits::pointer_to((++effects, one))) == sizeof(P));
+  static_assert(noexcept(Traits::pointer_to(*selected())));
+  static_assert(!noexcept(Traits::pointer_to(*potentially_throwing())));
+  static_assert(noexcept(SafeTraits::pointer_to(safe)(0)));
+  static_assert(!noexcept(Traits::pointer_to(one)(0)));
+  static_assert(noexcept(SafeTraits::pointer_to(Temporary{}.function)));
+  static_assert(!noexcept(SafeTraits::pointer_to(ThrowingCleanup{}.function)));
+  static_assert(__is_nothrow_constructible(WithDefault));
+  if (calls || effects || defaults || constructed || destroyed) return 1;
+  P p = Traits::pointer_to(one);
+  NP q = SafeTraits::pointer_to(safe);
+  if (p != one || q != safe || address() != one || calls) return 2;
+  if ((Traits::pointer_to)(one)(2) != 3 || calls != 1) return 3;
+  if (Alias::Traits::pointer_to(overloaded)(2) != 6 || calls != 2) return 4;
+  if (Traits::pointer_to((++effects, effects == 1 ? two : one))(2) != 4 || effects != 1 || calls != 3) return 5;
+  if (Traits::pointer_to((++effects, effects == 1 ? two : one))(2) != 3 || effects != 2 || calls != 4) return 6;
+  if (Traits::pointer_to(*selected()) != two || effects != 3 || defaults != 1 || calls != 4) return 7;
+  auto wrapped = std::ref(one);
+  if (Traits::pointer_to(wrapped.get())(2) != 3 || calls != 5) return 8;
+  if (Traits::pointer_to(std::as_const(one)) != one ||
+      Traits::pointer_to(std::move(two)) != two ||
+      Traits::pointer_to(std::forward<F &&>(one)) != one ||
+      SafeTraits::pointer_to(std::move_if_noexcept(safe)) != safe) return 9;
+  if (Traits::pointer_to(static_cast<F &&>(one)) != one ||
+      Traits::pointer_to(static_cast<F &>(two)) != two ||
+      Traits::pointer_to(static_cast<F &&>(safe)) != safe) return 10;
+  if (std::exchange(p, Traits::pointer_to((p = two, ++effects, one))) != two ||
+      p != one || effects != 4 || calls != 5) return 11;
+  WithDefault defaulted;
+  if (defaults != 2 || defaulted.pointer != one || calls != 5) return 12;
+  calls = 0;
+  if (!check(SafeTraits::pointer_to(Temporary{}.function))) return 13;
+  if (constructed != 1 || destroyed != 1 || calls) return 14;
+  if (SafeTraits::pointer_to(Temporary{}.function)(1) != 7 || destroyed != 1 || calls != 1) return 15;
+  if (constructed != 2 || destroyed != 2) return 16;
+  (void)SafeTraits::pointer_to((++effects, Temporary{}.function));
+  if (constructed != 3 || destroyed != 3 || effects != 5 || calls != 1) return 17;
+  P callback = one;
+  P *callback_address = std::pointer_traits<P *>::pointer_to(callback);
+  static_assert(__is_same(decltype(std::pointer_traits<P *>::pointer_to(callback)), P *));
+  if (callback_address != &callback || *callback_address != one) return 18;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-pointer-to" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsAddressesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"class-specialization", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}namespace std{inline namespace __1{template<>struct pointer_traits<F*>{static F*pointer_to(F&f)noexcept{return &f;}};}}auto f(){return std::pointer_traits<F*>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"partial-specialization", R"cpp(#include <memory>
+int one(int n){return n;}namespace std{inline namespace __1{template<class T>struct pointer_traits<T(*)(T)>{using F=T(T);static F*pointer_to(F&f)noexcept{return &f;}};}}auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"primary-redeclaration", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<class T>struct pointer_traits;}}int one(int n){return n;}auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"member-specialization", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}namespace std{inline namespace __1{template<>F*pointer_traits<F*>::pointer_to(F&f)noexcept{return &f;}}}auto f(){return std::pointer_traits<F*>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"query-member-specialization", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}namespace std{inline namespace __1{template<>F*pointer_traits<F*>::pointer_to(F&f)noexcept{return &f;}}}static_assert(noexcept(std::pointer_traits<F*>::pointer_to(one)));int main(){return 0;}
+)cpp", "TR0201"},
+      {"addressof-specialization", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&f)noexcept{return &f;}}}auto f(){return std::pointer_traits<F*>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"addressof-redeclaration", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}int one(int n){return n;}auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"casted-callee", R"cpp(#include <memory>
+using F=int(int);using A=F*(*)(F&);int one(int n){return n;}auto f(){return static_cast<A>(std::pointer_traits<F*>::pointer_to)(one);}
+)cpp", "TR0201"},
+      {"independent-address", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}auto f(){static_assert(noexcept(std::pointer_traits<F*>::pointer_to(one)));return &std::pointer_traits<F*>::pointer_to;}
+)cpp", "TR0201"},
+      {"indirect-adapter", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}auto f(){auto p=&std::pointer_traits<F*>::pointer_to;return p(one);}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <memory>
+template<class>using F=int(int);int one(int n){return n;}auto f(){return std::pointer_traits<F<long double>*>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"hidden-exception-source", R"cpp(#include <memory>
+int one(int n)noexcept{return n;}using F=int(int)noexcept(sizeof(long double)>0);auto f(){return std::pointer_traits<F*>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"variadic-signature", R"cpp(#include <memory>
+int one(int n,...){return n;}auto f(){return std::pointer_traits<int(*)(int,...)>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"long-double-signature", R"cpp(#include <memory>
+long double one(long double n){return n;}auto f(){return std::pointer_traits<long double(*)(long double)>::pointer_to(one);}
+)cpp", "TR0201"},
+      {"hidden-query-operand", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}static_assert(noexcept(std::pointer_traits<F*>::pointer_to((sizeof(long double),one))));int main(){return 0;}
+)cpp", "TR0201"},
+      {"selected-default-source", R"cpp(#include <memory>
+using F=int(int);int one(int n){return n;}F*select(int n=sizeof(long double))noexcept{return one;}static_assert(noexcept(std::pointer_traits<F*>::pointer_to(*select())));int main(){return 0;}
+)cpp", "TR0201"},
+      {"missing-target", R"cpp(#include <memory>
+int one(int);auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(one);}
+)cpp", "TR0203"},
+      {"reference-parameter", R"cpp(#include <memory>
+using F=int(int);F*address(F&ref){return std::pointer_traits<F*>::pointer_to(ref);}
+)cpp", "TR0201"},
+      {"reference-storage", R"cpp(#include <memory>
+int one(int n){return n;}int main(){auto&ref=one;return std::pointer_traits<int(*)(int)>::pointer_to(ref)(0);}
+)cpp", "TR0201"},
+      {"receiver-source", R"cpp(#include <memory>
+struct T{long double hidden;static int call(int n){return n;}};auto f(){return std::pointer_traits<int(*)(int)>::pointer_to(T{}.call);}
+)cpp", "TR0201"},
+      {"strengthen-noexcept", R"cpp(#include <memory>
+int one(int n){return n;}auto f(){return std::pointer_traits<int(*)(int)noexcept>::pointer_to(one);}
+)cpp", "TR0202"},
+      {"wrong-signature", R"cpp(#include <memory>
+int one(int n){return n;}auto f(){return std::pointer_traits<long(*)(long)>::pointer_to(one);}
+)cpp", "TR0202"},
+      {"object-rvalue", R"cpp(#include <memory>
+int main(){return *std::pointer_traits<int*>::pointer_to(1);}
+)cpp", "TR0202"},
+      {"volatile-object", R"cpp(#include <memory>
+auto f(volatile int&v){return std::pointer_traits<volatile int*>::pointer_to(v);}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-pointer-to-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-pointer-to-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionAddressofRunsAtBothOptimizations) {
   const auto Direct = tmpFile("function-addressof-direct.cpp");
   const auto DirectOutput = tmpFile("function-addressof-direct.nc");
@@ -51567,10 +51799,6 @@ TEST_F(TranslateTest, CoreV2MemoryAddressOperationsRequireExactObjectForms) {
        "#include <memory>\nauto f(){return "
        "&std::pointer_traits<int*>::pointer_to;}",
        "TR0201"},
-      {"pointer-to-function",
-       "#include <memory>\nint f(){return 1;}int main(){return "
-       "std::pointer_traits<int(*)()>::pointer_to(f)();}",
-       "TR0203"},
       {"pointer-to-fancy",
        "#include <memory>\nstruct F{using element_type=int;static F "
        "pointer_to(int&x){return F{&x};}int*p;};int main(){int n=1;return "

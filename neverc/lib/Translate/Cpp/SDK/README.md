@@ -277,7 +277,11 @@ change the selected global allocation function. These paths use ordinary source
 calls, enable the lifetime alias policy and add no libc++ runtime dependency.
 `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
-object lvalues. `std::destroy_at`, `std::destroy` and `std::destroy_n`
+object lvalues and admitted ordinary function lvalues. Function signatures,
+operand evaluation and temporary cleanup are preserved; unevaluated queries
+retain original source dependencies without instantiating an SDK body.
+Instantiated `pointer_to` bodies must select the exact SDK `addressof` builtin.
+`std::destroy_at`, `std::destroy` and `std::destroy_n`
 additionally lower for scalar and complete source-owned non-union record object
 pointers. Trivial destruction has no runtime body; nontrivial
 records use their checked destruction helper in forward order, while argument
