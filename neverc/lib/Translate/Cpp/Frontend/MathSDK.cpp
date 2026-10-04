@@ -14131,6 +14131,12 @@ static bool approvedUtilityPointerExchange(const State &S,
   const auto *Array = Context.getAsConstantArrayType(ReplacementType);
   const auto ArrayPointer =
       Array ? Context.getPointerType(Array->getElementType()) : QualType();
+  const bool ArrayVoidConversion =
+      Array &&
+      (Context.hasSameType(
+           Type, Context.getPointerType(Context.VoidTy.withConst())) ||
+       (!Array->getElementType().isConstQualified() &&
+        Context.hasSameType(Type, Context.VoidPtrTy)));
   const bool ArrayReplacement =
       Array && !Type->isFunctionPointerType() &&
       (!ReplacementType.hasQualifiers() ||
@@ -14138,13 +14144,14 @@ static bool approvedUtilityPointerExchange(const State &S,
                            ReplacementType.getUnqualifiedType().withConst())) &&
       (Context.hasSameType(Type, ArrayPointer) ||
        Context.hasSameType(
-           Type, Context.getPointerType(Array->getElementType().withConst())));
-  // Fixed arrays decay once, retaining their complete element type. Only
-  // matching pointees and immediate const additions use this path; unrelated
-  // pointer conversions and unknown bounds keep their separate requirements.
+           Type, Context.getPointerType(Array->getElementType().withConst())) ||
+       ArrayVoidConversion);
+  // Fixed arrays decay once to their complete element type before an optional
+  // const addition or object-to-void pointer conversion. Other pointee
+  // conversions and unknown bounds keep their separate requirements.
   if (!Type->isFunctionPointerType() && !ArrayReplacement)
     return false;
-  const bool ArrayQualification =
+  const bool ArrayPointerConversion =
       ArrayReplacement && !Context.hasSameType(Type, ArrayPointer);
   const bool ConstPointerReplacement =
       Context.hasSameType(ReplacementType, Type.withConst());
@@ -14207,7 +14214,7 @@ static bool approvedUtilityPointerExchange(const State &S,
           ? dyn_cast<ImplicitCastExpr>(ValueConversion->getSubExpr())
           : nullptr;
   const auto *ArrayInput =
-      ArrayQualification && ValueConversion
+      ArrayPointerConversion && ValueConversion
           ? dyn_cast<ImplicitCastExpr>(ValueConversion->getSubExpr())
           : ValueConversion;
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
@@ -14250,8 +14257,9 @@ static bool approvedUtilityPointerExchange(const State &S,
           (ArrayInput &&
            ArrayInput->getCastKind() == CK_ArrayToPointerDecay &&
            Context.hasSameType(ArrayInput->getType(), ArrayPointer) &&
-           (!ArrayQualification ||
-            (ValueConversion->getCastKind() == CK_NoOp &&
+           (!ArrayPointerConversion ||
+            (ValueConversion->getCastKind() ==
+                 (ArrayVoidConversion ? CK_BitCast : CK_NoOp) &&
              Context.hasSameType(ValueConversion->getType(), Type))))) &&
          utilitySwapPointerAdapter(S, SM, Forward, Function->getParamDecl(1),
                                    ReplacementType, Replacement, true,

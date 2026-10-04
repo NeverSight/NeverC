@@ -259,17 +259,21 @@ or results remain unsupported.
 
 Object-pointer `std::exchange` also accepts fixed-array replacements when
 the selected assignment decays the array to a pointer to its complete element
-type, optionally adding `const` to that pointee. Mutable and const lvalue/xvalue
-arrays, string literals, multidimensional arrays and arrays of admitted records
+type, optionally adding `const` to that pointee or converting it to `void*` or
+`const void*`. The object-to-void conversion preserves the pointer value and
+cannot discard `const` on the array element, following C++17's
+[pointer conversion rule](https://timsong-cpp.github.io/cppwp/n4659/conv.ptr#2).
+Mutable and const lvalue/xvalue arrays, string literals, multidimensional arrays
+and arrays of admitted records
 or pointers retain their existing type and lifetime checks. Deduced replacement
 types and explicit array, lvalue-reference or rvalue-reference template arguments
 qualify. The selected `forward<U>` retains that exact template argument while
 the exchange parameter follows C++17's [reference collapsing rules](https://timsong-cpp.github.io/cppwp/n4659/dcl.ref#6).
 Explicit rvalue-reference arguments still require a valid native reference
 binding and do not copy or move array elements. The completed pinned body must
-select the exact `move`, `forward`, array decay and
-qualification conversion; source replacements of any selected helper are
-rejected. This follows C++17's [exchange operation](https://timsong-cpp.github.io/cppwp/n4659/utility.exchange)
+select the exact `move`, `forward`, array decay and qualification or object-to-void
+pointer conversion; source replacements of any selected helper are rejected.
+This follows C++17's [exchange operation](https://timsong-cpp.github.io/cppwp/n4659/utility.exchange)
 and [array-to-pointer conversion](https://timsong-cpp.github.io/cppwp/n4659/conv.array).
 
 Both argument expressions are evaluated once before reading the old pointer.
@@ -280,10 +284,9 @@ size and exception queries use an already completed selected body without
 evaluating either operand. They authenticate the exact resolved pointer-move
 and array-assignment trait sources in its exception specification; substituted
 traits do not gain an exemption for returning the same boolean. Unknown-bound
-arrays, unrelated pointee conversions
-(including array-to-`void*` or derived-to-base pointers) and uncompleted
-query-only exchange bodies retain
-their separate requirements. Volatile or unsupported element types, indirect
+arrays, other pointee conversions (including derived-to-base pointers) and
+uncompleted query-only exchange bodies retain their separate requirements.
+Volatile or unsupported element types, indirect
 callees and hidden unsupported source remain rejected.
 
 Resolved namespace and nondependent block using-declarations may import the
