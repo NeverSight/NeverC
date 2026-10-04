@@ -1242,6 +1242,12 @@ std::optional<UtilityArrayRecord>
 approvedUtilityArrayRecord(const State &S, const clang::SourceManager &SM,
                            const clang::CXXRecordDecl *Record,
                            const clang::ASTContext &Context);
+struct UtilityArraySwapQuery {
+  std::vector<const clang::TypeTraitExpr *> Operations;
+};
+std::optional<UtilityArraySwapQuery> approvedUtilityArraySwapQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 bool approvedUtilityArrayConstruction(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXConstructExpr *Construction,

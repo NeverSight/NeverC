@@ -2416,9 +2416,38 @@ ordinary C++ binding rules. Receiver, argument, conversion, default and lifetime
 sources remain checked; independent function and member addresses and source
 specializations remain rejected. An evaluated empty swap still evaluates its
 operands and temporary cleanup, and still rejects const elements through the
-pinned body assertion. Nonempty swaps retain their selected element-operation
-proof; this empty-array query rule supplies no conditional exception evidence
-for them.
+pinned body assertion.
+
+Nonempty arrays admit the same direct query forms when the pinned conditional
+exception specification selects generic SDK element swap or recursive array
+swap. The proof follows the exact swappability variable specializations and
+both selected calls, then retains generic swap's original nothrow construction
+and assignment queries. Both operation sources must be checked even when the
+first result is false. Scalars, pointers, callbacks, trivial records, checked
+user move/copy operations and nested arrays retain their native results;
+nested empty arrays use the unconditional empty-member proof. The free array
+wrapper retains its original member delegation and explicit template arguments.
+
+Element operation queries use the shared source-completion rules for selected
+signatures, constructor defaults and destruction. A throwing copy fallback,
+move assignment, constructor default or temporary/object destructor can make
+the result false. Checked lazy class-template operation bodies remain
+uninstantiated. Nontrivial implicit/defaulted operations still require an
+already materialized definition under the
+[checked defaulted operation contract](#checked-defaulted-record-operations);
+query-only owning operations without that evidence require further proof.
+Source-owned ADL swaps, other SDK container swap overloads and a false
+swappability result with no selected operation also require further query
+evidence. Source specializations cannot replace the pinned trait or swap
+declarations.
+
+No query evaluates an operand, default argument, element operation or cleanup.
+Receiver and peer expressions retain their independent source and lifetime
+checks, and independent swap addresses remain rejected. Existing SDK bodies
+must still pass their ordinary selected-operation proof. Evaluated swap keeps
+its existing one-reference element-constructor and lifetime requirements; a
+query selecting an extra constructor default does not extend that runtime
+lowering. Native const, reference-binding and extent diagnostics remain intact.
 
 An array can also supply the element pack to `std::apply` through the
 [checked tuple, pair and array callable boundary](#value-tuples-from-tuple).

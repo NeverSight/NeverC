@@ -4572,15 +4572,16 @@ static bool utilityArrayCallSource(Adapter &A, const CallExpr *Call) {
   if (!Operation)
     return false;
   const auto *Function = Call->getDirectCallee();
-  bool EmptySwap = false;
+  bool Swap = false;
   if (Operation == UtilityOperation::ArrayMemberSwap ||
       Operation == UtilityOperation::ArraySwap) {
     const auto Type = Function->getParamDecl(0)->getType().getNonReferenceType();
     const auto Array = approvedUtilityArrayRecord(
         A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context);
-    EmptySwap = Array && !Array->Size;
+    Swap = Array && (!Array->Size ||
+        approvedUtilityArraySwapQuery(A.S, A.Sources, Call, A.Context));
   }
-  if (!EmptySwap && *Operation != UtilityOperation::ArrayData &&
+  if (!Swap && *Operation != UtilityOperation::ArrayData &&
       *Operation != UtilityOperation::ArrayBegin &&
       *Operation != UtilityOperation::ArrayEnd &&
       *Operation != UtilityOperation::ArrayRBegin &&
@@ -4594,8 +4595,9 @@ static bool utilityArrayCallSource(Adapter &A, const CallExpr *Call) {
       *Operation != UtilityOperation::ArrayAt &&
       *Operation != UtilityOperation::ArrayFill)
     return false;
-  // Only the exact direct call consumes this SDK signature. Empty swap also
-  // proves its fixed member exception and, for std::swap, the delegation. The
+  // Only the exact direct call consumes this SDK signature. Swap also proves
+  // its pinned exception expression; nonempty element operations are retained
+  // and checked separately before source admission completes. The
   // receiver and arguments' written types, expressions, defaults and lifetimes
   // remain source dependencies; an independent method address gains no proof.
   return operationCalleePrototype(Call) ==
@@ -7631,7 +7633,16 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr,
     const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr,
     const std::set<const CallExpr *> *QueryCalls = nullptr,
-    const QueryTemplateSelectionSources *TemplateSelections = nullptr) {
+    const QueryTemplateSelectionSources *TemplateSelections = nullptr,
+    const TypeTraitExpr *SDKQuery = nullptr) {
+  // A consumed pinned swap trait can select an owned constructor default at
+  // its SDK query location. Authenticate the exact retained semantic event;
+  // parameter identity, unchanged initializer and completed source still close
+  // below. Unconsumed SDK events and ordinary query roots gain no exemption.
+  const auto SDKSource = SDKQuery ? A.OperationTraits.find(SDKQuery)
+                                  : A.OperationTraits.end();
+  const bool ExactSDKQuery = SDKSource != A.OperationTraits.end() &&
+                             &SDKSource->second == &Source;
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
@@ -7855,7 +7866,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
               !UserSource ||
               Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
               P->getFunctionScopeIndex() != I || Default->hasRewrittenInit() ||
-              !A.S.owns(A.Sources, Default->getUsedLocation()) ||
+              (!A.S.owns(A.Sources, Default->getUsedLocation()) &&
+               !(ExactSDKQuery && Default->getUsedLocation() == SDKQuery->getExprLoc())) ||
               selectedDefaultArgument(Default, A.Context) != Init)
             return false;
           auto Proof = Defaults->find({P, Init});
@@ -13388,6 +13400,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  "An erased wrapper requires one original member source.");
     }
   }
+  std::set<const CallExpr *> ArraySwapQuerySources;
+  std::set<const TypeTraitExpr *> ArraySwapOperationQueries;
   void collectOperationSource(const Stmt *S) {
     if (auto Found = MemberPointerCarrierSources.find(S);
         Found != MemberPointerCarrierSources.end())
@@ -13425,6 +13439,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // Capture before ownership/cache skips; only a query selecting this exact
     // completed default consumes the evidence. MaybeBindToTemporary can resolve
     // even a trivial destructor and then omit the binding expression entirely.
+    if (const auto *Call = dyn_cast<CallExpr>(S))
+      if (const auto Swap = approvedUtilityArraySwapQuery(A.S, A.Sources, Call, A.Context);
+          Swap && ArraySwapQuerySources.insert(Call).second) {
+        A.chargeExpansion(1 + Swap->Operations.size(), Call->getExprLoc());
+        for (const auto *Query : Swap->Operations) {
+          // SDK spelling supplies the exact trait types. The retained Sema
+          // event supplies selected user operations, defaults and destruction;
+          // existing query queues close those sources without emitting a body.
+          ArraySwapOperationQueries.insert(Query);
+          A.typeClassificationValue(Query);
+          queueConsumedOperationSignatures(Query);
+        }
+      }
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
       const FunctionDecl *AuthenticatedVectorEndpoint = nullptr;
@@ -18555,7 +18582,8 @@ public:
                                    &CheckedOperationTypes, &CompletedGeneratedOperations,
                                    &CompletedQueryConstructions,
                                    &CompletedQueryDestructorSignatures,
-                                   &CompletedQueryCalls, &CompletedQueryTemplateSelections));
+                                   &CompletedQueryCalls, &CompletedQueryTemplateSelections,
+                                   ArraySwapOperationQueries.count(Query) ? Query : nullptr));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
@@ -22218,9 +22246,19 @@ public:
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
   bool retainNeverCOperationTraitSource(
       ASTContext &Context, unsigned Count, const SourceLocation &Location) override {
-    if (!S.coreV2() || !S.Diagnostics.empty() ||
-        !S.owns(Context.getSourceManager(), Location))
+    if (!S.coreV2() || !S.Diagnostics.empty())
       return false;
+    if (!S.owns(Context.getSourceManager(), Location)) {
+      const auto Origin = S.sdkFile(Context.getSourceManager(), Location);
+      // These two immutable headers supply the exact two-operand traits in
+      // generic swap's conditional exception specification. Retention grants
+      // no source admission: a consuming descriptor must authenticate the
+      // selected specialization and each operand before checking this event.
+      if (Count != 2 || !Origin || Origin->Root != "libcxx" ||
+          (Origin->Path != "__type_traits/is_nothrow_constructible.h" &&
+           Origin->Path != "__type_traits/is_nothrow_assignable.h"))
+        return false;
+    }
     if (Count > 65) {
       auto P = Context.getSourceManager().getPresumedLoc(Location);
       S.diagnose("TR0201", "operation trait source",

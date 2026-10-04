@@ -11,6 +11,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -20853,7 +20854,8 @@ static bool utilityArrayMethodSignature(const State &S,
                                           const UtilityArrayRecord &Array,
                                           unsigned Parameters = 0,
                                           ExceptionSpecificationType Exception =
-                                              EST_BasicNoexcept) {
+                                              EST_BasicNoexcept,
+                                          bool ConditionalException = false) {
   if (!Method ||
       (!Method->getIdentifier() &&
        Method->getOverloadedOperator() != OO_Subscript) ||
@@ -20868,7 +20870,7 @@ static bool utilityArrayMethodSignature(const State &S,
       Method->getRefQualifier() != RQ_None ||
       Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !Prototype || Prototype->getExceptionSpecType() != Exception ||
-      Prototype->getNoexceptExpr())
+      (!ConditionalException && Prototype->getNoexceptExpr()))
     return false;
   auto Pinned = [&](const FunctionDecl *Function) {
     if (!Function || Function->getTemplateSpecializationKind() ==
@@ -21264,6 +21266,307 @@ static bool utilityEmptyArraySwapFunction(const State &S, const SourceManager &S
          BodyMethod->getCanonicalDecl() == Method->getCanonicalDecl();
 }
 
+// Retain the builtin operations behind the pinned conditional swap signature.
+// This proof follows selected declarations only; it never asks Sema to produce
+// a missing SDK or element body, or substitutes a folded trait value for source.
+class UtilityArraySwapQueryProof {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  std::set<const FunctionDecl *> Active;
+  std::map<const FunctionDecl *, unsigned> Completed;
+  std::set<const TypeTraitExpr *> SeenTraits;
+
+  bool pinned(const Decl *Declaration, llvm::StringRef Path) const {
+    return Declaration && approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path);
+  }
+  const VarTemplateSpecializationDecl *variable(
+      const Expr *Expression, llvm::StringRef Name,
+      llvm::ArrayRef<QualType> Types, bool SwappableArgument = false) const {
+    const auto *Reference = Expression
+        ? dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+    const auto *Variable = Reference
+        ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl()) : nullptr;
+    const auto *Primary = Variable ? Variable->getSpecializedTemplate() : nullptr;
+    constexpr llvm::StringLiteral Path = "__type_traits/is_swappable.h";
+    if (!Variable || Variable->getName() != Name || !Primary ||
+        Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Variable->hasInit() ||
+        !Context.hasSameType(Variable->getType(), Context.BoolTy.withConst()) ||
+        Variable->getTemplateArgs().size() != Types.size() + SwappableArgument)
+      return nullptr;
+    for (const auto *Declaration : Variable->redecls())
+      if (!pinned(Declaration, Path))
+        return nullptr;
+    for (const auto *Declaration : Primary->redecls())
+      if (!pinned(Declaration, Path) ||
+          !pinned(Declaration->getTemplatedDecl(), Path))
+        return nullptr;
+    const auto Specialized = Variable->getSpecializedTemplateOrPartial();
+    if (const auto *Partial =
+            llvm::dyn_cast<VarTemplatePartialSpecializationDecl *>(Specialized))
+      for (const auto *Declaration : Partial->redecls())
+        if (!pinned(Declaration, Path))
+          return nullptr;
+    for (unsigned I = 0; I < Types.size(); ++I) {
+      const auto &Argument = Variable->getTemplateArgs().get(I);
+      if (Argument.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Argument.getAsType(), Types[I]))
+        return nullptr;
+    }
+    if (SwappableArgument) {
+      const auto &Argument = Variable->getTemplateArgs().get(Types.size());
+      if (!llvm::isa<VarTemplatePartialSpecializationDecl *>(Specialized) ||
+          Argument.getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Argument.getIntegralType(), Context.BoolTy) ||
+          Argument.getAsIntegral() != 1)
+        return nullptr;
+    }
+    return Variable;
+  }
+  bool operationTrait(const Expr *Expression, QualType Element,
+                      bool Assignment) {
+    const auto *Reference = Expression
+        ? dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+    const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Type ? Type->getAsCXXRecordDecl() : nullptr);
+    const auto *Value = Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    const auto Path = Assignment ? "__type_traits/is_nothrow_assignable.h"
+                                 : "__type_traits/is_nothrow_constructible.h";
+    const auto Name = Assignment ? "is_nothrow_move_assignable"
+                                 : "is_nothrow_move_constructible";
+    if (!Record || !Value || Value->getName() != "value" ||
+        !Record->isCompleteDefinition() || Record->getName() != Name ||
+        Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Record->getTemplateArgs().size() != 1 || Record->getNumBases() != 1 ||
+        Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Record->getTemplateArgs().get(0).getAsType(), Element))
+      return false;
+    for (const auto *Declaration : Record->redecls())
+      if (!pinned(Declaration, Path))
+        return false;
+    for (const auto *Declaration : Record->getSpecializedTemplate()->redecls())
+      if (!pinned(Declaration, Path) ||
+          !pinned(Declaration->getTemplatedDecl(), Path))
+        return false;
+    const auto &Base = *Record->bases_begin();
+    const auto *BaseRecord = Base.getType()->getAsCXXRecordDecl();
+    if (!Base.getTypeSourceInfo() || !BaseRecord ||
+        Value->getDeclContext() != BaseRecord ||
+        !approvedSDKIntegerConstant(S, SM, Value, Context))
+      return false;
+    auto Location = Base.getTypeSourceInfo()->getTypeLoc();
+    if (const auto Elaborated = Location.getAs<ElaboratedTypeLoc>())
+      Location = Elaborated.getNamedTypeLoc();
+    const auto Template = Location.getAs<TemplateSpecializationTypeLoc>();
+    if (!Template || Template.getNumArgs() != 2)
+      return false;
+    const auto Argument = Template.getArgLoc(1);
+    const auto Kind = Argument.getArgument().getKind();
+    const auto *Source = Kind == TemplateArgument::Expression
+        ? Argument.getSourceExpression()
+        : Kind == TemplateArgument::Integral
+            ? Argument.getSourceIntegralExpression() : nullptr;
+    const auto *Query = Source
+        ? dyn_cast<TypeTraitExpr>(Source->IgnoreParenImpCasts()) : nullptr;
+    if (!Query || Query->getNumArgs() != 2 ||
+        Query->getTrait() != (Assignment ? BTT_IsNothrowAssignable
+                                         : TT_IsNothrowConstructible) ||
+        Query->isTypeDependent() || Query->isValueDependent() ||
+        Query->isInstantiationDependent() ||
+        !Context.hasSameType(Query->getArg(0)->getType(),
+            Assignment ? Context.getLValueReferenceType(Element) : Element) ||
+        !Context.hasSameType(Query->getArg(1)->getType(),
+                            Context.getRValueReferenceType(Element)))
+      return false;
+    if (SeenTraits.insert(Query).second)
+      Result.Operations.push_back(Query);
+    return true;
+  }
+  bool declval(const Expr *Expression, QualType Reference) const {
+    const auto *Call = Expression
+        ? dyn_cast<CallExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+    return Call && directFunctionReference(Call) && !Call->getNumArgs() &&
+           utilitySwapSDKFunction(S, SM, Function, "declval", "__utility/declval.h") &&
+           !Function->getNumParams() && !Function->hasBody() && Arguments &&
+           Arguments->size() == 1 &&
+           Arguments->get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(Arguments->get(0).getAsType(), Reference) &&
+           Context.hasSameType(Function->getReturnType(), Reference) &&
+           Call->isLValue() &&
+           Context.hasSameType(Call->getType(), Reference->getPointeeType()) &&
+           Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+           !Prototype->getNoexceptExpr();
+  }
+  bool elementException(const Expr *Expression, QualType Element, unsigned Depth) {
+    const auto *Exception = Expression
+        ? dyn_cast<CXXNoexceptExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+    const auto *Call = Exception
+        ? dyn_cast<CallExpr>(Exception->getOperand()->IgnoreParenImpCasts()) : nullptr;
+    const auto Reference = Context.getLValueReferenceType(Element);
+    return Call && directFunctionReference(Call) && Call->getNumArgs() == 2 &&
+           Call->getType()->isVoidType() &&
+           declval(Call->getArg(0), Reference) && declval(Call->getArg(1), Reference) &&
+           function(Call->getDirectCallee(), Element, Depth + 1);
+  }
+
+public:
+  UtilityArraySwapQuery Result;
+  UtilityArraySwapQueryProof(const State &S, const SourceManager &SM,
+                             const ASTContext &Context)
+      : S(S), SM(SM), Context(Context) {}
+
+  bool member(const CXXMethodDecl *Method, const UtilityArrayRecord &Array,
+              unsigned Depth = 0) {
+    if (Depth > 64 || !Method)
+      return false;
+    if (!Array.Size)
+      return utilityEmptyArraySwapMethod(S, SM, Method, Array, Context);
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    if (!Prototype ||
+        (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
+         Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
+        !utilityArrayMethodSignature(S, SM, Method, Array, 1,
+                                     Prototype->getExceptionSpecType(), true) ||
+        !Method->getIdentifier() || Method->getName() != "swap" ||
+        Method->isConst() || Method->isConstexpr() ||
+        !Method->getReturnType()->isVoidType() ||
+        Method->getParamDecl(0)->hasDefaultArg() ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(),
+             Context.getLValueReferenceType(Context.getRecordType(Array.Record))) ||
+        (Method->hasBody() && !approvedUtilityArraySwapBody(S, SM, Method, Context)))
+      return false;
+    const auto *Trait = variable(Prototype->getNoexceptExpr(),
+                                "__is_nothrow_swappable_v", {Array.ElementType});
+    const auto Reference = Context.getLValueReferenceType(Array.ElementType);
+    const auto *With = Trait ? variable(Trait->getInit(),
+        "__is_nothrow_swappable_with_v", {Reference, Reference}, true) : nullptr;
+    const auto *Both = With
+        ? dyn_cast<BinaryOperator>(With->getInit()->IgnoreParenImpCasts()) : nullptr;
+    return Both && Both->getOpcode() == BO_LAnd &&
+           elementException(Both->getLHS(), Array.ElementType, Depth) &&
+           elementException(Both->getRHS(), Array.ElementType, Depth);
+  }
+  bool function(const FunctionDecl *Function, QualType Type, unsigned Depth = 0) {
+    if (Depth > 64 || !Function || Type.hasQualifiers() ||
+        Function->isInvalidDecl() || Function->isDeleted() ||
+        isa<CXXMethodDecl>(Function) || !Function->isInlined() ||
+        Function->isConstexpr() || Function->getNumParams() != 2 ||
+        !Function->getReturnType()->isVoidType())
+      return false;
+    const auto Reference = Context.getLValueReferenceType(Type);
+    for (const auto *Parameter : Function->parameters())
+      if (Parameter->hasDefaultArg() ||
+          !Context.hasSameType(Parameter->getType(), Reference))
+        return false;
+    if (auto Found = Completed.find(Function);
+        Found != Completed.end() && Depth <= Found->second)
+      return true;
+    if (!Active.insert(Function).second)
+      return false;
+    auto Restore = llvm::make_scope_exit([&] { Active.erase(Function); });
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    if (!Prototype || !Arguments ||
+        (Prototype->getExceptionSpecType() != EST_NoexceptTrue &&
+         Prototype->getExceptionSpecType() != EST_NoexceptFalse) ||
+        !Prototype->getNoexceptExpr())
+      return false;
+    bool Valid = false;
+    if (utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h")) {
+      const auto *Both = dyn_cast<BinaryOperator>(
+          Prototype->getNoexceptExpr()->IgnoreParenImpCasts());
+      Valid = Arguments->size() == 1 &&
+              Arguments->get(0).getKind() == TemplateArgument::Type &&
+              Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
+              Both && Both->getOpcode() == BO_LAnd &&
+              operationTrait(Both->getLHS(), Type, false) &&
+              operationTrait(Both->getRHS(), Type, true);
+    } else if (utilitySwapSDKFunction(S, SM, Function, "swap", "array")) {
+      const auto Array = approvedUtilityArrayRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+      const auto *Exception = dyn_cast<CXXNoexceptExpr>(
+          Prototype->getNoexceptExpr()->IgnoreParenImpCasts());
+      if (!Array || !Exception || Arguments->size() != 3 ||
+          Arguments->get(0).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments->get(0).getAsType(), Array->ElementType) ||
+          Arguments->get(1).getKind() != TemplateArgument::Integral ||
+          Arguments->get(1).getAsIntegral() != Array->Size ||
+          !Context.hasSameType(Arguments->get(1).getIntegralType(), Context.getSizeType()) ||
+          Arguments->get(2).getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy))
+        return false;
+      auto Delegate = [&](const Expr *Expression) -> const CXXMethodDecl * {
+        const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Expression);
+        const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+        return Call && directMethodReference(Call) && Call->getNumArgs() == 1 &&
+                       Call->getType()->isVoidType() &&
+                       functionalInvokeParameterReference(Call->getImplicitObjectArgument(), Function->getParamDecl(0)) &&
+                       functionalInvokeParameterReference(Call->getArg(0), Function->getParamDecl(1)) &&
+                       member(Method, *Array, Depth + 1)
+                   ? Method : nullptr;
+      };
+      const auto *Method = Delegate(Exception->getOperand());
+      if (!Method)
+        return false;
+      Valid = true;
+      if (Function->hasBody()) {
+        const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+        const auto *BodyMethod = Body && Body->size() == 1
+            ? Delegate(dyn_cast<Expr>(*Body->body_begin())) : nullptr;
+        Valid = BodyMethod && BodyMethod->getCanonicalDecl() == Method->getCanonicalDecl();
+      }
+    }
+    if (Valid)
+      Completed[Function] = Depth;
+    return Valid;
+  }
+};
+
+std::optional<UtilityArraySwapQuery> approvedUtilityArraySwapQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "swap" ||
+      !Call->getType()->isVoidType() || Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto *Reference = directFunctionReference(Call);
+  const auto *MemberReference = dyn_cast_or_null<MemberExpr>(Reference);
+  const auto *FreeReference = dyn_cast_or_null<DeclRefExpr>(Reference);
+  if (!Reference || !S.owns(SM, Reference->getExprLoc()) ||
+      !(MemberReference ? MemberReference->isNonOdrUse() == NOUR_Unevaluated
+                        : FreeReference && FreeReference->isNonOdrUse() == NOUR_Unevaluated))
+    return std::nullopt;
+  const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+  if (Call->getNumArgs() != (Method ? 1u : 2u) ||
+      Function->getNumParams() != Call->getNumArgs())
+    return std::nullopt;
+  const auto Parameter = Function->getParamDecl(0)->getType();
+  const auto Array = approvedUtilityArrayRecord(S, SM,
+      Method ? Method->getParent() : Parameter.getNonReferenceType()->getAsCXXRecordDecl(), Context);
+  if (!Array || !Array->Size)
+    return std::nullopt;
+  const auto Type = Context.getRecordType(Array->Record);
+  for (const auto *Argument : Call->arguments())
+    if (!Argument->isLValue() || !Context.hasSameType(Argument->getType(), Type))
+      return std::nullopt;
+  UtilityArraySwapQueryProof Proof(S, SM, Context);
+  if (Method) {
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *Object = MemberCall ? MemberCall->getImplicitObjectArgument() : nullptr;
+    if (!Object || !Context.hasSameType(Object->getType(), Type) ||
+        !Proof.member(Method, *Array))
+      return std::nullopt;
+  } else if (!Proof.function(Function, Type))
+    return std::nullopt;
+  return std::move(Proof.Result);
+}
+
 static bool utilityArrayCapacityBody(const State &S, const SourceManager &SM,
                                      const CXXMethodDecl *Method,
                                      const UtilityArrayRecord &Array,
@@ -21570,6 +21873,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (approvedUtilityArraySwapQuery(S, SM, Call, Context))
+    return isa<CXXMethodDecl>(Call->getDirectCallee())
+               ? UtilityOperation::ArrayMemberSwap : UtilityOperation::ArraySwap;
   if (auto CString = approvedCStringOperation(S, SM, Call, Context))
     return CString;
   if (auto Predicate =
