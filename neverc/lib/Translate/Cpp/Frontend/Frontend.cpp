@@ -4539,8 +4539,8 @@ static bool utilityRecordConditionalMoveSource(
                /*Owner=*/nullptr, RootConstObject);
 }
 
-static bool utilityFunctionAddressofSource(Adapter &A, const CallExpr *Call) {
-  if (!Call || !Call->getType()->isFunctionPointerType() ||
+static bool utilityAddressofSource(Adapter &A, const CallExpr *Call) {
+  if (!Call || !Call->getType()->isPointerType() ||
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
           UtilityOperation::MemoryAddressof)
     return false;
@@ -4548,9 +4548,9 @@ static bool utilityFunctionAddressofSource(Adapter &A, const CallExpr *Call) {
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   const auto *Arguments = Function->getTemplateSpecializationArgs();
   const auto *Builtin = Function->getAttr<BuiltinAttr>();
-  // The exact library builtin supplies a pointer to the unchanged function.
-  // It need not instantiate a body for a query; original signature, operand
-  // and lifetime sources still close independently, without Sema synthesis.
+  // The exact library builtin supplies a pointer to the unchanged object or
+  // function, without selecting operator&. A query needs no instantiated SDK
+  // body; original type, operand and lifetime sources still close independently.
   return Builtin && Builtin->isImplicit() &&
          Builtin->getID() == Builtin::BIaddressof &&
          Function->getBuiltinID() == Builtin::BIaddressof &&
@@ -7630,7 +7630,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullComparisonSource(A, Call) ||
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
-        utilityFunctionAddressofSource(A, Call) ||
+        utilityAddressofSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -13375,7 +13375,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             utilityUniquePtrNullComparisonSource(A, Call) ||
             utilityUniquePtrNullOrderingSource(A, Call) ||
             utilityUniquePtrOwnerComparisonSource(A, Call) ||
-            utilityFunctionAddressofSource(A, Call) ||
+            utilityAddressofSource(A, Call) ||
             ValueAdapter || utilityArrayExchangeSource(A, Call) ||
             functionalReferenceFactorySource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(

@@ -3553,13 +3553,22 @@ temporary cleanup; taking the address does not call the target function.
 Exact SDK name imports and explicit function template arguments retain the
 same proof. Function-pointer objects still use ordinary object addressing.
 
-Function `addressof` calls also retain their exact builtin/signature proof in
-unevaluated `decltype` and `noexcept` queries without instantiating a body.
-Original written types, exception expressions and operands remain checked.
+Object and function `addressof` calls retain their exact builtin/signature proof
+in unevaluated `decltype`, size, alignment and `noexcept` queries without
+instantiating a body. Object queries preserve pointee `const`, fixed array
+dimensions and the distinction between a function and a function-pointer
+object. Supported scalar, pointer, array and source-record lvalues use their
+ordinary type/source checks; no overloaded `operator&` is selected, even when
+that operator is deleted. Queries do not execute operand side effects, selected
+default arguments or temporary construction/cleanup. Exception queries still
+account for the operand's calls and temporary destructors. The same proof
+applies to exact `addressof` calls in selected defaults consumed by supported
+construction/exception queries.
+Original written types, array bounds, exception expressions and operands remain
+checked.
 Source overloads, redeclarations or specializations, indirect adapter calls,
 unsupported function signatures, and missing runtime targets remain rejected.
 This does not add function-reference storage or function `pointer_to` support.
-Object `addressof` queries retain their separate source requirements.
 
 The exact C++17 `std::destroy_at`, `std::destroy` and `std::destroy_n`
 templates also lower for raw pointers to admitted scalar objects and complete

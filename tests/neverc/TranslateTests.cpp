@@ -51023,6 +51023,247 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ObjectAddressofQueriesRunAtBothOptimizations) {
+  const auto Control = tmpFile("object-addressof-queries-control.cpp");
+  const auto ControlOutput = tmpFile("object-addressof-queries-control.nc");
+  writeFile(Control, R"cpp(#include <memory>
+int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));return v;}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto QueryControl = tmpFile("object-addressof-queries-only.cpp");
+  const auto QueryOutput = tmpFile("object-addressof-queries-only.nc");
+  writeFile(QueryControl, R"cpp(#include <memory>
+namespace Imported{using std::addressof;}
+using Row=int[2][3];using P=int(*)(int);
+struct Box{int value;Box*operator&()=delete;};
+int queries(int&v,const int&c,Row&r,P&p,Box&b){
+static_assert(__is_same(decltype(Imported::addressof(v)),int*));
+static_assert(__is_same(decltype(Imported::addressof(c)),const int*));
+static_assert(__is_same(decltype(Imported::addressof(r)),Row*));
+static_assert(__is_same(decltype(Imported::addressof(p)),P*));
+static_assert(__is_same(decltype(Imported::addressof(b)),Box*));
+static_assert(noexcept(Imported::addressof(b)));
+static_assert(sizeof(Imported::addressof(r))==sizeof(void*));
+return v;
+}
+)cpp");
+  auto QueryResult = translate(
+      QueryControl, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("object-addressof-queries.cpp");
+  const auto Output = tmpFile("object-addressof-queries.nc");
+  writeFile(Source, R"cpp(#include <memory>
+#include <utility>
+namespace Imported { using std::addressof; }
+namespace Reexport { using Imported::addressof; }
+namespace Alias = Reexport;
+using Row = int[2];
+using Matrix = int[2][3];
+using P = int(*)(int);
+using NP = int(*)(int) noexcept;
+int calls, defaults, constructed, destroyed, overloaded;
+int anchor = 11;
+int one(int n) { ++calls; return n + 1; }
+int safe(int n) noexcept { ++calls; return n + 2; }
+int &select(int &v, int n = (++defaults, 1)) noexcept {
+  calls += n;
+  return v;
+}
+int &potentially_throwing(int &v) { ++calls; return v; }
+struct Box {
+  int value;
+  Box *operator&() { ++overloaded; return nullptr; }
+  const Box *operator&() const { ++overloaded; return nullptr; }
+};
+struct DeletedAddress {
+  int value;
+  DeletedAddress *operator&() = delete;
+  const DeletedAddress *operator&() const = delete;
+};
+struct Temporary {
+  int value;
+  Temporary(int n) noexcept : value(n) { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  int &get() noexcept { ++calls; return value; }
+};
+struct ThrowingCleanup {
+  int value;
+  ThrowingCleanup() noexcept : value(7) { ++constructed; }
+  ~ThrowingCleanup() noexcept(false) { ++destroyed; }
+  int &get() noexcept { ++calls; return value; }
+};
+struct WithDefault {
+  int *pointer;
+  WithDefault(int *p = std::addressof((++defaults, anchor))) noexcept : pointer(p) {}
+};
+bool inspect(const int *pointer) noexcept {
+  return constructed == 1 && destroyed == 0 && calls == 1 && *pointer == 19;
+}
+enum Choice { first, second };
+int main() {
+  using Alias::addressof;
+  int value = 3;
+  const int constant = 5;
+  bool flag = true;
+  double real = 1.5;
+  Choice choice = second;
+  int *pointer = &value;
+  int *const fixed = pointer;
+  P callback = one;
+  NP nothrow_callback = safe;
+  Row row{7, 8};
+  const Row const_row{9, 10};
+  Matrix matrix{{1, 2, 3}, {4, 5, 6}};
+  Box box{13};
+  const Box const_box{17};
+  DeletedAddress deleted{23};
+  static_assert(__is_same(decltype(addressof(value)), int *));
+  static_assert(__is_same(decltype((addressof)(constant)), const int *));
+  static_assert(__is_same(decltype(addressof<const int>(value)), const int *));
+  static_assert(__is_same(decltype(*addressof(value)), int &));
+  static_assert(__is_same(decltype(addressof(flag)), bool *));
+  static_assert(__is_same(decltype(addressof(real)), double *));
+  static_assert(__is_same(decltype(addressof(choice)), Choice *));
+  static_assert(__is_same(decltype(addressof(pointer)), int **));
+  static_assert(__is_same(decltype(addressof(fixed)), int *const *));
+  static_assert(__is_same(decltype(addressof(callback)), P *));
+  static_assert(__is_same(decltype(addressof(nothrow_callback)), NP *));
+  static_assert(__is_same(decltype(addressof(row)), Row *));
+  static_assert(__is_same(decltype(addressof(const_row)), const Row *));
+  static_assert(__is_same(decltype(addressof<const Row>(row)), const Row *));
+  static_assert(__is_same(decltype(addressof(matrix)), Matrix *));
+  static_assert(__is_same(decltype(addressof(box)), Box *));
+  static_assert(__is_same(decltype(addressof(const_box)), const Box *));
+  static_assert(__is_same(decltype(addressof(deleted)), DeletedAddress *));
+  static_assert(__is_same(decltype(addressof(std::as_const(value))), const int *));
+  static_assert(__is_same(decltype(addressof(std::forward<Row &>(row))), Row *));
+  static_assert(sizeof(addressof((++calls, row))) == sizeof(Row *));
+  static_assert(alignof(decltype(addressof(row))) == alignof(Row *));
+  static_assert(noexcept(addressof(select(value))));
+  static_assert(!noexcept(addressof(potentially_throwing(value))));
+  static_assert(noexcept(addressof(box)) && noexcept(addressof(deleted)));
+  static_assert(noexcept(addressof(Temporary{19}.get())));
+  static_assert(!noexcept(addressof(ThrowingCleanup{}.get())));
+  static_assert(__is_nothrow_constructible(WithDefault));
+  if (calls || defaults || constructed || destroyed || overloaded) return 1;
+  if (addressof(select(value)) != &value || calls != 1 || defaults != 1) return 2;
+  if (addressof<const int>(value) != &value || addressof(constant) != &constant) return 3;
+  if (*addressof(flag) != true || *addressof(real) != 1.5 || *addressof(choice) != second) return 4;
+  if (addressof(pointer) != &pointer || addressof(fixed) != &fixed) return 5;
+  if (addressof(callback) != &callback || addressof(nothrow_callback) != &nothrow_callback) return 6;
+  if (addressof(row) != &row || addressof<const Row>(row) != &row ||
+      addressof(const_row) != &const_row || (*addressof(matrix))[1][2] != 6) return 7;
+  if (addressof(box)->value != 13 || addressof(const_box)->value != 17 ||
+      addressof(deleted)->value != 23 || overloaded) return 8;
+  if (&box != nullptr || overloaded != 1) return 9;
+  WithDefault defaulted;
+  if (defaults != 2 || defaulted.pointer != &anchor) return 10;
+  calls = 0;
+  if (!inspect(addressof(Temporary{19}.get()))) return 11;
+  if (constructed != 1 || destroyed != 1 || calls != 1) return 12;
+  (void)addressof((++calls, Temporary{29}.get()));
+  if (constructed != 2 || destroyed != 2 || calls != 3) return 13;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("object-addressof-queries" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ObjectAddressofQueriesRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"primary-redeclaration", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));return v;}
+)cpp", "TR0201"},
+      {"specialization", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<>constexpr int*addressof<int>(int&v)noexcept{return &v;}}}int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));return v;}
+)cpp", "TR0201"},
+      {"const-specialization", R"cpp(#include <memory>
+namespace std{inline namespace __1{template<>constexpr const int*addressof<const int>(const int&v)noexcept{return &v;}}}int f(const int&v){static_assert(noexcept(std::addressof(v)));return v;}
+)cpp", "TR0201"},
+      {"source-overload", R"cpp(#include <memory>
+namespace std{inline namespace __1{int*addressof(int&v)noexcept{return &v;}}}int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));return v;}
+)cpp", "TR0201"},
+      {"casted-callee", R"cpp(#include <memory>
+using A=int*(*)(int&);int f(int&v){static_assert(__is_same(decltype(static_cast<A>(std::addressof<int>)(v)),int*));return v;}
+)cpp", "TR0201"},
+      {"independent-address", R"cpp(#include <memory>
+using A=int*(*)(int&)noexcept;int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));static_assert(sizeof(static_cast<A>(&std::addressof<int>))>0);return v;}
+)cpp", "TR0201"},
+      {"hidden-query-operand", R"cpp(#include <memory>
+int f(int&v){static_assert(__is_same(decltype(std::addressof((sizeof(long double),v))),int*));return v;}
+)cpp", "TR0201"},
+      {"selected-default-source", R"cpp(#include <memory>
+int&select(int&v,int n=sizeof(long double))noexcept{return v;}int f(int&v){static_assert(noexcept(std::addressof(select(v))));return v;}
+)cpp", "TR0201"},
+      {"original-exception-source", R"cpp(#include <memory>
+int&select(int&v)noexcept(sizeof(long double)>0);int&select(int&v)noexcept{return v;}int f(int&v){static_assert(noexcept(std::addressof(select(v))));return v;}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <memory>
+template<class>using I=int;int f(int&v){static_assert(__is_same(decltype(std::addressof<I<long double>>(v)),int*));return v;}
+)cpp", "TR0201"},
+      {"original-array-bound", R"cpp(#include <memory>
+using Row=int[sizeof(long double)];int f(Row&v){static_assert(__is_same(decltype(std::addressof(v)),Row*));return 0;}
+)cpp", "TR0201"},
+      {"volatile-object", R"cpp(#include <memory>
+int f(volatile int&v){static_assert(__is_same(decltype(std::addressof(v)),volatile int*));return 0;}
+)cpp", "TR0201"},
+      {"deep-volatile-pointer", R"cpp(#include <memory>
+int f(volatile int*&v){static_assert(__is_same(decltype(std::addressof(v)),volatile int**));return 0;}
+)cpp", "TR0201"},
+      {"long-double-object", R"cpp(#include <memory>
+int f(long double&v){static_assert(__is_same(decltype(std::addressof(v)),long double*));return 0;}
+)cpp", "TR0201"},
+      {"record-field-source", R"cpp(#include <memory>
+struct Box{long double hidden;};int f(Box&v){static_assert(__is_same(decltype(std::addressof(v)),Box*));return 0;}
+)cpp", "TR0201"},
+      {"as-const-specialization", R"cpp(#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<>constexpr const int&as_const<int>(int&v)noexcept{return v;}}}int f(int&v){static_assert(__is_same(decltype(std::addressof(std::as_const(v))),const int*));return v;}
+)cpp", "TR0201"},
+      {"rvalue-object", R"cpp(#include <memory>
+int main(){static_assert(noexcept(std::addressof(3)));return 0;}
+)cpp", "TR0202"},
+      {"explicit-reference", R"cpp(#include <memory>
+int f(int&v){static_assert(__is_same(decltype(std::addressof<int&>(v)),int*));return v;}
+)cpp", "TR0202"},
+      {"bit-field", R"cpp(#include <memory>
+struct Box{int bit:3;};int f(Box&v){static_assert(__is_same(decltype(std::addressof(v.bit)),int*));return 0;}
+)cpp", "TR0202"},
+      {"non-reference-conversion", R"cpp(#include <memory>
+int f(int&v){static_assert(__is_same(decltype(std::addressof<double>(v)),double*));return v;}
+)cpp", "TR0202"},
+      {"drop-const", R"cpp(#include <memory>
+int f(const int&v){static_assert(__is_same(decltype(std::addressof<int>(v)),int*));return v;}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("object-addressof-queries-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("object-addressof-queries-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionAddressofRunsAtBothOptimizations) {
   const auto Direct = tmpFile("function-addressof-direct.cpp");
   const auto DirectOutput = tmpFile("function-addressof-direct.nc");
@@ -51213,9 +51454,6 @@ namespace Imported{using std::addressof;}using F=int(int);int one(int v){return 
       {"imported-deleted-rvalue", R"cpp(#include <memory>
 namespace Imported{using std::addressof;}int main(){return *Imported::addressof(3);}
 )cpp", "TR0202"},
-      {"object-query-remains-separate", R"cpp(#include <memory>
-int f(int&v){static_assert(__is_same(decltype(std::addressof(v)),int*));return v;}
-)cpp", "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
