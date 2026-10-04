@@ -554,7 +554,8 @@ class FunctionLowering {
       const auto Operation =
           approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
       if (Operation == UtilityOperation::Move ||
-          Operation == UtilityOperation::Forward)
+          Operation == UtilityOperation::Forward ||
+          Operation == UtilityOperation::AsConst)
         return functionValue(Call->getArg(0));
       const auto Info = approvedFunctionalReferenceAccessCall(
           A.S, A.Sources, Call, A.Context);

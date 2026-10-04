@@ -216,6 +216,19 @@ and function-to-pointer decay match the destination, with the existing optional
 unsupported signatures and ordinary function-reference storage remain outside
 this support.
 
+The exact pinned `std::as_const` also accepts these admitted function
+designators. It returns the same function lvalue and preserves its `noexcept`
+signature: C++17 [ignores top-level cv-qualification on function types](https://timsong-cpp.github.io/cppwp/n4659/dcl.fct#7),
+and [`as_const` returns its argument](https://timsong-cpp.github.io/cppwp/n4659/utility.as_const).
+Direct and imported names, explicit function or function rvalue-reference
+template arguments, nested `as_const`/`move`/`forward` calls, function-reference
+casts and `reference_wrapper` access retain function identity. Runtime operands and
+temporary cleanup are evaluated once; type and exception queries remain
+unevaluated. The selected nondeleted lvalue overload, SDK declaration chain
+and builtin or completed return body must still match exactly. Independent
+adapter addresses, substituted declarations and ordinary runtime
+function-reference storage retain their existing rejection.
+
 Function designators also support explicit `static_cast<F&>` and
 `static_cast<F&&>`, equivalent C-style casts, and functional casts through a
 function-reference alias. The checked conversion preserves the signature or

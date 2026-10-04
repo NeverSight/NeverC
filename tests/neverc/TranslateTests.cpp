@@ -26358,6 +26358,180 @@ using F=int(*)();using N=int(*)()noexcept;N f(N&p,F&r){return std::exchange<N,F&
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionAsConstRunAtBothOptimizations) {
+  const auto Control = tmpFile("function-as-const-control.cpp");
+  const auto ControlOutput = tmpFile("function-as-const-control.nc");
+  writeFile(Control, R"cpp(#include <utility>
+namespace Imported{using std::as_const;}
+using F=int(int);using N=int(int)noexcept;
+int one(int v){return v;}int two(int v)noexcept{return v;}
+static_assert(__is_same(decltype(Imported::as_const(one)),F&));
+static_assert(__is_same(decltype(Imported::as_const<N>(two)),N&));
+static_assert(noexcept(Imported::as_const(one)));
+static_assert(__is_same(decltype(std::move(Imported::as_const(one))),F&));
+static_assert(__is_same(decltype(Imported::as_const(static_cast<F&&>(one))),F&));
+int main(){return 0;}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto ReferenceControl = tmpFile("function-as-const-reference.cpp");
+  const auto ReferenceOutput = tmpFile("function-as-const-reference.nc");
+  writeFile(ReferenceControl, R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}auto f(){return std::as_const<F&&>(one); }
+)cpp");
+  auto ReferenceResult = translate(
+      ReferenceControl, {"--profile", "cpp-core-v2", "-o", ReferenceOutput.string()});
+  ASSERT_EQ(ReferenceResult.exitCode, 0) << ReferenceResult.out << ReferenceResult.err;
+
+  const auto Source = tmpFile("function-as-const.cpp");
+  const auto Output = tmpFile("function-as-const.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <functional>
+namespace Imported { using std::as_const; }
+namespace Reexport { using Imported::as_const; }
+namespace Alias = Reexport;
+using F = int(int);
+using N = int(int) noexcept;
+using P = int(*)(int);
+using NP = int(*)(int) noexcept;
+int calls, effects, constructed, destroyed;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int overloaded(int n) { ++calls; return n + 4; }
+long overloaded(long n) { return n + 5; }
+P selected() { ++effects; return two; }
+struct Temporary {
+  Temporary() { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  static int function(int n) noexcept { ++calls; return n + 6; }
+};
+bool check(P p) noexcept {
+  return constructed == 1 && destroyed == 0 && calls == 0 && p == Temporary::function;
+}
+int main() {
+  using Alias::as_const;
+  static_assert(__is_same(decltype(as_const(one)), F &));
+  static_assert(__is_same(decltype(as_const<F>(one)), F &));
+  static_assert(__is_same(decltype((as_const)(safe)), N &));
+  static_assert(noexcept(as_const((++effects, one))));
+  static_assert(noexcept(as_const(safe)(0)));
+  static_assert(!noexcept(as_const(one)(0)));
+  static_assert(__is_same(decltype(as_const(std::move(one))), F &));
+  static_assert(__is_same(decltype(std::forward<F &&>(as_const(one))), F &));
+  static_assert(__is_same(decltype(as_const<F &&>(one)), F &));
+  if (calls || effects || constructed || destroyed) return 1;
+  P p = as_const(one);
+  NP q = as_const<N>(safe);
+  if (p != one || q != safe || &as_const(two) != two || calls) return 2;
+  if ((as_const)(one)(2) != 3 || calls != 1) return 3;
+  if (as_const<F>(overloaded)(2) != 6 || calls != 2) return 4;
+  if (as_const((++effects, effects == 1 ? two : one))(2) != 4 || effects != 1 || calls != 3) return 5;
+  if (as_const((++effects, effects == 1 ? two : one))(2) != 3 || effects != 2 || calls != 4) return 6;
+  if (&as_const(*selected()) != two || effects != 3 || calls != 4) return 7;
+  auto wrapped = std::ref(one);
+  if (as_const(wrapped.get())(2) != 3 || calls != 5) return 8;
+  if (&as_const(as_const(one)) != one || &std::move(as_const(two)) != two ||
+      &as_const(std::forward<F &&>(one)) != one) return 9;
+  if (&as_const(static_cast<F &&>(one)) != one ||
+      &static_cast<F &>(as_const(two)) != two) return 10;
+  if (&as_const(static_cast<F &&>(safe)) != safe) return 11;
+  if (std::exchange<P, F &&>(p, as_const((p = two, ++effects, one))) != two ||
+      p != one || effects != 4 || calls != 5) return 12;
+  if (std::exchange(p, as_const(safe)) != one || p != safe) return 13;
+  calls = 0;
+  if (!check(as_const(Temporary{}.function))) return 14;
+  if (constructed != 1 || destroyed != 1 || calls) return 15;
+  if (as_const(Temporary{}.function)(1) != 7 || destroyed != 1 || calls != 1) return 16;
+  if (constructed != 2 || destroyed != 2) return 17;
+  (void)as_const((++effects, Temporary{}.function));
+  if (constructed != 3 || destroyed != 3 || effects != 5 || calls != 1) return 18;
+  int value = 4;
+  P callback = one;
+  static_assert(__is_same(decltype(as_const(value)), const int &));
+  static_assert(__is_same(decltype(as_const(callback)), P const &));
+  if (&as_const(value) != &value || &as_const(callback) != &callback) return 19;
+  if (&as_const<F &&>(one) != one || &as_const<N &&>(safe) != safe) return 20;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-as-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAsConstRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&as_const<F>(F&v)noexcept{return v;}}}auto f(){return std::as_const(one);}
+)cpp", "TR0201"},
+      {"query-specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&as_const<F>(F&v)noexcept{return v;}}}static_assert(__is_same(decltype(std::as_const(one)),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"redeclaration", R"cpp(#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr const T&as_const(T&)noexcept;}}int one(int v){return v;}auto f(){return std::as_const(one);}
+)cpp", "TR0201"},
+      {"source-overload", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{F&as_const(F&v)noexcept{return v;}}}auto f(){return std::as_const(one);}
+)cpp", "TR0201"},
+      {"indirect-adapter", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}auto f(){using A=F&(*)(F&)noexcept;A adapter=&std::as_const<F>;return adapter(one);}
+)cpp", "TR0201"},
+      {"long-double-signature", R"cpp(#include <utility>
+long double one(long double v){return v;}auto f(){return std::as_const(one);}
+)cpp", "TR0201"},
+      {"variadic-signature", R"cpp(#include <utility>
+int one(int v,...){return v;}auto f(){return std::as_const(one);}
+)cpp", "TR0201"},
+      {"hidden-query-operand", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(std::as_const((sizeof(long double),one))),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"hidden-exception-source", R"cpp(#include <utility>
+int one(int v)noexcept{return v;}static_assert(__is_same(decltype(std::as_const<int(int)noexcept(sizeof(long double)>0)>(one)),int(&)(int)noexcept));int main(){return 0;}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <utility>
+template<class>using F=int(int);int one(int v){return v;}auto f(){return std::as_const<F<long double>>(one);}
+)cpp", "TR0201"},
+      {"missing-target", R"cpp(#include <utility>
+int one(int);auto f(){return std::as_const(one);}
+)cpp", "TR0203"},
+      {"reference-storage", R"cpp(#include <utility>
+int one(int v){return v;}int main(){auto&ref=std::as_const(one);return ref(0);}
+)cpp", "TR0201"},
+      {"receiver-source", R"cpp(#include <utility>
+struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::as_const(T{}.call);}
+)cpp", "TR0201"},
+      {"explicit-lvalue-reference", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}auto f(){return std::as_const<F&>(one);}
+)cpp", "TR0202"},
+      {"deleted-object-rvalue", R"cpp(#include <utility>
+int main(){return std::as_const(3);}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-as-const-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-as-const-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionReferenceCastsRunAtBothOptimizations) {
   const auto Control = tmpFile("function-reference-casts-control.cpp");
   const auto ControlOutput = tmpFile("function-reference-casts-control.nc");

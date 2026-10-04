@@ -29138,7 +29138,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Origin->Path == "__utility/as_const.h" && Name == "as_const" &&
         Function->getParamDecl(0)->getType()->isLValueReferenceType() &&
         Function->getReturnType()->isLValueReferenceType() &&
-        Function->getReturnType()->getPointeeType().isConstQualified())
+        (Function->getReturnType()->getPointeeType().isConstQualified() ||
+         Call->getType()->isFunctionProtoType()))
       return UtilityOperation::AsConst;
   }
   if (Origin->Path == "__utility/exchange.h" && Name == "exchange" &&

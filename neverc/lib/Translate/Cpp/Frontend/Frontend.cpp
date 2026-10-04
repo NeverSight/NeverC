@@ -3031,6 +3031,9 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
       (Operation == UtilityOperation::Forward || AsConst || CopyFallback ||
        ReferenceArgument) &&
       Call->isLValue() && Function->getReturnType()->isLValueReferenceType();
+  // C++ ignores top-level const added to a function type.
+  const bool AddConst =
+      CopyFallback || (AsConst && !Call->getType()->isFunctionType());
   if (!Function || !Function->getIdentifier() || Function->getName() != Name ||
       isa<CXXMethodDecl>(Function) || !Reference ||
       Reference->getDecl() != Function || !Function->getPrimaryTemplate() ||
@@ -3044,7 +3047,7 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
       !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
       Prototype->getNoexceptExpr() ||
       operationCalleePrototype(Call) != Prototype ||
-      !A.Context.hasSameType(AsConst || CopyFallback
+      !A.Context.hasSameType(AddConst
                                  ? Call->getArg(0)->getType().withConst()
                                  : Call->getArg(0)->getType(),
                              Call->getType()) ||
@@ -3091,8 +3094,8 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
         !A.Context.hasSameType(Value->getType(), Call->getType()) ||
         !Parameter || Parameter->getDecl() != Function->getParamDecl(0))
       return false;
-    // Mutable parameters gain const through only the selected no-op reference
-    // conversion; already const parameters require no conversion.
+    // Mutable objects gain const through only the selected no-op reference
+    // conversion; const objects and function types require no conversion.
     const auto *Conversion = dyn_cast<ImplicitCastExpr>(Value->IgnoreParens());
     return !Conversion || Conversion->getCastKind() == CK_NoOp;
   }
@@ -4548,7 +4551,8 @@ static bool utilityValueAdapterSource(
   const bool FunctionReference =
       Type->isFunctionProtoType() && Call->isLValue() &&
       (*Operation == UtilityOperation::Move ||
-       *Operation == UtilityOperation::Forward);
+       *Operation == UtilityOperation::Forward ||
+       *Operation == UtilityOperation::AsConst);
   // The tuple-like descriptor supplies only authenticated storage. The exact
   // reference cast, element layouts and every original operand/type source
   // still close separately; this proof does not perform container lifecycle.
@@ -20193,7 +20197,8 @@ public:
             const auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
             if (Operation == UtilityOperation::Move ||
-                Operation == UtilityOperation::Forward)
+                Operation == UtilityOperation::Forward ||
+                Operation == UtilityOperation::AsConst)
               FunctionValueDesignators.insert(Call->getArg(0));
           }
         }
