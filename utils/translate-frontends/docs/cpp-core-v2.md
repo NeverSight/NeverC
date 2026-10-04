@@ -2432,10 +2432,10 @@ Element operation queries use the shared source-completion rules for selected
 signatures, constructor defaults and destruction. A throwing copy fallback,
 move assignment, constructor default or temporary/object destructor can make
 the result false. Checked lazy class-template operation bodies remain
-uninstantiated. Nontrivial implicit/defaulted operations still require an
-already materialized definition under the
-[checked defaulted operation contract](#checked-defaulted-record-operations);
-query-only owning operations without that evidence require further proof.
+uninstantiated. Nontrivial implicit/defaulted operations can use either an
+already checked generated definition or the complete retained subobject
+selection graph under the
+[checked defaulted operation contract](#checked-defaulted-record-operations).
 Source-owned ADL swaps, other SDK container swap overloads and a false
 swappability result with no selected operation also require further query
 evidence. Source specializations cannot replace the pinned trait or swap
@@ -7877,11 +7877,13 @@ the implementing revision's CI.
 ### Checked defaulted record operations
 
 Retained construction and assignment roots can also select checked ordinary or
-single-stage inline template defaulted operations. A trivial written operation
-requires every actual declaration and concrete signature to have completed source
-checks, plus the implicit owning-subobject family proof. A nontrivial operation
-requires its exact existing generated definition and completed initializer, body
-and layout source. The query does not cause a missing body to be instantiated.
+single-stage inline template defaulted operations. Every written declaration and
+concrete signature requires completed source checks. Trivial operations can use
+the existing implicit owning-subobject family proof. A nontrivial operation
+with an existing generated definition requires its completed initializer, body
+and layout source. A query-only operation without a generated body can instead
+use the exact successful subobject selections retained during Clang's deletion
+check. The query does not cause a missing body to be instantiated.
 
 ```cpp
 struct Value {
@@ -7898,10 +7900,35 @@ count, receiver/reference identity, selected exception specifications and separa
 owning destruction proof remain required. Assignment keeps its exact direct method
 reference. These checks run after source completion; the provisional implicit fast
 path is unchanged. True, false, trivial and nothrow results retain Clang's values.
-Written child operation families, template split defaulting, unmaterialized
-nontrivial operations and unsupported signature/body source still require further
-proof. Selected checked constructor defaults use the same completed generated
-source proof while retaining their independent initializer and lifetime checks.
+
+The retained graph must cover every selected owning field, array element family
+and admitted base, including constructor cleanup destruction. Failed or partial
+deletion checks cannot supply this evidence. Each selected constructor or
+assignment keeps its actual overload and access result, including const-field
+copy fallback and friendship. Every written field type, array bound, selected
+member signature and inferred exception dependency still needs completed source.
+Recursion and retained events use the existing depth and expansion budgets.
+Signature completion follows consumed source dependencies; collecting an unused
+default or pointee-layout dependency does not trigger an otherwise lazy check.
+
+Ordinary selected members require completed definitions. An exact inline
+class-template origin may instead supply a checked signature while its unused
+body stays lazy. If an explicit outer specification leaves a selected child's
+exception specification uninstantiated, only its identical nondependent written
+specification qualifies. Dependent unresolved specifications, separate template
+definitions and member-template selections need further evidence. Unselected
+member bodies and exception specifications remain lazy.
+
+Selected constructor defaults retain exact parameter/initializer identities,
+completed original source and temporary destruction checks. Default member
+initializers likewise require their complete field expression and dependencies.
+An uninstantiated field initializer cannot supply default-construction source;
+copy/move construction and assignment leave unused field initializers lazy.
+The initializer proof is shared with ordinary queried constructor defaults.
+Neither default expressions nor element operations run during a query. Results
+retain the pinned compiler's values, including its inferred exception treatment
+of subobject constructor defaults. Real operation use still requires checked
+generated or ordinary bodies and existing runtime lowering.
 
 ### Operations with completed ordinary definitions
 

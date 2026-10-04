@@ -6596,7 +6596,6 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesCheckErasedSource) {
       {"source-hidden-template-dimension", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>inline constexpr int index=noexcept(Mid());static_assert(__array_extent(int[2][3],index<int>)==3);"},
       {"source-hidden-default-dimension", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr int index(int n=noexcept(Mid())){return n;}static_assert(__array_extent(int[2][3],index())==3);"},
       {"source-hidden-metadata-dimension", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?2:3];static_assert(__array_extent(int[2][3],__is_array(A))==3);"},
-      {"source-unmaterialized-decltype", "struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};using A=decltype(S());static_assert(__array_rank(A)==0);"},
       {"source-split-template-defaulting", "template<class T>struct S{T n=1;constexpr S();};template<class T>constexpr S<T>::S()=default;constexpr int extent(){S<int>value;return value.n;}using A=int[extent()];static_assert(__array_rank(A)==1);"},
       {"rank-long-double", "int f(){return int(__array_rank(long double));}"},
       {"extent-long-double", "int f(){return int(__array_extent(long double[2],0));}"},
@@ -7077,6 +7076,7 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
       {"void", "bool f(){return __is_void(void)&&__is_void(const void)&&!__is_void(void*);}"},
       {"array", "bool f(){return __is_array(int[2][3])&&!__is_array(int*)&&!__is_array(int);}"},
       {"function", "using F=int(int);using N=int(int)noexcept;bool f(){return __is_function(F)&&__is_function(N)&&__is_function(void())&&!__is_function(F*);}"},
+      {"function-record-value", "struct R{int n;};bool f(){return __is_function(int(R));}"},
       {"reference", "bool f(){return __is_reference(int&)&&__is_reference(int&&)&&!__is_reference(int*);}"},
       {"lvalue-reference", "bool f(){return __is_lvalue_reference(const int&)&&!__is_lvalue_reference(int&&);}"},
       {"rvalue-reference", "bool f(){return __is_rvalue_reference(int&&)&&!__is_rvalue_reference(int&);}"},
@@ -7169,7 +7169,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"source-hidden-constexpr-body", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr int extent(){return noexcept(Mid())?2:3;}using A=int[extent()];static_assert(__is_array(A));"},
       {"source-hidden-selected-default", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}using A=int[noexcept(helper())?1:2];static_assert(__is_array(A));"},
       {"source-hidden-deleted-metadata", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};struct R{int values[noexcept(Mid())?1:2];~R()=delete;};static_assert(!__is_destructible(R));"},
-      {"source-unmaterialized-decltype", "struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};using A=decltype(S());static_assert(__is_class(A));"},
       {"source-split-template-defaulting", "template<class T>struct S{T n=1;constexpr S();};template<class T>constexpr S<T>::S()=default;constexpr int extent(){S<int>value;return value.n;}using A=int[extent()];static_assert(__is_array(A));"},
       {"lazy-noexcept-hidden-specification", "template<class T>int f(T)noexcept((sizeof(long double),__is_integral(T))){return T::missing;}static_assert(noexcept(f(1)));"},
       {"lazy-noexcept-hidden-return", "template<class T>long double f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1)));"},
@@ -7213,7 +7212,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"qualified-function", "bool f(){return __is_function(int()const);}"},
       {"function-return", "bool f(){return __is_function(long double());}"},
       {"function-parameter", "bool f(){return __is_function(int(long double));}"},
-      {"function-record-value", "struct R{int n;};bool f(){return __is_function(int(R));}"},
       {"function-noexcept-source", "bool f(){return __is_function(int()noexcept(sizeof(long double)>0));}"},
       {"adjusted-function-source", "bool f(){return __is_function(int(int[sizeof(long double)]));}"},
       {"decltype-source", "bool f(){return __is_integral(decltype(sizeof(long double)));}"},
@@ -8018,6 +8016,955 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2GeneratedOperationQueriesKeepBodiesLazy) {
+  // Successful subobject selection supplies source without a generated body.
+  // Poisoned unused template bodies prove that queries do not instantiate them.
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"array-query", R"cpp(#include <array>
+struct Inner {
+  int value;
+  Inner(Inner &&i) noexcept(false) : value(i.value) {}
+  Inner &operator=(Inner &&i) noexcept {
+    value = i.value;
+    return *this;
+  }
+};
+struct Outer {
+  Inner value;
+};
+void f(std::array<Outer, 2> &a) {
+  static_assert(!noexcept(a.swap(a)));
+  static_assert(!noexcept(std::swap(a, a)));
+}
+)cpp"},
+      {"direct-query", R"cpp(struct Inner {
+  int value;
+  Inner(Inner &&i) noexcept(false) : value(i.value) {}
+  Inner &operator=(Inner &&i) noexcept {
+    value = i.value;
+    return *this;
+  }
+};
+struct Outer {
+  Inner value;
+};
+static_assert(!__is_nothrow_constructible(Outer, Outer &&));
+static_assert(__is_nothrow_assignable(Outer &, Outer &&));
+)cpp"},
+      {"implicit-families", R"cpp(
+struct Field {
+  int value;
+  Field() noexcept(false) : value(1) {}
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(const Field &f) noexcept(false) {
+    value = f.value;
+    return *this;
+  }
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+};
+struct Owner {
+  Field field;
+};
+static_assert(__is_constructible(Owner));
+static_assert(!__is_nothrow_constructible(Owner));
+static_assert(__is_nothrow_constructible(Owner, const Owner &));
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));
+static_assert(!__is_trivially_constructible(Owner, const Owner &));
+static_assert(__is_assignable(Owner &, const Owner &));
+static_assert(!__is_nothrow_assignable(Owner &, const Owner &));
+static_assert(__is_nothrow_assignable(Owner &, Owner &&));
+static_assert(!__is_trivially_assignable(Owner &, Owner &&));
+)cpp"},
+      {"explicit-defaulting", R"cpp(
+struct Field {
+  int value;
+  Field() noexcept(false) : value(1) {}
+  Field(const Field &f) noexcept(false) : value(f.value) {}
+  Field &operator=(const Field &f) noexcept(false) {
+    value = f.value;
+    return *this;
+  }
+};
+struct Owner {
+  Field field;
+  Owner() noexcept = default;
+  Owner(const Owner &) noexcept = default;
+  Owner(Owner &&) noexcept(false) = default;
+  Owner &operator=(const Owner &) noexcept = default;
+  Owner &operator=(Owner &&) noexcept(false) = default;
+};
+static_assert(__is_nothrow_constructible(Owner));
+static_assert(__is_nothrow_constructible(Owner, const Owner &));
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_assignable(Owner &, const Owner &));
+static_assert(!__is_nothrow_assignable(Owner &, Owner &&));
+)cpp"},
+      {"nested-array-and-copy-fallback", R"cpp(
+struct Field {
+  int value;
+  Field(const Field &f) noexcept(false) : value(f.value) {}
+  Field &operator=(const Field &f) noexcept {
+    value = f.value;
+    return *this;
+  }
+};
+struct Row {
+  Field fields[3];
+};
+struct Owner {
+  Row left;
+  Row right;
+};
+static_assert(__is_constructible(Owner, Owner &&));
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_assignable(Owner &, Owner &&));
+static_assert(!__is_trivially_assignable(Owner &, const Owner &));
+)cpp"},
+      {"const-member-copy", R"cpp(
+struct Field {
+  int value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+};
+struct Owner {
+  const Field fields[2];
+};
+static_assert(__is_nothrow_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_constructible(Owner, const Owner &));
+)cpp"},
+      {"lazy-class-signatures", R"cpp(
+template <class T> struct Field {
+  T value;
+  Field() noexcept : value(1) { (void)sizeof(long double); }
+  Field(const Field &f) noexcept : value(f.value) { (void)sizeof(long double); }
+  Field(Field &&f) noexcept(false) : value(f.value) {
+    (void)sizeof(long double);
+  }
+  Field &operator=(const Field &f) noexcept {
+    (void)sizeof(long double);
+    value = f.value;
+    return *this;
+  }
+  Field &operator=(Field &&f) noexcept(false) {
+    (void)sizeof(long double);
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Owner {
+  Field<T> field;
+  Owner() = default;
+  Owner(const Owner &) = default;
+  Owner(Owner &&) = default;
+  Owner &operator=(const Owner &) = default;
+  Owner &operator=(Owner &&) = default;
+};
+static_assert(__is_nothrow_constructible(Owner<int>));
+static_assert(__is_nothrow_constructible(Owner<int>, const Owner<int> &));
+static_assert(!__is_nothrow_constructible(Owner<int>, Owner<int> &&));
+static_assert(__is_nothrow_assignable(Owner<int> &, const Owner<int> &));
+static_assert(!__is_nothrow_assignable(Owner<int> &, Owner<int> &&));
+)cpp"},
+      {"constructor-default", R"cpp(
+int default_value() noexcept(false) { return 2; }
+struct Field {
+  int value;
+  Field(Field &&f, int n = default_value()) noexcept : value(f.value + n) {}
+};
+struct Owner {
+  Field field;
+};
+static_assert(!__is_nothrow_constructible(Field, Field &&));
+// Preserve the pinned inferred specification, including its treatment of
+// defaults.
+static_assert(__is_nothrow_constructible(Owner, Owner &&));
+)cpp"},
+      {"constructor-default-temporary", R"cpp(
+struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept(false) {}
+};
+struct Field {
+  int value;
+  Field(Field &&f, const Guard &g = Guard()) noexcept : value(f.value) {}
+};
+struct Owner {
+  Field field;
+};
+static_assert(!__is_nothrow_constructible(Field, Field &&));
+static_assert(__is_nothrow_constructible(Owner, Owner &&));
+)cpp"},
+      {"default-field-initializers", R"cpp(
+int value() noexcept(false) { return 3; }
+struct Field {
+  int value;
+  explicit Field(int n) noexcept : value(n) {}
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field field{value()};
+  int scalar = value();
+};
+static_assert(__is_constructible(Owner));
+static_assert(!__is_nothrow_constructible(Owner));
+)cpp"},
+      {"friend-access", R"cpp(
+struct Owner;
+struct Field {
+  int value;
+
+private:
+  Field(const Field &f) noexcept(false) : value(f.value) {}
+  Field &operator=(const Field &f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  friend struct Owner;
+};
+struct Owner {
+  Field field;
+};
+static_assert(__is_constructible(Owner, const Owner &));
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_assignable(Owner &, Owner &&));
+)cpp"},
+      {"noexcept-expression", R"cpp(
+struct Field {
+  int value;
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+};
+struct Owner {
+  Field field;
+};
+void f(Owner &a, Owner &b) {
+  static_assert(!noexcept(Owner(static_cast<Owner &&>(a))));
+  static_assert(noexcept(a = static_cast<Owner &&>(b)));
+}
+)cpp"},
+      {"owner-explicit-lazy-field", R"cpp(template <class T> struct Field {
+  T value;
+  Field() noexcept { T::missing(); }
+  Field(const Field &) noexcept { T::missing(); }
+  Field(Field &&) noexcept(false) { T::missing(); }
+  Field &operator=(const Field &) noexcept {
+    T::missing();
+    return *this;
+  }
+  Field &operator=(Field &&) noexcept(false) {
+    T::missing();
+    return *this;
+  }
+};
+struct Owner {
+  Field<int> field;
+  Owner() noexcept = default;
+  Owner(const Owner &) noexcept = default;
+  Owner(Owner &&) noexcept = default;
+  Owner &operator=(const Owner &) noexcept = default;
+  Owner &operator=(Owner &&) noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner));
+static_assert(__is_nothrow_constructible(Owner, const Owner &));
+static_assert(__is_nothrow_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_assignable(Owner &, const Owner &));
+static_assert(__is_nothrow_assignable(Owner &, Owner &&));)cpp"},
+      {"query-order-lazy-specialization", R"cpp(template <class T> struct Field {
+  T value;
+  Field(Field &&f) noexcept(__is_integral(T)) : value(f.value) {
+    if constexpr (__is_same(T, int))
+      T::missing();
+  }
+  Field &operator=(Field &&f) noexcept(__is_integral(T)) {
+    if constexpr (__is_same(T, int))
+      T::missing();
+    value = f.value;
+    return *this;
+  }
+};
+template <class T> struct Owner {
+  Field<T> field;
+};
+static_assert(__is_nothrow_constructible(Owner<int>, Owner<int> &&));
+void f(Owner<unsigned> &a, Owner<unsigned> &b) {
+  Owner<unsigned> c(static_cast<Owner<unsigned> &&>(a));
+  b = static_cast<Owner<unsigned> &&>(c);
+}
+static_assert(__is_nothrow_assignable(Owner<int> &, Owner<int> &&));)cpp"},
+      {"selected-copy-skips-poisoned-move", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) { T::missing(); }
+  Field(Field &&f) noexcept(sizeof(long double) > 0) : value(f.value) {
+    T::missing();
+  }
+};
+struct Owner {
+  const Field<int> field;
+};
+static_assert(__is_nothrow_constructible(Owner, Owner &&));)cpp"},
+      {"copy-skips-lazy-field-initializer", R"cpp(template <class T> struct Owner {
+  T value = (sizeof(long double), 3);
+};
+static_assert(__is_trivially_constructible(Owner<int>, const Owner<int> &));
+static_assert(__is_nothrow_constructible(Owner<int>, Owner<int> &&));
+static_assert(__is_nothrow_assignable(Owner<int> &, Owner<int> &&));)cpp"},
+      {"consumed-signature-discovers-operation-query", R"cpp(template <class T> struct Child {
+  Child() noexcept(__is_nothrow_constructible(T)) { T::missing(); }
+};
+struct Mid {
+  Child<int> field;
+  Mid() = default;
+};
+using A = int[noexcept(Mid()) ? 1 : 2];
+static_assert(__array_extent(A, 0) == 1);)cpp"},
+      {"consumed-signature-discovers-false-query", R"cpp(struct F {
+  F() {}
+};
+template <class T> struct Child {
+  Child() noexcept(__is_trivially_constructible(T)) { T::missing(); }
+};
+struct Mid {
+  Child<F> field;
+  Mid() = default;
+};
+using A = int[noexcept(Mid()) ? 1 : 2];
+static_assert(__array_extent(A, 0) == 2);)cpp"},
+      {"source-unmaterialized-decltype", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct S {
+  F f;
+  S() = default;
+};
+using A = decltype(S());
+static_assert(__array_rank(A) == 0);)cpp"},
+      {"source-unmaterialized-decltype-1", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct S {
+  F f;
+  S() = default;
+};
+using A = decltype(S());
+static_assert(__is_class(A));)cpp"},
+      {"default-generated-unmaterialized-nested-noexcept", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct S {
+  F field;
+  S() = default;
+};
+struct R {
+  R(int = noexcept(S())) noexcept {}
+};
+static_assert(__is_constructible(R));)cpp"},
+      {"default-generated-unmaterialized-nested-trivial-false", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct S {
+  F field;
+  S() = default;
+};
+struct R {
+  R(int = __is_trivially_constructible(S)) noexcept {}
+};
+static_assert(__is_constructible(R));)cpp"},
+      {"defaulted-root-unmaterialized-constructor", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct R {
+  F field;
+  R() = default;
+};
+static_assert(__is_constructible(R));)cpp"},
+      {"defaulted-root-unmaterialized-template-constructor", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+template <class T> struct R {
+  T field;
+  R() = default;
+};
+static_assert(__is_nothrow_constructible(R<F>));)cpp"},
+      {"defaulted-root-unmaterialized-trivial-false", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct R {
+  F field;
+  R() = default;
+};
+static_assert(!__is_trivially_constructible(R));)cpp"},
+      {"defaulted-root-unmaterialized-assignment", R"cpp(struct F {
+  int n;
+  F &operator=(const F &o) noexcept {
+    n = o.n;
+    return *this;
+  }
+};
+template <class T> struct R {
+  T field;
+  R &operator=(const R &) = default;
+};
+static_assert(__is_assignable(R<F> &, const R<F> &));)cpp"},
+      {"inline-defaulting-unmaterialized-constructor", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+template <class T> struct S {
+  T f;
+  S() = default;
+};
+using A = char[noexcept(S<F>()) ? 1 : 2];
+static_assert(__is_constructible(A *));)cpp"},
+      {"generated-source-unmaterialized-default", R"cpp(struct F {
+  int n;
+  F() noexcept : n(1) {}
+};
+struct S {
+  F f;
+  S() = default;
+};
+using A = char[noexcept(S()) ? 1 : 2];
+static_assert(__is_constructible(A *));)cpp"},
+      {"default-generated-written-child-constructor", R"cpp(struct F {
+  int n;
+  F() noexcept = default;
+};
+struct S {
+  F field;
+  S() = default;
+};
+struct R {
+  R(const S & = S()) noexcept {}
+};
+static_assert(__is_constructible(R));)cpp"},
+      {"default-generated-written-child-assignment", R"cpp(struct F {
+  int n;
+  F &operator=(const F &) noexcept = default;
+};
+struct S {
+  F field;
+  S &operator=(const S &) = default;
+};
+S *p;
+struct R {
+  R(int = (*p = *p, 7)) noexcept {}
+};
+static_assert(__is_constructible(R));)cpp"},
+      {"defaulted-root-written-child-family", R"cpp(struct F {
+  int n;
+  F &operator=(const F &) noexcept = default;
+};
+struct R {
+  F field;
+  R &operator=(const R &) = default;
+};
+static_assert(__is_assignable(R &, const R &));)cpp"},
+      {"inline-defaulting-written-subfamily", R"cpp(struct F {
+  int n;
+  F &operator=(const F &) noexcept = default;
+};
+template <class T> struct S {
+  T f;
+  S &operator=(const S &) noexcept = default;
+};
+S<F> *p;
+using A = char[noexcept(*p = *p) ? 1 : 2];
+static_assert(__is_constructible(A *));)cpp"},
+      {"generated-source-trivial-written-subfamily", R"cpp(struct F {
+  int n;
+  F &operator=(const F &) = default;
+};
+struct S {
+  F f;
+  S &operator=(const S &) = default;
+};
+S *a;
+const S *b;
+using A = char[noexcept(*a = *b) ? 1 : 2];
+static_assert(__is_constructible(A *));)cpp"},
+      {"implicit-construct-written-field-constructor", R"cpp(struct F {
+  F() noexcept = default;
+  ~F() noexcept {}
+};
+struct R {
+  F field;
+};
+static_assert(__is_constructible(R));)cpp"},
+      {"result-signature-incomplete-constructor", R"cpp(struct F {
+  F() noexcept {}
+};
+template <class T> struct R {
+  T field;
+  R() = default;
+  ~R() = default;
+};
+static_assert(__is_constructible(R<F>));)cpp"},
+      {"record-base-written-default", R"cpp(struct B {
+  B() = default;
+};
+struct R : B {};
+bool f() { return __is_constructible(R); })cpp"},
+      {"record-base-written-copy", R"cpp(struct B {
+  B(const B &) noexcept(false) = default;
+};
+struct R : B {};
+bool f() { return __is_constructible(R, R); })cpp"},
+      {"record-field-written-copy", R"cpp(struct F {
+  F(const F &) noexcept(false) = default;
+};
+struct R {
+  F field;
+};
+bool f() { return __is_constructible(R, const R &); })cpp"},
+      {"record-field-written-default", R"cpp(struct F {
+  F() noexcept(false) = default;
+};
+struct R {
+  F field;
+};
+bool f() { return __is_constructible(R); })cpp"},
+      {"record-field-written-assignment", R"cpp(struct F {
+  F &operator=(const F &) noexcept(false) = default;
+};
+struct R {
+  F field;
+};
+bool f() { return __is_trivially_assignable(R &, const R &); })cpp"},
+      {"nothrow-defaulted-field-assignment", R"cpp(struct F {
+  F &operator=(const F &) noexcept(false) = default;
+};
+struct R {
+  F field;
+};
+bool f() { return __is_nothrow_assignable(R &, R); })cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source = tmpFile(std::string("generated-query-") + Case.Name + ".cpp");
+    auto Output = tmpFile(std::string("generated-query-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedOperationQueriesRetainSource) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"lazy-copy-exception", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept(sizeof(long double) > 0) : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field<int> field;
+};
+static_assert(__is_constructible(Owner, const Owner &));)cpp", "TR0201"},
+      {"lazy-move-exception", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(sizeof(long double) > 0) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field<int> field;
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"lazy-assignment-exception", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept(sizeof(long double) > 0) {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field<int> field;
+};
+static_assert(__is_assignable(Owner &, Owner &&));)cpp", "TR0201"},
+      {"lazy-destructor-exception", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept(sizeof(long double) > 0) {}
+};
+struct Owner {
+  Field<int> field;
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"root-defaulted-exception", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field<int> field;
+  Owner(Owner &&) noexcept(sizeof(long double) > 0) = default;
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"erased-field-type", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+template <class> using Erased = int;
+struct Owner {
+  Field<Erased<long double>> field;
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"field-extent", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field<int> fields[(sizeof(long double), 2)];
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"default-expression", R"cpp(struct Field {
+  int value;
+  Field(Field &&f, int n = (sizeof(long double), 0)) noexcept
+      : value(f.value + n) {}
+};
+struct Owner {
+  Field field;
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"default-cleanup", R"cpp(struct Guard {
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+struct Field {
+  int value;
+  Field(Field &&f, const Guard &g = Guard{}) noexcept : value(f.value) {}
+};
+struct Owner {
+  Field field;
+};
+static_assert(__is_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"default-member-initializer", R"cpp(struct Field {
+  int value;
+  explicit Field(int n) noexcept : value(n) {}
+};
+struct Owner {
+  Field field{(sizeof(long double), 2)};
+};
+static_assert(__is_constructible(Owner));)cpp", "TR0201"},
+      {"late-selected-signature", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Other {
+  int value;
+  Other(Other &&f) noexcept(sizeof(long double) > 0) : value(f.value) {}
+};
+struct Owner {
+  Field<int> first;
+  Other later;
+};
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"actual-lazy-body", R"cpp(template <class T> struct Field {
+  T value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {
+    (void)sizeof(long double);
+  }
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+  ~Field() noexcept {}
+};
+struct Owner {
+  Field<int> field;
+};
+static_assert(__is_constructible(Owner, Owner &&));
+void f(Owner &a) { Owner b(static_cast<Owner &&>(a)); })cpp", "TR0201"},
+      {"nontrivial-base-layout", R"cpp(struct Empty {};
+struct Field {
+  int value;
+  Field(const Field &f) noexcept : value(f.value) {}
+  Field(Field &&f) noexcept(false) : value(f.value) {}
+  Field &operator=(Field &&f) noexcept {
+    value = f.value;
+    return *this;
+  }
+};
+struct Owner : Empty {
+  Field field;
+};
+static_assert(__is_nothrow_constructible(Owner, const Owner &));
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_assignable(Owner &, Owner &&));)cpp", "TR0201"},
+      {"explicit-owner-hidden-child-spec", R"cpp(template <class T> struct Field {
+  T value;
+  Field(Field &&f) noexcept(sizeof(long double) > 0) : value(f.value) {
+    T::missing();
+  }
+};
+struct Owner {
+  Field<int> field;
+  Owner(Owner &&) noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"explicit-owner-dependent-child-spec", R"cpp(template <class T> struct Field {
+  T value;
+  Field(Field &&f) noexcept(sizeof(T) > 0) : value(f.value) { T::missing(); }
+};
+struct Owner {
+  Field<int> field;
+  Owner(Owner &&) noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"explicit-owner-hidden-assignment-spec", R"cpp(template <class T> struct Field {
+  T value;
+  Field &operator=(const Field &) noexcept(sizeof(long double) > 0) {
+    T::missing();
+    return *this;
+  }
+};
+struct Owner {
+  Field<int> field;
+  Owner &operator=(const Owner &) noexcept = default;
+};
+static_assert(__is_nothrow_assignable(Owner &, const Owner &));)cpp", "TR0201"},
+      {"missing-selected-definition", R"cpp(struct Field {
+  int value;
+  Field(Field &&) noexcept;
+};
+struct Owner {
+  Field field;
+};
+static_assert(__is_nothrow_constructible(Owner, Owner &&));)cpp", "TR0203"},
+      {"late-lazy-child-spec", R"cpp(template <class T> struct First {
+  T value;
+  First(First &&f) noexcept(false) : value(f.value) { T::missing(); }
+};
+template <class T> struct Later {
+  T value;
+  Later(Later &&f) noexcept(sizeof(long double) > 0) : value(f.value) {
+    T::missing();
+  }
+};
+struct Owner {
+  First<int> first;
+  Later<int> later;
+};
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));)cpp", "TR0201"},
+      {"lazy-field-initializer-scalar", R"cpp(template <class T> struct Owner {
+  int value = (sizeof(long double), 3);
+  Owner() noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner<int>));)cpp", "TR0201"},
+      {"lazy-field-initializer-dependent", R"cpp(template <class T> struct Owner {
+  int value = T::missing();
+  Owner() noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner<int>));)cpp", "TR0201"},
+      {"lazy-field-initializer-record", R"cpp(struct Field {
+  int value;
+  Field(int v) noexcept : value(v) {}
+};
+template <class T> struct Owner {
+  Field field{(sizeof(long double), 3)};
+  Owner() noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner<int>));)cpp", "TR0201"},
+      {"lazy-field-initializer-valid", R"cpp(template <class T> struct Owner {
+  T value = 3;
+  Owner() noexcept = default;
+};
+static_assert(__is_nothrow_constructible(Owner<int>));)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source = tmpFile(std::string("generated-query-reject-") + Case.Name + ".cpp");
+    auto Output = tmpFile(std::string("generated-query-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedOperationQueriesPreserveValuesAndLifetimes) {
+  auto Source = tmpFile("generated-query-runtime.cpp");
+  auto Output = tmpFile("generated-query-runtime.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+int values, copies, moves, assignments, drops, defaults, guards, guard_drops;
+struct Field {
+  int value;
+  explicit Field(int n) noexcept : value(n) { ++values; }
+  Field(const Field &f) noexcept : value(f.value) { ++copies; }
+  Field(Field &&f) noexcept(false) : value(f.value) {
+    ++moves;
+    f.value = -1;
+  }
+  Field &operator=(const Field &f) noexcept(false) {
+    ++assignments;
+    value = f.value;
+    return *this;
+  }
+  Field &operator=(Field &&f) noexcept {
+    ++assignments;
+    value = f.value;
+    f.value = -1;
+    return *this;
+  }
+  ~Field() noexcept { ++drops; }
+};
+struct Owner {
+  Field fields[2];
+};
+struct ConstOwner {
+  const Field fields[2];
+};
+static_assert(__is_nothrow_constructible(Owner, const Owner &));
+static_assert(!__is_nothrow_constructible(Owner, Owner &&));
+static_assert(!__is_trivially_constructible(Owner, Owner &&));
+static_assert(__is_nothrow_assignable(Owner &, Owner &&));
+static_assert(!__is_nothrow_assignable(Owner &, const Owner &));
+static_assert(__is_nothrow_constructible(ConstOwner, ConstOwner &&));
+int make_default() noexcept(false) {
+  ++defaults;
+  return 7;
+}
+struct Guard {
+  Guard() noexcept { ++guards; }
+  ~Guard() noexcept(false) {
+    --guards;
+    ++guard_drops;
+  }
+};
+struct DefaultField {
+  int value;
+  explicit DefaultField(int n) noexcept : value(n) {}
+  DefaultField(DefaultField &&f, int n = make_default(),
+               const Guard &g = Guard{}) noexcept
+      : value(f.value + n) {
+    ++moves;
+  }
+};
+struct DefaultOwner {
+  DefaultField field;
+};
+static_assert(!__is_nothrow_constructible(DefaultField, DefaultField &&));
+static_assert(__is_nothrow_constructible(DefaultOwner, DefaultOwner &&));
+struct InitOwner {
+  Field field{make_default()};
+};
+static_assert(__is_constructible(InitOwner));
+static_assert(!__is_nothrow_constructible(InitOwner));
+void query_arrays(std::array<Owner, 2> &a) {
+  static_assert(!noexcept(a.swap(a)));
+  static_assert(!noexcept(std::swap(a, a)));
+  static_assert(__is_same(decltype(std::swap(a, a)), void));
+}
+int main() {
+  if (values || copies || moves || assignments || drops || defaults || guards ||
+      guard_drops)
+    return 1;
+  {
+    Owner a{{Field(2), Field(3)}};
+    Owner b(static_cast<const Owner &>(a));
+    Owner c(static_cast<Owner &&>(a));
+    if (values != 2 || copies != 2 || moves != 2 || drops ||
+        a.fields[0].value != -1 || c.fields[1].value != 3)
+      return 2;
+    b = static_cast<Owner &&>(c);
+    a = static_cast<const Owner &>(b);
+    if (assignments != 4 || a.fields[0].value != 2 || b.fields[1].value != 3 ||
+        c.fields[0].value != -1)
+      return 3;
+  }
+  if (drops != 6)
+    return 4;
+  {
+    ConstOwner a{{Field(5), Field(11)}};
+    ConstOwner b(static_cast<ConstOwner &&>(a));
+    if (copies != 4 || moves != 2 || b.fields[1].value != 11 ||
+        a.fields[0].value != 5)
+      return 5;
+  }
+  if (drops != 10)
+    return 6;
+  {
+    DefaultOwner a{DefaultField(13)};
+    DefaultOwner b(static_cast<DefaultOwner &&>(a));
+    if (defaults != 1 || guards || guard_drops != 1 || moves != 3 ||
+        b.field.value != 20)
+      return 7;
+    InitOwner init;
+    if (defaults != 2 || init.field.value != 7 || values != 5)
+      return 8;
+  }
+  return drops == 11 ? 0 : 9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("generated-query-runtime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"incomplete-reference-failed-binding", "struct R;struct S;static_assert(!__is_constructible(R&,S&));"},
@@ -8121,7 +9068,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"result-signature-hidden-child", "template<class T>struct F{~F()noexcept(sizeof(long double)>0)=default;};struct R{F<int>field;};static_assert(__is_constructible(R));"},
       {"result-signature-hidden-after-throw", "struct F{~F()noexcept(false){}};template<class T>struct B{~B()noexcept(sizeof(long double)>0)=default;};struct R{F first;B<int>last;};static_assert(!__is_nothrow_constructible(R));"},
       {"result-signature-split-defaulting", "template<class T>struct F{~F()noexcept;};template<class T>F<T>::~F()noexcept=default;struct R{F<int>field;};static_assert(__is_constructible(R));"},
-      {"result-signature-incomplete-constructor", "struct F{F()noexcept{}};template<class T>struct R{T field;R()=default;~R()=default;};static_assert(__is_constructible(R<F>));"},
       {"inferred-false-hidden-owning-spec", "struct F{~F()noexcept(false){}};template<class T>struct B{~B()noexcept(sizeof(long double)>0)=default;};struct R{F first;B<int>last;};static_assert(!__is_nothrow_destructible(R));"},
       {"inferred-false-written-source", "template<class T>struct F{~F()noexcept((sizeof(long double),false))=default;};struct R{F<int>field;};static_assert(!__is_nothrow_destructible(R));"},
       {"owning-signature-hidden-child-type", "template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));"},
@@ -8139,21 +9085,12 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"value-generated-later-written-memcpy", "struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};struct P{int n;P&operator=(const P&)noexcept=default;};struct S{F field;P values[2];S&operator=(const S&)noexcept;};S*p;using A=char[noexcept(*p=*p)?1:2];S&S::operator=(const S&)noexcept=default;void force(S&a,const S&b){a=b;}static_assert(__is_constructible(A*));"},
       {"default-generated-hidden-constructor-spec", "template<class T>struct S{T n;S()noexcept(sizeof(long double)>0)=default;};struct R{R(const S<int>& =S<int>())noexcept{}};static_assert(__is_constructible(R));"},
       {"default-generated-hidden-assignment-spec", "template<class T>struct S{T n;S&operator=(const S&)noexcept(sizeof(long double)>0)=default;};S<int>*p;struct R{R(int=(*p=*p,7))noexcept{}};static_assert(__is_constructible(R));"},
-      {"default-generated-written-child-constructor", "struct F{int n;F()noexcept=default;};struct S{F field;S()=default;};struct R{R(const S& =S())noexcept{}};static_assert(__is_constructible(R));"},
-      {"default-generated-written-child-assignment", "struct F{int n;F&operator=(const F&)noexcept=default;};struct S{F field;S&operator=(const S&)=default;};S*p;struct R{R(int=(*p=*p,7))noexcept{}};static_assert(__is_constructible(R));"},
       {"default-generated-hidden-initializer", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};struct S{int n=noexcept(Mid());S()=default;};struct R{R(const S& =S())noexcept{}};void force(){R value;}static_assert(__is_constructible(R));"},
       {"default-generated-split-template-constructor", "template<class T>struct S{T n=1;S()noexcept;};template<class T>S<T>::S()noexcept=default;struct R{R(const S<int>& =S<int>())noexcept{}};void force(){R value;}static_assert(__is_constructible(R));"},
-      {"default-generated-unmaterialized-nested-noexcept", "struct F{int n;F()noexcept:n(1){}};struct S{F field;S()=default;};struct R{R(int=noexcept(S()))noexcept{}};static_assert(__is_constructible(R));"},
-      {"default-generated-unmaterialized-nested-trivial-false", "struct F{int n;F()noexcept:n(1){}};struct S{F field;S()=default;};struct R{R(int=__is_trivially_constructible(S))noexcept{}};static_assert(__is_constructible(R));"},
       {"default-generated-written-array-memcpy", "struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};struct P{int n;P&operator=(const P&)noexcept=default;};struct S{F field;P values[2];S&operator=(const S&)=default;};S*p;struct R{R(int=(*p=*p,7))noexcept{}};void force(){R value;}static_assert(__is_constructible(R));"},
-      {"defaulted-root-unmaterialized-constructor", "struct F{int n;F()noexcept:n(1){}};struct R{F field;R()=default;};static_assert(__is_constructible(R));"},
-      {"defaulted-root-unmaterialized-template-constructor", "struct F{int n;F()noexcept:n(1){}};template<class T>struct R{T field;R()=default;};static_assert(__is_nothrow_constructible(R<F>));"},
-      {"defaulted-root-unmaterialized-trivial-false", "struct F{int n;F()noexcept:n(1){}};struct R{F field;R()=default;};static_assert(!__is_trivially_constructible(R));"},
-      {"defaulted-root-unmaterialized-assignment", "struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};template<class T>struct R{T field;R&operator=(const R&)=default;};static_assert(__is_assignable(R<F>&,const R<F>&));"},
       {"defaulted-root-hidden-constructor-spec", "template<class T>struct R{T n;R()noexcept(sizeof(long double)>0)=default;};static_assert(__is_constructible(R<int>));"},
       {"defaulted-root-hidden-assignment-spec", "template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(long double)>0)=default;};static_assert(__is_assignable(R<int>&,const R<int>&));"},
       {"defaulted-root-hidden-layout", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};struct R{char bytes[noexcept(Mid())?1:2];R()=default;};static_assert(__is_constructible(R));"},
-      {"defaulted-root-written-child-family", "struct F{int n;F&operator=(const F&)noexcept=default;};struct R{F field;R&operator=(const R&)=default;};static_assert(__is_assignable(R&,const R&));"},
       {"defaulted-root-written-record-memcpy", "struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};struct P{int n;P&operator=(const P&)noexcept=default;};struct R{F field;P values[2];R&operator=(const R&)=default;};void force(R&a,const R&b){a=b;}static_assert(__is_assignable(R&,const R&));"},
       {"defaulted-root-split-template-constructor", "template<class T>struct R{T n=1;R()noexcept;};template<class T>R<T>::R()noexcept=default;void force(){R<int>value;}static_assert(__is_constructible(R<int>));"},
       {"consumed-destructor-hidden-type", "template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};static_assert(__is_nothrow_destructible(R<int>));"},
@@ -8165,16 +9102,12 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"inline-defaulting-split-constructor", "struct F{int n;F()noexcept:n(1){}};template<class T>struct S{T f;S()noexcept;};template<class T>S<T>::S()noexcept=default;void force(){S<F>value;}using A=char[noexcept(S<F>())?1:2];static_assert(__is_constructible(A*));"},
       {"inline-defaulting-split-assignment", "struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};template<class T>struct S{T f;S&operator=(const S&)noexcept;};template<class T>S<T>&S<T>::operator=(const S&)noexcept=default;void force(S<F>&a,const S<F>&b){a=b;}S<F>*p;using A=char[noexcept(*p=*p)?1:2];static_assert(__is_constructible(A*));"},
       {"inline-defaulting-split-destructor", "template<class T>struct S{T n;~S()noexcept;};template<class T>S<T>::~S()noexcept=default;void force(){S<int>value{1};}static_assert(__is_nothrow_destructible(S<int>));"},
-      {"inline-defaulting-unmaterialized-constructor", "struct F{int n;F()noexcept:n(1){}};template<class T>struct S{T f;S()=default;};using A=char[noexcept(S<F>())?1:2];static_assert(__is_constructible(A*));"},
       {"inline-defaulting-hidden-spec", "template<class T>struct S{T n;S&operator=(const S&)noexcept(sizeof(long double)>0)=default;};S<int>*p;using A=char[noexcept(*p=*p)?1:2];static_assert(__is_constructible(A*));"},
-      {"inline-defaulting-written-subfamily", "struct F{int n;F&operator=(const F&)noexcept=default;};template<class T>struct S{T f;S&operator=(const S&)noexcept=default;};S<F>*p;using A=char[noexcept(*p=*p)?1:2];static_assert(__is_constructible(A*));"},
       {"inline-defaulting-hidden-initializer", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>f;};template<class T>struct S{T n=noexcept(Mid());constexpr S()=default;};constexpr int index(){S<int>value;return value.n;}using A=char[index()+1];static_assert(__is_constructible(A*));"},
       {"inline-defaulting-hidden-layout", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>f;};template<class T>struct S{char bytes[noexcept(Mid())?1:2];T n=1;S()=default;};void force(){S<int>value;}using A=char[noexcept(S<int>())?1:2];static_assert(__is_constructible(A*));"},
       {"inline-defaulting-hidden-destructor", "template<class T>struct S{T n;~S()noexcept(sizeof(long double)>0)=default;};static_assert(sizeof(S<int>{1})==sizeof(int));static_assert(__is_nothrow_destructible(S<int>));"},
       {"inline-defaulting-written-memcpy", "struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};struct P{int n;P&operator=(const P&)noexcept=default;};template<class T>struct S{F f;T values[2];S&operator=(const S&)=default;};void force(S<P>&a,const S<P>&b){a=b;}S<P>*p;using A=char[noexcept(*p=*p)?1:2];static_assert(__is_constructible(A*));"},
       {"generated-source-trivial-hidden-spec", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct Mid{F<int>f;};struct S{int n;S&operator=(const S&)noexcept(noexcept(Mid()))=default;};S*a;const S*b;using A=char[noexcept(*a=*b)?1:2];static_assert(__is_constructible(A*));"},
-      {"generated-source-trivial-written-subfamily", "struct F{int n;F&operator=(const F&)=default;};struct S{F f;S&operator=(const S&)=default;};S*a;const S*b;using A=char[noexcept(*a=*b)?1:2];static_assert(__is_constructible(A*));"},
-      {"generated-source-unmaterialized-default", "struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};using A=char[noexcept(S())?1:2];static_assert(__is_constructible(A*));"},
       {"generated-source-hidden-field-spec", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>f;};struct F{int n;constexpr F()noexcept(noexcept(Mid())):n(1){}};struct S{F f;constexpr S()=default;};constexpr int index(){S value;return value.f.n;}using A=char[index()+1];static_assert(__is_constructible(A*)&&__is_nothrow_constructible(A*));"},
       {"generated-source-hidden-initializer", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>f;};struct S{int n=noexcept(Mid());constexpr S()=default;};constexpr int index(){S value;return value.n;}using A=char[index()+1];static_assert(__is_constructible(A*)&&__is_nothrow_constructible(A*));"},
       {"generated-source-hidden-layout", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>f;};struct S{char bytes[noexcept(Mid())?1:2];int n=1;S()=default;};void force(){S value;}S*pointer;using A=char[noexcept(S())?1:2];static_assert(__is_constructible(A*));"},
@@ -8207,7 +9140,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"materialized-ordinary-split-hidden-parameter", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{F<int>field;};using Hidden=int[noexcept(S())?1:1];struct R{R(int(*)[1]);};static_assert(__is_constructible(R,int(*)[1]));R::R(Hidden*){}"},
       {"implicit-construct-hidden-destructor-body", "struct R{~R()noexcept{long double hidden=0;}};static_assert(__is_constructible(R));"},
       {"implicit-construct-hidden-destructor-spec", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{F<int>field;};struct R{~R()noexcept(noexcept(S())){}};static_assert(__is_constructible(R));"},
-      {"implicit-construct-written-field-constructor", "struct F{F()noexcept=default;~F()noexcept{}};struct R{F field;};static_assert(__is_constructible(R));"},
       {"implicit-construct-hidden-default-destruction", "template<class T>struct S{~S()noexcept(sizeof(long double)>0)=default;};struct R{R(const S<int>& =S<int>())noexcept{}};static_assert(__is_nothrow_constructible(R));"},
       {"generated-destructor-later-hidden-spec", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{F<int>field;};struct R{~R()noexcept(1);};static_assert(__is_nothrow_destructible(R));R::~R()noexcept(noexcept(S()))=default;"},
       {"generated-destructor-template-out-of-line", "template<class T>struct R{~R()noexcept;};template<class T>R<T>::~R()noexcept=default;static_assert(__is_nothrow_destructible(R<int>));"},
@@ -8360,8 +9292,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"record-reference-nothrow-used-body", "template<class T>struct R{~R(){long double hidden=0;}};static_assert(__is_nothrow_destructible(R<int>&));int main(){R<int>value;}"},
       {"record-query-before-runtime-body", "template<class T>struct R{T n;R(){long double hidden=0;}};static_assert(__is_constructible(R<int>,R<int>));int main(){R<int>value;return 0;}"},
       {"record-runtime-before-query-body", "template<class T>struct R{T n;R(){long double hidden=0;}};int main(){R<int>value;return 0;}static_assert(__is_constructible(R<int>,R<int>));"},
-      {"record-base-written-default", "struct B{B()=default;};struct R:B{};bool f(){return __is_constructible(R);}"},
-      {"record-base-written-copy", "struct B{B(const B&)noexcept(false)=default;};struct R:B{};bool f(){return __is_constructible(R,R);}"},
       {"record-query-hidden-source", "struct R{int n;};bool f(){return __is_constructible(decltype((sizeof(long double),R{})),R);}"},
       {"retained-inaccessible-construction", "class R{R(int){}};bool f(){return __is_constructible(R,int);}"},
       {"record-convertible-false", "struct R{int n;};bool f(){return __is_convertible(int,R);}"},
@@ -8381,9 +9311,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"default-hidden-source", "template<bool B=__is_nothrow_destructible(decltype(sizeof(long double)))>int f(){return 1;}int g(){return f();}"},
       {"argument-overflow", "bool f(){return __is_constructible(int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int);}"},
       {"record-failed-reference-binding", "struct R{int n;};bool f(){return __is_constructible(R&,R);}"},
-      {"record-field-written-copy", "struct F{F(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_constructible(R,const R&);}"},
-      {"record-field-written-default", "struct F{F()noexcept(false)=default;};struct R{F field;};bool f(){return __is_constructible(R);}"},
-      {"record-field-written-assignment", "struct F{F&operator=(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_trivially_assignable(R&,const R&);}"},
       {"record-unretained-base-reference", "struct B{};struct D:B{};bool f(){return __is_convertible(D&,B&);}"},
       {"user-hidden-body", "struct R{R(int){long double hidden=0;}};static_assert(__is_constructible(R,int));"},
       {"user-hidden-out-of-line", "struct R{R(int);};static_assert(__is_constructible(R,int));R::R(int){long double hidden=0;}"},
@@ -8397,7 +9324,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"nothrow-hidden-conversion-specification", "struct R{operator int()const noexcept(sizeof(long double)>0){return 3;}};bool f(){return __is_nothrow_convertible(R,int);}"},
       {"nothrow-hidden-destructor-specification", "struct R{R(int)noexcept{}~R()noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}"},
       {"nothrow-incomplete-reference", "struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R);}"},
-      {"nothrow-defaulted-field-assignment", "struct F{F&operator=(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_nothrow_assignable(R&,R);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);

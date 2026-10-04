@@ -915,6 +915,84 @@ def preserve_operation_trait_source(source_root):
             path.write_text(updated, encoding="utf-8")
 
 
+def preserve_special_member_source(source_root):
+    # Selection is observed during deletion checking, before a generated body
+    # exists. Validate every file/state before publishing any of these edits.
+    groups = (('clang/include/clang/AST/ASTConsumer.h',
+  (('  class CXXRecordDecl;',
+    '  class CXXRecordDecl;\n  class CXXBaseSpecifier;\n  class FieldDecl;'),
+   ('  virtual void HandleTranslationUnit(ASTContext &Ctx) {}',
+    '  virtual void HandleTranslationUnit(ASTContext &Ctx) {}\n'
+    '\n'
+    '  // NeverC retains successful subobject selection without defining a body.\n'
+    '  virtual bool retainNeverCSpecialMemberSource(ASTContext &,\n'
+    '                                               const CXXMethodDecl *) {\n'
+    '    return false;\n'
+    '  }\n'
+    '  virtual void HandleNeverCSpecialMemberCall(\n'
+    '      const CXXMethodDecl *, const CXXBaseSpecifier *, const FieldDecl *,\n'
+    '      const CXXMethodDecl *, bool) {}\n'
+    '  virtual void HandleNeverCSpecialMemberComplete(const CXXMethodDecl *) {}'))),
+ ('clang/lib/Sema/SemaDeclCXX.cpp',
+  (('struct SpecialMemberDeletionInfo\n'
+    '    : SpecialMemberVisitor<SpecialMemberDeletionInfo> {\n'
+    '  bool Diagnose;',
+    'struct SpecialMemberDeletionInfo\n'
+    '    : SpecialMemberVisitor<SpecialMemberDeletionInfo> {\n'
+    '  bool Diagnose;\n'
+    '  bool NeverCRetainSpecialMember;'),
+   ('      : SpecialMemberVisitor(S, MD, CSM, ICI), Diagnose(Diagnose),\n'
+    '        Loc(MD->getLocation()), AllFieldsAreConst(true) {}',
+    '      : SpecialMemberVisitor(S, MD, CSM, ICI), Diagnose(Diagnose),\n'
+    '        NeverCRetainSpecialMember(!Diagnose && !ICI &&\n'
+    '            S.getASTConsumer().retainNeverCSpecialMemberSource(S.Context, MD)),\n'
+    '        Loc(MD->getLocation()), AllFieldsAreConst(true) {}'),
+   ('  if (DiagKind == -1)\n    return false;',
+    '  if (DiagKind == -1) {\n'
+    '    if (NeverCRetainSpecialMember)\n'
+    '      S.getASTConsumer().HandleNeverCSpecialMemberCall(\n'
+    '          MD, Subobj.dyn_cast<CXXBaseSpecifier *>(), Field, Decl,\n'
+    '          IsDtorCallInCtor);\n'
+    '    return false;\n'
+    '  }'),
+   ('  return false;\n}\n\nvoid Sema::DiagnoseDeletedDefaultedFunction(FunctionDecl *FD) {',
+    '  // Early deletion, inherited construction and CUDA inference never publish\n'
+    '  // a complete NeverC selection graph. Nested owners retain independent graphs.\n'
+    '  if (SMI.NeverCRetainSpecialMember)\n'
+    '    getASTConsumer().HandleNeverCSpecialMemberComplete(MD);\n'
+    '  return false;\n'
+    '}\n'
+    '\n'
+    'void Sema::DiagnoseDeletedDefaultedFunction(FunctionDecl *FD) {'))))
+    pending, states = [], set()
+    for relative, patches in groups:
+        path = source_root / relative
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise SystemExit("Missing pinned Clang special-member source: " + str(path)) from error
+        remainder, updated = text, text
+        for before, after in patches:
+            state = 1 if remainder.count(after) == 1 else 0
+            chosen = (before, after)[state]
+            if remainder.count(chosen) != 1:
+                raise SystemExit("Unexpected pinned Clang special-member source: " + str(path))
+            remainder = remainder.replace(chosen, "", 1)
+            if before in remainder or after in remainder:
+                raise SystemExit("Duplicate pinned Clang special-member source: " + str(path))
+            states.add(state)
+            if not state:
+                updated = updated.replace(before, after, 1)
+        if re.search(r"\b(?:NeverCRetainSpecialMember|retainNeverCSpecialMemberSource|HandleNeverCSpecialMemberCall|HandleNeverCSpecialMemberComplete)\b", remainder):
+            raise SystemExit("Orphan pinned Clang special-member source: " + str(path))
+        pending.append((path, updated))
+    if len(states) != 1:
+        raise SystemExit("Mixed pinned Clang special-member source states")
+    if states == {0}:
+        for path, updated in pending:
+            path.write_text(updated, encoding="utf-8")
+
+
 def fix_member_class_instantiation_patterns(path):
     before = '''    if (auto *CTD = dyn_cast_if_present<ClassTemplateDecl *>(From)) {
       while (auto *NewCTD = CTD->getInstantiatedFromMemberTemplate()) {
@@ -1432,6 +1510,7 @@ fix_member_class_instantiation_patterns(args.source / "clang/lib/AST/DeclCXX.cpp
 fix_array_type_query_dimensions(args.source)
 preserve_unary_transform_source(args.source / "clang/lib/Sema/TreeTransform.h")
 preserve_operation_trait_source(args.source)
+preserve_special_member_source(args.source)
 fix_pseudo_destructor_exception_spec(args.source / "clang/lib/Sema/SemaExceptionSpec.cpp")
 fix_partial_specialization_argument_bounds(args.source / "clang/lib/Sema/SemaTemplate.cpp")
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")

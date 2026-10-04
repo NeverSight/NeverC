@@ -584,6 +584,121 @@ class OperationTraitSourceTests(unittest.TestCase):
                             self.assertEqual(snapshot(), old)
 
 
+# Independent pinned selection-source fixtures; kept separate from the patcher.
+SPECIAL_MEMBER_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
+  (('  class CXXRecordDecl;',
+    '  class CXXRecordDecl;\n  class CXXBaseSpecifier;\n  class FieldDecl;'),
+   ('  virtual void HandleTranslationUnit(ASTContext &Ctx) {}',
+    '  virtual void HandleTranslationUnit(ASTContext &Ctx) {}\n'
+    '\n'
+    '  // NeverC retains successful subobject selection without defining a body.\n'
+    '  virtual bool retainNeverCSpecialMemberSource(ASTContext &,\n'
+    '                                               const CXXMethodDecl *) {\n'
+    '    return false;\n'
+    '  }\n'
+    '  virtual void HandleNeverCSpecialMemberCall(\n'
+    '      const CXXMethodDecl *, const CXXBaseSpecifier *, const FieldDecl *,\n'
+    '      const CXXMethodDecl *, bool) {}\n'
+    '  virtual void HandleNeverCSpecialMemberComplete(const CXXMethodDecl *) {}'))),
+ ('clang/lib/Sema/SemaDeclCXX.cpp',
+  (('struct SpecialMemberDeletionInfo\n'
+    '    : SpecialMemberVisitor<SpecialMemberDeletionInfo> {\n'
+    '  bool Diagnose;',
+    'struct SpecialMemberDeletionInfo\n'
+    '    : SpecialMemberVisitor<SpecialMemberDeletionInfo> {\n'
+    '  bool Diagnose;\n'
+    '  bool NeverCRetainSpecialMember;'),
+   ('      : SpecialMemberVisitor(S, MD, CSM, ICI), Diagnose(Diagnose),\n'
+    '        Loc(MD->getLocation()), AllFieldsAreConst(true) {}',
+    '      : SpecialMemberVisitor(S, MD, CSM, ICI), Diagnose(Diagnose),\n'
+    '        NeverCRetainSpecialMember(!Diagnose && !ICI &&\n'
+    '            S.getASTConsumer().retainNeverCSpecialMemberSource(S.Context, MD)),\n'
+    '        Loc(MD->getLocation()), AllFieldsAreConst(true) {}'),
+   ('  if (DiagKind == -1)\n    return false;',
+    '  if (DiagKind == -1) {\n'
+    '    if (NeverCRetainSpecialMember)\n'
+    '      S.getASTConsumer().HandleNeverCSpecialMemberCall(\n'
+    '          MD, Subobj.dyn_cast<CXXBaseSpecifier *>(), Field, Decl,\n'
+    '          IsDtorCallInCtor);\n'
+    '    return false;\n'
+    '  }'),
+   ('  return false;\n}\n\nvoid Sema::DiagnoseDeletedDefaultedFunction(FunctionDecl *FD) {',
+    '  // Early deletion, inherited construction and CUDA inference never publish\n'
+    '  // a complete NeverC selection graph. Nested owners retain independent graphs.\n'
+    '  if (SMI.NeverCRetainSpecialMember)\n'
+    '    getASTConsumer().HandleNeverCSpecialMemberComplete(MD);\n'
+    '  return false;\n'
+    '}\n'
+    '\n'
+    'void Sema::DiagnoseDeletedDefaultedFunction(FunctionDecl *FD) {'))))
+
+
+class SpecialMemberSourceTests(unittest.TestCase):
+    def test_selection_rewrites_are_atomic_and_idempotent(self):
+        script = Path(__file__).resolve().with_name("IsolateSymbols.py")
+        function = next(node for node in ast.parse(script.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and
+                        node.name == "preserve_special_member_source")
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(script), "exec"), namespace)
+        repair = namespace[function.name]
+        with tempfile.TemporaryDirectory(prefix="neverc-special-member-source-") as temporary:
+            root = Path(temporary)
+            def reset(state=0):
+                for relative, patches in SPECIAL_MEMBER_PATCHES:
+                    path = root / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("\n// Independent source boundary.\n".join(
+                        pair[state] for pair in patches))
+            def snapshot():
+                return {str(path.relative_to(root)): path.read_bytes()
+                        for path in root.rglob("*") if path.is_file()}
+            reset()
+            repair(root)
+            for relative, patches in SPECIAL_MEMBER_PATCHES:
+                self.assertEqual((root / relative).read_text(),
+                    "\n// Independent source boundary.\n".join(after for _, after in patches))
+            complete = snapshot()
+            repair(root)
+            self.assertEqual(snapshot(), complete)
+            for relative, patches in SPECIAL_MEMBER_PATCHES:
+                for before, after in patches:
+                    for state in (0, 1):
+                        for name in ("missing anchor", "duplicate", "drift", "mixed state"):
+                            with self.subTest(file=relative, anchor=before[:60], state=state, case=name):
+                                reset(state)
+                                path = root / relative
+                                text = path.read_text()
+                                chosen = (before, after)[state]
+                                if name == "missing anchor":
+                                    text = text.replace(chosen, "", 1)
+                                elif name == "duplicate":
+                                    text += "\n" + chosen
+                                elif name == "drift":
+                                    text = text.replace(chosen, re.sub(r"\S", "@", chosen, count=1), 1)
+                                else:
+                                    text = text.replace(chosen, (after, before)[state], 1)
+                                path.write_text(text)
+                                old = snapshot()
+                                with self.assertRaises(SystemExit):
+                                    repair(root)
+                                self.assertEqual(snapshot(), old)
+                for state in (0, 1):
+                    for name in ("missing file", "NeverCRetainSpecialMember",
+                                 "HandleNeverCSpecialMemberCall", "HandleNeverCSpecialMemberComplete"):
+                        with self.subTest(file=relative, state=state, case=name):
+                            reset(state)
+                            path = root / relative
+                            if name == "missing file":
+                                path.unlink()
+                            else:
+                                path.write_text(path.read_text() + "\n// " + name + "\n")
+                            old = snapshot()
+                            with self.assertRaises(SystemExit):
+                                repair(root)
+                            self.assertEqual(snapshot(), old)
+
+
 class ArrayQuerySourceTests(unittest.TestCase):
     def test_pinned_dimension_repairs_are_atomic_and_idempotent(self):
         script = Path(__file__).resolve().with_name("IsolateSymbols.py")
@@ -1446,9 +1561,10 @@ public:
         explicit_instantiate_original += "\n" + friend_context_original
         explicit_instantiate_expected += "\n" + friend_context_expected
         files['clang/lib/Sema/SemaTemplateInstantiateDecl.cpp'] = explicit_instantiate_original
-        explicit_header_original += "\n  class Decl;\n"
-        explicit_header_expected += "\n  class Decl;\n"
-        for before, after in OPERATION_TRAIT_PATCHES[0][1]:
+        explicit_header_original += "\n  class Decl;\n  class CXXMethodDecl;\n"
+        explicit_header_expected += "\n  class Decl;\n  class CXXMethodDecl;\n"
+        for before, after in (*OPERATION_TRAIT_PATCHES[0][1],
+                              *SPECIAL_MEMBER_PATCHES[0][1]):
             if before in explicit_header_original:
                 explicit_header_original = explicit_header_original.replace(before, after, 1)
                 explicit_header_expected = explicit_header_expected.replace(before, after, 1)
@@ -1456,6 +1572,8 @@ public:
                 explicit_header_original += "\n" + after
                 explicit_header_expected += "\n" + after
         files['clang/include/clang/AST/ASTConsumer.h'] = explicit_header_original
+        files['clang/lib/Sema/SemaDeclCXX.cpp'] = "\n".join(
+            after for _, after in SPECIAL_MEMBER_PATCHES[1][1])
         files['clang/lib/Sema/SemaTemplate.cpp'] = explicit_source_original
         files['clang/lib/Sema/SemaTemplateDeduction.cpp'] = explicit_deduction_original
         files['clang/include/clang/Sema/Sema.h'] = explicit_sema_original
@@ -1569,7 +1687,7 @@ public:
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
             # A correct text rewrite must also declare every callback type.
             # This header deliberately has no includes; upstream supplies the
-            # CXXRecordDecl/VarDecl forwards retained in the fixture above.
+            # CXXRecordDecl/CXXMethodDecl/VarDecl forwards retained above.
             consumer = explicit_paths[0].read_text(encoding="utf-8")
             declared = set(re.findall(r"\b(?:class|struct)\s+(\w+)\s*;", consumer))
             referenced = set(re.findall(r"\b([A-Z]\w*)\s*(?:\*|&)", consumer))

@@ -32,6 +32,7 @@
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <functional>
 #include <set>
 #include <tuple>
 #ifndef _WIN32
@@ -3957,7 +3958,7 @@ static bool utilityConditionalMoveExcludedConversion(
 }
 
 static bool utilityLazyConditionalMoveSignatureSource(
-    Adapter &A, const CXXMethodDecl *Method) {
+    Adapter &A, const CXXMethodDecl *Method, bool AllowCopyAssignment = false) {
   const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
   // Parameter-record proofs also retain unused default and explicit
   // constructors. Their written signatures need no hypothetical construction.
@@ -3978,7 +3979,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
   const bool OrdinaryConstructor =
       DefaultConstructor || ValueConstructor || ExplicitArgumentConstructor ||
       RecordArgumentConstructor;
-  const bool Assignment = Method && Method->isMoveAssignmentOperator();
+  const bool Assignment = Method && (Method->isMoveAssignmentOperator() ||
+      (AllowCopyAssignment && Method->isCopyAssignmentOperator()));
   const bool Destructor = isa_and_nonnull<CXXDestructorDecl>(Method);
   // Only classify signatures already retained by the adapter's decision
   // proof. That proof excludes either the conversion or every ordinary
@@ -4016,7 +4018,8 @@ static bool utilityLazyConditionalMoveSignatureSource(
       !utilityConditionalMoveExplicitArgumentConstructor(OriginConstructor))
     return false;
   const bool MatchingOrigin =
-      Assignment ? Origin->isMoveAssignmentOperator()
+      Assignment ? Origin->isMoveAssignmentOperator() == Method->isMoveAssignmentOperator() &&
+                       Origin->isCopyAssignmentOperator() == Method->isCopyAssignmentOperator()
       : Destructor ? isa<CXXDestructorDecl>(Origin)
       : OrdinaryConversion ? utilityConditionalMoveConversionShape(
                                   dyn_cast<CXXConversionDecl>(Origin))
@@ -7153,6 +7156,98 @@ static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
   return Method;
 }
 
+// A successful deletion check records the actual overload/access decision for
+// every owning subobject. Only the exact, complete graph can replace a missing
+// generated body in an operation query; fields and signatures keep their source.
+static const SpecialMemberSource *specialMemberSelectionSource(
+    Adapter &A, const CXXMethodDecl *Method) {
+  if (!Method || Method->isInvalidDecl() || Method->isDeleted() ||
+      !A.S.owns(A.Sources, Method->getLocation()))
+    return nullptr;
+  const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
+  if (!(Constructor ? defaultedLifecycle(Constructor) || defaultedCopyOrMoveConstructor(Constructor)
+                    : defaultedAssignment(Method)))
+    return nullptr;
+  const auto Found = A.SpecialMembers.find(Method->getCanonicalDecl());
+  if (Found == A.SpecialMembers.end() || !Found->second.Complete ||
+      !Found->second.Owner || Found->second.Owner->getCanonicalDecl() != Method->getCanonicalDecl())
+    return nullptr;
+  const auto *Record = Method->getParent()->getDefinition();
+  if (!Record || Record->isUnion() || Record->isDynamicClass() ||
+      Record->getNumVBases() || !A.S.owns(A.Sources, Record->getLocation()))
+    return nullptr;
+  std::set<std::pair<const void *, bool>> Expected;
+  const bool Default = Constructor && Constructor->isDefaultConstructor();
+  for (const auto &Base : Record->bases()) {
+    A.chargeExpansion(1, Base.getBeginLoc());
+    if (Base.isVirtual() || !Base.getTypeSourceInfo())
+      return nullptr;
+    Expected.emplace(&Base, false);
+    if (Constructor)
+      Expected.emplace(&Base, true);
+  }
+  for (const auto *Field : Record->fields()) {
+    A.chargeExpansion(1, Field->getLocation());
+    if (!Field->getTypeSourceInfo() || Field->isInvalidDecl() || Field->isBitField())
+      return nullptr;
+    if (!A.Context.getBaseElementType(Field->getType())->isRecordType())
+      continue;
+    if (!(Default && Field->hasInClassInitializer()))
+      Expected.emplace(Field, false);
+    if (Constructor)
+      Expected.emplace(Field, true);
+  }
+  for (const auto &Selection : Found->second.Selections) {
+    A.chargeExpansion(1, Method->getLocation());
+    const auto *Selected = Selection.Method;
+    const void *Subobject = Selection.Base ? static_cast<const void *>(Selection.Base)
+                                          : Selection.Field;
+    if (!Selected || bool(Selection.Base) == bool(Selection.Field) ||
+        !Expected.erase({Subobject, Selection.ConstructorDestruction}) ||
+        Selected->isInvalidDecl() || Selected->isDeleted() ||
+        !A.S.owns(A.Sources, Selected->getLocation()))
+      return nullptr;
+    const auto Type = Selection.Base ? Selection.Base->getType() : Selection.Field->getType();
+    const auto *Subrecord = A.Context.getBaseElementType(Type)->getAsCXXRecordDecl();
+    if (!Subrecord || Subrecord->getCanonicalDecl() != Selected->getParent()->getCanonicalDecl())
+      return nullptr;
+    if (Selection.ConstructorDestruction) {
+      if (!isa<CXXDestructorDecl>(Selected) || !Subrecord->getDestructor() ||
+          Subrecord->getDestructor()->getCanonicalDecl() != Selected->getCanonicalDecl())
+        return nullptr;
+    } else if (Constructor) {
+      const auto *Child = dyn_cast<CXXConstructorDecl>(Selected);
+      if (!Child || (Default ? !Child->isDefaultConstructor() : !Child->isCopyOrMoveConstructor()))
+        return nullptr;
+    } else if (!Selected->isCopyAssignmentOperator() && !Selected->isMoveAssignmentOperator()) {
+      return nullptr;
+    }
+  }
+  return Expected.empty() ? &Found->second : nullptr;
+}
+
+static bool selectedSpecialMemberSignature(Adapter &A, const CXXMethodDecl *Method) {
+  const auto *Signature = Method;
+  // An explicit owner specification can leave this selected child unresolved.
+  // Only an identical nondependent written specification can supply source;
+  // the query never asks Sema to instantiate a dependent exception expression.
+  if (Method && !standardExceptionSpecification(Method->getType()->getAs<FunctionProtoType>()) &&
+      utilityLazyConditionalMoveSignatureSource(A, Method, /*AllowCopyAssignment=*/true))
+    Signature = dyn_cast_or_null<CXXMethodDecl>(Method->getInstantiatedFromMemberFunction());
+  const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Signature);
+  const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Signature);
+  // No expression exists for these semantic selections. Member templates need
+  // separate deduction/default evidence and cannot borrow this signature proof.
+  return Method && Signature && !Method->isImplicit() && !Method->isInvalidDecl() &&
+         !Method->isDeleted() && !Method->getPrimaryTemplate() &&
+         !Method->getDescribedFunctionTemplate() &&
+         (Constructor ? ordinaryConstructor(Constructor)
+                      : Destructor ? ordinaryDestructor(Destructor)
+                                   : ordinaryCopyAssignment(Signature) || ordinaryMoveAssignment(Signature)) &&
+         A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
+         operationDefinitionCategory(A, Method);
+}
+
 // Source completion is independent of a trait's computed Boolean and of the
 // hypothetical root's fast admission path. Share this proof with query type roots.
 class OperationSourceChecker {
@@ -7162,6 +7257,11 @@ class OperationSourceChecker {
   const OperationTypeSources *Types;
   const GeneratedOperationSources *Generated;
   const std::set<const CXXDestructorDecl *> *QueryDestructors;
+  const std::set<const CXXMethodDecl *> *QuerySpecialMembers;
+  const OperationDefaultSources *Defaults;
+  std::function<bool(const CXXMethodDecl *)> PrepareSpecialMember;
+  std::set<const CXXMethodDecl *> ActiveSpecialMembers;
+  std::map<const CXXMethodDecl *, unsigned> CompletedSpecialMembers;
   std::vector<const OperationSourceDependencies *> Work;
   std::map<const CXXMethodDecl *, OperationSourceDependencies> InferredExceptions;
 
@@ -7169,9 +7269,14 @@ public:
   OperationSourceChecker(Adapter &A, const std::set<const FunctionDecl *> *Definitions,
       const OperationExpressionSources *Expressions, const OperationTypeSources *Types,
       const GeneratedOperationSources *Generated = nullptr,
-      const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr)
+      const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr,
+      const std::set<const CXXMethodDecl *> *QuerySpecialMembers = nullptr,
+      const OperationDefaultSources *Defaults = nullptr,
+      std::function<bool(const CXXMethodDecl *)> PrepareSpecialMember = {})
       : A(A), Definitions(Definitions), Expressions(Expressions), Types(Types),
-        Generated(Generated), QueryDestructors(QueryDestructors) {}
+        Generated(Generated), QueryDestructors(QueryDestructors),
+        QuerySpecialMembers(QuerySpecialMembers), Defaults(Defaults),
+        PrepareSpecialMember(std::move(PrepareSpecialMember)) {}
   void add(const OperationSourceDependencies *Dependencies) { Work.push_back(Dependencies); }
   bool requireExpression(const Stmt *Expression) {
     if (!Expression)
@@ -7311,12 +7416,237 @@ public:
   bool generatedDestructor(const CXXDestructorDecl *Destructor) {
     return Destructor && defaultedLifecycle(Destructor) && generatedDeclaration(Destructor);
   }
-  bool generatedOperation(const CXXMethodDecl *Method) {
+  bool selectedOperationSignature(const CXXMethodDecl *Method) {
+    if (!QuerySpecialMembers || !QuerySpecialMembers->count(Method) ||
+        !selectedSpecialMemberSignature(A, Method))
+      return false;
+    for (const auto *Declaration : Method->redecls()) {
+      const auto *Member = cast<CXXMethodDecl>(Declaration);
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!selectedSpecialMemberSignature(A, Member) ||
+          !requireType(operationTypeSourceKey(Member->getTypeSourceInfo()->getTypeLoc())))
+        return false;
+      const auto *Prototype = Member->getType()->getAs<FunctionProtoType>();
+      if (!standardExceptionSpecification(Prototype))
+        Prototype = Member->getTypeSourceInfo()->getType()->getAs<FunctionProtoType>();
+      if (!prototypeSource(Prototype, Member))
+        return false;
+    }
+    // An ordinary selected definition must finish normal traversal. Only the
+    // exact inline class-template signature may keep its unused body lazy.
+    return defined(Method) || (concreteClassFunction(Method) &&
+        !Method->isUsed(/*CheckUsedAttr=*/false) && !Method->hasBody());
+  }
+  bool exceptionSource(const FunctionDecl *Function, bool RequiresExceptionSource) {
+    // Read the selected resolved signature without asking Sema to resolve it.
+    const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+    return prototypeSource(Prototype, Function) &&
+           (!RequiresExceptionSource || standardExceptionSpecification(Prototype));
+  }
+  bool callExceptionSource(const CallExpr *Call, bool RequiresExceptionSource) {
+    if (scalarDestruction(Call, A.Context))
+      return true;
+    // C++17 canCalleeThrow reads the actual callee expression type, even for a
+    // direct call. A pointer conversion can erase noexcept from its declaration.
+    const auto *Prototype = operationCalleePrototype(Call);
+    if (utilityUniquePtrMemberSource(A, Call) ||
+        utilityUniquePtrSwapSource(A, Call) ||
+        utilityUniquePtrNullComparisonSource(A, Call) ||
+        utilityUniquePtrNullOrderingSource(A, Call) ||
+        utilityUniquePtrOwnerComparisonSource(A, Call) ||
+        utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
+        utilityArrayCallSource(A, Call) ||
+        utilityValueAdapterSource(A, Call))
+      return Prototype ==
+             Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
+    return prototypeSource(Prototype, Call->getDirectCallee()) &&
+           (!RequiresExceptionSource || standardExceptionSpecification(Prototype)) &&
+           (!Call->getDirectCallee() || exceptionSource(Call->getDirectCallee(), RequiresExceptionSource));
+  }
+  // The caller supplies completed initializer source: an exact parameter
+  // default or a checked field expression. Close selected exception/lifetime
+  // dependencies without resolving signatures or generating operation bodies.
+  bool initializerDependencies(const Stmt *Initializer, unsigned InitialDepth = 0,
+                               bool RequiresExceptionSource = false) {
+    auto ExceptionSource = [&](const FunctionDecl *Function) {
+      return exceptionSource(Function, RequiresExceptionSource);
+    };
+    auto CallExceptionSource = [&](const CallExpr *Call) {
+      return callExceptionSource(Call, RequiresExceptionSource);
+    };
+    auto GeneratedOperation = [&](const CXXMethodDecl *Method) {
+      return Definitions && Expressions && Types && Generated &&
+             generatedOperation(Method, InitialDepth + 1);
+    };
+    auto Destruction = [&](auto &&, const CXXRecordDecl *Record, unsigned Depth) {
+      return destruction(Record, Depth);
+    };
+    auto DefaultDependencies = [&](auto &&Self, const Stmt *Node,
+                                   unsigned Depth) -> bool {
+      if (!Node)
+        return true;
+      if (Depth > 64)
+        return false;
+      A.chargeExpansion(1, Node->getBeginLoc());
+      if (isa<UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, TypeTraitExpr,
+              ArrayTypeTraitExpr>(Node))
+        return true; // Their unevaluated source and pending queries are checked independently.
+      if (const auto *E = dyn_cast<Expr>(Node);
+          E && !E->getType().isNull() && E->isPRValue())
+        if (const auto *Record = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl())
+          if (!Destruction(Destruction, Record, 0))
+            return false;
+      // MarkFunctionReferenced can resolve an implicit special member's inferred
+      // specification even for non-nothrow queries. A trivial parent body need
+      // never be generated, leaving selected subobject signatures unvisited.
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
+        const auto *Constructor = Construction->getConstructor();
+        const auto ObjectType = Construction->getType();
+        if (!Constructor || ObjectType.isNull() || !Construction->isPRValue() ||
+            !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(ObjectType),
+                A.Context.getRecordType(Constructor->getParent())) ||
+            !ExceptionSource(Constructor))
+          return false;
+        // Every exact record prvalue passed the shared destruction proof above.
+        // Classify the whole family: an earlier selected declaration need not
+        // carry its later =default definition's flag or generated source.
+        if ((Constructor->isImplicit() || defaultedDeclaration(Constructor)) &&
+            !implicitSpecialMemberSource(A, Constructor, false) &&
+            !GeneratedOperation(Constructor))
+          return false;
+      }
+      if (const auto *Call = dyn_cast<CallExpr>(Node))
+        if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+            Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
+            (Method->isImplicit() || defaultedDeclaration(Method)))
+          if (!implicitSpecialMemberSource(A, Method, true) && !GeneratedOperation(Method))
+            return false;
+      if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
+        const auto *Destructor = Temporary->getTemporary()->getDestructor();
+        const auto *Sub = Temporary->getSubExpr();
+        if (!Destructor || !Sub || !Temporary->isPRValue() || !Sub->isPRValue() ||
+            !ExceptionSource(Destructor) ||
+            !A.Context.hasSameType(Temporary->getType(), Sub->getType()) ||
+            !A.Context.hasSameUnqualifiedType(Temporary->getType(),
+                A.Context.getRecordType(Destructor->getParent())) ||
+            !Destruction(Destruction, Destructor->getParent(), 0))
+          return false;
+      }
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node))
+        if (Cleanup->getNumObjects() || !Cleanup->getSubExpr() ||
+            !A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) ||
+            Cleanup->getValueKind() != Cleanup->getSubExpr()->getValueKind())
+          return false;
+      if (const auto *New = dyn_cast<CXXNewExpr>(Node))
+        if (!ExceptionSource(New->getOperatorNew()))
+          return false;
+      if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
+        auto T = Delete->getDestroyedType();
+        if (T.isNull() || !ExceptionSource(Delete->getOperatorDelete()))
+          return false;
+        if (const auto *Record = A.Context.getBaseElementType(T)->getAsCXXRecordDecl())
+          if (!Destruction(Destruction, Record, 0) ||
+              !ExceptionSource(Record->getDestructor()))
+            return false;
+      }
+      if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+        if (!CallExceptionSource(Call))
+          return false;
+        if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Call->getDirectCallee()))
+          if (!Destruction(Destruction, Destructor->getParent(), 0))
+            return false;
+      }
+      // These source wrappers have no normal Stmt children. Array fillers may
+      // likewise exist only in the semantic initializer form.
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+        const auto *Init = selectedDefaultArgument(Default, A.Context);
+        return Init && Self(Self, Init, Depth + 1);
+      }
+      if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node))
+        return Default->getExpr() && Self(Self, Default->getExpr(), Depth + 1);
+      if (const auto *List = dyn_cast<InitListExpr>(Node)) {
+        if (const auto *Semantic = List->getSemanticForm(); Semantic && Semantic != List)
+          if (!Self(Self, Semantic, Depth + 1))
+            return false;
+        if (List->hasArrayFiller() && !Self(Self, List->getArrayFiller(), Depth + 1))
+          return false;
+      }
+      for (const auto *Child : Node->children())
+        if (!Self(Self, Child, Depth + 1))
+          return false;
+      return true;
+    };
+    return DefaultDependencies(DefaultDependencies, Initializer, InitialDepth);
+  }
+  bool selectedOperation(const CXXMethodDecl *Method, unsigned Depth) {
+    if (!QuerySpecialMembers || !QuerySpecialMembers->count(Method) || Depth > 64)
+      return false;
+    const auto *Source = specialMemberSelectionSource(A, Method);
+    if (!Source)
+      return false;
+    if (auto Found = CompletedSpecialMembers.find(Method);
+        Found != CompletedSpecialMembers.end() && Depth <= Found->second)
+      return true;
+    if (!ActiveSpecialMembers.insert(Method).second)
+      return false;
+    auto Restore = llvm::make_scope_exit([&] { ActiveSpecialMembers.erase(Method); });
+    const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
+    const bool Default = Constructor && Constructor->isDefaultConstructor();
+    for (const auto &Base : Method->getParent()->bases())
+      if (!requireType(operationTypeSourceKey(Base.getTypeSourceInfo()->getTypeLoc())))
+        return false;
+    for (const auto *Field : Method->getParent()->fields()) {
+      if (!requireType(operationTypeSourceKey(Field->getTypeSourceInfo()->getTypeLoc())))
+        return false;
+      if (Default && Field->hasInClassInitializer() &&
+          (!Field->getInClassInitializer() ||
+           !requireExpression(Field->getInClassInitializer()) ||
+           !initializerDependencies(Field->getInClassInitializer(), Depth + 1)))
+        return false;
+    }
+    for (const auto &Selection : Source->Selections) {
+      const auto *Child = Selection.Method;
+      if (Selection.ConstructorDestruction) {
+        if (!destruction(Child->getParent(), Depth + 1))
+          return false;
+        continue;
+      }
+      if (Child->isImplicit() || defaultedDeclaration(Child)) {
+        if (!generatedOperation(Child, Depth + 1))
+          return false;
+      } else if (!selectedOperationSignature(Child)) {
+        return false;
+      }
+      const auto *ChildConstructor = dyn_cast<CXXConstructorDecl>(Child);
+      const unsigned Supplied = ChildConstructor && ChildConstructor->isDefaultConstructor() ? 0 : 1;
+      for (unsigned I = Supplied; I < Child->getNumParams(); ++I) {
+        const auto *Parameter = Child->getParamDecl(I);
+        const auto *Init = operationDefaultInitializer(A, Parameter);
+        if (!Defaults || !Init)
+          return false;
+        auto Proof = Defaults->find({Parameter, Init});
+        if (Proof == Defaults->end() || !initializerDependencies(Init, Depth + 1))
+          return false;
+        add(Proof->second);
+      }
+    }
+    CompletedSpecialMembers[Method] = Depth;
+    return true;
+  }
+  bool generatedOperation(const CXXMethodDecl *Method, unsigned Depth = 0) {
     if (implicitSpecialMemberSource(A, Method, false))
       return true;
     const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
     if (!(Constructor ? (defaultedLifecycle(Constructor) || defaultedCopyOrMoveConstructor(Constructor))
-                      : defaultedAssignment(Method)) || !generatedDeclaration(Method))
+                      : defaultedAssignment(Method)))
+      return false;
+    // Collection records possible edges, including unused defaults and pointee
+    // layouts. Only consumption of this exact family may complete its selected
+    // signatures. An existing nontrivial body keeps its normal source proof.
+    if ((Method->isTrivial() || !Method->hasBody()) && PrepareSpecialMember &&
+        specialMemberSelectionSource(A, Method) && !PrepareSpecialMember(Method))
+      return false;
+    if (!generatedDeclaration(Method))
       return false;
     if (Method->isTrivial()) {
       // The exact written root has its own declaration proof. Subobjects still
@@ -7325,10 +7655,17 @@ public:
       const auto Family = Constructor
           ? (Constructor->isDefaultConstructor() ? OperationFamily::Default : OperationFamily::CopyMove)
           : OperationFamily::Assignment;
-      return implicitOperationFamilySource(A, Method->getParent(), Family, false, 0, false);
+      if (implicitOperationFamilySource(A, Method->getParent(), Family, false, 0, false))
+        return true;
+      // A trivial generated body can omit individual written child operations.
+      // Its exact successful selections still prove their signatures and source.
+      if (selectedOperation(Method, Depth))
+        return true;
     }
     const FunctionDecl *BodyOwner = nullptr;
-    if (!Generated || !Method->hasBody(BodyOwner))
+    if (!Method->hasBody(BodyOwner))
+      return selectedOperation(Method, Depth);
+    if (!Generated)
       return false;
     const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(BodyOwner);
     if (!Definition || !generatedDeclaration(Definition))
@@ -7634,7 +7971,9 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr,
     const std::set<const CallExpr *> *QueryCalls = nullptr,
     const QueryTemplateSelectionSources *TemplateSelections = nullptr,
-    const TypeTraitExpr *SDKQuery = nullptr) {
+    const TypeTraitExpr *SDKQuery = nullptr,
+    const std::set<const CXXMethodDecl *> *QuerySpecialMembers = nullptr,
+    std::function<bool(const CXXMethodDecl *)> PrepareSpecialMember = {}) {
   // A consumed pinned swap trait can select an owned constructor default at
   // its SDK query location. Authenticate the exact retained semantic event;
   // parameter identity, unchanged initializer and completed source still close
@@ -7647,7 +7986,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
-  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated, QueryDestructors);
+  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated,
+      QueryDestructors, QuerySpecialMembers, Defaults, std::move(PrepareSpecialMember));
   auto QueryCallSource = [&](const CallExpr *Call, const CXXMethodDecl *Method) {
     return QueryCalls && QueryCalls->count(Call) && SourceCheck.queryCallSignature(Method);
   };
@@ -7667,10 +8007,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     return SourceCheck.prototypeSource(Prototype, Function);
   };
   auto ExceptionSource = [&](const FunctionDecl *Function) {
-    // Read the selected resolved signature without asking Sema to resolve it.
-    const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
-    return PrototypeSource(Prototype, Function) &&
-           (!RequiresExceptionSource || standardExceptionSpecification(Prototype));
+    return SourceCheck.exceptionSource(Function, RequiresExceptionSource);
   };
   auto Defined = [&](const FunctionDecl *Function) { return SourceCheck.defined(Function); };
   auto GeneratedOperation = [&](const CXXMethodDecl *Method) {
@@ -7683,124 +8020,12 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     return SourceCheck.destruction(Record, Depth);
   };
   auto CallExceptionSource = [&](const CallExpr *Call) {
-    if (scalarDestruction(Call, A.Context))
-      return true;
-    // C++17 canCalleeThrow reads the actual callee expression type, even for a
-    // direct call. A pointer conversion can erase noexcept from its declaration.
-    const auto *Prototype = operationCalleePrototype(Call);
-    if (utilityUniquePtrMemberSource(A, Call) ||
-        utilityUniquePtrSwapSource(A, Call) ||
-        utilityUniquePtrNullComparisonSource(A, Call) ||
-        utilityUniquePtrNullOrderingSource(A, Call) ||
-        utilityUniquePtrOwnerComparisonSource(A, Call) ||
-        utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
-        utilityArrayCallSource(A, Call) ||
-        utilityValueAdapterSource(A, Call))
-      return Prototype ==
-             Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
-    return PrototypeSource(Prototype, Call->getDirectCallee()) &&
-           (!RequiresExceptionSource || standardExceptionSpecification(Prototype)) &&
-           (!Call->getDirectCallee() || ExceptionSource(Call->getDirectCallee()));
+    return SourceCheck.callExceptionSource(Call, RequiresExceptionSource);
   };
   // Normal parameter traversal proves the unchanged initializer's written
   // operations. It does not prove every inferred specification or implicit
   // destructor, and an unused default need never reach runtime lowering.
   // Inspect those dependencies without resolving specs or creating helpers.
-  auto DefaultDependencies = [&](auto &&Self, const Stmt *Node,
-                                 unsigned Depth) -> bool {
-    if (!Node)
-      return true;
-    if (Depth > 64)
-      return false;
-    A.chargeExpansion(1, Node->getBeginLoc());
-    if (isa<UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, TypeTraitExpr,
-            ArrayTypeTraitExpr>(Node))
-      return true; // Their unevaluated source and pending queries are checked independently.
-    if (const auto *E = dyn_cast<Expr>(Node);
-        E && !E->getType().isNull() && E->isPRValue())
-      if (const auto *Record = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl())
-        if (!Destruction(Destruction, Record, 0))
-          return false;
-    // MarkFunctionReferenced can resolve an implicit special member's inferred
-    // specification even for non-nothrow queries. A trivial parent body need
-    // never be generated, leaving selected subobject signatures unvisited.
-    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
-      const auto *Constructor = Construction->getConstructor();
-      const auto ObjectType = Construction->getType();
-      if (!Constructor || ObjectType.isNull() || !Construction->isPRValue() ||
-          !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(ObjectType),
-              A.Context.getRecordType(Constructor->getParent())) ||
-          !ExceptionSource(Constructor))
-        return false;
-      // Every exact record prvalue passed the shared destruction proof above.
-      // Classify the whole family: an earlier selected declaration need not
-      // carry its later =default definition's flag or generated source.
-      if ((Constructor->isImplicit() || defaultedDeclaration(Constructor)) &&
-          !implicitSpecialMemberSource(A, Constructor, false) &&
-          !GeneratedOperation(Constructor))
-        return false;
-    }
-    if (const auto *Call = dyn_cast<CallExpr>(Node))
-      if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
-          Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
-          (Method->isImplicit() || defaultedDeclaration(Method)))
-        if (!implicitSpecialMemberSource(A, Method, true) && !GeneratedOperation(Method))
-          return false;
-    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
-      const auto *Destructor = Temporary->getTemporary()->getDestructor();
-      const auto *Sub = Temporary->getSubExpr();
-      if (!Destructor || !Sub || !Temporary->isPRValue() || !Sub->isPRValue() ||
-          !ExceptionSource(Destructor) ||
-          !A.Context.hasSameType(Temporary->getType(), Sub->getType()) ||
-          !A.Context.hasSameUnqualifiedType(Temporary->getType(),
-              A.Context.getRecordType(Destructor->getParent())) ||
-          !Destruction(Destruction, Destructor->getParent(), 0))
-        return false;
-    }
-    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node))
-      if (Cleanup->getNumObjects() || !Cleanup->getSubExpr() ||
-          !A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) ||
-          Cleanup->getValueKind() != Cleanup->getSubExpr()->getValueKind())
-        return false;
-    if (const auto *New = dyn_cast<CXXNewExpr>(Node))
-      if (!ExceptionSource(New->getOperatorNew()))
-        return false;
-    if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
-      auto T = Delete->getDestroyedType();
-      if (T.isNull() || !ExceptionSource(Delete->getOperatorDelete()))
-        return false;
-      if (const auto *Record = A.Context.getBaseElementType(T)->getAsCXXRecordDecl())
-        if (!Destruction(Destruction, Record, 0) ||
-            !ExceptionSource(Record->getDestructor()))
-          return false;
-    }
-    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
-      if (!CallExceptionSource(Call))
-        return false;
-      if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Call->getDirectCallee()))
-        if (!Destruction(Destruction, Destructor->getParent(), 0))
-          return false;
-    }
-    // These source wrappers have no normal Stmt children. Array fillers may
-    // likewise exist only in the semantic initializer form.
-    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
-      const auto *Init = selectedDefaultArgument(Default, A.Context);
-      return Init && Self(Self, Init, Depth + 1);
-    }
-    if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node))
-      return Default->getExpr() && Self(Self, Default->getExpr(), Depth + 1);
-    if (const auto *List = dyn_cast<InitListExpr>(Node)) {
-      if (const auto *Semantic = List->getSemanticForm(); Semantic && Semantic != List)
-        if (!Self(Self, Semantic, Depth + 1))
-          return false;
-      if (List->hasArrayFiller() && !Self(Self, List->getArrayFiller(), Depth + 1))
-        return false;
-    }
-    for (const auto *Child : Node->children())
-      if (!Self(Self, Child, Depth + 1))
-        return false;
-    return true;
-  };
   const std::set<const Expr *> Operands(Source.Operands.begin(), Source.Operands.end());
   auto Check = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
     if (!E || Depth > 64 || E->isInstantiationDependent())
@@ -7874,7 +8099,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           if (Proof == Defaults->end())
             return false;
           SourceCheck.add(Proof->second);
-          if (!DefaultDependencies(DefaultDependencies, Init, 0))
+          if (!SourceCheck.initializerDependencies(Init, 0, RequiresExceptionSource))
             return false;
         } else if (!Self(Self, Argument, Depth + 1)) {
           return false;
@@ -10197,6 +10422,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const Expr *> IndexedUnevaluatedArraySources;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
+  std::vector<const CXXMethodDecl *> ConsumedSpecialMemberSignatures;
+  std::set<const CXXMethodDecl *> QueuedSpecialMemberSignatures,
+      CompletedSpecialMemberSignatures;
+  std::size_t GeneratedMethodIndex = 0, DestructorSignatureIndex = 0,
+              ConstructorSignatureIndex = 0, CallSignatureIndex = 0,
+              ConditionalMoveSignatureIndex = 0, SpecialMemberSignatureIndex = 0;
   QueryTemplateSelectionSources CompletedQueryTemplateSelections;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
@@ -10230,7 +10461,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              ArraySources.count(Copy->Loop->getCommonExpr())));
   }
   const CXXMethodDecl *CurrentMethod = nullptr;
-  const CXXMethodDecl *CurrentWrittenConditionalMoveSignature = nullptr;
+  const CXXMethodDecl *CurrentWrittenOperationSignature = nullptr;
   const FunctionDecl *CurrentFunction = nullptr;
   const DeclaratorDecl *CurrentDeclarator = nullptr;
   const FieldDecl *CurrentDefaultField = nullptr;
@@ -12904,6 +13135,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     };
     if (const auto *Variable = dyn_cast<VarDecl>(D); Variable && !isa<ParmVarDecl>(D))
       Register(Variable->getInit());
+    if (const auto *Field = dyn_cast<FieldDecl>(D); Field && Field->hasInClassInitializer())
+      Register(Field->getInClassInitializer());
     if (const auto *Binding = dyn_cast<BindingDecl>(D); A.decompositionBinding(Binding))
       Register(Binding->getBinding());
     if (const auto *Constant = dyn_cast<EnumConstantDecl>(D))
@@ -17750,8 +17983,8 @@ public:
     if (!Outer || Outer.getOpaqueData() != TL.getOpaqueData() ||
         Outer.getType() != TL.getType())
       return Normal();
-    if (CurrentWrittenConditionalMoveSignature == CurrentFunction)
-      return Normal(); // The exact adapter authorized only this written source.
+    if (CurrentWrittenOperationSignature == CurrentFunction)
+      return Normal(); // This consumed signature authorized only its written source.
     const auto *Written = TL.getTypePtr();
     const auto *Resolved = CurrentFunction->getType()->getAs<FunctionProtoType>();
     const auto *OldExpression = Written->getNoexceptExpr();
@@ -18146,6 +18379,35 @@ public:
     };
     Queue(Queue, RootRecord, 0);
   }
+  void queueSpecialMemberSignatures(const CXXMethodDecl *Root) {
+    std::set<const CXXMethodDecl *> Seen;
+    auto Queue = [&](auto &&Self, const CXXMethodDecl *Method, unsigned Depth) -> void {
+      if (!Method || Depth > 64 || !Seen.insert(Method).second)
+        return;
+      const auto *Source = specialMemberSelectionSource(A, Method);
+      if (!Source)
+        return;
+      auto Signature = [&](const CXXMethodDecl *Selected) {
+        if (QueuedSpecialMemberSignatures.insert(Selected).second) {
+          A.chargeExpansion(1, Selected->getLocation());
+          ConsumedSpecialMemberSignatures.push_back(Selected);
+        }
+      };
+      Signature(Method);
+      for (const auto &Selection : Source->Selections) {
+        const auto *Child = Selection.Method;
+        if (Selection.ConstructorDestruction) {
+          queueOwningDestructorSignatures(Child->getParent(),
+              cast<CXXDestructorDecl>(Child), Method->getLocation());
+        } else if (Child->isImplicit() || defaultedDeclaration(Child)) {
+          Self(Self, Child, Depth + 1);
+        } else if (selectedSpecialMemberSignature(A, Child)) {
+          Signature(Child);
+        }
+      }
+    };
+    Queue(Queue, Root, 0);
+  }
   void queueConsumedOperationSignatures(const TypeTraitExpr *Query) {
     auto Found = A.OperationTraits.find(Query);
     if (Found == A.OperationTraits.end())
@@ -18175,6 +18437,7 @@ public:
     };
     auto CallSignature = [&](const CallExpr *Call) {
       const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      queueSpecialMemberSignatures(Method);
       if ((lazyQueryCallSignature(A, Method) || queryMemberTemplateMethodSource(A, Method)) &&
           QueuedCallSignatures.insert(Call).second) {
         A.chargeExpansion(1, Call->getExprLoc());
@@ -18232,6 +18495,7 @@ public:
             !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(Construction->getType()),
                 A.Context.getRecordType(Constructor->getParent())))
           return;
+        queueSpecialMemberSignatures(Constructor);
         if ((lazyQueryConstructorSignature(A, Constructor) ||
              queryMemberTemplateMethodSource(A, Constructor)) &&
             QueuedConstructorSignatures.insert(Construction).second) {
@@ -18341,8 +18605,9 @@ public:
     Entry->second.Complete = Result && A.S.Diagnostics.empty();
     return Entry->second.Complete;
   }
+  enum class ConsumedSignatureKind { Resolved, ConditionalMove, SpecialMember };
   bool checkConsumedOperationSignature(const CXXMethodDecl *Method,
-                                       bool ConditionalMove = false) {
+      ConsumedSignatureKind Kind = ConsumedSignatureKind::Resolved) {
     const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
     const auto Written = CheckedOperationTypes.find(operationTypeSourceKey(Location));
     // An incomplete existing source cannot be replayed or repaired here.
@@ -18351,7 +18616,7 @@ public:
     auto *SavedFunction = CurrentFunction;
     auto *SavedMethod = CurrentMethod;
     auto *SavedDeclarator = CurrentDeclarator;
-    auto *SavedWrittenConditionalMove = CurrentWrittenConditionalMoveSignature;
+    auto *SavedWrittenOperation = CurrentWrittenOperationSignature;
     auto *SavedField = CurrentDefaultField;
     auto SavedOwner = ImplicitInitializerOwner;
     const auto DefinitionDepth = DefinitionFrames.size();
@@ -18360,8 +18625,10 @@ public:
     CurrentFunction = Method;
     CurrentMethod = Method;
     CurrentDeclarator = Method;
-    CurrentWrittenConditionalMoveSignature =
-        ConditionalMove && utilityLazyConditionalMoveSignatureSource(A, Method)
+    CurrentWrittenOperationSignature =
+        Kind != ConsumedSignatureKind::Resolved &&
+        utilityLazyConditionalMoveSignatureSource(A, Method,
+            /*AllowCopyAssignment=*/Kind == ConsumedSignatureKind::SpecialMember)
             ? Method : nullptr;
     CurrentDefaultField = nullptr;
     ImplicitInitializerOwner = Method->getLocation();
@@ -18369,7 +18636,7 @@ public:
       CurrentFunction = SavedFunction;
       CurrentMethod = SavedMethod;
       CurrentDeclarator = SavedDeclarator;
-      CurrentWrittenConditionalMoveSignature = SavedWrittenConditionalMove;
+      CurrentWrittenOperationSignature = SavedWrittenOperation;
       CurrentDefaultField = SavedField;
       ImplicitInitializerOwner = SavedOwner;
       DefinitionFrames.resize(DefinitionDepth);
@@ -18397,7 +18664,7 @@ public:
     // still needs its first check in this method's context, without replaying
     // an existing expression, visiting a body or requesting Sema resolution.
     const auto *Prototype =
-        (CurrentWrittenConditionalMoveSignature == Method ? Location.getType()
+        (CurrentWrittenOperationSignature == Method ? Location.getType()
                                                          : Method->getType())
             ->getAs<FunctionProtoType>();
     auto *Expression = Prototype ? Prototype->getNoexceptExpr() : nullptr;
@@ -18464,25 +18731,45 @@ public:
     // visiting all implicit declarations would broaden source admission. Each
     // signature queue can discover more work for another; process every new item
     // once and leave each method's scopes before starting another signature.
-    for (std::size_t Index = 0, DestructorIndex = 0, ConstructorIndex = 0,
-                     CallIndex = 0, ConditionalMoveIndex = 0;;) {
-      while (ConditionalMoveIndex < ConsumedConditionalMoveSignatures.size())
+    for (;;) {
+      while (ConditionalMoveSignatureIndex < ConsumedConditionalMoveSignatures.size())
         if (!checkConsumedOperationSignature(
-                ConsumedConditionalMoveSignatures[ConditionalMoveIndex++],
-                /*ConditionalMove=*/true))
+                ConsumedConditionalMoveSignatures[ConditionalMoveSignatureIndex++],
+                ConsumedSignatureKind::ConditionalMove))
           return false;
-      if (!finishConsumedDestructorSignatures(DestructorIndex) ||
-          !finishConsumedConstructorSignatures(ConstructorIndex) ||
-          !finishConsumedCallSignatures(CallIndex))
+      while (SpecialMemberSignatureIndex < ConsumedSpecialMemberSignatures.size()) {
+        const auto *Method = ConsumedSpecialMemberSignatures[SpecialMemberSignatureIndex++];
+        bool Complete = true;
+        for (const auto *Declaration : Method->redecls()) {
+          const auto *Member = cast<CXXMethodDecl>(Declaration);
+          if (Member->isImplicit())
+            continue;
+          if (!Member->getTypeSourceInfo()) {
+            Complete = false;
+            break;
+          }
+          if (!checkConsumedOperationSignature(Member, ConsumedSignatureKind::SpecialMember))
+            return false;
+          const auto Found = CheckedOperationTypes.find(
+              operationTypeSourceKey(Member->getTypeSourceInfo()->getTypeLoc()));
+          Complete &= Found != CheckedOperationTypes.end() && Found->second.Complete;
+        }
+        if (Complete)
+          CompletedSpecialMemberSignatures.insert(Method);
+      }
+      if (!finishConsumedDestructorSignatures(DestructorSignatureIndex) ||
+          !finishConsumedConstructorSignatures(ConstructorSignatureIndex) ||
+          !finishConsumedCallSignatures(CallSignatureIndex))
         return false;
-      if (DestructorIndex != ConsumedDestructorSignatures.size() ||
-          ConstructorIndex != ConsumedConstructorSignatures.size() ||
-          CallIndex != ConsumedCallSignatures.size() ||
-          ConditionalMoveIndex != ConsumedConditionalMoveSignatures.size())
+      if (DestructorSignatureIndex != ConsumedDestructorSignatures.size() ||
+          ConstructorSignatureIndex != ConsumedConstructorSignatures.size() ||
+          CallSignatureIndex != ConsumedCallSignatures.size() ||
+          ConditionalMoveSignatureIndex != ConsumedConditionalMoveSignatures.size() ||
+          SpecialMemberSignatureIndex != ConsumedSpecialMemberSignatures.size())
         continue;
-      if (Index == GeneratedMethods.size())
+      if (GeneratedMethodIndex == GeneratedMethods.size())
         break;
-      const auto *Method = GeneratedMethods[Index++];
+      const auto *Method = GeneratedMethods[GeneratedMethodIndex++];
       const auto *C = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
       if (!Body || (C ? ((!defaultedLifecycle(C) && !defaultedCopyOrMoveConstructor(C)) ||
@@ -18565,56 +18852,82 @@ public:
     return true;
   }
   bool finishTypeQueries() {
-    // Deferral is closed before this pass. A query in the selected definition's
-    // own body can use its completed proof, but all pending roots must pass
-    // before any runtime lowering observes the provisional boolean values.
-    for (const auto *Query : A.PendingOperationQueries) {
-      auto Source = A.OperationTraits.find(Query);
-      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
-          &CompletedQueryDestructorSignatures);
-      const bool Complete = Source != A.OperationTraits.end() &&
-          (Query->getTrait() == UTT_IsNothrowDestructible
-            ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
-            : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
-                                   operationTraitNeedsExceptionSource(Query->getTrait()),
-                                   &CompletedOperationDefaults, &CheckedOperationExpressions,
-                                   &CheckedOperationTypes, &CompletedGeneratedOperations,
-                                   &CompletedQueryConstructions,
-                                   &CompletedQueryDestructorSignatures,
-                                   &CompletedQueryCalls, &CompletedQueryTemplateSelections,
-                                   ArraySwapOperationQueries.count(Query) ? Query : nullptr));
-      if (!Complete) {
-        A.reject(Query->getExprLoc(), "operation trait source",
-                 "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
-        return false;
+    // Close only consumed source dependencies. Signature checks can discover
+    // more roots, so finish the whole worklist before exposing query results.
+    auto PrepareSpecialMember = [&](const CXXMethodDecl *Method) {
+      if (CompletedSpecialMemberSignatures.count(Method))
+        return true;
+      queueSpecialMemberSignatures(Method);
+      const bool Saved = A.CheckingSource;
+      A.CheckingSource = true;
+      auto Restore = llvm::make_scope_exit([&] { A.CheckingSource = Saved; });
+      return finishGeneratedMethods();
+    };
+    std::size_t OperationIndex = 0;
+    std::set<const Expr *> CheckedQueries;
+    std::set<OperationTypeSourceKey> CheckedRoots;
+    for (;;) {
+      while (OperationIndex < A.PendingOperationQueries.size()) {
+        const auto *Query = A.PendingOperationQueries[OperationIndex++];
+        auto Source = A.OperationTraits.find(Query);
+        OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+            &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+            &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+            &CompletedOperationDefaults, PrepareSpecialMember);
+        const bool Complete = Source != A.OperationTraits.end() &&
+            (Query->getTrait() == UTT_IsNothrowDestructible
+              ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
+              : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
+                                     operationTraitNeedsExceptionSource(Query->getTrait()),
+                                     &CompletedOperationDefaults, &CheckedOperationExpressions,
+                                     &CheckedOperationTypes, &CompletedGeneratedOperations,
+                                     &CompletedQueryConstructions,
+                                     &CompletedQueryDestructorSignatures,
+                                     &CompletedQueryCalls, &CompletedQueryTemplateSelections,
+                                     ArraySwapOperationQueries.count(Query) ? Query : nullptr,
+                                     &CompletedSpecialMemberSignatures, PrepareSpecialMember));
+        if (!Complete) {
+          A.reject(Query->getExprLoc(), "operation trait source",
+                   "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
+          return false;
+        }
+        A.VerifiedOperationQueries.insert(Query);
       }
-      A.VerifiedOperationQueries.insert(Query);
-    }
-    // A folded result does not prove its operands' type or value source. Check
-    // every resolved classification/operation/array query, including false and
-    // out-of-range results, after all ordinary source nodes complete.
-    for (const auto *Query : TypeSourceQueries) {
-      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
-          &CompletedQueryDestructorSignatures);
-      if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
-        A.reject(Query->getExprLoc(), "query type source",
-                 "Every consumed query type or dimension requires completed original source dependencies.");
-        return false;
+      // A folded result does not prove its operands' type or value source. Check
+      // every resolved classification/operation/array query, including false and
+      // out-of-range results, after all ordinary source nodes complete.
+      for (const auto *Query : TypeSourceQueries) {
+        if (!CheckedQueries.insert(Query).second)
+          continue;
+        OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+            &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+            &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+            &CompletedOperationDefaults, PrepareSpecialMember);
+        if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
+          A.reject(Query->getExprLoc(), "query type source",
+                   "Every consumed query type or dimension requires completed original source dependencies.");
+          return false;
+        }
       }
-    }
-    // Type transforms and function metadata consume source even without a
-    // surrounding query. Only normal traversal can complete these exact roots.
-    for (const auto &[Type, Location] : TypeSourceRoots) {
-      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
-          &CompletedQueryDestructorSignatures);
-      if (!SourceCheck.requireType(Type) || !SourceCheck.finish(Location)) {
-        A.reject(Location, "type metadata source",
-                 "Every consumed type metadata root requires completed original source dependencies.");
-        return false;
+      // Type transforms and function metadata consume source even without a
+      // surrounding query. Only normal traversal can complete these exact roots.
+      for (const auto &[Type, Location] : TypeSourceRoots) {
+        if (!CheckedRoots.insert(Type).second)
+          continue;
+        OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+            &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+            &CompletedQueryDestructorSignatures, &CompletedSpecialMemberSignatures,
+            &CompletedOperationDefaults, PrepareSpecialMember);
+        if (!SourceCheck.requireType(Type) || !SourceCheck.finish(Location)) {
+          A.reject(Location, "type metadata source",
+                   "Every consumed type metadata root requires completed original source dependencies.");
+          return false;
+        }
       }
+      if (OperationIndex == A.PendingOperationQueries.size() &&
+          CheckedQueries.size() == TypeSourceQueries.size() &&
+          CheckedRoots.size() == TypeSourceRoots.size())
+        break;
     }
     return A.S.Diagnostics.empty();
   }
@@ -21509,7 +21822,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   if (!Traversed || !S.Diagnostics.empty())
     return;
   CheckingSource = false;
-  if (!Check.finishAlgorithmPredicates() || !Check.finishTypeQueries())
+  if (!Check.finishTypeQueries() || !Check.finishAlgorithmPredicates())
     return;
   if (S.coreV2())
     orderCoreV2Records(*this);
@@ -22132,6 +22445,7 @@ class Consumer : public ASTConsumer {
   std::vector<VariableTypeSource> VariableTypes;
   std::vector<SelectedTemplateCallSource> SelectedCalls;
   std::map<const TypeTraitExpr *, OperationTraitSource> OperationTraits;
+  std::map<const CXXMethodDecl *, SpecialMemberSource> SpecialMembers;
   std::vector<FriendFunctionSource> FriendFunctions;
   std::vector<FriendDeclarationSource> FriendDeclarations;
   std::vector<FriendFunctionTemplateSource> FriendTemplates;
@@ -22244,6 +22558,48 @@ class Consumer : public ASTConsumer {
 public:
   explicit Consumer(State &S) : S(S) {}
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
+  bool retainNeverCSpecialMemberSource(
+      ASTContext &Context, const CXXMethodDecl *Method) override {
+    if (!S.coreV2() || !S.Diagnostics.empty() || !Method ||
+        !S.owns(Context.getSourceManager(), Method->getLocation()) ||
+        SpecialMembers.count(Method->getCanonicalDecl()) ||
+        !reserveSourceUnits(Context.getSourceManager(), Method->getLocation(), 0))
+      return false;
+    SpecialMembers.emplace(Method->getCanonicalDecl(),
+                           SpecialMemberSource{Method, {}, false});
+    return true;
+  }
+  void HandleNeverCSpecialMemberCall(
+      const CXXMethodDecl *Owner, const CXXBaseSpecifier *Base,
+      const FieldDecl *Field, const CXXMethodDecl *Method,
+      bool ConstructorDestruction) override {
+    if (!S.coreV2() || !S.Diagnostics.empty())
+      return;
+    auto Found = SpecialMembers.find(Owner->getCanonicalDecl());
+    if (Found == SpecialMembers.end() || Found->second.Owner != Owner ||
+        Found->second.Complete || !Method || bool(Base) == bool(Field)) {
+      S.diagnose("TR0201", "special member selection source",
+                 "A selected subobject operation requires its active exact owner.",
+                 "Use a frontend with consistent special-member source ownership.");
+      return;
+    }
+    if (reserveSourceUnits(Owner->getASTContext().getSourceManager(),
+                           Owner->getLocation(), 0))
+      Found->second.Selections.push_back({Base, Field, Method, ConstructorDestruction});
+  }
+  void HandleNeverCSpecialMemberComplete(const CXXMethodDecl *Owner) override {
+    if (!S.coreV2() || !S.Diagnostics.empty())
+      return;
+    auto Found = SpecialMembers.find(Owner->getCanonicalDecl());
+    if (Found == SpecialMembers.end() || Found->second.Owner != Owner ||
+        Found->second.Complete) {
+      S.diagnose("TR0201", "special member selection source",
+                 "A successful selection graph must complete its exact owner once.",
+                 "Use a frontend with consistent special-member source ownership.");
+      return;
+    }
+    Found->second.Complete = true;
+  }
   bool retainNeverCOperationTraitSource(
       ASTContext &Context, unsigned Count, const SourceLocation &Location) override {
     if (!S.coreV2() || !S.Diagnostics.empty())
@@ -22642,6 +22998,7 @@ public:
     Adapter A(S, C);
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
     A.OperationTraits = std::move(OperationTraits);
+    A.SpecialMembers = std::move(SpecialMembers);
     try {
       A.run(Directives, StaticDirectives, TemplateUses, Specializations,
             VariableTypes, SelectedCalls, MemberClassDirectives,

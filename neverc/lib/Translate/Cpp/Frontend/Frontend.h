@@ -173,6 +173,17 @@ struct OperationTraitSource {
   const clang::FunctionProtoType *DestructionPrototype;
   bool DestructionLookupAttempted, DestructionExceptionAttempted;
 };
+struct SpecialMemberSelection {
+  const clang::CXXBaseSpecifier *Base;
+  const clang::FieldDecl *Field;
+  const clang::CXXMethodDecl *Method;
+  bool ConstructorDestruction;
+};
+struct SpecialMemberSource {
+  const clang::CXXMethodDecl *Owner;
+  std::vector<SpecialMemberSelection> Selections;
+  bool Complete = false;
+};
 struct FunctionSpecializationSource {
   const clang::FunctionDecl *Declaration, *Selected;
   const clang::ASTTemplateArgumentListInfo *Written;
@@ -1782,6 +1793,7 @@ public:
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
   std::set<const clang::Expr *> SeparateArrayFillers;
   std::map<const clang::TypeTraitExpr *, OperationTraitSource> OperationTraits;
+  std::map<const clang::CXXMethodDecl *, SpecialMemberSource> SpecialMembers;
   bool CheckingSource = false;
   std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
   std::set<const clang::TypeTraitExpr *> DeferredOperationQueries, VerifiedOperationQueries;
