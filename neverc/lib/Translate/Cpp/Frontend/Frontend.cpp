@@ -2952,16 +2952,19 @@ static bool utilityConditionalMoveReferenceSource(Adapter &A,
       Function->getBuiltinID() != Builtin::BImove_if_noexcept)
     return false;
   const auto Reference = Arguments->get(0).getAsType();
-  // Binding an object reference to the identical reference type is nothrow;
+  // Binding identical object or function references is nothrow;
   // no referent copy/move constructor participates in this trait decision.
   // Only the exact SDK builtin supplies this collapsed reference cast. Its
   // declaration chain, parameter and original sources still close separately.
   return Reference->isReferenceType() &&
-         Reference->getPointeeType()->isObjectType() &&
+         (Reference->getPointeeType()->isObjectType() ||
+          Reference->getPointeeType()->isFunctionProtoType()) &&
          A.Context.hasSameType(Function->getReturnType(), Reference) &&
          A.Context.hasSameType(Call->getType(), Reference->getPointeeType()) &&
-         (Reference->isLValueReferenceType() ? Call->isLValue()
-                                             : Call->isXValue());
+         (Reference->isLValueReferenceType() ||
+                  Reference->getPointeeType()->isFunctionType()
+              ? Call->isLValue()
+              : Call->isXValue());
 }
 
 static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
@@ -3021,7 +3024,7 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
   // A call returning an rvalue reference to a function remains an lvalue.
   const bool FunctionResult =
       (Operation == UtilityOperation::Move ||
-       Operation == UtilityOperation::Forward) &&
+       Operation == UtilityOperation::Forward || ConditionalMove) &&
       Call->getType()->isFunctionType() && Call->isLValue();
   const bool RValueResult =
       !AsConst && Function && (Call->isXValue() || FunctionResult) &&
@@ -3079,9 +3082,10 @@ static bool utilitySDKValueAdapterSource(Adapter &A, const CallExpr *Call,
         Move && Move->getNumArgs() == 1
             ? dyn_cast<DeclRefExpr>(Move->getArg(0)->IgnoreParenImpCasts())
             : nullptr;
-    // The rvalue branch returns only the exact pinned move of its unchanged
+    // The selected branch returns only the exact pinned move of its unchanged
     // lvalue parameter. Querying it must not instantiate either SDK body.
-    return Body->size() == 1 && Value && Value->isXValue() &&
+    return Body->size() == 1 && Value &&
+           (FunctionResult ? Value->isLValue() : Value->isXValue()) &&
            A.Context.hasSameType(Value->getType(), Call->getType()) &&
            Parameter && Parameter->getDecl() == Function->getParamDecl(0) &&
            utilitySDKValueAdapterSource(A, Move, UtilityOperation::Move);
@@ -3149,6 +3153,29 @@ static bool utilityArrayConditionalMoveSource(Adapter &A,
          Arguments->get(0).getKind() == TemplateArgument::Type &&
          Arguments->get(0).getAsType()->isObjectType() &&
          A.Context.hasSameType(Arguments->get(0).getAsType(), Type);
+}
+
+static bool utilityFunctionConditionalMoveSource(Adapter &A,
+                                                 const CallExpr *Call) {
+  const auto *Function = Call->getDirectCallee();
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Type = Call->getType();
+  if (!A.Context.getLangOpts().CPlusPlus17 ||
+      A.Context.getLangOpts().CPlusPlus20 || !Call->isLValue() ||
+      !Type->isFunctionProtoType() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type)
+    return false;
+  const auto Argument = Arguments->get(0).getAsType();
+  if (Argument->isReferenceType())
+    return utilityConditionalMoveReferenceSource(A, Call);
+  // Function types cannot be copy-constructed. The exact function T selects
+  // T&&, whose call result is still a function lvalue. Retain the SDK and
+  // original signature/operand checks without constructing a trait body.
+  return A.Context.hasSameType(Argument, Type) &&
+         Function->getReturnType()->isRValueReferenceType() &&
+         A.Context.hasSameType(Function->getReturnType()->getPointeeType(),
+                              Type);
 }
 
 static bool utilityUniquePtrConditionalMoveSource(
@@ -4552,7 +4579,9 @@ static bool utilityValueAdapterSource(
       Type->isFunctionProtoType() && Call->isLValue() &&
       (*Operation == UtilityOperation::Move ||
        *Operation == UtilityOperation::Forward ||
-       *Operation == UtilityOperation::AsConst);
+       *Operation == UtilityOperation::AsConst ||
+       (*Operation == UtilityOperation::MoveIfNoexcept &&
+        utilityFunctionConditionalMoveSource(A, Call)));
   // The tuple-like descriptor supplies only authenticated storage. The exact
   // reference cast, element layouts and every original operand/type source
   // still close separately; this proof does not perform container lifecycle.
@@ -20198,7 +20227,8 @@ public:
                 approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
             if (Operation == UtilityOperation::Move ||
                 Operation == UtilityOperation::Forward ||
-                Operation == UtilityOperation::AsConst)
+                Operation == UtilityOperation::AsConst ||
+                Operation == UtilityOperation::MoveIfNoexcept)
               FunctionValueDesignators.insert(Call->getArg(0));
           }
         }

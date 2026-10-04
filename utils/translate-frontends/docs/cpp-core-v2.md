@@ -229,6 +229,19 @@ and builtin or completed return body must still match exactly. Independent
 adapter addresses, substituted declarations and ordinary runtime
 function-reference storage retain their existing rejection.
 
+The pinned `std::move_if_noexcept` preserves the same admitted function
+designators, including explicit function lvalue/rvalue-reference template
+arguments. For a function type `T`, C++17's
+[construction traits](https://timsong-cpp.github.io/cppwp/n4659/meta.unary.prop)
+select the `T&&` branch of the [helper](https://timsong-cpp.github.io/cppwp/n4659/forward#7);
+identical function-reference bindings are nothrow. These results remain function
+lvalues and retain their signatures, identity, operand effects and temporary
+cleanup. Direct/imported calls, unevaluated type/exception queries, nested
+adapters, checked function-reference casts, callback exchange and
+`reference_wrapper` access reuse the existing function representation. SDK
+declaration/body checks and original trait, signature and operand sources
+still apply; this does not introduce runtime function-reference storage.
+
 Function designators also support explicit `static_cast<F&>` and
 `static_cast<F&&>`, equivalent C-style casts, and functional casts through a
 function-reference alias. The checked conversion preserves the signature or

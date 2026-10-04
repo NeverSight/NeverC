@@ -26358,6 +26358,230 @@ using F=int(*)();using N=int(*)()noexcept;N f(N&p,F&r){return std::exchange<N,F&
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionConditionalMoveRunAtBothOptimizations) {
+  const auto Control = tmpFile("function-conditional-move-control.cpp");
+  const auto ControlOutput = tmpFile("function-conditional-move-control.nc");
+  writeFile(Control, R"cpp(#include <utility>
+namespace Imported{using std::move_if_noexcept;}
+using F=int(int);using N=int(int)noexcept;
+int one(int v){return v;}int two(int v)noexcept{return v;}
+static_assert(__is_same(decltype(Imported::move_if_noexcept(one)),F&));
+static_assert(__is_same(decltype(Imported::move_if_noexcept<N>(two)),N&));
+static_assert(noexcept(Imported::move_if_noexcept(one)));
+static_assert(__is_same(decltype(std::move(Imported::move_if_noexcept(one))),F&));
+static_assert(__is_same(decltype(Imported::move_if_noexcept(static_cast<F&&>(one))),F&));
+int main(){return 0;}
+)cpp");
+  auto ControlResult = translate(
+      Control, {"--profile", "cpp-core-v2", "-o", ControlOutput.string()});
+  ASSERT_EQ(ControlResult.exitCode, 0) << ControlResult.out << ControlResult.err;
+
+  const auto ReferenceControl = tmpFile("function-conditional-move-reference.cpp");
+  const auto ReferenceOutput = tmpFile("function-conditional-move-reference.nc");
+  writeFile(ReferenceControl, R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}auto f(){return std::move_if_noexcept<F&>(one); }auto g(){return std::move_if_noexcept<F&&>(one); }
+)cpp");
+  auto ReferenceResult = translate(
+      ReferenceControl, {"--profile", "cpp-core-v2", "-o", ReferenceOutput.string()});
+  ASSERT_EQ(ReferenceResult.exitCode, 0) << ReferenceResult.out << ReferenceResult.err;
+
+  const auto Source = tmpFile("function-conditional-move.cpp");
+  const auto Output = tmpFile("function-conditional-move.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <functional>
+namespace Imported { using std::move_if_noexcept; }
+namespace Reexport { using Imported::move_if_noexcept; }
+namespace Alias = Reexport;
+using F = int(int);
+using N = int(int) noexcept;
+using P = int(*)(int);
+using NP = int(*)(int) noexcept;
+int calls, effects, constructed, destroyed;
+int one(int n) { ++calls; return n + 1; }
+int two(int n) { ++calls; return n + 2; }
+int safe(int n) noexcept { ++calls; return n + 3; }
+int overloaded(int n) { ++calls; return n + 4; }
+long overloaded(long n) { return n + 5; }
+P selected() { ++effects; return two; }
+struct Temporary {
+  Temporary() { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  static int function(int n) noexcept { ++calls; return n + 6; }
+};
+bool check(P p) noexcept {
+  return constructed == 1 && destroyed == 0 && calls == 0 && p == Temporary::function;
+}
+int main() {
+  using Alias::move_if_noexcept;
+  static_assert(__is_same(decltype(move_if_noexcept(one)), F &));
+  static_assert(__is_same(decltype(move_if_noexcept<F>(one)), F &));
+  static_assert(__is_same(decltype((move_if_noexcept)(safe)), N &));
+  static_assert(noexcept(move_if_noexcept((++effects, one))));
+  static_assert(noexcept(move_if_noexcept(safe)(0)));
+  static_assert(!noexcept(move_if_noexcept(one)(0)));
+  static_assert(__is_same(decltype(move_if_noexcept(std::move(one))), F &));
+  static_assert(__is_same(decltype(std::forward<F &&>(move_if_noexcept(one))), F &));
+  static_assert(__is_same(decltype(move_if_noexcept<F &&>(one)), F &));
+  if (calls || effects || constructed || destroyed) return 1;
+  P p = move_if_noexcept(one);
+  NP q = move_if_noexcept<N>(safe);
+  if (p != one || q != safe || &move_if_noexcept(two) != two || calls) return 2;
+  if ((move_if_noexcept)(one)(2) != 3 || calls != 1) return 3;
+  if (move_if_noexcept<F>(overloaded)(2) != 6 || calls != 2) return 4;
+  if (move_if_noexcept((++effects, effects == 1 ? two : one))(2) != 4 || effects != 1 || calls != 3) return 5;
+  if (move_if_noexcept((++effects, effects == 1 ? two : one))(2) != 3 || effects != 2 || calls != 4) return 6;
+  if (&move_if_noexcept(*selected()) != two || effects != 3 || calls != 4) return 7;
+  auto wrapped = std::ref(one);
+  if (move_if_noexcept(wrapped.get())(2) != 3 || calls != 5) return 8;
+  if (&move_if_noexcept(move_if_noexcept(one)) != one || &std::move(move_if_noexcept(two)) != two ||
+      &move_if_noexcept(std::forward<F &&>(one)) != one) return 9;
+  if (&move_if_noexcept(static_cast<F &&>(one)) != one ||
+      &static_cast<F &>(move_if_noexcept(two)) != two) return 10;
+  if (&move_if_noexcept(static_cast<F &&>(safe)) != safe) return 11;
+  if (std::exchange<P, F &&>(p, move_if_noexcept((p = two, ++effects, one))) != two ||
+      p != one || effects != 4 || calls != 5) return 12;
+  if (std::exchange(p, move_if_noexcept(safe)) != one || p != safe) return 13;
+  calls = 0;
+  if (!check(move_if_noexcept(Temporary{}.function))) return 14;
+  if (constructed != 1 || destroyed != 1 || calls) return 15;
+  if (move_if_noexcept(Temporary{}.function)(1) != 7 || destroyed != 1 || calls != 1) return 16;
+  if (constructed != 2 || destroyed != 2) return 17;
+  (void)move_if_noexcept((++effects, Temporary{}.function));
+  if (constructed != 3 || destroyed != 3 || effects != 5 || calls != 1) return 18;
+  if (&move_if_noexcept<F &>(one) != one ||
+      &move_if_noexcept<N &>(safe) != safe ||
+      &move_if_noexcept<F &&>(one) != one ||
+      &move_if_noexcept<N &&>(safe) != safe) return 19;
+  if (&move_if_noexcept<F>(safe) != safe ||
+      &move_if_noexcept<F &>(safe) != safe ||
+      &move_if_noexcept<F &&>(safe) != safe) return 20;
+  int value = 4;
+  int &&view = move_if_noexcept(value);
+  view = 7;
+  if (value != 7 || move_if_noexcept(p) != safe) return 21;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-conditional-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionConditionalMoveRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&move_if_noexcept<F>(F&v)noexcept{return static_cast<F&&>(v);}}}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0201"},
+      {"query-specialization", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&move_if_noexcept<F>(F&v)noexcept{return static_cast<F&&>(v);}}}static_assert(__is_same(decltype(std::move_if_noexcept(one)),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"redeclaration", R"cpp(#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr __move_if_noexcept_result_t<T>move_if_noexcept(T&)noexcept;}}int one(int v){return v;}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0201"},
+      {"source-overload", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{F&move_if_noexcept(F&v)noexcept{return v;}}}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0201"},
+      {"indirect-adapter", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}auto f(){using A=F&&(*)(F&)noexcept;A adapter=&std::move_if_noexcept<F>;return adapter(one);}
+)cpp", "TR0201"},
+      {"long-double-signature", R"cpp(#include <utility>
+long double one(long double v){return v;}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0201"},
+      {"variadic-signature", R"cpp(#include <utility>
+int one(int v,...){return v;}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0201"},
+      {"hidden-query-operand", R"cpp(#include <utility>
+using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(std::move_if_noexcept((sizeof(long double),one))),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"hidden-exception-source", R"cpp(#include <utility>
+int one(int v)noexcept{return v;}static_assert(__is_same(decltype(std::move_if_noexcept<int(int)noexcept(sizeof(long double)>0)>(one)),int(&)(int)noexcept));int main(){return 0;}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <utility>
+template<class>using F=int(int);int one(int v){return v;}auto f(){return std::move_if_noexcept<F<long double>>(one);}
+)cpp", "TR0201"},
+      {"missing-target", R"cpp(#include <utility>
+int one(int);auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0203"},
+      {"reference-storage", R"cpp(#include <utility>
+int one(int v){return v;}int main(){auto&ref=std::move_if_noexcept(one);return ref(0);}
+)cpp", "TR0201"},
+      {"receiver-source", R"cpp(#include <utility>
+struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::move_if_noexcept(T{}.call);}
+)cpp", "TR0201"},
+      {"incompatible-signature", R"cpp(#include <utility>
+int one(int v){return v;}auto f(){return std::move_if_noexcept<int(long)>(one);}
+)cpp", "TR0202"},
+      {"object-rvalue", R"cpp(#include <utility>
+int main(){return std::move_if_noexcept(3);}
+)cpp", "TR0202"},
+      {"copy-trait-specialization", R"cpp(#include <utility>
+using F=int(int);namespace std{inline namespace __1{template<>struct is_copy_constructible<F>{static constexpr bool value=false;};}}int one(int v){return v;}static_assert(__is_same(decltype(std::move_if_noexcept(one)),F&));int main(){return 0;}
+)cpp", "TR0202"},
+      {"nothrow-trait-specialization", R"cpp(#include <utility>
+using F=int(int);namespace std{inline namespace __1{template<>struct is_nothrow_move_constructible<F>{static constexpr bool value=false;};}}int one(int v){return v;}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0202"},
+      {"move-source-specialization", R"cpp(#include <utility>
+using F=int(int);namespace std{inline namespace __1{template<>constexpr F&&move<F&>(F&v)noexcept{return static_cast<F&&>(v);}}}int one(int v){return v;}auto f(){return std::move_if_noexcept(one);}
+)cpp", "TR0201"},
+      {"copy-trait-redeclaration", R"cpp(#include <utility>
+using F=int(int);namespace std{inline namespace __1{template<class T>struct is_copy_constructible;}}int one(int v){return v;}static_assert(__is_same(decltype(std::move_if_noexcept(one)),F&));int main(){return 0;}
+)cpp", "TR0201"},
+      {"nothrow-trait-redeclaration", R"cpp(#include <utility>
+using F=int(int);namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}int one(int v){return v;}auto f(){return std::move_if_noexcept<F&>(one);}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("function-conditional-move-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("function-conditional-move-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MoveIfNoexceptRetainsPromotedRecordQueries) {
+  struct Case { const char *Name; const char *Source; };
+  const Case Cases[] = {
+      {"object-nested-copy-overload-stays-separate", R"cpp(#include <utility>
+#include <type_traits>
+using Row=int[2];
+namespace Alias{using std::move_if_noexcept;}
+
+struct M{int n;M(const M&r,int=0)noexcept:n(r.n){}M(M&&r)noexcept(false):n(r.n){}};struct R{M value;R(const R&)=default;R(R&&)=default;};int f(R&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<R>(v)),const R&));return 0;}
+)cpp"},
+      {"nontrivial-move-result-record", R"cpp(#include <utility>
+
+struct Box{int n;Box(const Box&r)noexcept:n(r.n){}};int f(Box&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Box&&));return 0;}
+)cpp"},
+      {"copy-result-record", R"cpp(#include <utility>
+
+struct Box{int n;Box(const Box&r)noexcept:n(r.n){}Box(Box&&r):n(r.n){}};int f(Box&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),const Box&));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("conditional-move-record-query-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("conditional-move-record-query-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    const auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionAsConstRunAtBothOptimizations) {
   const auto Control = tmpFile("function-as-const-control.cpp");
   const auto ControlOutput = tmpFile("function-as-const-control.nc");
@@ -45180,9 +45404,6 @@ using F=int(int);int f(F&v){static_assert(__is_same(decltype(Alias::move_if_noex
       {"member-pointer", R"cpp(
 struct R{int n;};using P=int R::*;int f(P&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<P&&>(v)),P&&));return 0;}
 )cpp", "TR0201"},
-      {"object-nested-copy-overload-stays-separate", R"cpp(
-struct M{int n;M(const M&r,int=0)noexcept:n(r.n){}M(M&&r)noexcept(false):n(r.n){}};struct R{M value;R(const R&)=default;R(R&&)=default;};int f(R&v){static_assert(__is_same(decltype(Alias::move_if_noexcept<R>(v)),const R&));return 0;}
-)cpp", "TR0201"},
       {"address-requires-illformed-body", R"cpp(
 using F=int&(*)(int&)noexcept;int f(){static_assert(sizeof(static_cast<F>(&Alias::move_if_noexcept<int&>))>0);return 0;}
 )cpp", "TR0202"},
@@ -45790,14 +46011,6 @@ int f(long double*&p){static_assert(__is_same(decltype(std::move_if_noexcept(p))
        "TR0201"},
       {"array-original-bound", R"cpp(
 using Array=int[sizeof(long double)];int f(Array&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Array&&));return 0;}
-)cpp",
-       "TR0201"},
-      {"nontrivial-move-result-record", R"cpp(
-struct Box{int n;Box(const Box&r)noexcept:n(r.n){}};int f(Box&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),Box&&));return 0;}
-)cpp",
-       "TR0201"},
-      {"copy-result-record", R"cpp(
-struct Box{int n;Box(const Box&r)noexcept:n(r.n){}Box(Box&&r):n(r.n){}};int f(Box&p){static_assert(__is_same(decltype(std::move_if_noexcept(p)),const Box&));return 0;}
 )cpp",
        "TR0201"},
       {"function-reference", R"cpp(

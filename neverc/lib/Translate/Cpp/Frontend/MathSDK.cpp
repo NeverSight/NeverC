@@ -29111,7 +29111,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   auto ReferenceResult = [&] {
     auto Result = Function->getReturnType();
     const bool FunctionReference =
-        (Name == "move" || Name == "forward") &&
+        (Name == "move" || Name == "forward" || Name == "move_if_noexcept") &&
         Call->getType()->isFunctionType();
     if (!Result->isReferenceType() ||
         !Same(Call->getType(), Result->getPointeeType()) ||
