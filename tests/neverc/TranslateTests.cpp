@@ -51264,6 +51264,218 @@ int f(const int&v){static_assert(__is_same(decltype(std::addressof<int>(v)),int*
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerTraitsNameImportsRunAtBothOptimizations) {
+  const auto UnusedSource = tmpFile("pointer-traits-imports-unused.cpp");
+  const auto UnusedOutput = tmpFile("pointer-traits-imports-unused.nc");
+  writeFile(UnusedSource, R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+int main() { return 0; }
+)cpp");
+  auto UnusedResult = translate(
+      UnusedSource, {"--profile", "cpp-core-v2", "-o", UnusedOutput.string()});
+  ASSERT_EQ(UnusedResult.exitCode, 0)
+      << UnusedResult.out << UnusedResult.err;
+
+  const auto QuerySource = tmpFile("pointer-traits-imports-query.cpp");
+  const auto QueryOutput = tmpFile("pointer-traits-imports-query.nc");
+  writeFile(QuerySource, R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace Reexport { using Imported::pointer_traits; }
+namespace Alias = Reexport;
+using F = int(int) noexcept;
+int safe(int n) noexcept { return n; }
+static_assert(__is_same(Alias::pointer_traits<F *>::pointer, F *));
+static_assert(__is_same(Alias::pointer_traits<F *>::element_type, F));
+static_assert(__is_same(Alias::pointer_traits<F *>::rebind<const int>, const int *));
+static_assert(__is_same(decltype(Alias::pointer_traits<F *>::pointer_to(safe)), F *));
+static_assert(noexcept(Alias::pointer_traits<F *>::pointer_to(safe)));
+struct Box { int value; Box *operator&() = delete; };
+using Row = int[2][3];
+int query(int &v, const int &c, Row &row, Box &box) {
+  using Alias::pointer_traits;
+  static_assert(__is_same(decltype(pointer_traits<int *>::pointer_to(v)), int *));
+  static_assert(__is_same(decltype(pointer_traits<const int *>::pointer_to(c)), const int *));
+  static_assert(__is_same(decltype(pointer_traits<Row *>::pointer_to(row)), Row *));
+  static_assert(__is_same(decltype(pointer_traits<Box *>::pointer_to(box)), Box *));
+  static_assert(noexcept(pointer_traits<Box *>::pointer_to(box)));
+  static_assert(sizeof(pointer_traits<Row *>::pointer_to(row)) == sizeof(Row *));
+  static_assert(alignof(decltype(pointer_traits<Row *>::pointer_to(row))) == alignof(Row *));
+  return v;
+}
+int main() { return 0; }
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0)
+      << QueryResult.out << QueryResult.err;
+
+  const auto Source = tmpFile("pointer-traits-imports.cpp");
+  const auto Output = tmpFile("pointer-traits-imports.nc");
+  writeFile(Source, R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits, std::addressof; }
+namespace Reexport { using Imported::pointer_traits; using Imported::pointer_traits; }
+namespace Alias = Reexport;
+namespace Directed { using namespace Alias; }
+using std::pointer_traits;
+using F = int(int);
+using N = int(int) noexcept;
+using Row = int[2][3];
+using Traits = Alias::pointer_traits<F *>;
+int effects, calls, defaults, constructed, destroyed;
+int one(int n) { ++calls; return n + 1; }
+int overloaded(int n) { ++calls; return n + 2; }
+long overloaded(long n) { return n + 3; }
+int safe(int n) noexcept { ++calls; return n + 4; }
+int &select(int &v, int n = (++defaults, 2)) noexcept { effects += n; return v; }
+struct Box { int value; Box *operator&() = delete; };
+struct Temporary {
+  Temporary() noexcept { ++constructed; }
+  ~Temporary() noexcept { ++destroyed; }
+  static int function(int n) noexcept { ++calls; return n + 5; }
+};
+namespace Owned {
+template<class T> struct pointer_traits { static int value() { return 7; } };
+}
+int main() {
+  using Alias::pointer_traits, Imported::addressof;
+  using Alias::pointer_traits;
+  static_assert(__is_same(pointer_traits<int *>, std::pointer_traits<int *>));
+  static_assert(__is_same(pointer_traits<N *>::element_type, N));
+  static_assert(__is_same(pointer_traits<Row *>::rebind<const int>, const int *));
+  static_assert(__is_same(pointer_traits<F *>::pointer, F *));
+  static_assert(sizeof(pointer_traits<int *>::difference_type) == sizeof(void *));
+  int v = 3;
+  const int c = 4;
+  Row row = {{1, 2, 3}, {4, 5, 6}};
+  Box box{8};
+  static_assert(noexcept(pointer_traits<int *>::pointer_to(select(v))));
+  static_assert(sizeof(pointer_traits<int *>::pointer_to((++effects, v))) == sizeof(int *));
+  if (effects || defaults || calls || constructed || destroyed) return 1;
+  int *p = pointer_traits<int *>::pointer_to(select(v));
+  if (p != &v || effects != 2 || defaults != 1) return 2;
+  *p = 9;
+  if (v != 9 || Directed::pointer_traits<const int *>::pointer_to(c) != &c) return 3;
+  Row *r = Directed::pointer_traits<Row *>::pointer_to(row);
+  (*r)[1][2] = 10;
+  if (r != &row || row[1][2] != 10) return 4;
+  if (pointer_traits<Box *>::pointer_to(box) != addressof(box)) return 5;
+  F *callback = Traits::pointer_to(overloaded);
+  if (callback(3) != 5 || calls != 1) return 6;
+  if (pointer_traits<F **>::pointer_to(callback) != &callback) return 7;
+  N *no_throw = pointer_traits<N *>::pointer_to(safe);
+  if (no_throw(3) != 7 || calls != 2) return 8;
+  if (pointer_traits<F *>::pointer_to((++effects, one))(3) != 4 || effects != 3 || calls != 3) return 9;
+  if (pointer_traits<N *>::pointer_to(Temporary{}.function)(3) != 8 || destroyed != 0 || calls != 4) return 10;
+  if (constructed != 1 || destroyed != 1) return 11;
+  {
+    using Owned::pointer_traits;
+    if (pointer_traits<int>::value() != 7) return 12;
+  }
+  return pointer_traits<int *>::pointer_to(v) != &v;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pointer-traits-imports" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsNameImportsRetainSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"primary-redeclaration", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace std{inline namespace __1{template<class T>struct pointer_traits;}}
+)cpp", "TR0201"},
+      {"class-specialization", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace std{inline namespace __1{template<>struct pointer_traits<int*>{static int*pointer_to(int&v)noexcept{return &v;}};}}int f(int&v){return *Imported::pointer_traits<int*>::pointer_to(v);}
+)cpp", "TR0201"},
+      {"partial-specialization", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace std{inline namespace __1{template<class T>struct pointer_traits<const T*>{static const T*pointer_to(const T&v)noexcept{return &v;}};}}int f(const int&v){return *Imported::pointer_traits<const int*>::pointer_to(v);}
+)cpp", "TR0201"},
+      {"member-specialization", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace std{inline namespace __1{template<>int*pointer_traits<int*>::pointer_to(int&v)noexcept{return &v;}}}int f(int&v){return *Imported::pointer_traits<int*>::pointer_to(v);}
+)cpp", "TR0201"},
+      {"addressof-specialization", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace std{inline namespace __1{template<>constexpr int*addressof<int>(int&v)noexcept{return &v;}}}int f(int&v){return *Imported::pointer_traits<int*>::pointer_to(v);}
+)cpp", "TR0201"},
+      {"fancy-pointer", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+struct P{using element_type=int;static P pointer_to(int&)noexcept{return {};}};auto f(int&v){return Imported::pointer_traits<P>::pointer_to(v);}
+)cpp", "TR0203"},
+      {"casted-callee", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+using F=int*(*)(int&)noexcept;int f(int&v){return *static_cast<F>(&Imported::pointer_traits<int*>::pointer_to)(v);}
+)cpp", "TR0201"},
+      {"independent-address", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+auto f(){return &Imported::pointer_traits<int*>::pointer_to;}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+template<class>using Pointer=int*;int f(int&v){return *Imported::pointer_traits<Pointer<long double>>::pointer_to(v);}
+)cpp", "TR0201"},
+      {"hidden-query-operand", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+int f(int&v){static_assert(noexcept(Imported::pointer_traits<int*>::pointer_to((sizeof(long double),v))));return v;}
+)cpp", "TR0201"},
+      {"selected-default-source", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+int&select(int&v,int n=sizeof(long double))noexcept{return v;}int f(int&v){static_assert(noexcept(Imported::pointer_traits<int*>::pointer_to(select(v))));return v;}
+)cpp", "TR0201"},
+      {"missing-target", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+int one(int);auto f(){return Imported::pointer_traits<int(*)(int)>::pointer_to(one);}
+)cpp", "TR0203"},
+      {"volatile-object", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+auto f(volatile int&v){return Imported::pointer_traits<volatile int*>::pointer_to(v);}
+)cpp", "TR0201"},
+      {"owned-hidden-type", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace Owned{template<class T>struct pointer_traits{long double unsupported;};}int f(){using Owned::pointer_traits;return sizeof(pointer_traits<int>);}
+)cpp", "TR0201"},
+      {"other-sdk-class", R"cpp(#include <memory>
+using std::allocator;
+)cpp", "TR0201"},
+      {"other-sdk-alias", R"cpp(#include <type_traits>
+using std::remove_pointer_t;
+)cpp", "TR0201"},
+      {"sdk-directive", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+using namespace std;
+)cpp", "TR0201"},
+      {"sdk-namespace-alias", R"cpp(#include <memory>
+namespace Imported { using std::pointer_traits; }
+namespace Alias=std;
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("pointer-traits-imports-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("pointer-traits-imports-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PointerTraitsFunctionAddressesRunAtBothOptimizations) {
   const auto Control = tmpFile("function-pointer-to-control.cpp");
   const auto ControlOutput = tmpFile("function-pointer-to-control.nc");

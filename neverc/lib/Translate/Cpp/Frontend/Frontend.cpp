@@ -12228,6 +12228,48 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
+  bool sdkUsingNamespace(const DeclContext *Context, SourceLocation L) {
+    unsigned Namespaces = 0;
+    while (const auto *Namespace = dyn_cast_or_null<NamespaceDecl>(Context)) {
+      A.chargeExpansion(1, L);
+      if (++Namespaces > 64)
+        return false;
+      if (Namespace->isStdNamespace())
+        return true;
+      if (!Namespace->isInline())
+        return false;
+      Context = Namespace->getParent();
+    }
+    return false;
+  }
+  bool sdkPointerTraitsUsingTarget(const NamedDecl *Target, SourceLocation L) {
+    const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Target);
+    const auto *Pattern = Template ? Template->getTemplatedDecl() : nullptr;
+    if (!Template || !Template->getIdentifier() ||
+        Template->getName() != "pointer_traits" || !Pattern ||
+        !Pattern->getDefinition() ||
+        !sdkUsingNamespace(Template->getDeclContext(), L))
+      return false;
+    auto Pinned = [&](const Decl *Declaration) {
+      A.chargeExpansion(1, L);
+      const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+      return !Declaration->isInvalidDecl() && Origin &&
+             Origin->Root == "libcxx" &&
+             Origin->Path == "__memory/pointer_traits.h" &&
+             approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
+    };
+    for (const auto *Redeclaration : Template->redecls()) {
+      if (!Pinned(Redeclaration))
+        return false;
+      for (const auto *Record : Redeclaration->getTemplatedDecl()->redecls())
+        if (!Pinned(Record))
+          return false;
+    }
+    // This proves the primary's lookup identity only. Do not instantiate its
+    // dependent base or members; each selected type, specialization and call
+    // keeps its existing argument, operation and original-source checks.
+    return Pinned(Pattern->getDefinition());
+  }
   bool sdkFunctionUsingTarget(const NamedDecl *Target, SourceLocation L) {
     const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(Target);
     const auto *Function = Template ? Template->getTemplatedDecl()
@@ -12267,22 +12309,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                Name->getName() != "swap" && Name->getName() != "get")
         return false;
     }
-    const DeclContext *Context = Function->getDeclContext();
-    unsigned Namespaces = 0;
-    bool Standard = false;
-    while (const auto *Namespace = dyn_cast_or_null<NamespaceDecl>(Context)) {
-      A.chargeExpansion(1, L);
-      if (++Namespaces > 64)
-        return false;
-      if (Namespace->isStdNamespace()) {
-        Standard = true;
-        break;
-      }
-      if (!Namespace->isInline())
-        return false;
-      Context = Namespace->getParent();
-    }
-    if (!Standard)
+    if (!sdkUsingNamespace(Function->getDeclContext(), L))
       return false;
     auto Pinned = [&](const Decl *Declaration) {
       A.chargeExpansion(1, L);
@@ -12350,12 +12377,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
     }
     if (!Supported)
-      Supported = sdkFunctionUsingTarget(Target, D->getLocation());
+      Supported = sdkFunctionUsingTarget(Target, D->getLocation()) ||
+                  sdkPointerTraitsUsingTarget(Target, D->getLocation());
     if (!Supported) {
       A.reject(
           D->getLocation(), "using target",
           "Expected an owned namespace or block declaration, an unscoped "
-          "non-member enumerator, or an admitted pinned SDK free function.");
+          "non-member enumerator, an admitted pinned SDK free function, or "
+          "the pinned SDK pointer_traits template.");
       return;
     }
     A.chargeExpansion(1, D->getLocation());

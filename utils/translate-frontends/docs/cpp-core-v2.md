@@ -3554,7 +3554,8 @@ evaluated once, including static-member receiver effects and full-expression
 temporary cleanup; taking the address does not call the target function.
 Exact SDK name imports and explicit function template arguments retain the
 same proof for `addressof`. `pointer_to` accepts checked traits aliases and
-namespace qualification; its typed parameter can select a matching function
+namespace qualification, including resolved `using std::pointer_traits` imports
+and source-owned reexports; its typed parameter can select a matching function
 overload. An instantiated `pointer_to` body must return the unchanged
 parameter through the exact SDK `addressof` builtin, including its declaration
 family. Function-pointer objects still use ordinary object addressing.
@@ -11344,8 +11345,20 @@ comparisons use the direct-call boundary above; importing their names does
 not admit `shared_ptr` comparisons or SDK function pointers. Imported `move`
 and `forward` retain their selected scalar, record and owner reference-cast
 operations and existing query boundaries. Other SDK function imports,
-SDK class/typedef imports, source replacements and
+source replacements and
 independent SDK function addresses remain excluded.
+
+Resolved using-declarations also admit the `std::pointer_traits` class-template
+name. The primary definition and every template/record redeclaration must come
+from the pinned libc++ `__memory/pointer_traits.h` in `std` or its inline
+namespaces. Namespace/block imports, repeated/comma imports, and source-owned
+reexports retain Clang's template identity and ordinary local hiding. The import
+does not instantiate the dependent primary base or members. Selected aliases,
+metadata queries, and object/function `pointer_to` calls retain their existing
+type, original template-argument, operation and lifetime checks. User
+redeclarations/specializations, fancy-pointer runtime operations and independent
+member addresses retain their rejection; other SDK class/typedef imports remain
+excluded.
 
 Lookup declarations add no runtime storage, initialization or cleanup. Imported
 and qualified names address the same object, preserve const permissions, and
