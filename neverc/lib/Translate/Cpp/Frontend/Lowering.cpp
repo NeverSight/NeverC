@@ -4174,7 +4174,15 @@ class FunctionLowering {
       auto ObjectType = Call->getArg(0)->getType();
       auto ObjectAddress = snapshot(
           address(lvalue(Call->getArg(0)), ObjectType, L), L);
-      auto NewValue = snapshot(expression(Call->getArg(1)), L);
+      const auto *Replacement = Call->getArg(1);
+      const auto *Array =
+          A.Context.getAsConstantArrayType(Replacement->getType());
+      auto NewValue = snapshot(
+          Array ? decay(lvalue(Replacement),
+                        type(A.Context.getPointerType(Array->getElementType()), L),
+                        L)
+                : expression(Replacement),
+          L);
       auto Object = dereference(std::move(ObjectAddress), L);
       auto OldValue = snapshot(Object, L);
       assign(Object,

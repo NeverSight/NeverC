@@ -4548,6 +4548,76 @@ static bool utilityValueAdapterSource(
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
+static bool utilityArrayExchangeSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() ||
+      Function->getName() != "exchange" || Call->getNumArgs() != 2 ||
+      !Call->getType()->isPointerType() ||
+      !A.Context.getAsConstantArrayType(Call->getArg(1)->getType()) ||
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
+          UtilityOperation::Exchange ||
+      !utilitySDKFunctionSource(A, Function, "__utility/exchange.h"))
+    return false;
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  const auto *Exception = Prototype && Prototype->getNoexceptExpr()
+      ? dyn_cast<BinaryOperator>(
+            Prototype->getNoexceptExpr()->IgnoreParenImpCasts())
+      : nullptr;
+  if (!Exception || Exception->getOpcode() != BO_LAnd ||
+      Prototype->getExceptionSpecType() != EST_NoexceptTrue ||
+      operationCalleePrototype(Call) != Prototype)
+    return false;
+  // The runtime descriptor proves pointer move/assignment and the selected
+  // array decay. Its exception source must still be the two exact pinned
+  // traits, not a user replacement that merely returns the same boolean.
+  auto Trait = [&](const Expr *Expression, llvm::StringRef Name,
+                   llvm::StringRef Path, llvm::ArrayRef<QualType> Types) {
+    const auto *Reference =
+        dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts());
+    const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Record = Type ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                                   Type->getAsCXXRecordDecl()) : nullptr;
+    const auto *Variable =
+        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    if (!Record || !Variable || !Record->isCompleteDefinition() ||
+        Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Record->getName() != Name ||
+        Record->getTemplateArgs().size() != Types.size())
+      return false;
+    for (unsigned I = 0; I < Types.size(); ++I) {
+      const auto &Argument = Record->getTemplateArgs().get(I);
+      if (Argument.getKind() != TemplateArgument::Type ||
+          !A.Context.hasSameType(Argument.getAsType(), Types[I]))
+        return false;
+    }
+    auto Pinned = [&](const Decl *Declaration) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+      return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
+             Origin && Origin->Root == "libcxx" && Origin->Path == Path;
+    };
+    for (const auto *Declaration : Record->redecls())
+      if (!Pinned(Declaration))
+        return false;
+    for (const auto *Declaration : Record->getSpecializedTemplate()->redecls())
+      if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
+        return false;
+    const auto Value =
+        approvedSDKIntegerConstant(A.S, A.Sources, Variable, A.Context);
+    return Variable->getName() == "value" && Value && *Value == 1;
+  };
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  return Arguments && Arguments->size() == 2 &&
+         Arguments->get(1).getKind() == TemplateArgument::Type &&
+         Trait(Exception->getLHS(), "is_nothrow_move_constructible",
+               "__type_traits/is_nothrow_constructible.h", {Call->getType()}) &&
+         Trait(Exception->getRHS(), "is_nothrow_assignable",
+               "__type_traits/is_nothrow_assignable.h",
+               {Function->getParamDecl(0)->getType(),
+                Arguments->get(1).getAsType()});
+}
+
 static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
   const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl());
   const auto *Record = Field ? dyn_cast<CXXRecordDecl>(Field->getParent())
@@ -13197,7 +13267,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             utilityUniquePtrNullComparisonSource(A, Call) ||
             utilityUniquePtrNullOrderingSource(A, Call) ||
             utilityUniquePtrOwnerComparisonSource(A, Call) ||
-            ValueAdapter ||
+            ValueAdapter || utilityArrayExchangeSource(A, Call) ||
             functionalReferenceFactorySource(A, Call))
           if (const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
                   directFunctionReference(Call))) {

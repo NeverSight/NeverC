@@ -197,6 +197,32 @@ accepted when that decay is followed by the selected conversion to a possibly
 throwing callback pointer. Matching mutable or const `noexcept` callback-pointer
 lvalues and unqualified rvalues use a checked pointer read and the same pointer
 conversion. Source specializations remain rejected.
+
+Object-pointer `std::exchange` also accepts fixed-array replacements when
+the selected assignment decays the array to a pointer to its complete element
+type, optionally adding `const` to that pointee. Mutable and const lvalue/xvalue
+arrays, string literals, multidimensional arrays and arrays of admitted records
+or pointers retain their existing type and lifetime checks. Deduced replacement
+types and explicit array or lvalue-reference template arguments qualify. The
+completed pinned body must select the exact `move`, `forward`, array decay and
+qualification conversion; source replacements of any selected helper are
+rejected. This follows C++17's [exchange operation](https://timsong-cpp.github.io/cppwp/n4659/utility.exchange)
+and [array-to-pointer conversion](https://timsong-cpp.github.io/cppwp/n4659/conv.array).
+
+Both argument expressions are evaluated once before reading the old pointer.
+The array is bound and decayed without copying, moving or reading its elements;
+the old pointer is returned and the destination points at the first element.
+Array storage and temporary cleanup retain their original lifetimes. Result,
+size and exception queries use an already completed selected body without
+evaluating either operand. They authenticate the exact resolved pointer-move
+and array-assignment trait sources in its exception specification; substituted
+traits do not gain an exemption for returning the same boolean. Unknown-bound
+arrays, unrelated pointee conversions
+(including array-to-`void*` or derived-to-base pointers), explicit replacement
+rvalue-reference template arguments and uncompleted query-only bodies retain
+their separate requirements. Volatile or unsupported element types, indirect
+callees and hidden unsupported source remain rejected.
+
 Resolved namespace and nondependent block using-declarations may import the
 pinned `std::move`, `std::forward`, `std::as_const`, `std::move_if_noexcept`,
 `std::swap`, `std::exchange`, `std::make_pair`, `std::get`, `std::ref` and

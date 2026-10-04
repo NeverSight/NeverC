@@ -14049,7 +14049,7 @@ approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
   return true;
 }
 
-// A selected move/forward call must preserve the native pointer or function.
+// A selected move/forward call must preserve the pointer, function or array.
 // The SDK provenance check includes source redeclarations and specializations.
 static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
                                       const Expr *Expression,
@@ -14102,13 +14102,13 @@ static bool utilityNoexceptCallbackPointer(QualType Pointer, QualType Source,
 }
 
 // The pinned exchange body selects move and forward independently; prove both
-// instantiated calls before replacing them with a direct callback-value write.
-static bool approvedUtilityCallbackExchange(const State &S,
-                                            const SourceManager &SM,
-                                            const FunctionDecl *Function,
-                                            QualType Type,
-                                            const ASTContext &Context) {
-  if (!Function || Type.isNull() || !Type->isFunctionPointerType() ||
+// instantiated calls before replacing them with a direct pointer-value write.
+static bool approvedUtilityPointerExchange(const State &S,
+                                           const SourceManager &SM,
+                                           const FunctionDecl *Function,
+                                           QualType Type,
+                                           const ASTContext &Context) {
+  if (!Function || Type.isNull() || !Type->isPointerType() ||
       !utilitySwapSDKFunction(S, SM, Function, "exchange",
                               "__utility/exchange.h") ||
       Function->getNumParams() != 2 ||
@@ -14129,6 +14129,24 @@ static bool approvedUtilityCallbackExchange(const State &S,
   const auto ReplacementType = Replacement->isLValueReferenceType()
                                    ? Replacement->getPointeeType()
                                    : Replacement;
+  const auto *Array = Context.getAsConstantArrayType(ReplacementType);
+  const auto ArrayPointer =
+      Array ? Context.getPointerType(Array->getElementType()) : QualType();
+  const bool ArrayReplacement =
+      Array && !Type->isFunctionPointerType() &&
+      (!ReplacementType.hasQualifiers() ||
+       Context.hasSameType(ReplacementType,
+                           ReplacementType.getUnqualifiedType().withConst())) &&
+      (Context.hasSameType(Type, ArrayPointer) ||
+       Context.hasSameType(
+           Type, Context.getPointerType(Array->getElementType().withConst())));
+  // Fixed arrays decay once, retaining their complete element type. Only
+  // matching pointees and immediate const additions use this path; unrelated
+  // pointer conversions and unknown bounds keep their separate requirements.
+  if (!Type->isFunctionPointerType() && !ArrayReplacement)
+    return false;
+  const bool ArrayQualification =
+      ArrayReplacement && !Context.hasSameType(Type, ArrayPointer);
   const bool ConstPointerReplacement =
       Replacement->isLValueReferenceType() &&
       Context.hasSameType(ReplacementType, Type.withConst());
@@ -14153,11 +14171,12 @@ static bool approvedUtilityCallbackExchange(const State &S,
       utilityNoexceptCallbackPointer(Type, UnqualifiedReplacement, Context) &&
       (!ReplacementType.hasQualifiers() || ConstNoexceptPointerReplacement);
   if ((ReplacementType.hasQualifiers() && !ConstPointerReplacement &&
-       !ConstNullReplacement && !ConstNoexceptPointerReplacement) ||
+       !ConstNullReplacement && !ConstNoexceptPointerReplacement &&
+       !ArrayReplacement) ||
       (!Context.hasSameType(ReplacementType, Type) &&
        !ReplacementType->isNullPtrType() && !FunctionReplacement &&
        !NoexceptFunctionReplacement && !NoexceptPointerReplacement &&
-       !ConstPointerReplacement))
+       !ConstPointerReplacement && !ArrayReplacement))
     return false;
   const auto ReplacementReference =
       Replacement->isLValueReferenceType()
@@ -14184,7 +14203,8 @@ static bool approvedUtilityCallbackExchange(const State &S,
   const auto *ValueConversion =
       Assignment && (ReplacementType->isNullPtrType() || FunctionReplacement ||
                      NoexceptFunctionReplacement ||
-                     NoexceptPointerReplacement || ConstPointerReplacement)
+                     NoexceptPointerReplacement || ConstPointerReplacement ||
+                     ArrayReplacement)
           ? dyn_cast<ImplicitCastExpr>(Assignment->getRHS())
           : nullptr;
   const auto *NoexceptInput =
@@ -14192,6 +14212,10 @@ static bool approvedUtilityCallbackExchange(const State &S,
               (NoexceptFunctionReplacement || NoexceptPointerReplacement)
           ? dyn_cast<ImplicitCastExpr>(ValueConversion->getSubExpr())
           : nullptr;
+  const auto *ArrayInput =
+      ArrayQualification && ValueConversion
+          ? dyn_cast<ImplicitCastExpr>(ValueConversion->getSubExpr())
+          : ValueConversion;
   const auto *Return = dyn_cast<ReturnStmt>(*Statement);
   const auto *Returned =
       Return ? dyn_cast_or_null<DeclRefExpr>(
@@ -14228,6 +14252,13 @@ static bool approvedUtilityCallbackExchange(const State &S,
           (ValueConversion &&
            ValueConversion->getCastKind() == CK_LValueToRValue &&
            Context.hasSameType(ValueConversion->getType(), Type))) &&
+         (!ArrayReplacement ||
+          (ArrayInput &&
+           ArrayInput->getCastKind() == CK_ArrayToPointerDecay &&
+           Context.hasSameType(ArrayInput->getType(), ArrayPointer) &&
+           (!ArrayQualification ||
+            (ValueConversion->getCastKind() == CK_NoOp &&
+             Context.hasSameType(ValueConversion->getType(), Type))))) &&
          utilitySwapPointerAdapter(S, SM, Forward, Function->getParamDecl(1),
                                    ReplacementType, Replacement, true,
                                    Context) &&
@@ -29121,6 +29152,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Object->getPointeeType().isVolatileQualified() &&
         ((utilityScalar(Context, Object->getPointeeType()) &&
           utilityScalar(Context, Value->getPointeeType())) ||
+         (Object->getPointeeType()->isPointerType() &&
+          Context.getAsConstantArrayType(Value->getPointeeType()) &&
+          approvedUtilityPointerExchange(
+              S, SM, Function, Object->getPointeeType(), Context)) ||
          (Object->getPointeeType()->isFunctionPointerType() &&
           (Context.hasSameType(Object->getPointeeType(),
                                Value->getPointeeType()) ||
@@ -29134,7 +29169,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityNoexceptCallbackPointer(
                Object->getPointeeType(),
                Value->getPointeeType().getUnqualifiedType(), Context)) &&
-          approvedUtilityCallbackExchange(
+          approvedUtilityPointerExchange(
               S, SM, Function, Object->getPointeeType(), Context))) &&
         Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), Value->getPointeeType()) &&

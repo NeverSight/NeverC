@@ -26161,6 +26161,198 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayExchangeRunsAtBothOptimizations) {
+  const auto Source = tmpFile("array-exchange.cpp");
+  const auto Output = tmpFile("array-exchange.nc");
+  writeFile(Source, R"cpp(#include <utility>
+namespace Imported { using std::exchange; }
+namespace Reexport { using Imported::exchange; }
+namespace Alias = Reexport;
+int first=1, changed=7, data[3]={2,3,4};
+int *slot=&first;
+int destinations, replacements, defaults;
+using Three=int[3];
+Three& replacement(int=(++defaults,1))noexcept {
+  ++replacements;
+  slot=&changed;
+  return data;
+}
+int live, destroyed, copies, moves;
+struct Item {
+  int n;
+  Item(int value)noexcept:n(value){++live;}
+  Item(const Item&v)noexcept:n(v.n){++live;++copies;}
+  Item(Item&&v)noexcept:n(v.n){++live;++moves;v.n=-1;}
+  ~Item()noexcept{--live;++destroyed;}
+};
+struct Temporary { Item items[2]{{11},{13}}; };
+Item *items;
+bool check_temporary(Item*old)noexcept {
+  return old==nullptr&&live==2&&destroyed==0&&items[0].n==11&&items[1].n==13;
+}
+int one(int n)noexcept{return n+1;}
+int two(int n)noexcept{return n+2;}
+int main(){
+  using Alias::exchange;
+  static_assert(__is_same(decltype(exchange(slot,replacement())),int*));
+  static_assert(noexcept(exchange(slot,replacement())));
+  static_assert(sizeof(exchange(slot,replacement()))==sizeof(int*));
+  if(destinations||replacements||defaults)return 1;
+  int*old=exchange((++destinations,slot),replacement());
+  if(old!=&changed||slot!=data||slot[2]!=4||destinations!=1||replacements!=1||defaults!=1)return 2;
+  if((Reexport::exchange)(slot,data)!=data||slot!=data)return 3;
+  int more[3]={5,6,7};
+  if(Alias::exchange<int*,Three&>(slot,more)!=data||slot!=more)return 4;
+  if(exchange<int*,Three>(slot,std::move(data))!=more||slot!=data)return 5;
+  const int frozen[3]={8,9,10};
+  const int*view=&first;
+  if(exchange(view,data)!=&first||view!=data)return 6;
+  if(exchange(view,frozen)!=data||view!=frozen)return 7;
+  if(exchange(view,std::move(frozen))!=frozen||view!=frozen)return 8;
+  if(exchange(view,std::move(more))!=frozen||view!=more)return 9;
+  int matrix[2][3]={{1,2,3},{4,5,6}};
+  int (*row)[3]=nullptr;
+  if(exchange(row,matrix)!=nullptr||row!=matrix||row[1][2]!=6)return 10;
+  const int (*rows)[3]=nullptr;
+  if(exchange(rows,matrix)!=nullptr||rows!=matrix||rows[0][1]!=2)return 11;
+  int*pointers[2]={&first,&changed};
+  int**pp=nullptr;
+  if(exchange(pp,pointers)!=nullptr||pp!=pointers||pp[1]!=&changed)return 12;
+  int*const*cpp=nullptr;
+  if(exchange(cpp,pointers)!=nullptr||cpp!=pointers||cpp[0]!=&first)return 13;
+  int*const immutable[2]={&changed,&first};
+  if(exchange(cpp,immutable)!=pointers||cpp!=immutable)return 14;
+  const char*text=nullptr;
+  if(exchange(text,"array")!=nullptr||text[0]!='a'||text[5]!=0)return 15;
+  using Callback=int(*)(int)noexcept;
+  Callback callbacks[2]={one,two};Callback*functions=nullptr;
+  if(exchange(functions,callbacks)!=nullptr||functions!=callbacks||functions[1](3)!=5)return 16;
+  int branches=0;
+  if(exchange(slot,(++branches,branches==1?data:more))!=data||slot!=data||branches!=1)return 17;
+  if(!check_temporary(exchange(items,Temporary{}.items)))return 18;
+  if(live||destroyed!=2||copies||moves)return 19;
+  items=nullptr;
+  {
+    Item objects[2]{{17},{19}};
+    if(exchange(items,objects)!=nullptr||items!=objects||items[1].n!=19||live!=2||copies||moves)return 20;
+    const Item*read=nullptr;
+    if(exchange(read,objects)!=nullptr||read!=objects||read[0].n!=17)return 21;
+  }
+  return live==0&&destroyed==4&&copies==0&&moves==0?0:22;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-exchange" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayExchangeRetainsSourceBoundaries) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"move-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>constexpr int*&&move<int*&>(int*&v)noexcept{return static_cast<int*&&>(v);}}}int*f(int*&p,Row&r){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"lvalue-forward-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>constexpr Row&forward<Row&>(Row&v)noexcept{return v;}}}int*f(int*&p,Row&r){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"const-forward-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>constexpr const Row&forward<const Row&>(const Row&v)noexcept{return v;}}}const int*f(const int*&p,const Row&r){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"rvalue-forward-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>constexpr Row&&forward<Row>(Row&v)noexcept{return static_cast<Row&&>(v);}}}int*f(int*&p,Row&r){return std::exchange(p,std::move(r));}
+)cpp", "TR0201"},
+      {"exchange-specialization", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<>int*exchange<int*,Row&>(int*&p,Row&r)noexcept{return p;}}}int*f(int*&p,Row&r){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"exchange-redeclaration", R"cpp(#include <utility>
+namespace std{inline namespace __1{template<class T,class U>T exchange(T&,U&&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_assignable<T&,U>::value);}}int*f(int*&p,int(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"independent-address", R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,Row&r){auto call=&std::exchange<int*,Row&>;return call(p,r);}
+)cpp", "TR0201"},
+      {"cast-callee", R"cpp(#include <utility>
+using Row=int[2];using F=int*(*)(int*&,Row&)noexcept;int*f(int*&p,Row&r){return static_cast<F>(&std::exchange<int*,Row&>)(p,r);}
+)cpp", "TR0201"},
+      {"volatile-elements", R"cpp(#include <utility>
+volatile int*f(volatile int*&p,volatile int(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"volatile-pointer", R"cpp(#include <utility>
+int*f(int*volatile&p,int(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"long-double-elements", R"cpp(#include <utility>
+long double*f(long double*&p,long double(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"erased-array-bound", R"cpp(#include <utility>
+using Row=int[sizeof(long double)];int*f(int*&p,Row&r){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"erased-template-argument", R"cpp(#include <utility>
+int*f(int*&p,int(&r)[2]){return std::exchange<decltype((sizeof(long double),p+0))>(p,r);}
+)cpp", "TR0201"},
+      {"selected-operand-source", R"cpp(#include <utility>
+int*f(int*&p,int(&r)[2]){return std::exchange(p,(sizeof(long double),r));}
+)cpp", "TR0201"},
+      {"selected-default-source", R"cpp(#include <utility>
+using Row=int[2];Row data;Row&replacement(int=sizeof(long double)){return data;}int*f(int*&p){return std::exchange(p,replacement());}
+)cpp", "TR0201"},
+      {"unknown-bound", R"cpp(#include <utility>
+extern int values[];int*f(int*&p){return std::exchange(p,values);}
+)cpp", "TR0201"},
+      {"void-pointer-conversion", R"cpp(#include <utility>
+void*f(void*&p,int(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"base-pointer-conversion", R"cpp(#include <utility>
+struct Base{};struct Derived:Base{};Base*f(Base*&p,Derived(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"explicit-rvalue-reference-argument", R"cpp(#include <utility>
+using Row=int[2];int*f(int*&p,Row&r){return std::exchange<int*,Row&&>(p,std::move(r));}
+)cpp", "TR0201"},
+      {"uninstantiated-result-query", R"cpp(#include <utility>
+int f(int*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(p,r)),int*));return 0;}
+)cpp", "TR0201"},
+      {"drop-const", R"cpp(#include <utility>
+int*f(int*&p,const int(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0202"},
+      {"distinct-elements", R"cpp(#include <utility>
+int*f(int*&p,double(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0202"},
+      {"distinct-row-bounds", R"cpp(#include <utility>
+using Row=int[3];Row*f(Row*&p,int(&r)[2][4]){return std::exchange(p,r);}
+)cpp", "TR0202"},
+      {"const-destination", R"cpp(#include <utility>
+int*f(int*const&p,int(&r)[2]){return std::exchange(p,r);}
+)cpp", "TR0202"},
+      {"nothrow-move-trait-redeclaration", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}int*f(int*&p,Row&r){static_assert(noexcept(std::exchange(p,r)));return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"nothrow-assignment-trait-redeclaration", R"cpp(#include <utility>
+using Row=int[2];namespace std{inline namespace __1{template<class T,class U>struct is_nothrow_assignable;}}int*f(int*&p,Row&r){static_assert(noexcept(std::exchange(p,r)));return std::exchange(p,r);}
+)cpp", "TR0201"},
+      {"query-operand-source", R"cpp(#include <utility>
+int*f(int*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(p,(sizeof(long double),r))),int*));return std::exchange(p,r);}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("array-exchange-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("array-exchange-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2CallbackExchangeRunsAtBothOptimizations) {
   const auto Source = tmpFile("callback-exchange.cpp");
   const auto Output = tmpFile("callback-exchange.nc");
