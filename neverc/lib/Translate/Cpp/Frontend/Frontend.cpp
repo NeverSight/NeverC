@@ -10170,6 +10170,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const CallExpr *> ConsumedCallSignatures;
   std::set<const CallExpr *> QueuedCallSignatures;
   std::set<const CallExpr *> CompletedQueryCalls;
+  std::set<const Expr *> IndexedUnevaluatedArraySources;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   QueryTemplateSelectionSources CompletedQueryTemplateSelections;
@@ -12892,7 +12893,31 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Register(Initializer->getInit());
     }
   }
+  void registerUnevaluatedArraySubscripts(const Expr *Expression) {
+    if (!A.S.coreV2())
+      return;
+    std::vector<const Expr *> Pending{Expression};
+    while (!Pending.empty()) {
+      const auto *Current = Pending.back();
+      Pending.pop_back();
+      if (!Current || !IndexedUnevaluatedArraySources.insert(Current).second)
+        continue;
+      A.chargeExpansion(1, Current->getExprLoc());
+      // Follow only lexical expression operands. Selected defaults, declaration
+      // bodies and lambda bodies keep their own evaluation context, even when
+      // source validation reaches them while checking an unevaluated call.
+      if (isa<CXXDefaultArgExpr, CXXDefaultInitExpr, LambdaExpr>(Current))
+        continue;
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Current);
+          Call && Call->getOperator() == OO_Subscript)
+        A.S.UnevaluatedArraySubscripts.insert(Call);
+      for (const auto *Child : Current->children())
+        if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
+          Pending.push_back(Operand);
+    }
+  }
   void registerDecltypeCallResult(const Expr *Expression) {
+    registerUnevaluatedArraySubscripts(Expression);
     if (!Expression || !Expression->isPRValue() ||
         !Expression->getType()->isRecordType())
       return;
@@ -19976,6 +20001,12 @@ public:
   bool VisitStmt(Stmt *S) {
     if (!S)
       return true;
+    if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S))
+      registerUnevaluatedArraySubscripts(Query->getOperand());
+    if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
+        Query && Query->getKind() == UETT_SizeOf && !Query->isArgumentType() &&
+        !Query->getTypeOfArgument()->isVariablyModifiedType())
+      registerUnevaluatedArraySubscripts(Query->getArgumentExpr());
     collectOperationSource(S);
     if (!ImplicitInitializerOwner.isValid() && !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;

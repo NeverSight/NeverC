@@ -189,6 +189,9 @@ struct State {
       SDKDependencies;
   std::map<std::string, llvm::sys::fs::UniqueID> SDKVirtualFiles;
   std::string SDKDistribution, SDKCatalogHash;
+  // Exact operator calls indexed from unevaluated operands in this AST. Clang
+  // does not mark synthesized operator[] references with NOUR_Unevaluated.
+  std::set<const clang::CallExpr *> UnevaluatedArraySubscripts;
   mutable std::map<std::string, std::string> PathCache;
   std::vector<std::string> Arguments;
   json::Array Diagnostics;

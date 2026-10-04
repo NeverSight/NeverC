@@ -20904,14 +20904,33 @@ static bool utilityArrayIndexedStorage(const Expr *Expression,
          Parameter->getDecl() == Method->getParamDecl(0);
 }
 
+static const CallExpr *utilityArrayFailureCall(
+    const State &S, const SourceManager &SM, const Stmt *Statement,
+    llvm::StringRef Name, llvm::StringRef Path, unsigned Arguments) {
+  const auto *Call = dyn_cast_or_null<CallExpr>(Statement);
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() ||
+      Function->getIdentifier()->getName() != Name ||
+      !directFunctionReference(Call) || Call->getNumArgs() != Arguments ||
+      Function->getNumParams() != Arguments || Function->isVariadic() ||
+      Function->isDeleted() || !Function->isNoReturn() ||
+      !Function->hasBody() || !Function->getReturnType()->isVoidType() ||
+      !Call->getType()->isVoidType())
+    return nullptr;
+  for (const auto *Declaration : Function->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path))
+      return nullptr;
+  return Call;
+}
+
 static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
                                     const CXXMethodDecl *Method,
                                     const UtilityArrayRecord &Array,
                                     const ASTContext &Context) {
   const bool Subscript =
       Method && Method->getOverloadedOperator() == OO_Subscript;
-  if (!Array.Size ||
-      !utilityArrayAccessorSignature(S, SM, Method, Array, Subscript ? 1 : 0) ||
+  if (!utilityArrayAccessorSignature(S, SM, Method, Array, Subscript ? 1 : 0) ||
       !Method->isConstexpr())
     return false;
   const auto Name = Method->getIdentifier() ? Method->getIdentifier()->getName()
@@ -20927,14 +20946,14 @@ static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
         Method->getParamDecl(0)->hasDefaultArg())))
     return false;
   // The pinned signature suffices for an unevaluated reference result. When
-  // a body exists, prove the actual storage access and forwarding index too.
+  // a body exists, prove the storage access or empty failure path too.
   if (!Method->hasBody())
     return true;
   const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
-  if (!Body || Body->size() != (Subscript ? 2u : 1u))
+  if (!Body || Body->size() != (Subscript || !Array.Size ? 2u : 1u))
     return false;
   auto Statement = Body->body_begin();
-  if (Subscript) {
+  if (Subscript || !Array.Size) {
     const auto *Noop = dyn_cast<Expr>(*Statement++);
     const auto *Cast =
         Noop ? dyn_cast<CStyleCastExpr>(Noop->IgnoreParens()) : nullptr;
@@ -20945,6 +20964,9 @@ static bool utilityArrayElementBody(const State &S, const SourceManager &SM,
         !Context.hasSameType(Zero->getType(), Context.IntTy))
       return false;
   }
+  if (!Array.Size)
+    return utilityArrayFailureCall(S, SM, *Statement, "__libcpp_unreachable",
+                                   "__utility/unreachable.h", 0);
   const auto *Result = dyn_cast<ReturnStmt>(*Statement);
   const auto *Returned = Result ? Result->getRetValue() : nullptr;
   if (!Returned || !Returned->isLValue() ||
@@ -21012,24 +21034,6 @@ static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
     return false;
   // The throwing path never executes in an admitted evaluated call. Still
   // authenticate the selected helpers and bound comparison before erasing it.
-  auto Helper = [&](const Stmt *Statement, llvm::StringRef Name,
-                    llvm::StringRef Path, unsigned Arguments) {
-    const auto *Call = dyn_cast_or_null<CallExpr>(Statement);
-    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-    if (!Function || !Function->getIdentifier() ||
-        Function->getIdentifier()->getName() != Name ||
-        !directFunctionReference(Call) || Call->getNumArgs() != Arguments ||
-        Function->getNumParams() != Arguments || Function->isVariadic() ||
-        Function->isDeleted() || !Function->isNoReturn() ||
-        !Function->hasBody() || !Function->getReturnType()->isVoidType() ||
-        !Call->getType()->isVoidType())
-      return static_cast<const CallExpr *>(nullptr);
-    for (const auto *Declaration : Function->redecls())
-      if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
-          !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path))
-        return static_cast<const CallExpr *>(nullptr);
-    return Call;
-  };
   const Stmt *Failure = *Body->body_begin();
   if (Array.Size) {
     const auto *Branch = dyn_cast<IfStmt>(Failure);
@@ -21053,7 +21057,8 @@ static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
       return false;
     Failure = Branch->getThen();
   }
-  const auto *Throw = Helper(Failure, "__throw_out_of_range", "stdexcept", 1);
+  const auto *Throw = utilityArrayFailureCall(
+      S, SM, Failure, "__throw_out_of_range", "stdexcept", 1);
   const auto *Decay =
       Throw ? dyn_cast<ImplicitCastExpr>(Throw->getArg(0)) : nullptr;
   const auto *Message =
@@ -21065,7 +21070,8 @@ static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
     return false;
   const auto *Final = *(Body->body_begin() + 1);
   if (!Array.Size)
-    return Helper(Final, "__libcpp_unreachable", "__utility/unreachable.h", 0);
+    return utilityArrayFailureCall(S, SM, Final, "__libcpp_unreachable",
+                                   "__utility/unreachable.h", 0);
   const auto *Result = dyn_cast<ReturnStmt>(Final);
   const auto *Returned = Result ? Result->getRetValue() : nullptr;
   return Returned && Returned->isLValue() &&
@@ -23624,6 +23630,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool SubscriptMember = Method->getOverloadedOperator() == OO_Subscript;
     const bool ElementMember =
         SubscriptMember || Name == "front" || Name == "back" || Name == "at";
+    const auto *MemberReference = dyn_cast_or_null<MemberExpr>(Reference);
+    const bool UnevaluatedElement =
+        (MemberReference && MemberReference->isNonOdrUse() == NOUR_Unevaluated) ||
+        (Operator && S.UnevaluatedArraySubscripts.count(Operator));
     if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
         Method->getParent()->getCanonicalDecl() !=
             Array->Record->getCanonicalDecl() ||
@@ -23657,13 +23667,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return Name == "rend" || Name == "crend"
                    ? UtilityOperation::ArrayREnd
                    : UtilityOperation::ArrayRBegin;
-      if (Array->Size && (Name == "front" || Name == "back") &&
+      if ((Array->Size || UnevaluatedElement) &&
+          (Name == "front" || Name == "back") &&
           ReferenceResult() &&
           utilityArrayElementBody(S, SM, Method, *Array, Context))
         return Name == "front" ? UtilityOperation::ArrayFront
                                : UtilityOperation::ArrayBack;
     }
-    if (Array->Size && SubscriptMember && Method->getNumParams() == 1 &&
+    if ((Array->Size || UnevaluatedElement) && SubscriptMember &&
+        Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 + Offset &&
         Same(Call->getArg(Offset)->getType(), Context.getSizeType()) &&
         ReferenceResult() &&

@@ -119,14 +119,18 @@ literal zero/true; queries never instantiate a body or substitute arbitrary
 constant evaluation for source proof. Receiver types, extents, defaults and
 lifetimes remain checked, and evaluated capacity calls retain receiver effects
 and temporary cleanup through the existing lowering.
-Nonempty array `front/back/operator[]` queries likewise use exact pinned
+Array `front/back/operator[]` queries likewise use exact pinned
 constexpr fixed-noexcept signatures and const-correct lvalue-reference results,
 including explicit/parenthesized subscript member calls. Instantiated bodies
 must access the verified field through the exact size-type parameter, or
 forward `*this` to that pinned subscript at zero or extent minus one.
 Receiver and index sources, conversions, defaults and temporary cleanup remain
 checked; evaluated accesses preserve single evaluation and reference identity.
-Empty-array element access and method addresses retain their separate boundaries.
+Empty arrays admit the same unevaluated queries. Exact member-use markers or
+bounded indexing of bracket calls in query operands establish that context;
+called definitions and selected defaults never inherit it. Existing empty
+accessor bodies must retain the disabled assertion and pinned unreachable
+helper. Evaluated empty-array access and method addresses remain rejected.
 Array `at` queries use the exact member reference's Clang unevaluated-use
 marker to admit dynamic or out-of-range indices and empty arrays without
 executing them. Its pinned constexpr signature has no exception specification

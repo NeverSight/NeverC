@@ -38078,18 +38078,6 @@ namespace std{inline namespace __1{template<>struct array<unsigned,2>{unsigned v
 using Row=std::array<int,2>;
 int f(Row&a){auto n=a.front();using Method=int&(Row::*)()noexcept;Method method=&Row::front;return n+(a.*method)();}
 )cpp", "TR0201"},
-      {"empty-front", R"cpp(#include <array>
-using Row=std::array<int,2>;
-void f(std::array<int,0>&a){static_assert(noexcept(a.front()));}
-)cpp", "TR0203"},
-      {"empty-back", R"cpp(#include <array>
-using Row=std::array<int,2>;
-void f(const std::array<int,0>&a){static_assert(noexcept(a.back()));}
-)cpp", "TR0203"},
-      {"empty-subscript", R"cpp(#include <array>
-using Row=std::array<int,2>;
-void f(std::array<int,0>&a){static_assert(noexcept(a[0]));}
-)cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -38101,6 +38089,376 @@ void f(std::array<int,0>&a){static_assert(noexcept(a[0]));}
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyArrayElementQueriesRunAtBothOptimizations) {
+  const auto QuerySource = tmpFile("empty-array-element-queries-query.cpp");
+  const auto QueryOutput = tmpFile("empty-array-element-queries-query.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+using Empty = array<int, 0>;
+using Row = array<int, 2>;
+struct Element { int value; int extent[2]; };
+using Callback = int (*)(int) noexcept;
+template<class T> using First = decltype(array<T, 0>{}[0]);
+static_assert(__is_same(First<int>, int&));
+static_assert(__is_same(First<const int>, const int&));
+template<class T>
+auto select(array<T, 0>& a, T& value) noexcept(noexcept(a[0])) -> decltype(a[0]) {
+  return value;
+}
+template<class T> int lazy_read(T& a) noexcept { return a[0]; }
+void query_only(Empty& empty, const Empty& constant, array<const int, 0>& qualified,
+                array<Row, 0>& grid, const array<Row, 0>& constant_grid,
+                array<Element, 0>& records, const array<Element, 0>& constant_records,
+                array<Callback, 0>& callbacks, const array<Callback, 0>& constant_callbacks,
+                Empty::size_type index) {
+  // An explicit return type leaves this unused template body uninstantiated.
+  static_assert(noexcept(lazy_read(empty)));
+  static_assert(noexcept(empty.front()));
+  static_assert(__is_same(decltype(empty.front()), int&));
+  static_assert(noexcept(empty.back()));
+  static_assert(__is_same(decltype(empty.back()), int&));
+  static_assert(noexcept(empty[index]));
+  static_assert(__is_same(decltype(empty[index]), int&));
+  static_assert(noexcept(empty.operator[](index)));
+  static_assert(__is_same(decltype(empty.operator[](index)), int&));
+  static_assert(noexcept(constant.front()));
+  static_assert(__is_same(decltype(constant.front()), const int&));
+  static_assert(noexcept(constant.back()));
+  static_assert(__is_same(decltype(constant.back()), const int&));
+  static_assert(noexcept(constant[index]));
+  static_assert(__is_same(decltype(constant[index]), const int&));
+  static_assert(noexcept(constant.operator[](index)));
+  static_assert(__is_same(decltype(constant.operator[](index)), const int&));
+  static_assert(noexcept(qualified.front()));
+  static_assert(__is_same(decltype(qualified.front()), const int&));
+  static_assert(noexcept(qualified.back()));
+  static_assert(__is_same(decltype(qualified.back()), const int&));
+  static_assert(noexcept(qualified[index]));
+  static_assert(__is_same(decltype(qualified[index]), const int&));
+  static_assert(noexcept(qualified.operator[](index)));
+  static_assert(__is_same(decltype(qualified.operator[](index)), const int&));
+  static_assert(noexcept(grid.front()));
+  static_assert(__is_same(decltype(grid.front()), Row&));
+  static_assert(noexcept(grid.back()));
+  static_assert(__is_same(decltype(grid.back()), Row&));
+  static_assert(noexcept(grid[index]));
+  static_assert(__is_same(decltype(grid[index]), Row&));
+  static_assert(noexcept(grid.operator[](index)));
+  static_assert(__is_same(decltype(grid.operator[](index)), Row&));
+  static_assert(noexcept(constant_grid.front()));
+  static_assert(__is_same(decltype(constant_grid.front()), const Row&));
+  static_assert(noexcept(constant_grid.back()));
+  static_assert(__is_same(decltype(constant_grid.back()), const Row&));
+  static_assert(noexcept(constant_grid[index]));
+  static_assert(__is_same(decltype(constant_grid[index]), const Row&));
+  static_assert(noexcept(constant_grid.operator[](index)));
+  static_assert(__is_same(decltype(constant_grid.operator[](index)), const Row&));
+  static_assert(noexcept(records.front()));
+  static_assert(__is_same(decltype(records.front()), Element&));
+  static_assert(noexcept(records.back()));
+  static_assert(__is_same(decltype(records.back()), Element&));
+  static_assert(noexcept(records[index]));
+  static_assert(__is_same(decltype(records[index]), Element&));
+  static_assert(noexcept(records.operator[](index)));
+  static_assert(__is_same(decltype(records.operator[](index)), Element&));
+  static_assert(noexcept(constant_records.front()));
+  static_assert(__is_same(decltype(constant_records.front()), const Element&));
+  static_assert(noexcept(constant_records.back()));
+  static_assert(__is_same(decltype(constant_records.back()), const Element&));
+  static_assert(noexcept(constant_records[index]));
+  static_assert(__is_same(decltype(constant_records[index]), const Element&));
+  static_assert(noexcept(constant_records.operator[](index)));
+  static_assert(__is_same(decltype(constant_records.operator[](index)), const Element&));
+  static_assert(noexcept(callbacks.front()));
+  static_assert(__is_same(decltype(callbacks.front()), Callback&));
+  static_assert(noexcept(callbacks.back()));
+  static_assert(__is_same(decltype(callbacks.back()), Callback&));
+  static_assert(noexcept(callbacks[index]));
+  static_assert(__is_same(decltype(callbacks[index]), Callback&));
+  static_assert(noexcept(callbacks.operator[](index)));
+  static_assert(__is_same(decltype(callbacks.operator[](index)), Callback&));
+  static_assert(noexcept(constant_callbacks.front()));
+  static_assert(__is_same(decltype(constant_callbacks.front()), const Callback&));
+  static_assert(noexcept(constant_callbacks.back()));
+  static_assert(__is_same(decltype(constant_callbacks.back()), const Callback&));
+  static_assert(noexcept(constant_callbacks[index]));
+  static_assert(__is_same(decltype(constant_callbacks[index]), const Callback&));
+  static_assert(noexcept(constant_callbacks.operator[](index)));
+  static_assert(__is_same(decltype(constant_callbacks.operator[](index)), const Callback&));
+  static_assert(noexcept((empty.front)()) && noexcept((constant.back)()));
+  static_assert(noexcept((empty.operator[])(index)));
+  static_assert(__is_same(decltype(std::move(empty)[index]), int&));
+  static_assert(__is_same(decltype(std::move(constant).back()), const int&));
+  static_assert(__is_same(decltype(std::as_const(empty)[index]), const int&));
+  static_assert(__is_same(decltype(std::forward<Empty>(empty)[index]), int&));
+  static_assert(noexcept(Empty{}[0]) && noexcept(Empty{}[-1]));
+  static_assert(noexcept(Empty{}.front()) && noexcept(Empty{}.back()));
+  static_assert(__is_same(decltype(Empty{}[index]), int&));
+  static_assert(sizeof(Empty{}[99]) == sizeof(int));
+  static_assert(sizeof(records[index]) == sizeof(Element));
+  static_assert(alignof(decltype(grid[index])) == alignof(Row));
+  static_assert(noexcept(grid[0][1]) && noexcept(grid.front().back()));
+  static_assert(__is_same(decltype(constant_grid[0][1]), const int&));
+  static_assert(noexcept(noexcept(empty[index])));
+  int value = 3;
+  int& selected = select(empty, value);
+  selected += 2;
+}
+)cpp");
+  auto QueryResult = translate(
+      QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+
+  // Preserve the three former empty-element query rejections verbatim.
+  const char *FormerSources[] = {
+      R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,0>&a){static_assert(noexcept(a.front()));}
+)cpp",
+      R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(const std::array<int,0>&a){static_assert(noexcept(a.back()));}
+)cpp",
+      R"cpp(#include <array>
+using Row=std::array<int,2>;
+void f(std::array<int,0>&a){static_assert(noexcept(a[0]));}
+)cpp",
+  };
+  for (unsigned I = 0; I < 3; ++I) {
+    SCOPED_TRACE(I);
+    const auto FormerSource = tmpFile("empty-array-element-former-" + std::to_string(I) + ".cpp");
+    const auto FormerOutput = tmpFile("empty-array-element-former-" + std::to_string(I) + ".nc");
+    writeFile(FormerSource, FormerSources[I]);
+    auto FormerResult = translate(
+        FormerSource, {"--profile", "cpp-core-v2", "-o", FormerOutput.string()});
+    ASSERT_EQ(FormerResult.exitCode, 0) << FormerResult.out << FormerResult.err;
+  }
+
+  const auto Source = tmpFile("empty-array-element-queries.cpp");
+  const auto Output = tmpFile("empty-array-element-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+using Empty = std::array<int, 0>;
+int receivers, indices, defaults, live, destroyed;
+Empty& source(Empty& row, int n = (++defaults, 1)) noexcept {
+  ++receivers; return row;
+}
+Empty& may_throw(Empty& row) { ++receivers; return row; }
+Empty::size_type position(int n = (++defaults, 1)) noexcept {
+  ++indices; return n;
+}
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept { --live; ++destroyed; }
+};
+Empty& keep(Empty& row, const Guard& guard = Guard()) noexcept {
+  receivers += live == 1 ? 1 : 100; return row;
+}
+struct Index {
+  operator Empty::size_type() const noexcept { ++indices; return 7; }
+};
+struct Element {
+  int value;
+  Element() noexcept : value(13) { ++live; }
+  ~Element() noexcept { --live; ++destroyed; }
+};
+Empty global{};
+int queried_default(bool value = noexcept(global[0])) noexcept { return value; }
+struct QueriedField { bool value = noexcept(global[0]); };
+template<class T> using First = decltype(std::array<T, 0>{}[0]);
+template<class T>
+auto select(std::array<T, 0>& a, T& value) noexcept(noexcept(a[0])) -> decltype(a[0]) {
+  return value;
+}
+int main() {
+  Empty row{};
+  const Empty constant{};
+  std::array<Element, 0> records{};
+  static_assert(noexcept(source(row).front()));
+  static_assert(!noexcept(may_throw(row).back()));
+  static_assert(noexcept(keep(row)[position()]));
+  static_assert(noexcept((source(row).operator[])(Index{})));
+  static_assert(__is_same(decltype(source(row)[position()]), int&));
+  static_assert(sizeof(keep(row)[position()]) == sizeof(int));
+  static_assert(sizeof(Empty{}[Index{}]) == sizeof(int));
+  static_assert(__is_same(decltype(std::array<Element, 0>{}[position()]), Element&));
+  static_assert(noexcept(std::array<Element, 0>{}.front()));
+  static_assert(noexcept(records.back()) && noexcept(records[position()]));
+  static_assert(noexcept((++receivers, row)[++indices]));
+  static_assert(noexcept((++receivers ? row : global)[++indices]));
+  static_assert(__is_same(decltype(constant[0]), const int&));
+  if (receivers || indices || defaults || live || destroyed) return 1;
+  int value = 17;
+  First<int> reference = select(row, value);
+  reference += 2;
+  if (value != 19 || !queried_default() || !QueriedField{}.value) return 2;
+  if (!row.empty() || row.size() || row.max_size() || row.data() != nullptr ||
+      !constant.empty() || records.size()) return 3;
+  if (!source(row).empty() || receivers != 1 || defaults != 1) return 4;
+  auto size = keep(row).size();
+  if (size || receivers != 2 || live || destroyed != 1) return 5;
+  return indices == 0 && defaults == 1 ? 0 : 6;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-array-element-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyArrayElementQueriesRequireSourceAndNoRuntimeAccess) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"element", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(std::array<long double,0>&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0201"},
+      {"erased-element", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+template<class>using Erased=int;void f(std::array<Erased<long double>,0>&a){static_assert(noexcept(a.back()));}
+)cpp", "TR0201"},
+      {"extent", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(std::array<int,(sizeof(long double),0)>&a){static_assert(noexcept(a[0]));}
+)cpp", "TR0201"},
+      {"element-field", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+struct E{int values[(sizeof(long double),1)];};void f(std::array<E,0>&a){using T=decltype(a[0]);}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(Empty&a){static_assert(noexcept((sizeof(long double),a).front()));}
+)cpp", "TR0201"},
+      {"index-expression", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(Empty&a){static_assert(noexcept(a[(sizeof(long double),0)]));}
+)cpp", "TR0201"},
+      {"index-decltype", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(Empty&a){using T=decltype(a[(sizeof(long double),0)]);}
+)cpp", "TR0201"},
+      {"index-sizeof", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(){static_assert(sizeof(Empty{}[(sizeof(long double),0)])==sizeof(int));}
+)cpp", "TR0201"},
+      {"index-default", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+unsigned position(int n=(sizeof(long double),0))noexcept{return n;}void f(Empty&a){static_assert(noexcept(a[position()]));}
+)cpp", "TR0201"},
+      {"index-body", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+unsigned position()noexcept{(void)sizeof(long double);return 0;}void f(Empty&a){static_assert(noexcept(a[position()]));}
+)cpp", "TR0201"},
+      {"index-conversion", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+struct I{operator Empty::size_type()const noexcept{(void)sizeof(long double);return 0;}};void f(Empty&a){static_assert(noexcept(a[I{}]));}
+)cpp", "TR0201"},
+      {"index-declaration", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+unsigned position()noexcept;void f(Empty&a){static_assert(noexcept(a[position()]));}
+)cpp", "TR0203"},
+      {"receiver-default", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty&source(Empty&a,int n=(sizeof(long double),0))noexcept{return a;}void f(Empty&a){static_assert(noexcept(source(a).back()));}
+)cpp", "TR0201"},
+      {"receiver-body", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty&source(Empty&a)noexcept{(void)sizeof(long double);return a;}void f(Empty&a){static_assert(noexcept(source(a)[0]));}
+)cpp", "TR0201"},
+      {"receiver-exception", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty&source(Empty&a)noexcept(sizeof(long double)>0){return a;}void f(Empty&a){static_assert(noexcept(source(a)[0]));}
+)cpp", "TR0201"},
+      {"receiver-declaration", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty&source(Empty&)noexcept;void f(Empty&a){static_assert(noexcept(source(a)[0]));}
+)cpp", "TR0203"},
+      {"temporary-destructor", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+struct Guard{~Guard()noexcept{(void)sizeof(long double);}};Empty&keep(Empty&a,const Guard&)noexcept{return a;}void f(Empty&a){static_assert(noexcept(keep(a,Guard{})[0]));}
+)cpp", "TR0201"},
+      {"front-specialization", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int value;namespace std{inline namespace __1{template<>constexpr int& array<int,0>::front()noexcept{return value;}}}void f(Empty&a){static_assert(noexcept(a.front()));}
+)cpp", "TR0201"},
+      {"back-specialization", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int value;namespace std{inline namespace __1{template<>constexpr const int& array<int,0>::back()const noexcept{return value;}}}void f(const Empty&a){static_assert(noexcept(a.back()));}
+)cpp", "TR0201"},
+      {"subscript-specialization", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int value;namespace std{inline namespace __1{template<>constexpr int& array<int,0>::operator[](size_type)noexcept{return value;}}}void f(Empty&a){static_assert(noexcept(a[0]));}
+)cpp", "TR0201"},
+      {"runtime-front-after-query", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int f(Empty&a){static_assert(noexcept(a.front()));return a.front();}
+)cpp", "TR0203"},
+      {"runtime-back-after-query", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int f(const Empty&a){using T=decltype(a.back());return a.back();}
+)cpp", "TR0203"},
+      {"runtime-subscript-after-query", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int f(Empty&a,unsigned n){static_assert(noexcept(a[n]));return a[n];}
+)cpp", "TR0203"},
+      {"runtime-explicit-after-query", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int f(Empty&a){static_assert(sizeof(a.operator[](0))==sizeof(int));return (a.operator[])(0);}
+)cpp", "TR0203"},
+      {"runtime-temporary-after-query", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int f(){static_assert(noexcept(Empty{}[0]));return Empty{}[0];}
+)cpp", "TR0203"},
+      {"runtime-unchosen-after-query", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int f(Empty&a){return noexcept(a[0])?1:a[0];}
+)cpp", "TR0203"},
+      {"queried-function-body", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+int read(Empty&a)noexcept{return a[0];}void f(Empty&a){static_assert(noexcept(read(a)));}
+)cpp", "TR0203"},
+      {"queried-default", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty a{};int read(int value=a[0])noexcept{return value;}void f(){static_assert(noexcept(a[0]));static_assert(noexcept(read()));}
+)cpp", "TR0203"},
+      {"queried-conversion-body", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty a{};struct I{operator Empty::size_type()const noexcept{return a[0];}};void f(){static_assert(noexcept(Empty{}[I{}]));}
+)cpp", "TR0203"},
+      {"queried-field-default", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty a{};struct I{int n=a[0];operator Empty::size_type()const noexcept{return n;}};void f(){static_assert(noexcept(Empty{}[I{}]));}
+)cpp", "TR0203"},
+      {"queried-receiver-body", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+Empty&source(Empty&a)noexcept{(void)a[0];return a;}void f(Empty&a){static_assert(noexcept(source(a)[0]));}
+)cpp", "TR0203"},
+      {"queried-template-body", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+template<class T>decltype(auto) read(T&a)noexcept{return a[0];}void f(Empty&a){static_assert(noexcept(read(a)));}
+)cpp", "TR0203"},
+      {"member-address", R"cpp(#include <array>
+using Empty=std::array<int,0>;
+void f(Empty&a){static_assert(noexcept(a.front()));using Method=int&(Empty::*)()noexcept;Method method=&Empty::front;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("empty-array-element-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("empty-array-element-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
     expectNoArtifacts(Output);
   }
 }

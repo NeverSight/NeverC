@@ -2471,7 +2471,7 @@ still evaluate their receiver once and complete temporary cleanup, even though
 their result depends only on the array extent. Source replacements and
 independent method addresses remain rejected.
 
-Nonempty arrays also admit `front()`, `back()` and `operator[]` in `noexcept`,
+Arrays also admit `front()`, `back()` and `operator[]` in `noexcept`,
 `decltype` and size/alignment queries without instantiating their SDK bodies.
 Both bracket syntax and direct explicit member calls, including parenthesized
 member names, use the same proof. The pinned constexpr, fixed-noexcept
@@ -2485,8 +2485,17 @@ User replacements of either the accessor or its selected subscript are rejected.
 Receiver and index expressions, conversions, defaults and temporary lifetimes
 retain their original source checks. Queries produce no effects; evaluated
 calls preserve reference identity, evaluate the receiver and index once, and
-complete temporary cleanup. Empty-array element access and independent method
-addresses retain their existing restrictions.
+complete temporary cleanup. Zero-extent arrays admit these queries, including
+temporary receivers and arbitrary indices, but still reject evaluated element
+access. Explicit member references carry Clang's unevaluated-use marker;
+synthesized bracket calls are indexed from the exact `noexcept`, `decltype`
+or expression-form `sizeof` operand. This bounded expression walk does not
+enter called definitions, selected defaults or lambda bodies. Those sources
+are checked independently, so an outer query cannot authorize an evaluated
+empty-array access in a body or initializer. Existing empty accessor bodies
+must contain only the disabled assertion and pinned unreachable helper.
+Uninstantiated template bodies retain their existing lazy source checks.
+Independent method addresses retain their existing restrictions.
 
 Direct `array::at(index)` calls also admit these unevaluated queries, including
 dynamic, negative and out-of-range indices and zero-extent arrays. The exact
