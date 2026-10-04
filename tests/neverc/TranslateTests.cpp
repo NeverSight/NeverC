@@ -37376,6 +37376,270 @@ int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyArraySwapQueriesRunAtBothOptimizations) {
+  const auto QuerySource = tmpFile("empty-array-swap-query-only.cpp");
+  const auto QueryOutput = tmpFile("empty-array-swap-query-only.nc");
+  writeFile(QuerySource, R"cpp(#include <array>
+#include <utility>
+using std::array;
+struct Locked {
+  Locked() = default;
+  Locked(const Locked&) = delete;
+  Locked& operator=(const Locked&) = delete;
+};
+template<class T> struct Declared {
+  T value;
+  Declared(Declared&&) noexcept;
+  Declared& operator=(Declared&&) noexcept;
+};
+struct Private {
+  int value;
+private:
+  Private& operator=(const Private& other) { value=other.value; return *this; }
+};
+struct ConstField { const int value; };
+struct Adl { int value; friend void swap(Adl& a, Adl& b) noexcept(false) { a.value=b.value; } };
+using Callback = int (*)(int) noexcept;
+template<class T> void check(array<T,0>& a, array<T,0>& b) {
+  static_assert(noexcept(a.swap(b)));
+  static_assert(__is_same(decltype(a.swap(b)), void));
+  static_assert(noexcept(std::swap(a,b)));
+  static_assert(__is_same(decltype(std::swap(a,b)), void));
+  static_assert(noexcept((a.swap)(b)));
+  static_assert(noexcept((std::swap<T,0>)(a,b)));
+  static_assert(__is_same(decltype((std::swap<T,0,7>)(a,b)), void));
+  static_assert(noexcept(std::move(a).swap(b)));
+  static_assert(__is_same(decltype(std::forward<array<T,0>>(a).swap(b)), void));
+  static_assert(noexcept(array<T,0>{}.swap(b)));
+  static_assert(sizeof((a.swap(b),0)) == sizeof(int));
+  static_assert(alignof(decltype((std::swap(a,b),0))) == alignof(int));
+  using std::swap;
+  static_assert(noexcept(swap(a,b)));
+}
+void query_only(array<int,0>& a, array<const int,0>& c,
+                array<Locked,0>& locked, array<Declared<int>,0>& declared,
+                array<Private,0>& private_values, array<ConstField,0>& const_fields,
+                array<Adl,0>& adl, array<array<int,2>,0>& nested,
+                array<Callback,0>& callbacks, array<int*,0>& pointers) {
+  check(a,a); check(c,c); check(locked,locked); check(declared,declared);
+  check(private_values,private_values); check(const_fields,const_fields);
+  check(adl,adl); check(nested,nested); check(callbacks,callbacks); check(pointers,pointers);
+}
+// These specializations have no evaluated call or noexcept use that could
+// supply a body/specification before their return type is queried.
+void decltype_only(array<unsigned,0>& a, array<const short,0>& b) {
+  static_assert(__is_same(decltype(a.swap(a)), void));
+  static_assert(__is_same(decltype(std::swap(b,b)), void));
+}
+)cpp");
+  auto QueryResult = translate(QuerySource, {"--profile", "cpp-core-v2", "-o", QueryOutput.string()});
+  ASSERT_EQ(QueryResult.exitCode, 0) << QueryResult.out << QueryResult.err;
+  const auto Source = tmpFile("empty-array-swap-queries.cpp");
+  const auto Output = tmpFile("empty-array-swap-queries.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+using Empty = std::array<int,0>;
+int receivers, arguments, defaults, guards, drops, conversions;
+int constructions, moves, assignments, element_drops, element_swaps;
+Empty& source(Empty& a, int n=(++defaults,1)) noexcept { ++receivers; return a; }
+struct Guard {
+  Guard() noexcept { ++guards; }
+  ~Guard() noexcept { --guards; ++drops; }
+};
+Empty& peer(Empty& a, const Guard& guard=Guard()) noexcept { ++arguments; return a; }
+struct View {
+  Empty* value;
+  operator Empty&() const noexcept { ++conversions; return *value; }
+};
+struct Element {
+  int value;
+  Element() noexcept { ++constructions; }
+  Element(Element&& other) noexcept : value(other.value) { ++moves; }
+  Element& operator=(Element&& other) noexcept { ++assignments; value=other.value; return *this; }
+  ~Element() noexcept { ++element_drops; }
+  friend void swap(Element&, Element&) noexcept(false) { ++element_swaps; }
+};
+struct Locked {
+  Locked()=default;
+  Locked(const Locked&)=delete;
+  Locked& operator=(const Locked&)=delete;
+};
+template<class T> void signature(std::array<T,0>& a, std::array<T,0>& b)
+    noexcept(noexcept(a.swap(b)) && noexcept(std::swap(a,b))) {}
+int main() {
+  Empty a{}, b{};
+  static_assert(noexcept(source(a).swap(peer(b))));
+  static_assert(noexcept(std::swap(source(a),peer(b))));
+  static_assert(noexcept(a.swap(View{&b})));
+  static_assert(__is_same(decltype((source(a).swap)(peer(b))), void));
+  static_assert(__is_same(decltype(std::swap(source(a),peer(b))), void));
+  static_assert(sizeof((source(a).swap(View{&b}),0)) == sizeof(int));
+  static_assert(sizeof((std::swap(source(a),peer(b)),0)) == sizeof(int));
+  static_assert(noexcept(Empty{}.swap(peer(b))));
+  static_assert(noexcept(signature(a,b)));
+  signature(a,b);
+  if (receivers || arguments || defaults || guards || drops || conversions) return 1;
+  source(a).swap(peer(b));
+  if (receivers!=1 || arguments!=1 || defaults!=1 || guards || drops!=1) return 2;
+  std::swap(source(a),peer(b));
+  if (receivers!=2 || arguments!=2 || defaults!=2 || guards || drops!=2) return 3;
+  (a.swap)(View{&b});
+  (std::swap<int,0,7>)(a,b);
+  std::move(a).swap(b);
+  if (conversions!=1) return 4;
+  {
+    std::array<Element,0> x{}, y{};
+    static_assert(noexcept(x.swap(y)) && noexcept(std::swap(x,y)));
+    x.swap(y); std::swap(x,y);
+    std::array<Locked,0> l{}, r{};
+    static_assert(noexcept(l.swap(r)) && noexcept(std::swap(l,r)));
+    l.swap(r); std::swap(l,r);
+    std::array<const int,0> c{}, d{};
+    static_assert(noexcept(c.swap(d)) && noexcept(std::swap(c,d)));
+    signature(c,d);
+  }
+  return constructions || moves || assignments || element_drops || element_swaps ? 5 : 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-array-swap-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyArraySwapQueriesRequireSource) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"element", R"cpp(#include <array>
+void f(std::array<long double,0>&a){static_assert(noexcept(a.swap(a)));}
+)cpp", "TR0201"},
+      {"free-element", R"cpp(#include <array>
+void f(std::array<long double,0>&a){using T=decltype(std::swap(a,a));}
+)cpp", "TR0201"},
+      {"erased-element", R"cpp(#include <array>
+template<class>using Erased=int;void f(std::array<Erased<long double>,0>&a){static_assert(noexcept(a.swap(a)));}
+)cpp", "TR0201"},
+      {"extent", R"cpp(#include <array>
+void f(std::array<int,(sizeof(long double),0)>&a){static_assert(noexcept(std::swap(a,a)));}
+)cpp", "TR0201"},
+      {"receiver-expression", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){static_assert(noexcept((sizeof(long double),a).swap(a)));}
+)cpp", "TR0201"},
+      {"argument-expression", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){static_assert(noexcept(a.swap((sizeof(long double),a))));}
+)cpp", "TR0201"},
+      {"free-left-expression", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){static_assert(noexcept(std::swap((sizeof(long double),a),a)));}
+)cpp", "TR0201"},
+      {"free-right-decltype", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){using T=decltype(std::swap(a,(sizeof(long double),a)));}
+)cpp", "TR0201"},
+      {"argument-sizeof", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){static_assert(sizeof((a.swap((sizeof(long double),a)),0))==sizeof(int));}
+)cpp", "TR0201"},
+      {"receiver-default", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&a,int n=(sizeof(long double),0))noexcept{return a;}void f(A&a){static_assert(noexcept(source(a).swap(a)));}
+)cpp", "TR0201"},
+      {"free-argument-default", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&a,int n=(sizeof(long double),0))noexcept{return a;}void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+)cpp", "TR0201"},
+      {"receiver-body", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&a)noexcept{(void)sizeof(long double);return a;}void f(A&a){using T=decltype(source(a).swap(a));}
+)cpp", "TR0201"},
+      {"receiver-declaration", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(source(a).swap(a)));}
+)cpp", "TR0203"},
+      {"free-argument-declaration", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&)noexcept;void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+)cpp", "TR0203"},
+      {"argument-conversion", R"cpp(#include <array>
+using A=std::array<int,0>;struct V{A*p;operator A&()const noexcept{(void)sizeof(long double);return *p;}};void f(A&a){static_assert(noexcept(a.swap(V{&a})));}
+)cpp", "TR0201"},
+      {"argument-exception", R"cpp(#include <array>
+using A=std::array<int,0>;A&source(A&a)noexcept(sizeof(long double)>0){return a;}void f(A&a){static_assert(noexcept(std::swap(a,source(a))));}
+)cpp", "TR0201"},
+      {"temporary-destructor", R"cpp(#include <array>
+using A=std::array<int,0>;struct G{~G()noexcept{(void)sizeof(long double);}};A&keep(A&a,const G&)noexcept{return a;}void f(A&a){static_assert(noexcept(keep(a,G{}).swap(a)));}
+)cpp", "TR0201"},
+      {"free-default-destructor", R"cpp(#include <array>
+using A=std::array<int,0>;struct G{~G()noexcept{(void)sizeof(long double);}};A&keep(A&a,const G&g=G{})noexcept{return a;}void f(A&a){static_assert(noexcept(std::swap(a,keep(a))));}
+)cpp", "TR0201"},
+      {"member-specialization", R"cpp(#include <array>
+namespace std{inline namespace __1{template<>void array<int,0>::swap(array&)noexcept{}}}void f(std::array<int,0>&a){static_assert(noexcept(a.swap(a)));}
+)cpp", "TR0201"},
+      {"member-specialization-free", R"cpp(#include <array>
+namespace std{inline namespace __1{template<>void array<int,0>::swap(array&)noexcept{}}}void f(std::array<int,0>&a){using T=decltype(std::swap(a,a));}
+)cpp", "TR0201"},
+      {"free-specialization", R"cpp(#include <array>
+namespace std{inline namespace __1{template<>void swap<int,0>(array<int,0>&,array<int,0>&)noexcept{}}}void f(std::array<int,0>&a){static_assert(noexcept(std::swap(a,a)));}
+)cpp", "TR0201"},
+      {"array-specialization", R"cpp(#include <array>
+namespace std{inline namespace __1{template<>struct array<int,0>{void swap(array&)noexcept{}};}}void f(std::array<int,0>&a){static_assert(noexcept(std::swap(a,a)));}
+)cpp", "TR0201"},
+      {"member-address", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){static_assert(noexcept(a.swap(a)));auto p=&A::swap;(a.*p)(a);}
+)cpp", "TR0201"},
+      {"free-address", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){static_assert(noexcept(std::swap(a,a)));auto p=&std::swap<int,0>;p(a,a);}
+)cpp", "TR0201"},
+      {"nonempty-adl-runtime", R"cpp(#include <array>
+struct E{int value;friend void swap(E&a,E&b)noexcept{a.value=b.value;}};void f(std::array<E,0>&a,std::array<E,1>&b){static_assert(noexcept(a.swap(a)));b.swap(b);}
+)cpp", "TR0203"},
+      {"nonempty-free-adl-runtime", R"cpp(#include <array>
+struct E{int value;friend void swap(E&a,E&b)noexcept{a.value=b.value;}};void f(std::array<E,0>&a,std::array<E,1>&b){using T=decltype(std::swap(a,a));std::swap(b,b);}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("empty-array-swap-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("empty-array-swap-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyArraySwapQueriesRetainLanguageDiagnostics) {
+  struct Case { const char *Name; const char *Source; const char *Code; };
+  const Case Cases[] = {
+      {"const-receiver", R"cpp(#include <array>
+using A=std::array<int,0>;void f(const A&a,A&b){using T=decltype(a.swap(b));}
+)cpp", "TR0202"},
+      {"const-peer", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a,const A&b){using T=decltype(a.swap(b));}
+)cpp", "TR0202"},
+      {"free-const-peer", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a,const A&b){using T=decltype(std::swap(a,b));}
+)cpp", "TR0202"},
+      {"rvalue-peer", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){using T=decltype(a.swap(A{}));}
+)cpp", "TR0202"},
+      {"free-rvalue", R"cpp(#include <array>
+using A=std::array<int,0>;void f(A&a){using T=decltype(std::swap(A{},a));}
+)cpp", "TR0202"},
+      {"const-elements-runtime", R"cpp(#include <array>
+using A=std::array<const int,0>;void f(A&a){static_assert(noexcept(a.swap(a)));a.swap(a);}
+)cpp", "TR0202"},
+      {"free-const-elements-runtime", R"cpp(#include <array>
+using A=std::array<const int,0>;void f(A&a){static_assert(noexcept(std::swap(a,a)));std::swap(a,a);}
+)cpp", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("empty-array-swap-invalid-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("empty-array-swap-invalid-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayFillQueriesRunAtBothOptimizations) {
   const auto QuerySource = tmpFile("array-fill-query.cpp");
   const auto QueryOutput = tmpFile("array-fill-query.nc");

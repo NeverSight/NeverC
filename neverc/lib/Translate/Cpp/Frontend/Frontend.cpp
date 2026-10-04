@@ -4566,25 +4566,36 @@ static bool utilityAddressofSource(Adapter &A, const CallExpr *Call) {
                                   /*RequireDefinition=*/false);
 }
 
-static bool utilityArrayMemberSource(Adapter &A, const CallExpr *Call) {
+static bool utilityArrayCallSource(Adapter &A, const CallExpr *Call) {
   const auto Operation =
       approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
-  if (!Operation || (*Operation != UtilityOperation::ArrayData &&
-                     *Operation != UtilityOperation::ArrayBegin &&
-                     *Operation != UtilityOperation::ArrayEnd &&
-                     *Operation != UtilityOperation::ArrayRBegin &&
-                     *Operation != UtilityOperation::ArrayREnd &&
-                     *Operation != UtilityOperation::ArraySize &&
-                     *Operation != UtilityOperation::ArrayMaxSize &&
-                     *Operation != UtilityOperation::ArrayEmpty &&
-                     *Operation != UtilityOperation::ArrayFront &&
-                     *Operation != UtilityOperation::ArrayBack &&
-                     *Operation != UtilityOperation::ArraySubscript &&
-                     *Operation != UtilityOperation::ArrayAt &&
-                     *Operation != UtilityOperation::ArrayFill))
+  if (!Operation)
     return false;
   const auto *Function = Call->getDirectCallee();
-  // Only the exact direct member call consumes this SDK signature. The
+  bool EmptySwap = false;
+  if (Operation == UtilityOperation::ArrayMemberSwap ||
+      Operation == UtilityOperation::ArraySwap) {
+    const auto Type = Function->getParamDecl(0)->getType().getNonReferenceType();
+    const auto Array = approvedUtilityArrayRecord(
+        A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context);
+    EmptySwap = Array && !Array->Size;
+  }
+  if (!EmptySwap && *Operation != UtilityOperation::ArrayData &&
+      *Operation != UtilityOperation::ArrayBegin &&
+      *Operation != UtilityOperation::ArrayEnd &&
+      *Operation != UtilityOperation::ArrayRBegin &&
+      *Operation != UtilityOperation::ArrayREnd &&
+      *Operation != UtilityOperation::ArraySize &&
+      *Operation != UtilityOperation::ArrayMaxSize &&
+      *Operation != UtilityOperation::ArrayEmpty &&
+      *Operation != UtilityOperation::ArrayFront &&
+      *Operation != UtilityOperation::ArrayBack &&
+      *Operation != UtilityOperation::ArraySubscript &&
+      *Operation != UtilityOperation::ArrayAt &&
+      *Operation != UtilityOperation::ArrayFill)
+    return false;
+  // Only the exact direct call consumes this SDK signature. Empty swap also
+  // proves its fixed member exception and, for std::swap, the delegation. The
   // receiver and arguments' written types, expressions, defaults and lifetimes
   // remain source dependencies; an independent method address gains no proof.
   return operationCalleePrototype(Call) ==
@@ -7672,7 +7683,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
-        utilityArrayMemberSource(A, Call) ||
+        utilityArrayCallSource(A, Call) ||
         utilityValueAdapterSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
@@ -12945,7 +12956,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // A direct array reverse endpoint can name an incomplete iterator
           // in decltype. Only its authenticated signature supplies that result
           // identity; receiver and comma-left sources still traverse normally.
-          if (utilityArrayMemberSource(A, Call)) {
+          if (utilityArrayCallSource(A, Call)) {
             const auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
             if (Operation == UtilityOperation::ArrayRBegin ||
@@ -13435,8 +13446,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             if (Entry->second == Call)
               AuthenticatedVectorEndpoint = Method;
           }
-        if (utilityArrayMemberSource(A, Call))
-          if (const auto *Reference = directMethodReference(Call)) {
+        if (utilityArrayCallSource(A, Call))
+          if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
             if (Inserted)

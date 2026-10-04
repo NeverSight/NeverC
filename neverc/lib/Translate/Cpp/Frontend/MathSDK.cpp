@@ -21079,6 +21079,57 @@ static bool utilityArrayAtBody(const State &S, const SourceManager &SM,
          utilityArrayIndexedStorage(Returned, Method, Array);
 }
 
+static bool utilityEmptyArrayMutationBody(const State &S, const SourceManager &SM,
+                                          const CXXMethodDecl *Method,
+                                          const UtilityArrayRecord &Array,
+                                          llvm::StringRef MessageText,
+                                          const ASTContext &Context) {
+  if (Array.Size)
+    return false;
+  if (!Method->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 1)
+    return false;
+  const auto *Declaration = dyn_cast<DeclStmt>(*Body->body_begin());
+  const auto *Assertion =
+      Declaration && Declaration->isSingleDecl()
+          ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl()) : nullptr;
+  const auto *Negation =
+      Assertion ? dyn_cast<UnaryOperator>(Assertion->getAssertExpr()) : nullptr;
+  const auto *Read =
+      Negation ? dyn_cast<ImplicitCastExpr>(Negation->getSubExpr()) : nullptr;
+  const auto *Value = Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
+  const auto *Qualifier = Value ? Value->getQualifier() : nullptr;
+  const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+  const auto *Trait = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Type ? Type->getAsCXXRecordDecl() : nullptr);
+  const auto *Message =
+      Assertion ? dyn_cast_or_null<StringLiteral>(Assertion->getMessage()) : nullptr;
+  if (!Assertion || Assertion->isFailed() || !Negation ||
+      Negation->getOpcode() != UO_LNot || !Read ||
+      Read->getCastKind() != CK_LValueToRValue || !Trait ||
+      Trait->getName() != "is_const" ||
+      Trait->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Trait->getTemplateArgs().size() != 1 ||
+      Trait->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Trait->getTemplateArgs().get(0).getAsType(),
+                           Array.ElementType) ||
+      !Message || Message->getString() != MessageText)
+    return false;
+  for (const auto *Redeclaration : Trait->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
+        !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                       "__type_traits/is_const.h"))
+      return false;
+  const auto *Constant = dyn_cast<VarDecl>(Value->getDecl());
+  const auto Result = Constant
+                          ? approvedSDKIntegerConstant(S, SM, Constant, Context)
+                          : std::nullopt;
+  return Result && *Result == 0 && !Array.ElementType.isConstQualified() &&
+         Context.hasSameType(Read->getType(), Context.BoolTy);
+}
+
 static bool utilityArrayFillBody(const State &S, const SourceManager &SM,
                                  const CXXMethodDecl *Method,
                                  const UtilityArrayRecord &Array,
@@ -21099,46 +21150,10 @@ static bool utilityArrayFillBody(const State &S, const SourceManager &SM,
   const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
   if (!Body || Body->size() != 1)
     return false;
-  if (!Array.Size) {
-    const auto *Declaration = dyn_cast<DeclStmt>(*Body->body_begin());
-    const auto *Assertion = Declaration && Declaration->isSingleDecl()
-                                ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
-                                : nullptr;
-    const auto *Negation =
-        Assertion ? dyn_cast<UnaryOperator>(Assertion->getAssertExpr()) : nullptr;
-    const auto *Read =
-        Negation ? dyn_cast<ImplicitCastExpr>(Negation->getSubExpr()) : nullptr;
-    const auto *Value = Read ? dyn_cast<DeclRefExpr>(Read->getSubExpr()) : nullptr;
-    const auto *Qualifier = Value ? Value->getQualifier() : nullptr;
-    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
-    const auto *Trait = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
-        Type ? Type->getAsCXXRecordDecl() : nullptr);
-    const auto *Message =
-        Assertion ? dyn_cast_or_null<StringLiteral>(Assertion->getMessage()) : nullptr;
-    if (!Assertion || Assertion->isFailed() || !Negation ||
-        Negation->getOpcode() != UO_LNot || !Read ||
-        Read->getCastKind() != CK_LValueToRValue || !Trait ||
-        Trait->getName() != "is_const" ||
-        Trait->getSpecializationKind() != TSK_ImplicitInstantiation ||
-        Trait->getTemplateArgs().size() != 1 ||
-        Trait->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Trait->getTemplateArgs().get(0).getAsType(),
-                             Array.ElementType) ||
-        !Message || Message->getString() !=
-                        "cannot fill zero-sized array of type 'const T'")
-      return false;
-    for (const auto *Redeclaration : Trait->redecls())
-      if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
-          !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
-                         "__type_traits/is_const.h"))
-        return false;
-    const auto *Constant = dyn_cast<VarDecl>(Value->getDecl());
-    const auto Result = Constant
-                            ? approvedSDKIntegerConstant(S, SM, Constant, Context)
-                            : std::nullopt;
-    return Result && *Result == 0 && !Array.ElementType.isConstQualified() &&
-           Context.hasSameType(Read->getType(), Context.BoolTy);
-  }
+  if (!Array.Size)
+    return utilityEmptyArrayMutationBody(
+        S, SM, Method, Array, "cannot fill zero-sized array of type 'const T'",
+        Context);
   const auto *Call = dyn_cast<CallExpr>(*Body->body_begin());
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Arguments = Function ? Function->getTemplateSpecializationArgs() : nullptr;
@@ -21164,6 +21179,89 @@ static bool utilityArrayFillBody(const State &S, const SourceManager &SM,
          Context.hasSameType(Extent->getType(), SizeType) &&
          utilitySwapArrayData(S, SM, Call->getArg(0), Array, nullptr, Context) &&
          functionalInvokeParameterReference(Call->getArg(2), Method->getParamDecl(0));
+}
+
+static bool utilityEmptyArraySwapMethod(const State &S, const SourceManager &SM,
+                                        const CXXMethodDecl *Method,
+                                        const UtilityArrayRecord &Array,
+                                        const ASTContext &Context) {
+  // Unlike nonempty array swap, this signature has no element-dependent
+  // exception specification. Queries must not instantiate the const assertion.
+  return !Array.Size &&
+         utilityArrayMethodSignature(S, SM, Method, Array, 1) &&
+         Method->getIdentifier() && Method->getName() == "swap" &&
+         !Method->isConst() && !Method->isConstexpr() &&
+         Method->getReturnType()->isVoidType() &&
+         !Method->getParamDecl(0)->hasDefaultArg() &&
+         Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getLValueReferenceType(
+                                Context.getRecordType(Array.Record))) &&
+         utilityEmptyArrayMutationBody(
+             S, SM, Method, Array,
+             "cannot swap zero-sized array of type 'const T'", Context);
+}
+
+static bool utilityEmptyArraySwapFunction(const State &S, const SourceManager &SM,
+                                         const FunctionDecl *Function,
+                                         const UtilityArrayRecord &Array,
+                                         const ASTContext &Context) {
+  if (Array.Size ||
+      !utilitySwapSDKFunction(S, SM, Function, "swap", "array") ||
+      isa<CXXMethodDecl>(Function) || Function->isInvalidDecl() ||
+      Function->isDeleted() || !Function->isInlined() || Function->isConstexpr() ||
+      Function->getNumParams() != 2 || !Function->getReturnType()->isVoidType())
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  const Expr *ExceptionSource = Prototype ? Prototype->getNoexceptExpr() : nullptr;
+  // Clang may retain a constant-evaluation wrapper. Its cached value does
+  // not replace the original noexcept operand's exact delegation proof.
+  if (const auto *Constant = dyn_cast_or_null<ConstantExpr>(ExceptionSource))
+    ExceptionSource = Constant->getSubExpr();
+  const auto *Exception = dyn_cast_or_null<CXXNoexceptExpr>(ExceptionSource);
+  if (!Arguments || Arguments->size() != 3 || !Exception ||
+      Prototype->getExceptionSpecType() != EST_NoexceptTrue ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Array.ElementType) ||
+      Arguments->get(1).getKind() != TemplateArgument::Integral ||
+      Arguments->get(1).getAsIntegral() != 0 ||
+      !Context.hasSameType(Arguments->get(1).getIntegralType(),
+                           Context.getSizeType()) ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Arguments->get(2).getIntegralType(), Context.IntTy))
+    return false;
+  const auto Reference =
+      Context.getLValueReferenceType(Context.getRecordType(Array.Record));
+  for (const auto *Parameter : Function->parameters())
+    if (Parameter->hasDefaultArg() ||
+        !Context.hasSameType(Parameter->getType(), Reference))
+      return false;
+  auto Delegate = [&](const Stmt *Statement) -> const CXXMethodDecl * {
+    const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Statement);
+    const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+    if (!Call || !directMethodReference(Call) || Call->getNumArgs() != 1 ||
+        !Call->getType()->isVoidType() ||
+        !utilityEmptyArraySwapMethod(S, SM, Method, Array, Context) ||
+        !functionalInvokeParameterReference(Call->getImplicitObjectArgument(),
+                                            Function->getParamDecl(0)) ||
+        !functionalInvokeParameterReference(Call->getArg(0),
+                                            Function->getParamDecl(1)))
+      return nullptr;
+    return Method;
+  };
+  // A folded true alone is insufficient: the exception expression must call
+  // the exact pinned member on the two original parameters. Check an existing
+  // body against that same delegation without generating a missing body.
+  const auto *Method = Delegate(Exception->getOperand());
+  if (!Method)
+    return false;
+  if (!Function->hasBody())
+    return true;
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *BodyMethod = Body && Body->size() == 1
+                               ? Delegate(*Body->body_begin()) : nullptr;
+  return BodyMethod &&
+         BodyMethod->getCanonicalDecl() == Method->getCanonicalDecl();
 }
 
 static bool utilityArrayCapacityBody(const State &S, const SourceManager &SM,
@@ -23730,7 +23828,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
         !S.owns(SM, Reference->getExprLoc()) ||
         (!Method->hasBody() && !PointerMember && !ReverseMember &&
-         !CapacityMember && !ElementMember && Name != "fill"))
+         !CapacityMember && !ElementMember && Name != "fill" &&
+         !(Name == "swap" && !Array->Size)))
       return std::nullopt;
     if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
       if (CapacityMember && Call->isPRValue() &&
@@ -23804,16 +23903,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ArrayFill;
     }
     if (!Operator && Name == "swap" && Method->getNumParams() == 1 &&
-        Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
-        !Object->getType().isConstQualified() &&
-        (Array->Size
-             ? (utilityArrayTriviallyAssignable(Context, Array->ElementType) ||
-                utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType))
-             : !Array->ElementType.isConstQualified())) {
-      auto Parameter = Method->getParamDecl(0)->getType();
-      if (Parameter->isLValueReferenceType() &&
-          SameArray(Parameter->getPointeeType()) &&
-          SameArray(Call->getArg(0)->getType()) &&
+        Call->getNumArgs() == 1 && Call->getType()->isVoidType() &&
+        Method->getReturnType()->isVoidType() &&
+        !Object->getType().hasQualifiers()) {
+      const auto ArrayType = Context.getRecordType(Array->Record);
+      if (!Same(Method->getParamDecl(0)->getType(),
+                Context.getLValueReferenceType(ArrayType)) ||
+          !Same(Call->getArg(0)->getType(), ArrayType))
+        return std::nullopt;
+      if (!Array->Size &&
+          utilityEmptyArraySwapMethod(S, SM, Method, *Array, Context) &&
+          MemberReference && MemberReference->isNonOdrUse() == NOUR_Unevaluated)
+        return UtilityOperation::ArrayMemberSwap;
+      if ((Array->Size
+               ? (utilityArrayTriviallyAssignable(Context, Array->ElementType) ||
+                  utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType))
+               : utilityEmptyArraySwapMethod(S, SM, Method, *Array, Context)) &&
           approvedUtilityArraySwapBody(S, SM, Method, Context))
         return UtilityOperation::ArrayMemberSwap;
     }
@@ -29753,13 +29858,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                    ? RightType->getPointeeType()->getAsCXXRecordDecl()
                    : nullptr,
         Context);
+    const auto *Reference =
+        dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+    if (Left && Right && !Left->Size && Call->getType()->isVoidType() &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), RightType->getPointeeType()) &&
+        utilityEmptyArraySwapFunction(S, SM, Function, *Left, Context) &&
+        Reference && Reference->isNonOdrUse() == NOUR_Unevaluated)
+      return UtilityOperation::ArraySwap;
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
         (Left->Size
              ? (utilityArrayTriviallyAssignable(Context, Left->ElementType) ||
                 utilityPairSourceOwnedValue(S, SM, Context, Left->ElementType))
-             : !Left->ElementType.isConstQualified()) &&
+             : (!Left->ElementType.isConstQualified() &&
+                utilityEmptyArraySwapFunction(S, SM, Function, *Left, Context))) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()) &&
         approvedUtilityPairElementSwap(

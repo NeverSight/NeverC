@@ -2403,6 +2403,23 @@ selected-assignment proof, aliasing behavior and temporary cleanup; a query
 does not authorize an unsupported actual assignment or weaken native C++
 const/access/deletion diagnostics. Independent member addresses remain rejected.
 
+For `array<T, 0>`, direct member `swap(peer)` and free `std::swap(left, right)`
+also admit unevaluated `noexcept`, `decltype` and comma-result size/alignment
+queries. The pinned member is non-const, returns `void`, takes the same mutable
+array reference and has an unconditional `noexcept` specification. The free
+wrapper must delegate both its exception expression and any instantiated body
+to that exact member on its original parameters. Queries require no element
+swap, so const elements, deleted or inaccessible element assignments and an
+unused class-template move declaration do not prevent the query. Parenthesized
+calls, supported forwarding adapters and temporary member receivers retain
+ordinary C++ binding rules. Receiver, argument, conversion, default and lifetime
+sources remain checked; independent function and member addresses and source
+specializations remain rejected. An evaluated empty swap still evaluates its
+operands and temporary cleanup, and still rejects const elements through the
+pinned body assertion. Nonempty swaps retain their selected element-operation
+proof; this empty-array query rule supplies no conditional exception evidence
+for them.
+
 An array can also supply the element pack to `std::apply` through the
 [checked tuple, pair and array callable boundary](#value-tuples-from-tuple).
 Mutable and const lvalues, rvalues, zero-length arrays and nested arrays retain

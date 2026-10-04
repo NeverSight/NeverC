@@ -148,6 +148,13 @@ data/extent/source delegation to pinned `fill_n`, or the empty specialization's
 const-element assertion. Receiver, argument, conversion, default and lifetime
 sources remain checked, and evaluated fill retains selected-assignment proof,
 aliasing and cleanup. Queries never authorize unsupported actual assignments.
+Empty-array member and free `swap` queries authenticate the fixed member
+`void(array&) noexcept` signature and the free wrapper's exact exception/body
+delegation. They instantiate no element swap and can query const or nonassignable
+elements. Existing bodies retain the pinned const-element assertion; evaluated
+calls still evaluate operands and cleanup. Original source dependencies, direct
+call identity and specialization rejection remain checked. This does not supply
+exception-source evidence for nonempty array swaps.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move
