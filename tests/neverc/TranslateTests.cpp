@@ -117717,84 +117717,110 @@ int main() {
 TEST_F(TranslateTest, CoreV2FunctionInvokeQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-adapter-body", R"cpp(
-int f(){static_assert(__is_same(decltype(std::invoke(target,1)),int));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter-body", R"cpp(
-int f(){int n=target(1);static_assert(__is_same(decltype(std::invoke(target,1)),int));return n;}
-)cpp", "TR0203"},
-      {"different-argument-specialization", R"cpp(
-int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,short(1))),int));return n;}
-)cpp", "TR0203"},
-      {"different-callable-specialization", R"cpp(
-int f(){P p=target;int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(p,1)),int));return n;}
-)cpp", "TR0203"},
+      {"lazy-record-parameter", R"cpp(
+struct R{int value;};int record(R r)noexcept{return r.value;}int f(){static_assert(__is_same(decltype(std::invoke(record,R{})),int));return 0;}
+)cpp",
+       "TR0203"},
+      {"direct-record-call-does-not-supply-query-source", R"cpp(
+struct R{int value;};int record(R r)noexcept{return r.value;}int f(){int n=record(R{});static_assert(__is_same(decltype(std::invoke(record,R{})),int));return n;}
+)cpp",
+       "TR0203"},
+      {"lazy-record-result", R"cpp(
+struct R{int value;};R record(int n)noexcept{return R{n};}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(record,1)),R));return n;}
+)cpp",
+       "TR0203"},
+      {"lazy-record-result-pointer", R"cpp(
+struct R{int value;};R record(int n)noexcept{return R{n};}int f(){R(*p)(int)noexcept=record;int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(p,1)),R));return n;}
+)cpp",
+       "TR0203"},
       {"independent-invoke-address", R"cpp(
 int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,1)),int));static_assert(sizeof(&std::invoke<F&,int>)>0);return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"cast-invoke-callee", R"cpp(
 using I=int(*)(F&,int&&)noexcept;int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(static_cast<I>(&std::invoke<F&,int>)(target,1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"erased-invoke-noexcept", R"cpp(
 using I=int(*)(F&,int&&);int f(){int n=std::invoke(target,1);static_assert(!noexcept(static_cast<I>(&std::invoke<F&,int>)(target,1)));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"invoke-specialization", R"cpp(
 namespace std{inline namespace __1{template<>int invoke<F&,int>(F&fn,int&&n)noexcept{return fn(static_cast<int&&>(n));}}}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"exception-variable-specialization", R"cpp(
 namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<F&,int> = true;}}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,1)),int));return n;}
-)cpp", "TR0202"},
+)cpp",
+       "TR0202"},
       {"exception-trait-specialization", R"cpp(
 namespace std{inline namespace __1{template<>struct is_nothrow_invocable<F&,int>:true_type{};}}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,1)),int));return n;}
-)cpp", "TR0202"},
+)cpp",
+       "TR0202"},
       {"callable-expression", R"cpp(
 int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke((sizeof(long double),target),1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"argument-expression", R"cpp(
 int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,(sizeof(long double),1))),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"pointer-initializer", R"cpp(
 int f(){P p=(sizeof(long double),target);int n=std::invoke(p,1);static_assert(__is_same(decltype(std::invoke(p,1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"argument-initializer", R"cpp(
 int f(){int v=(sizeof(long double),1);int n=std::invoke(target,v);static_assert(__is_same(decltype(std::invoke(target,v)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"selected-argument-default", R"cpp(
 int arg(int n=sizeof(long double))noexcept{return n;}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,arg())),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"selected-callable-default", R"cpp(
 P source(int n=sizeof(long double))noexcept{return target;}int f(){int n=std::invoke(&target,1);static_assert(__is_same(decltype(std::invoke(source(),1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"callable-original-exception", R"cpp(
 P source()noexcept(sizeof(long double)>0);P source()noexcept{return target;}int f(){int n=std::invoke(&target,1);static_assert(__is_same(decltype(std::invoke(source(),1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"target-original-exception", R"cpp(
 int other(int n)noexcept(sizeof(long double)>0);int other(int n)noexcept{return n;}int f(){int n=std::invoke(other,1);static_assert(__is_same(decltype(std::invoke(other,1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"adjusted-target-array-bound", R"cpp(
 int other(int a[(sizeof(long double),2)])noexcept{return a[0];}int f(int*p){int n=std::invoke(other,p);static_assert(__is_same(decltype(std::invoke(other,p)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"argument-written-alias", R"cpp(
 using T=decltype((sizeof(long double),int{}));int f(T&v){int n=std::invoke(target,v);static_assert(__is_same(decltype(std::invoke(target,v)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"pointer-written-alias", R"cpp(
 using T=decltype((sizeof(long double),P{}));int f(T&p){int n=std::invoke(p,1);static_assert(__is_same(decltype(std::invoke(p,1)),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"temporary-destructor-body", R"cpp(
 struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,arg())),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"temporary-destructor-exception", R"cpp(
 struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,arg())),int));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"missing-temporary-destructor", R"cpp(
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(target,arg())),int));return n;}
-)cpp", "TR0203"},
+)cpp",
+       "TR0203"},
       {"missing-callable-definition", R"cpp(
 P source()noexcept;int f(){int n=std::invoke(&target,1);static_assert(__is_same(decltype(std::invoke(source(),1)),int));return n;}
-)cpp", "TR0203"},
+)cpp",
+       "TR0203"},
       {"unsupported-result", R"cpp(
 long double other(int n)noexcept{return n;}int f(){int n=std::invoke(target,1);static_assert(__is_same(decltype(std::invoke(other,1)),long double));return n;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -146423,6 +146449,278 @@ using W=int(*)(long double);int wide(long double){return 0;}using R=decltype(std
                                 C.Name + ".cpp");
     const auto Output = tmpFile(std::string("functional-boolean-query-guard-") +
                                 C.Name + ".nc");
+    writeFile(Source, C.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    EXPECT_FALSE(fs::exists(Output));
+    EXPECT_FALSE(fs::exists(Output.string() + ".manifest.json"));
+    EXPECT_FALSE(fs::exists(Output.string() + ".map.json"));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionSignatureQueryScalars) {
+  const auto Source = tmpFile("invoke-signature-query-query.cpp");
+  const auto Output = tmpFile("invoke-signature-query-query.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(int)noexcept;using P=int(*)(int)noexcept;
+P pointer()noexcept{++effects;return target;}
+static_assert(__is_same(decltype(std::invoke(target,short(1))),int));
+static_assert(__is_same(decltype(std::invoke(pointer(),2)),int));
+static_assert(noexcept(std::invoke(target,3)));
+static_assert(sizeof(std::invoke(pointer(),4))==sizeof(int));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("invoke-signature-query-query" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionSignatureQueryCallbacks) {
+  const auto Source = tmpFile("invoke-signature-query-callbacks.cpp");
+  const auto Output = tmpFile("invoke-signature-query-callbacks.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using N=int(*)(int)noexcept;using F=int(*)(int);
+int effects;int one(int x)noexcept{++effects;return x+1;}
+int consume(F,bool)noexcept{++effects;return 0;}
+F factory()noexcept{++effects;return one;}
+F identity(const F& value)noexcept{++effects;return value;}
+static_assert(__is_same(decltype(std::invoke(consume,one,one)),int));
+static_assert(__is_same(decltype(std::invoke(factory)),F));
+static_assert(noexcept(std::invoke(consume,one,one)));
+static_assert(noexcept(std::invoke(identity,one)));
+static_assert(sizeof(std::invoke(factory))==sizeof(F));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("invoke-signature-query-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionSignatureQueryReferences) {
+  const auto Source = tmpFile("invoke-signature-query-references.cpp");
+  const auto Output = tmpFile("invoke-signature-query-references.nc");
+  writeFile(Source, R"cpp(#include <functional>
+struct R{int value;};R object{3};int effects;
+R& record(R& r)noexcept{++effects;return r;}
+const int& scalar(const int& v)noexcept{++effects;return v;}
+static_assert(__is_same(decltype(std::invoke(record,object)),R&));
+static_assert(__is_same(decltype(std::invoke(scalar,object.value)),const int&));
+static_assert(noexcept(std::invoke(record,object)));
+static_assert(sizeof(std::invoke(record,object))==sizeof(R));
+int main(){return effects+object.value-3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("invoke-signature-query-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionSignatureQueryVoid) {
+  const auto Source = tmpFile("invoke-signature-query-void.cpp");
+  const auto Output = tmpFile("invoke-signature-query-void.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects;void action(int)noexcept{++effects;}
+using P=void(*)(int)noexcept;const P pointer=action;
+static_assert(__is_same(decltype(std::invoke(action,short(1))),void));
+static_assert(__is_same(decltype(std::invoke(pointer,2)),void));
+static_assert(noexcept(std::invoke(action,3)));
+static_assert(noexcept(std::invoke(pointer,4)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("invoke-signature-query-void" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionSignatureQueryCleanup) {
+  const auto Source = tmpFile("invoke-signature-query-cleanup.cpp");
+  const auto Output = tmpFile("invoke-signature-query-cleanup.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects;int target(int n)noexcept{++effects;return n;}
+struct Token{Token(){++effects;}~Token(){++effects;}};
+int argument(Token=Token{}){++effects;return 1;}
+using P=int(*)(int)noexcept;P pointer(Token=Token{}){++effects;return target;}
+static_assert(__is_same(decltype(std::invoke(target,argument())),int));
+static_assert(!noexcept(std::invoke(target,argument())));
+static_assert(!noexcept(std::invoke(pointer(),2)));
+static_assert(sizeof(std::invoke(pointer(),argument()))==sizeof(int));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("invoke-signature-query-cleanup" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionSignatureQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"argument-expression", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+using Q=decltype(std::invoke(target,(sizeof(long double),1)));int main(){return 0;}
+)cpp"},
+      {"caller-expression", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+using Q=decltype(std::invoke((sizeof(long double),target),1));int main(){return 0;}
+)cpp"},
+      {"caller-without-definition", R"cpp(#include <functional>
+int declared(short)noexcept;const int& reference(const int&)noexcept;
+static_assert(__is_same(decltype(std::invoke(declared,2)),int));
+static_assert(__is_same(decltype(std::invoke(reference,2)),const int&));
+static_assert(noexcept(std::invoke(declared,3)));
+static_assert(sizeof(std::invoke(declared,4))==sizeof(int));
+int main(){return 0;}
+)cpp"},
+      {"cleanup-body", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+struct Token{~Token()noexcept{long double value=0;}};int argument(Token=Token{})noexcept{return 1;}using Q=decltype(std::invoke(target,argument()));int main(){return 0;}
+)cpp"},
+      {"declval-specialization", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+template<>F& std::declval<F&>()noexcept;using Q=decltype(std::invoke(target,1));int main(){return 0;}
+)cpp"},
+      {"function-address", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+using Q=decltype(&std::invoke<F&,int>);int main(){return 0;}
+)cpp"},
+      {"hidden-default", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+int argument(int=sizeof(long double))noexcept{return 1;}using Q=decltype(std::invoke(target,argument()));int main(){return 0;}
+)cpp"},
+      {"hidden-noexcept", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+int other(int n)noexcept(sizeof(long double)>0);int other(int n)noexcept{return n;}using Q=decltype(std::invoke(other,1));int main(){return 0;}
+)cpp"},
+      {"hidden-parameter-bound", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+int other(int a[(sizeof(long double),2)])noexcept{return a[0];}int values[2];using Q=decltype(std::invoke(other,values));int main(){return 0;}
+)cpp"},
+      {"hidden-reference-return-alias", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+using R=decltype((sizeof(long double),*static_cast<int*>(nullptr)));R other(int& n)noexcept{return n;}int value;using Q=decltype(std::invoke(other,value));int main(){return 0;}
+)cpp"},
+      {"hidden-return-alias", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+using R=decltype((sizeof(long double),int{}));R other(int n)noexcept{return n;}using Q=decltype(std::invoke(other,1));int main(){return 0;}
+)cpp"},
+      {"internal-invocability-variable", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+template<>inline const bool std::__is_invocable_v<F&,int> = true;using Q=decltype(std::invoke(target,1));int main(){return 0;}
+)cpp"},
+      {"invoke-specialization", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<>int invoke<F&,int>(F&f,int&&n)noexcept{return f(n);}}}using Q=decltype(std::invoke(target,1));int main(){return 0;}
+)cpp"},
+      {"private-result-specialization", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+template<>struct std::__invoke_result<F&,int>{using type=int;};using Q=decltype(std::invoke(target,1));int main(){return 0;}
+)cpp"},
+      {"record-parameter", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+struct R{int value;};int record(R r)noexcept{return r.value;}using Q=decltype(std::invoke(record,R{}));int main(){return 0;}
+)cpp"},
+      {"record-result", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+struct R{int value;};R record(int n)noexcept{return R{n};}using Q=decltype(std::invoke(record,1));int main(){return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+struct R{operator int()const noexcept{return 1;}};using Q=decltype(std::invoke(target,R{}));int main(){return 0;}
+)cpp"},
+      {"variadic", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+int variadic(int,...){return 0;}using Q=decltype(std::invoke(variadic,1));int main(){return 0;}
+)cpp"},
+      {"volatile-pointer", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+P volatile pointer=target;using Q=decltype(std::invoke(pointer,1));int main(){return 0;}
+)cpp"},
+      {"wide-result", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+long double wide(int n)noexcept{return n;}using Q=decltype(std::invoke(wide,1));int main(){return 0;}
+)cpp"},
+      {"wide-signature", R"cpp(#include <functional>
+#include <type_traits>
+int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
+int wide(long double n)noexcept{return int(n);}using Q=decltype(std::invoke(wide,1));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &C : Cases) {
+    SCOPED_TRACE(C.Name);
+    const auto Source =
+        tmpFile(std::string("invoke-signature-query-guard-") + C.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("invoke-signature-query-guard-") + C.Name + ".nc");
     writeFile(Source, C.Source);
     auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});

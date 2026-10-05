@@ -335,6 +335,15 @@ operands, selected defaults and temporary cleanup keep their source checks;
 these queries do not evaluate them. Independent SDK function addresses and
 substituted declarations retain their existing restrictions.
 
+`std::invoke` queries around supported functions and function pointers now
+also work when no evaluated invocation has instantiated an SDK adapter body.
+Scalar, `void` and reference parameters or results retain the original
+function signature, argument conversions and `noexcept` specification; record
+values still require the existing materialized invocation path. The query
+checks the pinned SDK result and dispatch declarations without executing the
+callable, defaults or temporary cleanup. Caller definitions, written aliases
+and operand sources keep their existing checks.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

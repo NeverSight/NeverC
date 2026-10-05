@@ -32,6 +32,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 有类型和透明的 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 和 `std::logical_not` 也支持仅用于 `decltype`、`noexcept` 和常量 `sizeof` 表达式的直接调用及 `std::invoke`。固定 SDK 的实际替换签名提供布尔结果，无需实例化未使用的适配器或调用运算符函数体。已支持的标量与回调转换保留精确的参数类型和异常说明；调用者别名、操作数、选中的默认实参及临时对象清理仍检查原始来源，查询不会执行它们。独立 SDK 函数地址及替换声明继续受既有边界限制。
 
+受支持函数和函数指针的 `std::invoke` 查询，现在也可在没有求值调用实例化 SDK 适配器函数体时使用。标量、`void` 及引用参数或结果保留原始函数签名、实参转换和 `noexcept` 说明；记录类型的值仍需使用既有的已实例化调用路径。查询检查固定 SDK 的结果与分派声明，不执行可调用对象、默认实参或临时对象清理。调用者函数定义、书写的别名和操作数来源仍遵循既有检查。
+
 Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 符号隔离还会恢复普通 COFF 与 bigobj 静态库中 MSVC 原有的非关联节记录编号，使最终附加记录逐字节保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

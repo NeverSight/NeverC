@@ -205,7 +205,7 @@ struct State {
   std::set<const clang::CallExpr *> UnevaluatedArraySubscripts;
   // Signature proofs belong to exact lexical query operands, never to an
   // instantiated declaration or a shared default argument expression.
-  std::set<const clang::CallExpr *> UnevaluatedFunctionalCalls;
+  std::map<const clang::CallExpr *, clang::QualType> UnevaluatedFunctionalCalls;
   mutable std::map<std::string, std::string> PathCache;
   std::vector<std::string> Arguments;
   json::Array Diagnostics;

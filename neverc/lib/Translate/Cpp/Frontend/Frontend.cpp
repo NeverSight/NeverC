@@ -5158,12 +5158,8 @@ functionalBooleanQueryTargetSource(Adapter &A, const CallExpr *Call) {
   return Target && operationCalleePrototype(Call) == Target ? Target : nullptr;
 }
 
-static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
-  if (isa_and_nonnull<CXXOperatorCallExpr>(Call)) {
-    const auto *Reference = directMethodReference(Call);
-    return Reference && A.S.owns(A.Sources, Reference->getExprLoc()) &&
-           functionalBooleanQueryTargetSource(A, Call) != nullptr;
-  }
+static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
+                                                         const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Reference =
       dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
@@ -5171,28 +5167,23 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
   if (!Function || !Reference || Reference->getDecl() != Function ||
       !A.S.owns(A.Sources, Reference->getExprLoc()) ||
-      !Function->getIdentifier() ||
-      Function->getName() != "invoke" || !Call->isPRValue() ||
-      !Call->getType()->isBooleanType() || !Arguments ||
-      Arguments->size() != 2 ||
+      !Function->getIdentifier() || Function->getName() != "invoke" ||
+      !Arguments || Arguments->size() != 2 ||
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Pack ||
       Call->getNumArgs() != Function->getNumParams() ||
       Call->getNumArgs() != Arguments->get(1).pack_size() + 1 ||
       !utilitySDKFunctionSource(A, Function, "__functional/invoke.h", false))
-    return false;
+    return nullptr;
   const auto Callable = Arguments->get(0).getAsType();
   const auto &Pack = Arguments->get(1);
-  if (!functionalObjectStorageSource(
-          A, Callable.getNonReferenceType()->getAsCXXRecordDecl()))
-    return false;
   for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
     const auto Parameter = Function->getParamDecl(I)->getType();
     if (!Parameter->isReferenceType() ||
         Parameter->getPointeeType().isVolatileQualified() ||
         !A.Context.hasSameType(Parameter->getPointeeType(),
                                Call->getArg(I)->getType()))
-      return false;
+      return nullptr;
   }
   QualType Result = Function->getReturnType();
   if (const auto *Elaborated = dyn_cast<ElaboratedType>(Result.getTypePtr()))
@@ -5209,10 +5200,10 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
       AliasOrigin->Path != "__type_traits/invoke.h" ||
       !approvedStandardSDKDeclaration(A.S, A.Sources, AliasTemplate) ||
       !functionalQueryArguments(A, Alias->template_arguments(), Callable, Pack))
-    return false;
+    return nullptr;
   for (const auto *Declaration : AliasTemplate->redecls())
     if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
-      return false;
+      return nullptr;
   const auto *Qualified =
       dyn_cast<ElaboratedType>(Alias->getAliasedType().getTypePtr());
   const auto *Qualifier = Qualified ? Qualified->getQualifier() : nullptr;
@@ -5222,13 +5213,13 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
   if (!functionalQueryRecordSource(A, PublicResult, "invoke_result", Callable,
                                    Pack) ||
       PublicResult->getNumBases() != 1)
-    return false;
+    return nullptr;
   const auto *PrivateResult =
       PublicResult->bases_begin()->getType()->getAsCXXRecordDecl();
   if (!functionalQueryRecordSource(A, PrivateResult, "__invoke_result",
                                    Callable, Pack) ||
       PrivateResult->getNumBases() != 1)
-    return false;
+    return nullptr;
   auto Enabled = PrivateResult->bases_begin()->getType();
   if (const auto *Elaborated = dyn_cast<ElaboratedType>(Enabled.getTypePtr()))
     Enabled = Elaborated->getNamedType();
@@ -5238,19 +5229,19 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
       Enable->getTemplateName().getAsTemplateDecl()->getName() != "enable_if" ||
       Enable->template_arguments().size() != 2 ||
       Enable->template_arguments()[1].getKind() != TemplateArgument::Type)
-    return false;
+    return nullptr;
   const auto *EnabledRecord = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Enabled->getAsCXXRecordDecl());
   if (!EnabledRecord ||
       EnabledRecord->getSpecializationKind() != TSK_ImplicitInstantiation)
-    return false;
+    return nullptr;
   const auto EnabledPattern = EnabledRecord->getSpecializedTemplateOrPartial();
   const auto *EnabledPartial =
       EnabledPattern.is<ClassTemplatePartialSpecializationDecl *>()
           ? EnabledPattern.get<ClassTemplatePartialSpecializationDecl *>()
           : nullptr;
   if (!EnabledPartial)
-    return false;
+    return nullptr;
   auto EnabledPinned = [&](const Decl *Declaration) {
     const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
     return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
@@ -5259,20 +5250,20 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
   };
   for (const auto *Declaration : EnabledRecord->redecls())
     if (!EnabledPinned(Declaration))
-      return false;
+      return nullptr;
   for (const auto *Declaration : EnabledPartial->redecls())
     if (!EnabledPinned(Declaration))
-      return false;
+      return nullptr;
   for (const auto *Declaration :
        EnabledRecord->getSpecializedTemplate()->redecls())
     if (!EnabledPinned(Declaration) ||
         !EnabledPinned(Declaration->getTemplatedDecl()))
-      return false;
+      return nullptr;
   const auto &Condition = Enable->template_arguments()[0];
   if (Condition.getKind() != TemplateArgument::Expression ||
       !functionalQueryVariableSource(A, Condition.getAsExpr(),
                                      "__is_invocable_v", Callable, Pack))
-    return false;
+    return nullptr;
   const auto SourceResult = Enable->template_arguments()[1].getAsType();
   const auto *SourceQualified =
       dyn_cast<ElaboratedType>(SourceResult.getTypePtr());
@@ -5291,7 +5282,7 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
       !ResultAlias || ResultAlias->getDecl()->getName() != "_Result" ||
       ResultAlias->getDecl()->getDeclContext() != Invokable ||
       !approvedStandardSDKDeclaration(A.S, A.Sources, ResultAlias->getDecl()))
-    return false;
+    return nullptr;
   const auto *Try = functionalQueryDecltypeCall(A, SourceResult);
   const auto *TryFunction =
       Try ? dyn_cast_or_null<CXXMethodDecl>(Try->getDirectCallee()) : nullptr;
@@ -5308,7 +5299,7 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
       !functionalQueryArguments(A, TryArguments->asArray(), Callable, Pack) ||
       !utilitySDKFunctionSource(A, TryFunction, "__type_traits/invoke.h",
                                 false))
-    return false;
+    return nullptr;
   const auto *Dispatch =
       functionalQueryDecltypeCall(A, TryFunction->getReturnType());
   const auto *DispatchFunction =
@@ -5323,24 +5314,76 @@ static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
                                 Pack) ||
       !utilitySDKFunctionSource(A, DispatchFunction, "__type_traits/invoke.h",
                                 false))
-    return false;
+    return nullptr;
   const auto *Selected =
       functionalQueryDecltypeCall(A, DispatchFunction->getReturnType());
-  const auto *Target = functionalBooleanQueryTargetSource(A, Selected);
-  if (!Target || Selected->getNumArgs() != Call->getNumArgs() ||
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Selected);
+  if (!Selected ||
+      Selected->getNumArgs() + unsigned(!Operator) != Call->getNumArgs() ||
       !A.Context.hasSameType(Selected->getType(), Call->getType()) ||
-      !functionalInvocabilitySource(A, Call, Callable, Pack, Target))
-    return false;
+      Selected->getValueKind() != Call->getValueKind())
+    return nullptr;
   for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
     const auto Expected =
         I == 0 ? Callable : Pack.pack_elements()[I - 1].getAsType();
     if (!functionalQueryDeclvalSource(A, Dispatch->getArg(I), Expected) ||
-        !functionalQueryDeclvalSource(A, Selected->getArg(I), Expected))
-      return false;
+        !functionalQueryDeclvalSource(A,
+                                      Operator ? Selected->getArg(I)
+                                      : I == 0 ? Selected->getCallee()
+                                               : Selected->getArg(I - 1),
+                                      Expected))
+      return nullptr;
   }
   // Every selected node comes from the pinned trait's actual substituted type.
   // A query never asks Sema to complete an unused invoke or operator body.
-  return true;
+  return Selected;
+}
+
+static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
+  if (isa_and_nonnull<CXXOperatorCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Call);
+    return Reference && A.S.owns(A.Sources, Reference->getExprLoc()) &&
+                   functionalBooleanQueryTargetSource(A, Call)
+               ? A.Context.BoolTy
+               : QualType();
+  }
+  const auto *Selected = functionalInvokeQueryTargetSource(A, Call);
+  if (!Selected)
+    return {};
+  const auto *Arguments =
+      Call->getDirectCallee()->getTemplateSpecializationArgs();
+  const auto Callable = Arguments->get(0).getAsType();
+  const auto Value = Callable.getNonReferenceType();
+  const FunctionProtoType *Target = nullptr;
+  QualType Result;
+  if (Value->isFunctionType() || Value->isFunctionPointerType()) {
+    const auto Signature =
+        Value->isFunctionType() ? Value : Value->getPointeeType();
+    Target = Signature->getAs<FunctionProtoType>();
+    if (!Target || !ordinaryCallbackPrototype(Target) ||
+        Target->getNumParams() != Selected->getNumArgs() ||
+        Target->getReturnType()->isRecordType() ||
+        isa<CXXOperatorCallExpr>(Selected) || Selected->getDirectCallee() ||
+        !A.Context.hasSameType(
+            Signature, Selected->getCallee()->getType()->getPointeeType()))
+      return {};
+    for (const auto Parameter : Target->param_types())
+      if (Parameter->isRecordType())
+        return {};
+    // Keep the caller's original return spelling, including aliases, adjusted
+    // types and exception inputs. The SDK's result alias adds no new source.
+    Result = Target->getReturnType();
+  } else {
+    if (!functionalObjectStorageSource(A, Value->getAsCXXRecordDecl()))
+      return {};
+    Target = functionalBooleanQueryTargetSource(A, Selected);
+    Result = A.Context.BoolTy;
+  }
+  return Target && operationCalleePrototype(Selected) == Target &&
+                 functionalInvocabilitySource(A, Call, Callable,
+                                              Arguments->get(1), Target)
+             ? Result
+             : QualType();
 }
 
 static bool functionalObjectCallSource(Adapter &A, const CallExpr *Call) {
@@ -13696,9 +13739,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Current);
           Call && Call->getOperator() == OO_Subscript)
         A.S.UnevaluatedArraySubscripts.insert(Call);
-      if (const auto *Call = dyn_cast<CallExpr>(Current);
-          Call && functionalObjectQuerySource(A, Call))
-        A.S.UnevaluatedFunctionalCalls.insert(Call);
+      if (const auto *Call = dyn_cast<CallExpr>(Current); Call)
+        if (const auto Result = functionalQuerySource(A, Call);
+            !Result.isNull())
+          A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
           Pending.push_back(Operand);
@@ -13811,8 +13855,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       else {
         const auto *Call = dyn_cast<CallExpr>(Expression);
         auto Result = applyResultSource(Call);
-        if (Result.isNull() && (functionalObjectCallSource(A, Call) ||
-                                A.S.UnevaluatedFunctionalCalls.count(Call)))
+        if (Result.isNull())
+          if (auto Query = A.S.UnevaluatedFunctionalCalls.find(Call);
+              Query != A.S.UnevaluatedFunctionalCalls.end())
+            Result = Query->second;
+        if (Result.isNull() && functionalObjectCallSource(A, Call))
           // The exact operation proves this scalar result and SDK signature.
           // Retain caller operands rather than private trailing-return sugar.
           Result = A.Context.getCanonicalType(

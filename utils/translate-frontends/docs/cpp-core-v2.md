@@ -4114,22 +4114,27 @@ specializations without bodies, invocation forms outside the boundaries below,
 and independent function or member addresses retain their separate
 requirements; this does not instantiate an SDK body for a query.
 
-`std::invoke` also supports result-source queries around admitted fixed-arity
-functions and function pointers after evaluated calls materialize the exact
-public adapter and internal dispatch. Named and dereferenced functions, stored
-or const pointers, pointer prvalues and xvalues retain their own deduced
-callable category and argument pack. Scalar conversions, scalar and void
-results, and admitted lvalue/rvalue reference results use the existing runtime
-operation's type rules. The source proof checks the internal call's target
-prototype and result category, pins both SDK declaration families and the
-exact conditional invocability variable, and requires its exception value to
-agree with the target prototype. `decltype`, result traits, array extent,
-`sizeof`, `alignof` and `noexcept` queries execute no callable, argument,
-default-argument or temporary-lifetime effects. Original function signatures,
-pointer initializers and written types remain independent source roots.
-A direct target call or a different `invoke` specialization does not supply
-a missing adapter body. Cast or indirect adapter callees, source replacements
-and unsupported callable/result types retain their separate requirements.
+`std::invoke` also supports query-only calls around admitted fixed-arity
+functions and function pointers without materializing public adapter or
+internal dispatch bodies. Named and dereferenced functions, stored or const
+pointers, pointer prvalues and xvalues retain their own deduced callable
+category and argument pack. Scalar conversions, scalar and void results, and
+admitted lvalue/rvalue reference parameters and results preserve the original
+caller prototype, including array, record and callback references. By-value
+record parameters or results keep the existing materialized operation path.
+The proof follows the pinned SDK's actual substituted result-trait and dispatch
+signatures, authenticates every selected declaration family and the exact
+conditional invocability variables, and checks the internal target prototype,
+result category and exception specification. It does not complete an unused
+SDK function body. `decltype`, result traits, array extent, `sizeof`, `alignof`
+and `noexcept` queries execute no callable, argument, default-argument or
+temporary-lifetime effects. Original function definitions and signatures,
+pointer initializers, written aliases, selected defaults and temporary cleanup
+remain independent source roots. Query-only use retains the existing
+requirement for caller function definitions in a single-source translation.
+Cast or indirect adapter callees, independent SDK function addresses, source
+replacements and unsupported callable/result types retain their separate
+requirements.
 
 Materialized `std::invoke` adapters around admitted source-owned record
 callables also support result-source queries. The exact receiver, selected
