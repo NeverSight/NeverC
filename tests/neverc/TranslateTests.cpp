@@ -27916,6 +27916,264 @@ using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return 
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceApply) {
+  const auto Source = tmpFile("function-reference-category-rvalue-apply.cpp");
+  const auto Output = tmpFile("function-reference-category-rvalue-apply.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int call(F&&f,int n)noexcept{return f(n);}F&&source()noexcept{effects+=2;return target;}int main(){int n=2;std::tuple<F&&,int&>t(target,n);auto w=std::ref(call);std::tuple<>empty;static_assert(__is_same(decltype(std::apply(source,empty)),F&));return std::apply(call,t)!=3||std::apply(w,std::move(t))!=3||std::apply(source,empty)(1)!=2||effects!=5;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-category-rvalue-apply" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceConverting) {
+  const auto Source =
+      tmpFile("function-reference-category-rvalue-converting.cpp");
+  const auto Output =
+      tmpFile("function-reference-category-rvalue-converting.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int main(){int n=2;std::pair<F&,int&>a(target,n);std::pair<F&&,const int&>b(a);std::tuple<F&,int&>c(target,n);std::tuple<F&&,const int&>d(c);std::tuple<F&&,int&>e(a);std::pair<F&,const int&>f(std::move(b));std::tuple<F&,const int&>g(std::move(d));return b.first(n)!=3||std::get<0>(d)(n)!=3||std::get<0>(e)(n)!=3||f.first(n)!=3||std::get<0>(g)(n)!=3||effects!=5;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-category-rvalue-converting" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceFunctionPointer) {
+  const auto Source =
+      tmpFile("function-reference-category-rvalue-function-pointer.cpp");
+  const auto Output =
+      tmpFile("function-reference-category-rvalue-function-pointer.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&&source()noexcept{effects+=2;return target;}int main(){auto p=&source;auto w=std::ref(p);std::tuple<>t;static_assert(__is_same(decltype(std::invoke(p)),F&));static_assert(__is_same(decltype(w()),F&));return std::invoke(p)(1)!=2||w()(2)!=3||std::invoke(w)(3)!=4||std::apply(p,t)(4)!=5||std::apply(w,t)(5)!=6||effects!=15;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-reference-category-rvalue-function-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceGet) {
+  const auto Source = tmpFile("function-reference-category-rvalue-get.cpp");
+  const auto Output = tmpFile("function-reference-category-rvalue-get.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int main(){int n=2;std::pair<F&&,int&>p(target,n);std::tuple<F&&,int&>t(target,n);static_assert(__is_same(decltype(std::get<0>(std::move(p))),F&));static_assert(__is_same(decltype(std::get<0>(std::move(t))),F&));static_assert(__is_same(decltype(std::get<F&&>(std::move(t))),F&));return std::get<0>(std::move(p))(1)!=2||std::get<F&&>(std::move(p))(2)!=3||std::get<0>(std::move(t))(3)!=4||std::get<F&&>(std::move(t))(4)!=5||effects!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-category-rvalue-get" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferencePairTuple) {
+  const auto Source =
+      tmpFile("function-reference-category-rvalue-pair-tuple.cpp");
+  const auto Output =
+      tmpFile("function-reference-category-rvalue-pair-tuple.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int main(){int n=2;std::pair<F&&,int&>p(target,n);std::tuple<F&&,int&>t(target,n);static_assert(__is_same(decltype(std::get<0>(p)),F&));return p.first(p.second)!=3||std::get<0>(t)(n)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-category-rvalue-pair-tuple" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceParameter) {
+  const auto Source =
+      tmpFile("function-reference-category-rvalue-parameter.cpp");
+  const auto Output =
+      tmpFile("function-reference-category-rvalue-parameter.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int apply(F&&f,int n)noexcept{return f(n);}int main(){auto w=std::ref(apply);static_assert(noexcept(std::invoke(apply,target,1)));return std::invoke(apply,target,1)!=2||w(std::move(target),2)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-category-rvalue-parameter" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceResult) {
+  const auto Source = tmpFile("function-reference-category-rvalue-result.cpp");
+  const auto Output = tmpFile("function-reference-category-rvalue-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&&source()noexcept{effects+=2;return static_cast<F&&>(target);}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(std::invoke(source)),F&));static_assert(__is_same(decltype(w()),F&));static_assert(noexcept(std::invoke(w)));F&&f=std::invoke(source);return f(1)!=2||w()(2)!=3||effects!=6;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-category-rvalue-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceUserMember) {
+  const auto Source =
+      tmpFile("function-reference-category-rvalue-user-member.cpp");
+  const auto Output =
+      tmpFile("function-reference-category-rvalue-user-member.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}struct Box{F&&operator()()const noexcept{++effects;return target;}F&&get()const noexcept{++effects;return target;}int call(F&&f,int n)const noexcept{return f(n);}};int main(){Box b;auto w=std::ref(b);auto m=std::mem_fn(&Box::get);std::tuple<>t;static_assert(__is_same(decltype(std::invoke(b)),F&));static_assert(__is_same(decltype(w()),F&));return std::invoke(b)(1)!=2||w()(2)!=3||std::apply(b,t)(3)!=4||std::apply(w,t)(4)!=5||std::invoke(&Box::get,b)(5)!=6||m(b)(6)!=7||std::invoke(&Box::call,b,target,7)!=8||effects!=13;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("function-reference-category-rvalue-user-member" +
+                              Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionRvalueReferenceRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"callback-body", R"cpp(#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{long double hidden=0;return n;}F&&source()noexcept{return target;}int main(){F&&f=source();return f(1);}
+)cpp",
+       "TR0201"},
+      {"field-hidden-noexcept",
+       R"cpp(using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n;}struct Box{F&&f;};int main(){Box b{target};return b.f(1);}
+)cpp",
+       "TR0201"},
+      {"field-variadic-referent",
+       R"cpp(using F=int(int,...);int target(int n,...){return n;}struct Box{F&&f;};int main(){Box b{target};return b.f(1);}
+)cpp",
+       "TR0201"},
+      {"hidden-function-noexcept", R"cpp(#include <functional>
+using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n;}F&&source()noexcept{return target;}int main(){auto w=std::ref(source);static_assert(noexcept(w()));return 0;}
+)cpp",
+       "TR0201"},
+      {"hidden-parameter-alias", R"cpp(#include <functional>
+using I=decltype((sizeof(long double),int{}));using F=int(I)noexcept;int target(I n)noexcept{return n;}F&&source()noexcept{return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));return 0;}
+)cpp",
+       "TR0201"},
+      {"long-double-referent", R"cpp(#include <functional>
+using F=int(long double)noexcept;int target(long double n)noexcept{return 0;}F&&source()noexcept{return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));return 0;}
+)cpp",
+       "TR0201"},
+      {"missing-factory-definition", R"cpp(#include <functional>
+using F=int(int)noexcept;F&&source()noexcept;int main(){auto w=std::ref(source);return w()(1);}
+)cpp",
+       "TR0203"},
+      {"missing-target-definition", R"cpp(#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept;F&&source()noexcept{return target;}int main(){F&&f=source();return f(1);}
+)cpp",
+       "TR0203"},
+      {"parameter-body", R"cpp(#include <functional>
+using F=int(int)noexcept;int target(int n)noexcept{return n;}int apply(F&&f,int n)noexcept{long double hidden=0;return f(n);}int main(){auto w=std::ref(apply);static_assert(noexcept(w(target,1)));return 0;}
+)cpp",
+       "TR0201"},
+      {"result-body", R"cpp(#include <functional>
+using F=int(int)noexcept;int target(int n)noexcept{return n;}F&&source()noexcept{long double hidden=0;return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));return 0;}
+)cpp",
+       "TR0201"},
+      {"variadic-referent", R"cpp(#include <utility>
+using F=int(int,...);int target(int n,...){return n;}F&&source()noexcept{return target;}int main(){F&&f=source();return f(1,2)-1;}
+)cpp",
+       "TR0201"},
+      {"zero-arity-wide-signature",
+       R"cpp(long double get(){return 3;}int main(){long double(&r)()=get;return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source =
+        tmpFile(std::string("function-category-reject-") + Case.Name + ".cpp");
+    auto Output =
+        tmpFile(std::string("function-category-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierPreviouslyRejectedForms) {
   struct Case {
     const char *Name;

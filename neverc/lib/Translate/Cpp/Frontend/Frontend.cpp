@@ -2120,6 +2120,17 @@ bool ordinaryCallbackPrototype(const FunctionProtoType *P) {
   return true;
 }
 
+QualType functionCallResultType(QualType DeclaredResult,
+                                const ASTContext &Context) {
+  // A function expression is always an lvalue, including a call whose declared
+  // result is F&&. Keep the original prototype for source and ABI validation;
+  // only the expression's decltype and SDK result traits collapse to F&.
+  return !DeclaredResult.isNull() && DeclaredResult->isRValueReferenceType() &&
+                 DeclaredResult->getPointeeType()->isFunctionType()
+             ? Context.getLValueReferenceType(DeclaredResult->getPointeeType())
+             : DeclaredResult;
+}
+
 bool functionReferenceCast(const CastExpr *Cast, const ASTContext &Context) {
   if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isLValue() ||
       Cast->isTypeDependent() || Cast->isValueDependent() ||
@@ -5468,11 +5479,11 @@ functionalReferenceQuerySource(Adapter &A, const CallExpr *Call) {
     for (const auto Parameter : Target->param_types())
       if (Parameter->isRecordType())
         return {};
-    Source.Result = Target->getReturnType();
+    Source.Result = functionCallResultType(Target->getReturnType(), A.Context);
   } else if (const auto *User = functionalUserInvokeQuerySource(
                  A, Call, Selected, Value->getAsCXXRecordDecl())) {
     Target = User->getType()->getAs<FunctionProtoType>();
-    Source = {Target->getReturnType(), User};
+    Source = {functionCallResultType(Target->getReturnType(), A.Context), User};
   } else if (functionalObjectStorageSource(A, Value->getAsCXXRecordDecl())) {
     Target = functionalObjectQueryTargetSource(A, Selected);
     if (Target)
@@ -5599,11 +5610,11 @@ static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
         return {};
     // Keep the caller's original return spelling, including aliases, adjusted
     // types and exception inputs. The SDK's result alias adds no new source.
-    Result = Target->getReturnType();
+    Result = functionCallResultType(Target->getReturnType(), A.Context);
   } else if (const auto *Method =
                  functionalUserInvokeQuerySource(A, Call, Selected)) {
     Target = Method->getType()->getAs<FunctionProtoType>();
-    Result = Target->getReturnType();
+    Result = functionCallResultType(Target->getReturnType(), A.Context);
   } else {
     if (!functionalObjectStorageSource(A, Value->getAsCXXRecordDecl()))
       return {};
@@ -5899,7 +5910,9 @@ static UtilityApplySource utilityApplyResultSource(Adapter &A,
         approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
     return Operation && *Operation == UtilityOperation::TupleApply &&
                    utilityApplyInvocationSource(A, Call, Target)
-               ? UtilityApplySource{Target->getReturnType()} : UtilityApplySource{};
+               ? UtilityApplySource{functionCallResultType(
+                     Target->getReturnType(), A.Context)}
+               : UtilityApplySource{};
   }
   if (const auto User =
           approvedUtilityTupleApplyUserCall(A.S, A.Sources, Call, A.Context)) {
@@ -5910,7 +5923,8 @@ static UtilityApplySource utilityApplyResultSource(Adapter &A,
     // The pinned SDK dispatch proves only invocation. Retain the selected
     // source operator's original signature, exception and completed definition,
     // including a specialization selected solely by an unevaluated query.
-    return {Target->getReturnType(), User->Method};
+    return {functionCallResultType(Target->getReturnType(), A.Context),
+            User->Method};
   }
   const auto Object =
       approvedUtilityTupleApplyObjectOperation(A.S, A.Sources, Call, A.Context);

@@ -1677,6 +1677,8 @@ bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryOperator(const clang::FunctionDecl *Function);
 bool ordinaryConversion(const clang::CXXConversionDecl *Conversion);
 bool ordinaryCallbackPrototype(const clang::FunctionProtoType *Prototype);
+clang::QualType functionCallResultType(clang::QualType DeclaredResult,
+                                       const clang::ASTContext &Context);
 bool functionReferenceCast(const clang::CastExpr *Cast,
                            const clang::ASTContext &Context);
 const clang::CallExpr *userConversionCall(const clang::CastExpr *Cast,

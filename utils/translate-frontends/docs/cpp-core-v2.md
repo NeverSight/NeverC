@@ -8822,7 +8822,14 @@ SDK declaration, selected operation and forwarding proofs remain required;
 this carrier change grants no independent SDK address or private helper use.
 Reference-wrapper and invocation signature queries retain the exact `F&`
 result and parameter identity. `pair` and `tuple` function-reference elements,
-copies, `get` and admitted `apply` flows preserve bindings. Evaluated operands
+copies, `get` and admitted `apply` flows preserve bindings. Exact function
+lvalues bind both `F&` and `F&&` parameters and elements. Lvalue/rvalue pair
+and tuple getters, converting constructors and admitted `apply` dispatches
+retain that special function category without relaxing object-reference rules.
+A target declared to return `F&&` keeps that source prototype, while the SDK's
+invocation result trait and the call's `decltype` are `F&`. Named functions,
+function-pointer objects, reference wrappers, source call operators and member
+functions share that expression rule. Evaluated operands
 and callbacks execute once; pure type and exception queries execute none of
 their effects.
 

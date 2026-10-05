@@ -3826,8 +3826,10 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
                                             SourceValue) ||
             !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
                                                                   Context) ||
-            (Destination->isRValueReferenceType() && !SourceRValue) ||
+            (Destination->isRValueReferenceType() &&
+             !SourceValue->isFunctionType() && !SourceRValue) ||
             (Destination->isLValueReferenceType() &&
+             !SourceValue->isFunctionType() &&
              !Destination->getPointeeType().isConstQualified() && SourceRValue))
           return std::nullopt;
         continue;
@@ -3869,7 +3871,7 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
                                             Element->getPointeeType()) ||
             !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
                                                               Context) ||
-            (Element->isRValueReferenceType() &&
+            (Element->isRValueReferenceType() && !Argument->isFunctionType() &&
              Construction->getArg(I)->isLValue()) ||
             (Element->isLValueReferenceType() &&
              !Element->getPointeeType().isConstQualified() &&
@@ -4799,10 +4801,11 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                                             SourceValue) ||
             !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
                                                                   Context) ||
-            (Destination->isRValueReferenceType() && !SourceRValue) ||
+            (Destination->isRValueReferenceType() &&
+             !SourceValue->isFunctionType() && !SourceRValue) ||
             (Destination->isLValueReferenceType() &&
-             !Destination->getPointeeType().isConstQualified() &&
-             SourceRValue))
+             !SourceValue->isFunctionType() &&
+             !Destination->getPointeeType().isConstQualified() && SourceRValue))
           return std::nullopt;
       } else if (!utilityTupleDirectConversion(S, SM, Context, SourceValue,
                                                Destination)) {
@@ -4853,10 +4856,11 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                                             SourceValue) ||
             !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
                                                                   Context) ||
-            (Destination->isRValueReferenceType() && !SourceRValue) ||
+            (Destination->isRValueReferenceType() &&
+             !SourceValue->isFunctionType() && !SourceRValue) ||
             (Destination->isLValueReferenceType() &&
-             !Destination->getPointeeType().isConstQualified() &&
-             SourceRValue))
+             !SourceValue->isFunctionType() &&
+             !Destination->getPointeeType().isConstQualified() && SourceRValue))
           return std::nullopt;
       } else if (!utilityTupleDirectConversion(S, SM, Context, SourceValue,
                                                Destination)) {
@@ -4888,7 +4892,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                                           Element->getPointeeType()) ||
           !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
                                                             Context) ||
-          (Element->isRValueReferenceType() &&
+          (Element->isRValueReferenceType() && !Argument->isFunctionType() &&
            Construction->getArg(I)->isLValue()) ||
           (Element->isLValueReferenceType() &&
            !Element->getPointeeType().isConstQualified() &&
@@ -11751,7 +11755,8 @@ supportedFunctionalInvokeReferenceArgument(const State &S,
   const auto Referent = Parameter->getPointeeType();
   const auto Argument = ArgumentExpression->getType();
   return supportedFunctionalInvokeReference(S, SM, Context, Referent) &&
-         (Parameter->isLValueReferenceType()
+         (Referent->isFunctionType() ? ArgumentExpression->isLValue()
+          : Parameter->isLValueReferenceType()
               ? (ArgumentExpression->isLValue() ||
                  (Referent.isConstQualified() &&
                   ArgumentExpression->isXValue()))
@@ -11852,7 +11857,7 @@ approvedNativeMemberPointerCall(
       (ObjectType.isConstQualified() && !Method->isConst()))
     return std::nullopt;
 
-  const auto Result = Method->getReturnType();
+  const auto Result = functionCallResultType(Method->getReturnType(), Context);
   const bool ReferenceResult = Result->isReferenceType();
   const auto Referent =
       ReferenceResult ? Result->getPointeeType() : QualType();
@@ -12277,7 +12282,8 @@ approvedFunctionalMemberInvokeCallImpl(
   }
 
   if (Method) {
-    const auto Result = Method->getReturnType();
+    const auto Result =
+        functionCallResultType(Method->getReturnType(), Context);
     const auto Referent =
         MethodReferenceResult ? Result->getPointeeType() : QualType();
     if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
@@ -12468,17 +12474,18 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
           Definition->getCanonicalDecl() ||
       Method->getNumParams() + 1 != Call->getNumArgs() ||
       Operation->getNumArgs() != Call->getNumArgs() ||
-      !Context.hasSameType(Method->getReturnType(),
-                           DispatchFunction->getReturnType()) ||
+      !Context.hasSameType(
+          functionCallResultType(Method->getReturnType(), Context),
+          DispatchFunction->getReturnType()) ||
       !Context.hasSameType(Call->getType(), Operation->getType()) ||
       !functionalMemberReceiverValueCategory(Method, Call->getArg(0), false) ||
-      (!functionalInvokeParameterReference(
-           Operation->getArg(0), DispatchFunction->getParamDecl(0)) &&
-       !approvedFunctionalForwardingCall(
-           S, SM, Operation->getArg(0), DispatchFunction->getParamDecl(0))))
+      (!functionalInvokeParameterReference(Operation->getArg(0),
+                                           DispatchFunction->getParamDecl(0)) &&
+       !approvedFunctionalForwardingCall(S, SM, Operation->getArg(0),
+                                         DispatchFunction->getParamDecl(0))))
     return std::nullopt;
 
-  const auto Result = Method->getReturnType();
+  const auto Result = functionCallResultType(Method->getReturnType(), Context);
   const auto Referent =
       Result->isReferenceType() ? Result->getPointeeType() : QualType();
   if (Result->isReferenceType()
@@ -12849,7 +12856,7 @@ bool approvedUtilityTupleLikeGet(
                              : Context.getRValueReferenceType(Element);
   return Context.hasSameType(Function->getReturnType(), Result) &&
          Context.hasSameType(Get->getType(), Element) &&
-         (LValue ? Get->isLValue() : Get->isXValue());
+         Get->getValueKind() == Expr::getValueKindForType(Result);
 }
 
 // apply additionally requires its exact forwarding parameter path.
@@ -13059,8 +13066,9 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
           Definition->getCanonicalDecl() ||
       Method->getNumParams() != Tuple->size() ||
       Operation->getNumArgs() != Tuple->size() + 1 ||
-      !Context.hasSameType(Method->getReturnType(),
-                           Function->getReturnType()) ||
+      !Context.hasSameType(
+          functionCallResultType(Method->getReturnType(), Context),
+          Function->getReturnType()) ||
       !Context.hasSameType(Operation->getType(), Call->getType()) ||
       !functionalMemberReceiverValueCategory(Method, Call->getArg(0), false) ||
       !approvedFunctionalInvokeArgumentFlow(S, SM, Operation->getArg(0),
@@ -13068,7 +13076,7 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                             ObjectType, Context))
     return std::nullopt;
 
-  const auto Result = Method->getReturnType();
+  const auto Result = functionCallResultType(Method->getReturnType(), Context);
   const auto Referent =
       Result->isReferenceType() ? Result->getPointeeType() : QualType();
   if (Result->isReferenceType()
@@ -13093,13 +13101,14 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
     bool Supported = false;
     if (Parameter->isReferenceType()) {
       const auto ParameterReferent = Parameter->getPointeeType();
-      const bool ElementIsLValue =
-          StoredElement->isLValueReferenceType() ||
-          Call->getArg(1)->isLValue();
-      const bool Category = Parameter->isLValueReferenceType()
-                                ? (ElementIsLValue ||
-                                   ParameterReferent.isConstQualified())
-                                : !ElementIsLValue;
+      const bool ElementIsLValue = Element->isFunctionType() ||
+                                   StoredElement->isLValueReferenceType() ||
+                                   Call->getArg(1)->isLValue();
+      const bool Category =
+          ParameterReferent->isFunctionType() ? ElementIsLValue
+          : Parameter->isLValueReferenceType()
+              ? (ElementIsLValue || ParameterReferent.isConstQualified())
+              : !ElementIsLValue;
       Supported = Category &&
                   supportedFunctionalInvokeReference(S, SM, Context,
                                                      ParameterReferent) &&
@@ -13416,9 +13425,9 @@ approvedFunctionalReferenceDirectInvoke(
   const auto *OperationCall = dyn_cast<CXXOperatorCallExpr>(Invoked);
   const auto *OperationMethod = dyn_cast_or_null<CXXMethodDecl>(
       OperationCall ? OperationCall->getDirectCallee() : nullptr);
-  if (ReferentDefinition &&
-      S.owns(SM, ReferentDefinition->getLocation()) && OperationCall &&
-      OperationMethod && OperationMethod->getOverloadedOperator() == OO_Call &&
+  if (ReferentDefinition && S.owns(SM, ReferentDefinition->getLocation()) &&
+      OperationCall && OperationMethod &&
+      OperationMethod->getOverloadedOperator() == OO_Call &&
       !OperationMethod->isStatic() && ordinaryOperator(OperationMethod) &&
       callableMethod(OperationMethod) && OperationMethod->hasBody() &&
       S.owns(SM, OperationMethod->getLocation()) &&
@@ -13427,13 +13436,15 @@ approvedFunctionalReferenceDirectInvoke(
       OperationMethod->getRefQualifier() != RQ_RValue &&
       OperationMethod->getNumParams() + 1 == Call->getNumArgs() &&
       OperationCall->getNumArgs() == Call->getNumArgs() &&
-      Context.hasSameType(OperationMethod->getReturnType(), MethodResult) &&
-      (functionalInvokeParameterReference(
-           OperationCall->getArg(0), DispatchFunction->getParamDecl(0)) ||
-       approvedFunctionalForwardingCall(
-           S, SM, OperationCall->getArg(0),
-           DispatchFunction->getParamDecl(0)))) {
-    const auto Result = OperationMethod->getReturnType();
+      Context.hasSameType(
+          functionCallResultType(OperationMethod->getReturnType(), Context),
+          MethodResult) &&
+      (functionalInvokeParameterReference(OperationCall->getArg(0),
+                                          DispatchFunction->getParamDecl(0)) ||
+       approvedFunctionalForwardingCall(S, SM, OperationCall->getArg(0),
+                                        DispatchFunction->getParamDecl(0)))) {
+    const auto Result =
+        functionCallResultType(OperationMethod->getReturnType(), Context);
     const auto Referent =
         Result->isReferenceType() ? Result->getPointeeType() : QualType();
     bool Supported =
@@ -13496,11 +13507,13 @@ approvedFunctionalReferenceDirectInvoke(
       Indirect->getDirectCallee() ||
       Prototype->getNumParams() != Method->getNumParams() ||
       Indirect->getNumArgs() != Prototype->getNumParams() ||
-      !Context.hasSameType(Prototype->getReturnType(), MethodResult) ||
+      !Context.hasSameType(
+          functionCallResultType(Prototype->getReturnType(), Context),
+          MethodResult) ||
       (ReferenceResult
-           ? !supportedFunctionalInvokeReference(S, SM, Context, ExpressionResult)
-           : !supportedFunctionalResult(S, SM, Context,
-                                        Call->getType())))
+           ? !supportedFunctionalInvokeReference(S, SM, Context,
+                                                 ExpressionResult)
+           : !supportedFunctionalResult(S, SM, Context, Call->getType())))
     return std::nullopt;
   std::vector<const CXXConstructExpr *> SelectedCopies(
       Prototype->getNumParams(), nullptr);
@@ -30295,7 +30308,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             : Callable->isFunctionPointerType()
                   ? Callable->getPointeeType()->getAs<FunctionProtoType>()
                   : nullptr;
-    const auto Result = Prototype ? Prototype->getReturnType() : QualType();
+    const auto Result = functionCallResultType(
+        Prototype ? Prototype->getReturnType() : QualType(), Context);
     const bool ReferenceResult =
         !Result.isNull() && Result->isReferenceType();
     const auto Referent =
@@ -30500,13 +30514,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto TupleParameter = Function->getParamDecl(1)->getType();
     const auto Tuple = approvedUtilityTupleLikeSource(
         S, SM, Call->getArg(1)->getType(), Context, true, true);
-    const auto Result =
-        Prototype ? Prototype->getReturnType()
-                  : UserCallable ? UserCallable->Method->getReturnType()
-                  : ObjectOperation ? ObjectOperation->Operation.ResultType
-                  : ReferenceCallable ? ReferenceCallableResult
-                  : MemberCallable ? Function->getReturnType()
-                                    : QualType();
+    const auto Result = functionCallResultType(
+        Prototype           ? Prototype->getReturnType()
+        : UserCallable      ? UserCallable->Method->getReturnType()
+        : ObjectOperation   ? ObjectOperation->Operation.ResultType
+        : ReferenceCallable ? ReferenceCallableResult
+        : MemberCallable    ? Function->getReturnType()
+                            : QualType(),
+        Context);
     const unsigned Arity =
         Prototype ? Prototype->getNumParams()
         : UserCallable ? UserCallable->Method->getNumParams()
@@ -30556,13 +30571,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Parameter->isReferenceType()) {
         const auto ParameterReferent = Parameter->getPointeeType();
         const auto TupleArgument = Call->getArg(1)->getType();
-        const bool ElementIsLValue =
-            StoredElement->isLValueReferenceType() ||
-            Call->getArg(1)->isLValue();
-        const bool Category = Parameter->isLValueReferenceType()
-                                  ? (ElementIsLValue ||
-                                     ParameterReferent.isConstQualified())
-                                  : !ElementIsLValue;
+        const bool ElementIsLValue = Element->isFunctionType() ||
+                                     StoredElement->isLValueReferenceType() ||
+                                     Call->getArg(1)->isLValue();
+        const bool Category =
+            ParameterReferent->isFunctionType() ? ElementIsLValue
+            : Parameter->isLValueReferenceType()
+                ? (ElementIsLValue || ParameterReferent.isConstQualified())
+                : !ElementIsLValue;
         if (!Category ||
             !supportedFunctionalInvokeReference(S, SM, Context,
                                                 ParameterReferent) ||
@@ -31045,12 +31061,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      : nullptr,
           Context);
     if (Arguments && (Arguments->size() == 2 || Arguments->size() == 3) &&
-        Parameter->isReferenceType() &&
-        Result->isReferenceType() && Pair &&
+        Parameter->isReferenceType() && Result->isReferenceType() && Pair &&
         Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
         Same(Call->getType(), Result->getPointeeType()) &&
-        (Result->isLValueReferenceType() ? Call->isLValue()
-                                         : Call->isXValue())) {
+        (Call->getValueKind() == Expr::getValueKindForType(Result))) {
       if (Arguments->size() == 3 &&
           Arguments->get(0).getKind() == TemplateArgument::Integral) {
         const auto Index = Arguments->get(0).getAsIntegral();
@@ -31104,8 +31118,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Arguments->get(1).pack_size() != Tuple->Elements.size() ||
         !Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) ||
         !Same(Call->getType(), Result->getPointeeType()) ||
-        (Result->isLValueReferenceType() ? !Call->isLValue()
-                                         : !Call->isXValue()))
+        (Call->getValueKind() != Expr::getValueKindForType(Result)))
       return std::nullopt;
     unsigned PackIndex = 0;
     for (const auto &Argument : Arguments->get(1).pack_elements())
