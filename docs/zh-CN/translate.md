@@ -36,6 +36,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 有类型和透明的 `std::logical_and`、`std::logical_or` 和 `std::logical_not` 也接受已支持的完整对象指针、`void*` 和 `decltype(nullptr)` 值，包括已支持的 `const` 类型。直接调用、`std::invoke` 及其类型查询保留相同的布尔转换和实参求值规则。14 类已支持的单参数谓词算法可在对象指针和 `void*` 范围上使用固定 SDK 的 `std::logical_not`。不完整或易失的所指类型、用户定义转换及替换 SDK 声明仍遵循既有检查。
 
+来源自调用者的普通函数声明，在整个声明族没有运行时使用时，也可无需定义而为直接调用和 `std::invoke` 查询提供类型元数据。已支持的标量、`void`、引用和回调结果保留原始签名；别名、数组边界、异常表达式、选中的默认实参及临时清理仍会检查，查询操作数不会执行。运行时调用和存储函数地址仍需定义，C 导出及成员声明继续遵循既有要求。
+
 Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 符号隔离还会恢复普通 COFF 与 bigobj 静态库中 MSVC 原有的非关联节记录编号，使最终附加记录逐字节保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

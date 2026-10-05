@@ -9101,6 +9101,28 @@ std::vector<const CheckedEmptyBase *> Adapter::emptyBaseCast(const CastExpr *Cas
   return Path;
 }
 
+static bool functionDeclarationMetadataSource(Adapter &A,
+                                              const FunctionDecl *Function) {
+  if (!A.S.coreV2() || !Function ||
+      !A.S.owns(A.Sources, Function->getLocation()) ||
+      isa<CXXMethodDecl>(Function) || !Function->getIdentifier() ||
+      !Function->getDeclContext()->isFileContext() ||
+      !Function->getLexicalDeclContext()->isFileContext() ||
+      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Function->hasBody() || !Function->isReferenced() ||
+      Function->isUsed(/*CheckUsedAttr=*/true) || Function->isImplicit() ||
+      Function->isDeleted() || Function->isExplicitlyDefaulted() ||
+      Function->isConsteval() || Function->isMain() || Function->isExternC() ||
+      !Function->getTypeSourceInfo())
+    return false;
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  // Clang marks metadata-only references without requesting a definition.
+  // Any evaluated call or address in the declaration family revokes this
+  // exception. Original signatures and selected defaults still traverse.
+  return ordinaryCallbackPrototype(Prototype) &&
+         standardExceptionSpecification(Prototype);
+}
+
 bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
   if (F && allocationOperatorKind(F->getOverloadedOperator()))
     if (const auto *Definition = F->getDefinition())
@@ -9123,11 +9145,17 @@ bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
     reject(L, "function address", "An ordinary source-owned free function or static method is required.");
     return false;
   }
+  if (CheckingSource && functionDeclarationMetadataSource(*this, F)) {
+    checkTypeOnly(F->getType(), L);
+    return S.Diagnostics.empty();
+  }
   if (functionPointerType(Context.getPointerType(F->getType()), L).empty())
     return false;
   const auto *Definition = F->getDefinition();
   if (!Definition || !S.owns(Sources, Definition->getLocation())) {
-    reject(L, "function address definition", "A named callback requires its definition in this source unit.", "TR0203");
+    reject(L, "function address definition",
+           "A named callback requires its definition in this source unit.",
+           "TR0203");
     return false;
   }
   return true;
@@ -18085,11 +18113,15 @@ public:
     }
     return true;
   }
+  bool lazyFunctionDeclarationSignature(const FunctionDecl *Function) {
+    return functionDeclarationMetadataSource(A, Function);
+  }
   bool lazyFreeFunctionSignature(const FunctionDecl *Function) {
     if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) ||
         !owned(Function) || Function->hasBody() ||
         Function->isUsed(/*CheckUsedAttr=*/false) || Function->isDeleted() ||
-        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        Function->getTemplateSpecializationKind() !=
+            TSK_ImplicitInstantiation ||
         !Function->getTypeSourceInfo())
       return false;
     const auto *Primary = Function->getPrimaryTemplate();
@@ -20183,7 +20215,8 @@ public:
           A.reject(P->getLocation(), "C export",
                    "C ABI exports require scalar results and parameters.");
     }
-    if (!D->hasBody() && !Defaulted && !Deleted && !lazyFreeFunctionSignature(D) &&
+    if (!D->hasBody() && !Defaulted && !Deleted &&
+        !lazyFunctionDeclarationSignature(D) && !lazyFreeFunctionSignature(D) &&
         !lazyFriendFunctionSignature(D) &&
         A.nativeHeapImport(D, D->getLocation()).empty() &&
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
@@ -22026,14 +22059,17 @@ public:
         else
           queueGenerated(Method, L);
       }
-      const bool LazySignature = lazyFreeFunctionSignature(F) || lazyFriendFunctionSignature(F);
-      // Sema's unused specialization needs its complete signature and selected
-      // source, but does not request a body. Runtime-used instances still need
-      // definitions and lowering never emits this hypothetical call.
+      const bool LazySignature = lazyFunctionDeclarationSignature(F) ||
+                                 lazyFreeFunctionSignature(F) ||
+                                 lazyFriendFunctionSignature(F);
+      // An unused declaration or specialization needs its complete signature
+      // and selected source, but does not request a body. Runtime uses still
+      // need definitions and lowering never emits this hypothetical call.
       if (LazySignature && !TraverseDecl(const_cast<FunctionDecl *>(F)))
         return false;
       if (!F ||
-          (!GeneratedAssignment && !LazySignature && !F->isImplicit() && !F->hasBody() &&
+          (!GeneratedAssignment && !LazySignature && !F->isImplicit() &&
+           !F->hasBody() &&
            (!A.S.project() || F->getFormalLinkage() == Linkage::Internal ||
             F->isInlined())))
         A.reject(

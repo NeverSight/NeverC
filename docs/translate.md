@@ -353,6 +353,15 @@ pinned `std::logical_not` on object-pointer and `void*` ranges. Incomplete or
 volatile pointees, user-defined conversions and replaced SDK declarations
 retain their existing checks.
 
+Source-owned ordinary function declarations also provide metadata for direct
+calls and `std::invoke` queries without a definition when the whole declaration
+family has no runtime use. Supported scalar, `void`, reference and callback
+results retain their original signatures. Aliases, array bounds, exception
+expressions, selected defaults and temporary cleanup remain checked without
+executing query operands. Runtime calls and stored function addresses still
+require definitions; C exports and member declarations keep their existing
+requirements.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

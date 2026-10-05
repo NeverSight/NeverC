@@ -117814,7 +117814,7 @@ struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}i
 )cpp",
        "TR0203"},
       {"missing-callable-definition", R"cpp(
-P source()noexcept;int f(){int n=std::invoke(&target,1);static_assert(__is_same(decltype(std::invoke(source(),1)),int));return n;}
+P source()noexcept;int f(){int n=std::invoke(&target,1);static_assert(__is_same(decltype(std::invoke(source(),1)),int));return source()(n);}
 )cpp",
        "TR0203"},
       {"unsupported-result", R"cpp(
@@ -146616,13 +146616,10 @@ using Q=decltype(std::invoke(target,(sizeof(long double),1)));int main(){return 
 int target(int n)noexcept{return n+1;}using F=int(int)noexcept;using P=int(*)(int)noexcept;
 using Q=decltype(std::invoke((sizeof(long double),target),1));int main(){return 0;}
 )cpp"},
-      {"caller-without-definition", R"cpp(#include <functional>
-int declared(short)noexcept;const int& reference(const int&)noexcept;
+      {"caller-runtime-without-definition", R"cpp(#include <functional>
+int declared(short)noexcept;
 static_assert(__is_same(decltype(std::invoke(declared,2)),int));
-static_assert(__is_same(decltype(std::invoke(reference,2)),const int&));
-static_assert(noexcept(std::invoke(declared,3)));
-static_assert(sizeof(std::invoke(declared,4))==sizeof(int));
-int main(){return 0;}
+int main(){return std::invoke(declared,1);}
 )cpp"},
       {"cleanup-body", R"cpp(#include <functional>
 #include <type_traits>
@@ -147016,5 +147013,215 @@ return n==1?0:3;}
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionDeclarationMetadataPlain) {
+  const auto Source = tmpFile("function-declaration-metadata-plain.cpp");
+  const auto Output = tmpFile("function-declaration-metadata-plain.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+int declared(short)noexcept;
+static_assert(__is_same(decltype(declared(1)),int));
+static_assert(__is_same(decltype(std::invoke(declared,2)),int));
+static_assert(__is_same(decltype(std::invoke(&declared,3)),int));
+static_assert(noexcept(std::invoke(declared,4)));
+static_assert(sizeof(std::invoke(declared,5))==sizeof(int));
+static_assert(std::is_same<decltype(std::invoke(declared,6)),int>::value);
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-declaration-metadata-plain" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionDeclarationMetadataReferences) {
+  const auto Source = tmpFile("function-declaration-metadata-references.cpp");
+  const auto Output = tmpFile("function-declaration-metadata-references.nc");
+  writeFile(Source, R"cpp(#include <functional>
+struct R{int value;};using A=int[2];using F=int(int)noexcept;
+R& reference(R&)noexcept;const int& scalar(const int&)noexcept;
+A& array()noexcept;F& callback()noexcept;
+int main(){R r{3};
+static_assert(__is_same(decltype(std::invoke(reference,r)),R&));
+static_assert(__is_same(decltype(std::invoke(scalar,1)),const int&));
+static_assert(__is_same(decltype(std::invoke(array)),A&));
+static_assert(__is_same(decltype(callback()),F&));
+static_assert(sizeof(std::invoke(array))==sizeof(A));
+static_assert(noexcept(std::invoke(reference,r)));
+return r.value==3?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-declaration-metadata-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionDeclarationMetadataCallbacks) {
+  const auto Source = tmpFile("function-declaration-metadata-callbacks.cpp");
+  const auto Output = tmpFile("function-declaration-metadata-callbacks.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using N=int(*)(int)noexcept;using F=int(*)(int);
+int target(int)noexcept;void consume(F,bool)noexcept;F factory()noexcept;
+static_assert(__is_same(decltype(std::invoke(consume,target,target)),void));
+static_assert(__is_same(decltype(std::invoke(factory)),F));
+static_assert(__is_same(decltype(std::invoke(factory(),1)),int));
+static_assert(noexcept(std::invoke(consume,target,target)));
+static_assert(!noexcept(std::invoke(factory(),1)));
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-declaration-metadata-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionDeclarationMetadataDefaults) {
+  const auto Source = tmpFile("function-declaration-metadata-defaults.cpp");
+  const auto Output = tmpFile("function-declaration-metadata-defaults.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{R(){++effects;}~R(){++effects;}};
+int argument(R r=R{})noexcept;
+using P=int(*)(int)noexcept;P callable(R r=R{})noexcept;
+int target(int)noexcept;
+static_assert(__is_same(decltype(std::invoke(target,argument())),int));
+static_assert(__is_same(decltype(std::invoke(callable(),1)),int));
+static_assert(!noexcept(std::invoke(target,argument())));
+static_assert(!noexcept(std::invoke(callable(),1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-declaration-metadata-defaults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionDeclarationMetadataRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"extern-c-export", R"cpp(#include <functional>
+#include <type_traits>
+extern "C" int declared(int)noexcept;static_assert(__is_same(decltype(std::invoke(declared,1)),int));int main(){return 0;}
+)cpp"},
+      {"hidden-cleanup-body", R"cpp(#include <functional>
+#include <type_traits>
+struct R{~R(){long double n=0;}};int target(int)noexcept;int argument(R r=R{})noexcept;using T=decltype(std::invoke(target,argument()));int main(){return 0;}
+)cpp"},
+      {"hidden-noexcept", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept(sizeof(long double)>0);using R=decltype(std::invoke(declared,1));int main(){return 0;}
+)cpp"},
+      {"hidden-parameter-bound", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int a[(sizeof(long double),2)])noexcept;using R=decltype(std::invoke(declared,static_cast<int*>(nullptr)));int main(){return 0;}
+)cpp"},
+      {"hidden-return-alias", R"cpp(#include <functional>
+#include <type_traits>
+using T=decltype((sizeof(long double),int{}));T declared(int)noexcept;using R=decltype(std::invoke(declared,1));int main(){return 0;}
+)cpp"},
+      {"hidden-selected-default", R"cpp(#include <functional>
+#include <type_traits>
+int target(int)noexcept;int argument(int n=sizeof(long double))noexcept;using R=decltype(std::invoke(target,argument()));int main(){return 0;}
+)cpp"},
+      {"missing-cleanup-body", R"cpp(#include <functional>
+#include <type_traits>
+struct R{~R()noexcept;};int target(int)noexcept;int argument(R r=R{})noexcept;using T=decltype(std::invoke(target,argument()));int main(){return 0;}
+)cpp"},
+      {"record-result-query", R"cpp(#include <functional>
+#include <type_traits>
+struct R{int n;};R declared(int)noexcept;using T=decltype(std::invoke(declared,1));int main(){return 0;}
+)cpp"},
+      {"runtime-address", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;using P=int(*)(int)noexcept;P pointer=declared;int main(){return pointer(1);}
+)cpp"},
+      {"runtime-after-query", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;static_assert(__is_same(decltype(std::invoke(declared,1)),int));int main(){return declared(1);}
+)cpp"},
+      {"runtime-callback-object", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;using P=int(*)(int)noexcept;int main(){return std::logical_not<P>{}(declared);}
+)cpp"},
+      {"runtime-direct", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;int main(){return declared(1);}
+)cpp"},
+      {"runtime-invoke", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;int main(){return std::invoke(declared,1);}
+)cpp"},
+      {"sdk-invoke-specialization", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;using F=int(int)noexcept;namespace std{inline namespace __1{template<>int invoke<F&,int>(F&f,int&&n)noexcept{return f(static_cast<int&&>(n));}}}using R=decltype(std::invoke(declared,1));int main(){return 0;}
+)cpp"},
+      {"unreferenced-declaration", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int)noexcept;int main(){return 0;}
+)cpp"},
+      {"variadic", R"cpp(#include <functional>
+#include <type_traits>
+int declared(int,...)noexcept;using R=decltype(std::invoke(declared,1,2));int main(){return 0;}
+)cpp"},
+      {"wide-result", R"cpp(#include <functional>
+#include <type_traits>
+long double declared(int)noexcept;using R=decltype(std::invoke(declared,1));int main(){return 0;}
+)cpp"},
+      {"wide-signature", R"cpp(#include <functional>
+#include <type_traits>
+int declared(long double)noexcept;using R=decltype(std::invoke(declared,1));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &C : Cases) {
+    SCOPED_TRACE(C.Name);
+    const auto Source = tmpFile(
+        std::string("function-declaration-metadata-guard-") + C.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("function-declaration-metadata-guard-") + C.Name + ".nc");
+    writeFile(Source, C.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
   }
 }

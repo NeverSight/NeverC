@@ -36,6 +36,8 @@ Core v2 接受經過驗證的空與非空 `<tuple>` 值，包括建構、賦值�
 
 具型別與透明的 `std::logical_and`、`std::logical_or` 與 `std::logical_not` 也接受已支援的完整物件指標、`void*` 和 `decltype(nullptr)` 值，包括已支援的 `const` 型別。直接呼叫、`std::invoke` 及其型別查詢保留相同的布林轉換與引數求值規則。14 類已支援的單參數述詞演算法可在物件指標與 `void*` 範圍上使用固定 SDK 的 `std::logical_not`。不完整或易失的所指型別、使用者定義轉換及替換 SDK 宣告仍遵循既有檢查。
 
+來源屬於呼叫者的普通函式宣告，在整個宣告族沒有執行期使用時，也可無須定義而為直接呼叫與 `std::invoke` 查詢提供型別中繼資料。已支援的純量、`void`、參考與回呼結果保留原始簽章；別名、陣列邊界、例外運算式、選取的預設引數與暫存物件清理仍會檢查，查詢運算元不會執行。執行期呼叫與儲存函式位址仍需定義，C 匯出及成員宣告繼續遵循既有要求。
+
 Windows 建置保留 Microsoft SDK 原有的內部 `log10`/`pow` 範本，並隔離其編譯後的符號，以保留 SDK 特有的計算及浮點狀態行為。實際 SDK 與執行階段差分檢查須由實作此變更的版本通過原生 CI 驗證。 符號隔離也會還原一般 COFF 與 bigobj 靜態函式庫中 MSVC 原有的非關聯節記錄編號，使最終附加記錄逐位元組保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

@@ -4143,8 +4143,15 @@ SDK function body. `decltype`, result traits, array extent, `sizeof`, `alignof`
 and `noexcept` queries execute no callable, argument, default-argument or
 temporary-lifetime effects. Original function definitions and signatures,
 pointer initializers, written aliases, selected defaults and temporary cleanup
-remain independent source roots. Query-only use retains the existing
-requirement for caller function definitions in a single-source translation.
+remain independent source roots. An ordinary source-owned namespace function
+may supply its declaration alone when Clang references the declaration family
+only as metadata, without any runtime use. Its original written prototype and
+selected defaults still finish source traversal, and queries execute no operand
+or temporary effects. An evaluated call or function address anywhere in that
+family revokes this declaration-only exception. C exports, member functions,
+unreferenced declarations and templates retain their separate definition or
+lazy-signature requirements. No missing function definition is emitted or
+imported through this metadata proof.
 Cast or indirect adapter callees, independent SDK function addresses, source
 replacements and unsupported callable/result types retain their separate
 requirements.
