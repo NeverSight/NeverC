@@ -818,6 +818,8 @@ static bool supportedFunctionalReferenceValue(const State &S,
       Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
     return false;
   Type = Type.getUnqualifiedType();
+  if (Type->isFunctionType())
+    return ordinaryCallbackPrototype(Type->getAs<FunctionProtoType>());
   if (const auto *Array = Context.getAsConstantArrayType(Type))
     return Array->getSize().getLimitedValue(65537) <= 65536 &&
            supportedFunctionalReferenceValue(S, SM, Context,

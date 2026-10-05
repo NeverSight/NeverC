@@ -2106,7 +2106,7 @@ void Adapter::chargeExpansion(std::size_t Nodes, SourceLocation L) {
 }
 
 // The source prototype must describe exactly the default emitted function ABI.
-static bool ordinaryCallbackPrototype(const FunctionProtoType *P) {
+bool ordinaryCallbackPrototype(const FunctionProtoType *P) {
   if (!P || P->isVariadic() || P->getNumParams() > 64 ||
       !standardExceptionSpecification(P) ||
       P->getExtInfo() != FunctionType::ExtInfo() ||
@@ -2274,8 +2274,8 @@ static bool incompleteRecordMetadataIdentity(Adapter &A, const CXXRecordDecl *D)
 static QualType functionMetadataType(QualType T) {
   if (T.isNull())
     return {};
-  // A function reference has no runtime carrier in the C23 protocol, but its
-  // direct referent is still a complete type-trait and transform operand.
+  // A direct function referent keeps its complete type-trait and transform
+  // identity, independently of its callback value carrier during lowering.
   if (T->isReferenceType())
     T = T->getPointeeType();
   return !T.isNull() && T->isFunctionType() ? T : QualType{};
@@ -2414,7 +2414,7 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
   if (auto Function = functionMetadataType(T); !Function.isNull()) {
     // Bare functions and their direct references share one signature
     // contract. Check the prototype before forming a pointer to reject
-    // cv/ref-qualified functions without admitting a runtime reference.
+    // cv/ref-qualified functions before checking their callback value carrier.
     if (T.isVolatileQualified() || T->isAtomicType() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default || Function.hasQualifiers() ||
         Function.getAddressSpace() != LangAS::Default ||
@@ -10023,6 +10023,18 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     }
   if (S.coreV2() && C->isFunctionPointerType())
     return functionPointerType(T, L, Depth);
+  if (S.coreV2() && C->isReferenceType() &&
+      C->getPointeeType()->isFunctionType()) {
+    if (T.getAddressSpace() != LangAS::Default) {
+      reject(L, "function reference address space",
+             "Function-reference carriers require the default address space.");
+      return {};
+    }
+    // A function reference binds a callable value, not object storage. The
+    // same bounded prototype and target layout proof governs its carrier.
+    return functionPointerType(Context.getPointerType(C->getPointeeType()), L,
+                               Depth + 1);
+  }
   if (S.coreV2() && (C->isPointerType() || C->isReferenceType())) {
     QualType Pointee = C->getPointeeType();
     if (T.getAddressSpace() != LangAS::Default ||
@@ -20413,11 +20425,9 @@ public:
       }
       checkTemplateArguments(templateSourceParameters(Primary), *Arguments, D->getLocation());
     }
-    // A declaration selected only by decltype/noexcept can return a function
-    // reference as type metadata even though the C23 protocol has no runtime
-    // carrier for that reference. Do not extend this exception to incomplete
-    // records or arrays. Definitions and evaluated calls are still rejected by
-    // their lowering/signature carrier checks.
+    // Function-reference results retain their exact signature metadata.
+    // Definitions and evaluated calls additionally validate the callback
+    // value carrier; incomplete records and arrays keep their own contracts.
     if (!functionMetadataType(D->getReturnType()).isNull())
       A.checkTypeOnly(D->getReturnType(), D->getLocation());
     else
@@ -21155,8 +21165,12 @@ public:
       Access = Field->getAccess();
       auto T = A.Context.getBaseElementType(Field->getType());
       if (T->isReferenceType()) {
-        if (!T->getPointeeType()->isObjectType())
+        const auto Referent = T->getPointeeType();
+        if (!Referent->isObjectType() &&
+            !ordinaryCallbackPrototype(Referent->getAs<FunctionProtoType>()))
           return false;
+        // Field traversal independently validates every callback component,
+        // its target layout and the original written signature sources.
         HasReference = true;
       } else if (const auto *Member = T->getAsCXXRecordDecl()) {
         if (!admittedRecordLayout(Member, Depth + 1))

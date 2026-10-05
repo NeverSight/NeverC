@@ -213,8 +213,8 @@ the existing function-pointer representation and temporary cleanup.
 function rvalue-reference replacement arguments when its selected `forward`
 and function-to-pointer decay match the destination, with the existing optional
 `noexcept` removal. Independent SDK helper addresses, substituted helpers,
-unsupported signatures and ordinary function-reference storage remain outside
-this support.
+unsupported signatures remain outside this support. Runtime function-reference
+bindings use the checked callback carrier described below.
 
 The exact pinned `std::as_const` also accepts these admitted function
 designators. It returns the same function lvalue and preserves its `noexcept`
@@ -226,8 +226,8 @@ casts and `reference_wrapper` access retain function identity. Runtime operands 
 temporary cleanup are evaluated once; type and exception queries remain
 unevaluated. The selected nondeleted lvalue overload, SDK declaration chain
 and builtin or completed return body must still match exactly. Independent
-adapter addresses, substituted declarations and ordinary runtime
-function-reference storage retain their existing rejection.
+adapter addresses and substituted declarations retain their existing rejection.
+Runtime function-reference bindings keep the callback source and ABI checks.
 
 The pinned `std::move_if_noexcept` preserves the same admitted function
 designators, including explicit function lvalue/rvalue-reference template
@@ -240,7 +240,8 @@ cleanup. Direct/imported calls, unevaluated type/exception queries, nested
 adapters, checked function-reference casts, callback exchange and
 `reference_wrapper` access reuse the existing function representation. SDK
 declaration/body checks and original trait, signature and operand sources
-still apply; this does not introduce runtime function-reference storage.
+still apply; runtime function-reference bindings reuse the checked callback
+carrier described below.
 
 Function designators also support explicit `static_cast<F&>` and
 `static_cast<F&&>`, equivalent C-style casts, and functional casts through a
@@ -253,9 +254,9 @@ Address-taking, decay, invocation and `move`/`forward`/`exchange` preserve the
 selected function and evaluate each operand once. Discarded casts retain
 operand effects and full-expression cleanup without invoking the function.
 Written signatures, alias arguments, exception expressions and query operands
-are still checked before erasure. Reinterpretation, signature changes other
-than `noexcept` removal, and runtime function-reference variables, parameters
-or results remain unsupported.
+are still checked before erasure. Reinterpretation and signature changes other
+than `noexcept` removal remain unsupported. Runtime function-reference bindings
+reuse the same checked callback value and original source proof.
 
 Object-pointer `std::exchange` also accepts fixed-array replacements when
 the selected assignment decays the array to a pointer to its complete element
@@ -2301,7 +2302,7 @@ minimum argument count includes defaults accumulated on later redeclarations;
 adding a default that makes a record-parameter constructor callable with one
 argument removes this arity proof. No default expression is instantiated to
 determine the count. Every parameter's original type source is still checked;
-this does not admit unsupported parameter types such as function references.
+this does not admit unsupported parameter types such as `long double`.
 Record parameter types must already satisfy the ordinary completion checks;
 these constructor proofs do not instantiate an otherwise incomplete template
 record.
@@ -8774,7 +8775,7 @@ excluded, as do array values in callback parameters or results. Complete
 source-owned record values use the callback parameter/result destination
 contract above. Supported complete-record pointers/references keep their existing carrier contract;
 incomplete record signatures do not gain a carrier. Runtime function-reference
-variables, fields, parameters and results remain outside the carrier contract.
+bindings follow the separate callback value contract below.
 
 Actual written function-type template arguments, retained alias underlying
 sources and ordinary typedef/using sources register exact source roots. Normal
@@ -8796,6 +8797,44 @@ conversion, deduction, stored callbacks and zero source expression effects.
 O0/O2 and relocation require the implementing revision's CI. This work adds no
 runtime type, IR operation or helper. Standard headers and complete C++/STL
 remain unfinished.
+
+## Runtime function references
+
+Core v2 encodes an ordinary function reference with the existing checked
+callback value. A direct `F&` or `F&&` uses the same bounded default-ABI
+prototype, code-pointer layout and address-space proof as `F*`; it does not
+add a protocol type or IR operation. Reference kind and the original function
+exception specification remain available to type and exception queries.
+Function expressions remain lvalues, including a call declared to return
+`F&&`, as required by C++17.
+
+Source functions can take and return these references. Local bindings and
+admitted reference fields retain the selected function identity. Named
+functions still require an ordinary source-owned definition before evaluated
+address-taking or binding. Checked `noexcept` removal, source call results,
+function-reference parameters and field access produce callable values.
+A reference to a function-pointer object remains an object pointer to callback
+storage, with its original aliasing and dereference behavior.
+
+The existing pinned reference-wrapper, invocation, pair and tuple descriptors
+can consume admitted function-reference parameters and results. Their exact
+SDK declaration, selected operation and forwarding proofs remain required;
+this carrier change grants no independent SDK address or private helper use.
+Reference-wrapper and invocation signature queries retain the exact `F&`
+result and parameter identity. `pair` and `tuple` function-reference elements,
+copies, `get` and admitted `apply` flows preserve bindings. Evaluated operands
+and callbacks execute once; pure type and exception queries execute none of
+their effects.
+
+Original aliases, signatures, adjusted bounds, exception expressions and
+source bodies retain ordinary traversal before erasure. Hidden unsupported
+sources, missing evaluated definitions, variadic or nondefault-ABI callbacks
+and unsupported signature components remain rejected. Array and incomplete
+record signatures keep their existing restrictions. Native C23 remains the
+source-language frontend; this representation belongs to the external
+`cpp-core-v2` translator. Cross-platform native execution requires the
+implementing revision's CI.
+
 
 ## Unary type transforms
 
@@ -10950,8 +10989,8 @@ the function body, signature and complete template source before the written
 overload pseudo-type is skipped. Unsupported syntax in a second clause remains
 diagnosed even when it selects the same canonical specialization.
 
-The ordinary callback contract still excludes function references, nonstatic
-member pointers, constructor/conversion-template addresses,
+The ordinary callback contract still excludes nonstatic member pointers,
+constructor/conversion-template addresses,
 variadics, lambda conversions and nondefault ABI metadata. Function-pointer
 non-type template arguments and cross-unit callbacks remain unsupported.
 Variable-template callback storage follows its own contract below. Existing direct calls and discarded function

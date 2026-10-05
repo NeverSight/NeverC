@@ -118,6 +118,14 @@ class FunctionLowering {
                       {"loc", A.loc(L)}};
   }
   Expression address(Expression Place, QualType T, SourceLocation L) {
+    if (A.S.coreV2() && T->isFunctionType()) {
+      // A function referent already denotes this exact callable value. SDK
+      // forwarding must not turn it into an object-address IR operation.
+      if (Place.getString("type") != type(A.Context.getPointerType(T), L))
+        reject(L, "function referent address",
+               "The exact checked callback value is required.");
+      return Place;
+    }
     return Expression{{"kind", "address"},
                       {"type", type(A.Context.getPointerType(T), L)},
                       {"args", json::Array{std::move(Place)}},
@@ -125,6 +133,10 @@ class FunctionLowering {
   }
   Expression dereference(Expression Pointer, SourceLocation L) {
     auto T = *Pointer.getString("type");
+    // A function referent is already its callback value. Object storage for
+    // a callback still has a ptr:/cptr: prefix and dereferences normally.
+    if (T.starts_with("fnptr:"))
+      return Pointer;
     auto Pointee = T.drop_front(T.starts_with("cptr:") ? 5 : 4).str();
     return Expression{{"kind", "dereference"},
                       {"type", Pointee},
@@ -145,6 +157,8 @@ class FunctionLowering {
       auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
       return bind(Default->getExpr(), ReferenceType);
     }
+    if (ReferenceType->getPointeeType()->isFunctionType())
+      return cast(functionValue(E), type(ReferenceType, L), L);
     auto Pointer = address(lvalue(E), E->getType(), L);
     return cast(std::move(Pointer), type(ReferenceType, L), L);
   }
@@ -573,9 +587,19 @@ class FunctionLowering {
         return snapshot(std::move(Pointer), L);
       }
     }
-    if (const auto *R = dyn_cast<DeclRefExpr>(E))
-      return A.functionAddress(dyn_cast<FunctionDecl>(R->getDecl()), L);
+    if (const auto *Call = dyn_cast<CallExpr>(E); Call && Call->isLValue())
+      return call(Call);
+    if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
+      if (const auto *Function = dyn_cast<FunctionDecl>(R->getDecl()))
+        return A.functionAddress(Function, L);
+      if (isa<VarDecl, BindingDecl>(R->getDecl()))
+        return snapshot(storage(R->getDecl(), L), L);
+    }
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
+      if (const auto *Field = dyn_cast<FieldDecl>(M->getMemberDecl());
+          Field && Field->getType()->isReferenceType() &&
+          Field->getType()->getPointeeType()->isFunctionType())
+        return snapshot(lvalue(M), L);
       // Static member access evaluates the source base, including its cleanup.
       discard(M->getBase());
       return A.functionAddress(dyn_cast<FunctionDecl>(M->getMemberDecl()), L);
@@ -18523,7 +18547,11 @@ class FunctionLowering {
   Expression call(const CallExpr *Call,
                   std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
-    auto T = type(Call->getType(), L, true);
+    // Function-reference call results are function lvalues in the source AST.
+    // Their runtime result uses the same checked callback value as a binding.
+    auto T = A.S.coreV2() && Call->getType()->isFunctionType()
+                 ? type(A.Context.getLValueReferenceType(Call->getType()), L)
+                 : type(Call->getType(), L, true);
     auto *Callee = Call->getDirectCallee();
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
     if (A.S.coreV2()) {
@@ -24205,7 +24233,8 @@ class FunctionLowering {
     auto Found = Storage.find(V->getCanonicalDecl());
     if (Found != Storage.end()) {
       // Reference identity is represented by dereferencing its hidden pointer.
-      if (V->getType()->isReferenceType())
+      if (V->getType()->isReferenceType() &&
+          !V->getType()->getPointeeType()->isFunctionType())
         return *(*Found->second.getArray("args"))[0].getAsObject();
       return Found->second;
     }

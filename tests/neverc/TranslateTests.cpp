@@ -6754,7 +6754,6 @@ TEST_F(TranslateTest, CoreV2BareFunctionMetadataChecksErasedSource) {
       {"wide-alias-default", "template<class T=int>using F=int(char[sizeof(long double)+sizeof(T)]);using R=F<>;"},
       {"volatile-pointer-signature", "template<class T>using I=int;I<int(volatile int*)> f(){return 3;}"},
       {"ordinary-alias-qualifier", "using F=int()const;"},
-      {"runtime-function-reference", "int identity(int n){return n;}template<class T>using I=T;I<int(int)>& f(){return identity;}"},
       {"hidden-erased-argument", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T>using I=int;I<int()noexcept(noexcept(Mid()))> f(){return 3;}"},
       {"hidden-erased-pack", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class...T>using I=int;I<void(),int()noexcept(noexcept(Mid()))> f(){return 3;}"},
       {"hidden-erased-default", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T=int()noexcept(noexcept(Mid()))>using I=int;I<> f(){return 3;}"},
@@ -17894,7 +17893,7 @@ TEST_F(TranslateTest, CoreV2FunctionPointersAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2FunctionPointersRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"function-reference", "int get(){return 3;}int main(){int(&r)()=get;return r();}"},
+      {"function-reference-signature", "long double get(){return 3;}int main(){long double(&r)()=get;return 0;}"},
       {"variadic", "int get(int,...){return 3;}int main(){auto p=&get;return p(1,2);}"},
       {"lambda-conversion", "int main(){int(*p)(int)=[](int n){return n;};return p(3);}"},
       {"double-signature", "long double get(long double n){return n;}int main(){auto p=&get;return int(p(3.0L));}"},
@@ -27682,6 +27681,357 @@ int main(){return std::as_const(3);}
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierAliasRuntime) {
+  auto Source = tmpFile("function-reference-alias-runtime.cpp");
+  auto Output = tmpFile("function-reference-alias-runtime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+template<class T>using Identity=T;using F=int(int);int effects;int target(int n){++effects;return n+1;}Identity<F>&source(){effects+=2;return target;}int main(){Identity<F>&f=source();static_assert(__is_same(decltype(source()),F&));return f(1)!=2||std::invoke(source)(2)!=3||effects!=6;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-alias-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierInvokeResult) {
+  auto Source = tmpFile("function-reference-invoke-result.cpp");
+  auto Output = tmpFile("function-reference-invoke-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&source()noexcept{++effects;return target;}int main(){static_assert(__is_same(decltype(std::invoke(source)),F&));static_assert(noexcept(std::invoke(source)));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-invoke-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierInvokeRuntime) {
+  auto Source = tmpFile("function-reference-invoke-runtime.cpp");
+  auto Output = tmpFile("function-reference-invoke-runtime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&source()noexcept{effects+=2;return target;}int apply(F&f,int n)noexcept{return f(n);}int main(){F&f=std::invoke(source);static_assert(__is_same(decltype(std::invoke(source)),F&));static_assert(noexcept(std::invoke(source)));return std::invoke(apply,std::move(f),1)!=2||std::invoke(std::ref(f),2)!=3||effects!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-invoke-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierPairFunctionReference) {
+  auto Source = tmpFile("function-reference-pair-function-reference.cpp");
+  auto Output = tmpFile("function-reference-pair-function-reference.nc");
+  writeFile(Source, R"cpp(#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{return n+1;}int main(){int n=2;std::pair<F&,int&>p(target,n);static_assert(__is_same(decltype(p.first),F&));return p.first(p.second)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-pair-function-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierPairRuntime) {
+  auto Source = tmpFile("function-reference-pair-runtime.cpp");
+  auto Output = tmpFile("function-reference-pair-runtime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int main(){int n=2;std::pair<F&,int&>p(target,n);auto copy=p;std::pair<F&,int>mixed(target,4);F&f=std::get<0>(copy);static_assert(__is_same(decltype(p.first),F&));return p.first(p.second)!=3||f(copy.second)!=3||mixed.first(mixed.second)!=5||effects!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("function-reference-pair-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierPlainRuntime) {
+  auto Source = tmpFile("function-reference-plain-runtime.cpp");
+  auto Output = tmpFile("function-reference-plain-runtime.nc");
+  writeFile(Source, R"cpp(#include <utility>
+using F=int(int)noexcept;int effects;int first(int n)noexcept{++effects;return n+1;}int second(int n)noexcept{effects+=2;return n+2;}F&pick(bool yes,F&a,F&b)noexcept{++effects;return yes?a:b;}F&&rvalue()noexcept{return static_cast<F&&>(first);}int apply(F&f,int n)noexcept{return f(n);}int main(){F&local=first;F&selected=pick(false,local,second);F&&moved=rvalue();static_assert(__is_same(decltype(selected),F&));static_assert(__is_same(decltype(moved),F&&));return apply(selected,3)!=5||moved(4)!=5||effects!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-plain-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierTupleRuntime) {
+  auto Source = tmpFile("function-reference-tuple-runtime.cpp");
+  auto Output = tmpFile("function-reference-tuple-runtime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int apply(F&f,int n)noexcept{return f(n);}int main(){int n=2;std::tuple<F&,int&>t(target,n);auto copy=t;F&f=std::get<0>(copy);static_assert(__is_same(decltype(std::get<0>(t)),F&));return f(std::get<1>(copy))!=3||std::apply(apply,t)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-tuple-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierWrapperParameter) {
+  auto Source = tmpFile("function-reference-wrapper-parameter.cpp");
+  auto Output = tmpFile("function-reference-wrapper-parameter.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int apply(F&f,int n)noexcept{return f(n);}int main(){auto w=std::ref(apply);static_assert(__is_same(decltype(w(target,1)),int));static_assert(noexcept(std::invoke(w,target,1)));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-wrapper-parameter" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierWrapperResult) {
+  auto Source = tmpFile("function-reference-wrapper-result.cpp");
+  auto Output = tmpFile("function-reference-wrapper-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&source()noexcept{++effects;return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));static_assert(noexcept(std::invoke(w)));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-wrapper-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierWrapperRuntime) {
+  auto Source = tmpFile("function-reference-wrapper-runtime.cpp");
+  auto Output = tmpFile("function-reference-wrapper-runtime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&source()noexcept{effects+=2;return target;}int apply(F&f,int n)noexcept{return f(n);}int main(){auto result=std::ref(source);auto parameter=std::ref(apply);F&f=result();static_assert(__is_same(decltype(result()),F&));static_assert(noexcept(std::invoke(result)));return f(1)!=2||parameter(target,2)!=3||std::invoke(parameter,f,3)!=4||effects!=5;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-wrapper-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierMemberRuntime) {
+  auto Source = tmpFile("function-reference-member-runtime.cpp");
+  auto Output = tmpFile("function-reference-member-runtime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}struct Box{F&f;F&get()const noexcept{return f;}};int main(){Box b{target};Box copy=b;F&f=copy.get();static_assert(__is_same(decltype(b.f),F&));return b.f(1)!=2||f(2)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-member-runtime" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierPreviouslyRejectedForms) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"legacy-zero-arity-function-reference",
+       R"cpp(int get(){return 3;}int main(){int(&r)()=get;return r()!=3;}
+)cpp"},
+      {"legacy-0-runtime-reference-storage",
+       R"cpp(using F=int(int);int one(int v){return v;}int main(){F&&ref=static_cast<F&&>(one);return ref(0);}
+)cpp"},
+      {"legacy-1-runtime-reference-parameter",
+       R"cpp(using F=int(int);auto f(F&r){return &static_cast<F&&>(r);}
+
+int target(int n){return n;}int main(){return f(target)(0);}
+)cpp"},
+      {"legacy-2-runtime-reference-result",
+       R"cpp(using F=int(int);int one(int v){return v;}F&&f(){return static_cast<F&&>(one);}
+
+int main(){return f()(0);}
+)cpp"},
+      {"legacy-3-runtime-reference-storage", R"cpp(#include <utility>
+int one(int v){return v;}int main(){int(&&ref)(int)=std::move(one);return ref(0);}
+)cpp"},
+      {"legacy-4-runtime-function-reference",
+       R"cpp(int identity(int n){return n;}template<class T>using I=T;I<int(int)>& f(){return identity;}
+int main(){return f()(0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source = tmpFile(std::string(Case.Name) + ".cpp");
+    auto Output = tmpFile(std::string(Case.Name) + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      auto Executable = tmpFile(std::string(Case.Name) + Optimization);
+      auto Compile =
+          compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceCarrierRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"field-variadic-referent",
+       R"cpp(using F=int(int,...);int target(int n,...){return n;}struct Box{F&f;};int main(){Box b{target};return b.f(1);}
+)cpp",
+       "TR0201"},
+      {"field-hidden-noexcept",
+       R"cpp(using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n;}struct Box{F&f;};int main(){Box b{target};return b.f(1);}
+)cpp",
+       "TR0201"},
+      {"callback-body", R"cpp(#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{long double hidden=0;return n;}F&source()noexcept{return target;}int main(){F&f=source();return f(1);}
+)cpp",
+       "TR0201"},
+      {"hidden-function-noexcept", R"cpp(#include <functional>
+using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n;}F&source()noexcept{return target;}int main(){auto w=std::ref(source);static_assert(noexcept(w()));return 0;}
+)cpp",
+       "TR0201"},
+      {"hidden-parameter-alias", R"cpp(#include <functional>
+using I=decltype((sizeof(long double),int{}));using F=int(I)noexcept;int target(I n)noexcept{return n;}F&source()noexcept{return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));return 0;}
+)cpp",
+       "TR0201"},
+      {"long-double-referent", R"cpp(#include <functional>
+using F=int(long double)noexcept;int target(long double n)noexcept{return 0;}F&source()noexcept{return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));return 0;}
+)cpp",
+       "TR0201"},
+      {"missing-factory-definition", R"cpp(#include <functional>
+using F=int(int)noexcept;F&source()noexcept;int main(){auto w=std::ref(source);return w()(1);}
+)cpp",
+       "TR0203"},
+      {"missing-target-definition", R"cpp(#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept;F&source()noexcept{return target;}int main(){F&f=source();return f(1);}
+)cpp",
+       "TR0203"},
+      {"parameter-body", R"cpp(#include <functional>
+using F=int(int)noexcept;int target(int n)noexcept{return n;}int apply(F&f,int n)noexcept{long double hidden=0;return f(n);}int main(){auto w=std::ref(apply);static_assert(noexcept(w(target,1)));return 0;}
+)cpp",
+       "TR0201"},
+      {"result-body", R"cpp(#include <functional>
+using F=int(int)noexcept;int target(int n)noexcept{return n;}F&source()noexcept{long double hidden=0;return target;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w()),F&));return 0;}
+)cpp",
+       "TR0201"},
+      {"variadic-referent", R"cpp(#include <utility>
+using F=int(int,...);int target(int n,...){return n;}F&source()noexcept{return target;}int main(){F&f=source();return f(1,2)-1;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source =
+        tmpFile(std::string("function-reference-reject-") + Case.Name + ".cpp");
+    auto Output =
+        tmpFile(std::string("function-reference-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionReferenceCastsRunAtBothOptimizations) {
   const auto Control = tmpFile("function-reference-casts-control.cpp");
   const auto ControlOutput = tmpFile("function-reference-casts-control.nc");
@@ -27816,12 +28166,6 @@ TEST_F(TranslateTest, CoreV2FunctionReferenceCastsRetainSourceBoundaries) {
       {"runtime-written-exception-source", R"cpp(int one(int v)noexcept{return v;}auto f(){return &static_cast<int(&&)(int)noexcept(sizeof(long double)>0)>(one);}
 )cpp", "TR0201"},
       {"erased-alias-source", R"cpp(template<class>using F=int(int);int one(int v){return v;}auto f(){return &static_cast<F<long double>&>(one);}
-)cpp", "TR0201"},
-      {"runtime-reference-storage", R"cpp(using F=int(int);int one(int v){return v;}int main(){F&&ref=static_cast<F&&>(one);return ref(0);}
-)cpp", "TR0201"},
-      {"runtime-reference-parameter", R"cpp(using F=int(int);auto f(F&r){return &static_cast<F&&>(r);}
-)cpp", "TR0201"},
-      {"runtime-reference-result", R"cpp(using F=int(int);int one(int v){return v;}F&&f(){return static_cast<F&&>(one);}
 )cpp", "TR0201"},
       {"receiver-source", R"cpp(using F=int(int);struct T{long double hidden;static int call(int v){return v;}};auto f(){return &static_cast<F&&>(T{}.call);}
 )cpp", "TR0201"},
@@ -27976,9 +28320,6 @@ using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(std::
 )cpp", "TR0201"},
       {"query-exception-source", R"cpp(#include <utility>
 int one(int v)noexcept{return v;}using F=int(int)noexcept(sizeof(long double)>0);static_assert(__is_same(decltype(std::forward<F&&>(one)),F&));int main(){return 0;}
-)cpp", "TR0201"},
-      {"runtime-reference-storage", R"cpp(#include <utility>
-int one(int v){return v;}int main(){int(&&ref)(int)=std::move(one);return ref(0);}
 )cpp", "TR0201"},
       {"static-member-base-source", R"cpp(#include <utility>
 struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::move(T{}.call);}
