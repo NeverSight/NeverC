@@ -945,8 +945,8 @@ method or field reference and record results. The callable's source-owned
 checks, selected cv/ref-qualified method and mutable receiver storage remain
 unchanged.
 
-By-value argument reads discard only the source object's top-level `const`,
-including qualification hidden by a type alias. Const tuple-like elements can
+By-value argument reads discard only the source object's and value parameter's
+top-level `const`, including qualification hidden by a type alias. Const tuple-like elements can
 therefore feed value parameters through reference-wrapped callbacks while
 preserving pointee qualification and all existing reference-binding checks.
 Volatile, restrict and address-space restrictions remain in force.
@@ -4321,7 +4321,15 @@ parameter destruction, then finish inside the SDK invocation before the caller
 continues. Forwarded scalar values, function-pointer variables, reference-wrapper
 bindings and receiver pointers are read after all caller arguments have been
 evaluated; prvalue values remain captured at their binding. The selected function
-pointer is captured before callback parameter construction. Ordinary indirect
+pointer is captured before callback parameter construction. Checked by-value conversions also admit
+function-to-pointer decay, removal of `noexcept` from an otherwise matching
+function-pointer signature, `nullptr` to an admitted function pointer, and
+function or function-pointer values to `bool`. Functions, source function objects,
+member-function and `mem_fn` adapters, and direct or invoked reference wrappers
+use the actual selected callback parameter type through `invoke` and `apply`.
+A null function-pointer value converts to `false`; top-level `const` on a value
+parameter does not alter the conversion. Source signatures, nested qualification
+and exact reference bindings retain their separate checks. Ordinary indirect
 calls retain their callee-before-arguments rule. Scalar values, reference
 addresses and record results are retained
 before that cleanup. Caller-created callable, receiver and argument temporaries

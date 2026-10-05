@@ -815,6 +815,7 @@ static bool supportedFunctionalByValue(const State &S,
       Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default)
     return false;
+  Type = Type.getUnqualifiedType();
   if (supportedFunctionalCallableValue(Type, Context) ||
       utilityObjectPointer(Context, Type))
     return true;
@@ -11486,17 +11487,15 @@ supportedFunctionalInvokeReferenceArgument(const State &S,
 
 static bool functionalMemberValueConversion(const ASTContext &Context,
                                             QualType From, QualType To) {
-  // Reading a value argument drops its top-level const, including const hidden
-  // by a typedef. Preserve all other qualifiers for the conversion checks below.
+  // By-value conversion drops top-level const from the source and parameter,
+  // including const hidden by a typedef. Preserve all other qualifiers.
   From = From.getCanonicalType();
   From.removeLocalConst();
-  if (To->isFunctionPointerType()) {
-    if (From->isFunctionType())
-      return Context.hasSameType(Context.getPointerType(From), To);
-    return From->isFunctionPointerType() && Context.hasSameType(From, To);
-  }
-  if (From->isFunctionType() || From->isFunctionPointerType())
-    return false;
+  To = To.getCanonicalType();
+  To.removeLocalConst();
+  if (From->isFunctionType() || From->isFunctionPointerType() ||
+      To->isFunctionPointerType())
+    return utilityCallbackDirectConversion(Context, From, To);
   if (To->isRecordType())
     return From->isRecordType() &&
            Context.hasSameUnqualifiedType(From, To);
@@ -13338,7 +13337,7 @@ approvedFunctionalReferenceInvokeCall(
                                : !Parameter->isReferenceType() &&
                                      functionalMemberValueConversion(
                                          Context, Call->getArg(I)->getType(),
-                                         InnerCall->getArg(I)->getType());
+                                         Parameter);
     if (!Supported)
       return std::nullopt;
   }

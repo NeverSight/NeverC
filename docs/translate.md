@@ -283,6 +283,13 @@ all caller arguments have been evaluated. The selected function pointer is
 captured before callback parameter construction. Prvalue callables keep their
 captured value, and ordinary indirect calls retain their callee-before-arguments
 evaluation rule.
+By-value callback arguments consistently accept checked function-to-pointer decay,
+removal of `noexcept` from compatible function pointers, `nullptr` to an admitted
+function pointer, and function or function-pointer values to `bool`. These rules
+apply to functions, function objects, member-function and `mem_fn` adapters, and
+direct or invoked reference wrappers through `invoke` and `apply`. A null function
+pointer converts to `false`. Top-level `const` on a value parameter does not alter
+the conversion; original signatures and exact reference bindings remain checked.
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
 tuple/pair sources plus scalar and recursively composite arrays, evaluates all
 sources once before reading their elements, and constructs the exact

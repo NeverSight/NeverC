@@ -31947,6 +31947,621 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2InvocationCallbackConversionsNoexceptValues) {
+  const auto Source = tmpFile("callback-conversion-noexcept-values.cpp");
+  const auto Output = tmpFile("callback-conversion-noexcept-values.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+N argument = safe;
+if (std::invoke(consume, argument, 3) != 5) return 1;
+if (std::invoke(reader, argument, 3) != 5) return 2;
+if (std::invoke(&Reader::read, reader, argument, 3) != 5) return 3;
+if (std::mem_fn(&Reader::read)(reader, argument, 3) != 5) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, argument, 3) != 5) return 5;
+if (std::ref(consume)(argument, 3) != 5) return 6;
+if (std::invoke(std::ref(consume), argument, 3) != 5) return 7;
+if (std::apply(consume, std::make_tuple(argument, 3)) != 5) return 8;
+if (std::apply(reader, std::make_tuple(argument, 3)) != 5) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(argument, 3)) != 5) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), argument, 3)) != 5) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), argument, 3)) != 5) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-noexcept-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallbackConversionsConstParametersNoexceptValues) {
+  const auto Source =
+      tmpFile("callback-conversion-const-parameters-noexcept-values.cpp");
+  const auto Output =
+      tmpFile("callback-conversion-const-parameters-noexcept-values.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F const f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F const f, int n) const { return consume(f,n); }
+  int read(F const f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+N argument = safe;
+if (std::invoke(consume, argument, 3) != 5) return 1;
+if (std::invoke(reader, argument, 3) != 5) return 2;
+if (std::invoke(&Reader::read, reader, argument, 3) != 5) return 3;
+if (std::mem_fn(&Reader::read)(reader, argument, 3) != 5) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, argument, 3) != 5) return 5;
+if (std::ref(consume)(argument, 3) != 5) return 6;
+if (std::invoke(std::ref(consume), argument, 3) != 5) return 7;
+if (std::apply(consume, std::make_tuple(argument, 3)) != 5) return 8;
+if (std::apply(reader, std::make_tuple(argument, 3)) != 5) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(argument, 3)) != 5) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), argument, 3)) != 5) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), argument, 3)) != 5) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "callback-conversion-const-parameters-noexcept-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationCallbackConversionsNoexceptFunctions) {
+  const auto Source = tmpFile("callback-conversion-noexcept-functions.cpp");
+  const auto Output = tmpFile("callback-conversion-noexcept-functions.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+
+if (std::invoke(consume, safe, 3) != 5) return 1;
+if (std::invoke(reader, safe, 3) != 5) return 2;
+if (std::invoke(&Reader::read, reader, safe, 3) != 5) return 3;
+if (std::mem_fn(&Reader::read)(reader, safe, 3) != 5) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, safe, 3) != 5) return 5;
+if (std::ref(consume)(safe, 3) != 5) return 6;
+if (std::invoke(std::ref(consume), safe, 3) != 5) return 7;
+if (std::apply(consume, std::make_tuple(safe, 3)) != 5) return 8;
+if (std::apply(reader, std::make_tuple(safe, 3)) != 5) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(safe, 3)) != 5) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), safe, 3)) != 5) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), safe, 3)) != 5) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-noexcept-functions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallbackConversionsConstParametersNoexceptFunctions) {
+  const auto Source =
+      tmpFile("callback-conversion-const-parameters-noexcept-functions.cpp");
+  const auto Output =
+      tmpFile("callback-conversion-const-parameters-noexcept-functions.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F const f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F const f, int n) const { return consume(f,n); }
+  int read(F const f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+
+if (std::invoke(consume, safe, 3) != 5) return 1;
+if (std::invoke(reader, safe, 3) != 5) return 2;
+if (std::invoke(&Reader::read, reader, safe, 3) != 5) return 3;
+if (std::mem_fn(&Reader::read)(reader, safe, 3) != 5) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, safe, 3) != 5) return 5;
+if (std::ref(consume)(safe, 3) != 5) return 6;
+if (std::invoke(std::ref(consume), safe, 3) != 5) return 7;
+if (std::apply(consume, std::make_tuple(safe, 3)) != 5) return 8;
+if (std::apply(reader, std::make_tuple(safe, 3)) != 5) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(safe, 3)) != 5) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), safe, 3)) != 5) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), safe, 3)) != 5) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-const-parameters-noexcept-functions" +
+                Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationCallbackConversionsNullptrValues) {
+  const auto Source = tmpFile("callback-conversion-nullptr-values.cpp");
+  const auto Output = tmpFile("callback-conversion-nullptr-values.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+decltype(nullptr) argument = nullptr;
+if (std::invoke(consume, argument, 3) != 9) return 1;
+if (std::invoke(reader, argument, 3) != 9) return 2;
+if (std::invoke(&Reader::read, reader, argument, 3) != 9) return 3;
+if (std::mem_fn(&Reader::read)(reader, argument, 3) != 9) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, argument, 3) != 9) return 5;
+if (std::ref(consume)(argument, 3) != 9) return 6;
+if (std::invoke(std::ref(consume), argument, 3) != 9) return 7;
+if (std::apply(consume, std::make_tuple(argument, 3)) != 9) return 8;
+if (std::apply(reader, std::make_tuple(argument, 3)) != 9) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(argument, 3)) != 9) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), argument, 3)) != 9) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), argument, 3)) != 9) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-nullptr-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallbackConversionsConstParametersNullptrValues) {
+  const auto Source =
+      tmpFile("callback-conversion-const-parameters-nullptr-values.cpp");
+  const auto Output =
+      tmpFile("callback-conversion-const-parameters-nullptr-values.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F const f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F const f, int n) const { return consume(f,n); }
+  int read(F const f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+decltype(nullptr) argument = nullptr;
+if (std::invoke(consume, argument, 3) != 9) return 1;
+if (std::invoke(reader, argument, 3) != 9) return 2;
+if (std::invoke(&Reader::read, reader, argument, 3) != 9) return 3;
+if (std::mem_fn(&Reader::read)(reader, argument, 3) != 9) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, argument, 3) != 9) return 5;
+if (std::ref(consume)(argument, 3) != 9) return 6;
+if (std::invoke(std::ref(consume), argument, 3) != 9) return 7;
+if (std::apply(consume, std::make_tuple(argument, 3)) != 9) return 8;
+if (std::apply(reader, std::make_tuple(argument, 3)) != 9) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(argument, 3)) != 9) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), argument, 3)) != 9) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), argument, 3)) != 9) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "callback-conversion-const-parameters-nullptr-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationCallbackConversionsNullptrLiterals) {
+  const auto Source = tmpFile("callback-conversion-nullptr-literals.cpp");
+  const auto Output = tmpFile("callback-conversion-nullptr-literals.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+
+if (std::invoke(consume, nullptr, 3) != 9) return 1;
+if (std::invoke(reader, nullptr, 3) != 9) return 2;
+if (std::invoke(&Reader::read, reader, nullptr, 3) != 9) return 3;
+if (std::mem_fn(&Reader::read)(reader, nullptr, 3) != 9) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, nullptr, 3) != 9) return 5;
+if (std::ref(consume)(nullptr, 3) != 9) return 6;
+if (std::invoke(std::ref(consume), nullptr, 3) != 9) return 7;
+if (std::apply(consume, std::make_tuple(nullptr, 3)) != 9) return 8;
+if (std::apply(reader, std::make_tuple(nullptr, 3)) != 9) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(nullptr, 3)) != 9) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), nullptr, 3)) != 9) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), nullptr, 3)) != 9) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-nullptr-literals" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallbackConversionsConstParametersNullptrLiterals) {
+  const auto Source =
+      tmpFile("callback-conversion-const-parameters-nullptr-literals.cpp");
+  const auto Output =
+      tmpFile("callback-conversion-const-parameters-nullptr-literals.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F const f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F const f, int n) const { return consume(f,n); }
+  int read(F const f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { Reader reader;
+
+if (std::invoke(consume, nullptr, 3) != 9) return 1;
+if (std::invoke(reader, nullptr, 3) != 9) return 2;
+if (std::invoke(&Reader::read, reader, nullptr, 3) != 9) return 3;
+if (std::mem_fn(&Reader::read)(reader, nullptr, 3) != 9) return 4;
+if (std::invoke(std::mem_fn(&Reader::read), reader, nullptr, 3) != 9) return 5;
+if (std::ref(consume)(nullptr, 3) != 9) return 6;
+if (std::invoke(std::ref(consume), nullptr, 3) != 9) return 7;
+if (std::apply(consume, std::make_tuple(nullptr, 3)) != 9) return 8;
+if (std::apply(reader, std::make_tuple(nullptr, 3)) != 9) return 9;
+if (std::apply(std::ref(consume), std::make_tuple(nullptr, 3)) != 9) return 10;
+if (std::apply(&Reader::read, std::make_tuple(std::ref(reader), nullptr, 3)) != 9) return 11;
+if (std::apply(std::mem_fn(&Reader::read), std::make_tuple(std::ref(reader), nullptr, 3)) != 9) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "callback-conversion-const-parameters-nullptr-literals" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationCallbackConversionsPointerBool) {
+  const auto Source = tmpFile("callback-conversion-pointer-bool.cpp");
+  const auto Output = tmpFile("callback-conversion-pointer-bool.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { BooleanReader reader;
+if (std::invoke(boolean, safe, 3) != 3) return 1;
+if (std::invoke(reader, safe, 3) != 3) return 2;
+if (std::invoke(&BooleanReader::read, reader, safe, 3) != 3) return 3;
+if (std::mem_fn(&BooleanReader::read)(reader, safe, 3) != 3) return 4;
+if (std::invoke(std::mem_fn(&BooleanReader::read), reader, safe, 3) != 3) return 5;
+if (std::ref(boolean)(safe, 3) != 3) return 6;
+if (std::invoke(std::ref(boolean), safe, 3) != 3) return 7;
+if (std::apply(boolean, std::make_tuple(safe, 3)) != 3) return 8;
+if (std::apply(reader, std::make_tuple(safe, 3)) != 3) return 9;
+if (std::apply(std::ref(boolean), std::make_tuple(safe, 3)) != 3) return 10;
+if (std::apply(&BooleanReader::read, std::make_tuple(std::ref(reader), safe, 3)) != 3) return 11;
+if (std::apply(std::mem_fn(&BooleanReader::read), std::make_tuple(std::ref(reader), safe, 3)) != 3) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-pointer-bool" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallbackConversionsConstParametersPointerBool) {
+  const auto Source =
+      tmpFile("callback-conversion-const-parameters-pointer-bool.cpp");
+  const auto Output =
+      tmpFile("callback-conversion-const-parameters-pointer-bool.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool const f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool const f, int n) const { return boolean(f,n); }
+  int read(bool const f, int n) const { return boolean(f,n); }
+};
+int main() { BooleanReader reader;
+if (std::invoke(boolean, safe, 3) != 3) return 1;
+if (std::invoke(reader, safe, 3) != 3) return 2;
+if (std::invoke(&BooleanReader::read, reader, safe, 3) != 3) return 3;
+if (std::mem_fn(&BooleanReader::read)(reader, safe, 3) != 3) return 4;
+if (std::invoke(std::mem_fn(&BooleanReader::read), reader, safe, 3) != 3) return 5;
+if (std::ref(boolean)(safe, 3) != 3) return 6;
+if (std::invoke(std::ref(boolean), safe, 3) != 3) return 7;
+if (std::apply(boolean, std::make_tuple(safe, 3)) != 3) return 8;
+if (std::apply(reader, std::make_tuple(safe, 3)) != 3) return 9;
+if (std::apply(std::ref(boolean), std::make_tuple(safe, 3)) != 3) return 10;
+if (std::apply(&BooleanReader::read, std::make_tuple(std::ref(reader), safe, 3)) != 3) return 11;
+if (std::apply(std::mem_fn(&BooleanReader::read), std::make_tuple(std::ref(reader), safe, 3)) != 3) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "callback-conversion-const-parameters-pointer-bool" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationCallbackConversionsNullBool) {
+  const auto Source = tmpFile("callback-conversion-null-bool.cpp");
+  const auto Output = tmpFile("callback-conversion-null-bool.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool f, int n) const { return boolean(f,n); }
+  int read(bool f, int n) const { return boolean(f,n); }
+};
+int main() { BooleanReader reader; F argument = nullptr;
+if (std::invoke(boolean, argument, 3) != 9) return 1;
+if (std::invoke(reader, argument, 3) != 9) return 2;
+if (std::invoke(&BooleanReader::read, reader, argument, 3) != 9) return 3;
+if (std::mem_fn(&BooleanReader::read)(reader, argument, 3) != 9) return 4;
+if (std::invoke(std::mem_fn(&BooleanReader::read), reader, argument, 3) != 9) return 5;
+if (std::ref(boolean)(argument, 3) != 9) return 6;
+if (std::invoke(std::ref(boolean), argument, 3) != 9) return 7;
+if (std::apply(boolean, std::make_tuple(argument, 3)) != 9) return 8;
+if (std::apply(reader, std::make_tuple(argument, 3)) != 9) return 9;
+if (std::apply(std::ref(boolean), std::make_tuple(argument, 3)) != 9) return 10;
+if (std::apply(&BooleanReader::read, std::make_tuple(std::ref(reader), argument, 3)) != 9) return 11;
+if (std::apply(std::mem_fn(&BooleanReader::read), std::make_tuple(std::ref(reader), argument, 3)) != 9) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-conversion-null-bool" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallbackConversionsConstParametersNullBool) {
+  const auto Source =
+      tmpFile("callback-conversion-const-parameters-null-bool.cpp");
+  const auto Output =
+      tmpFile("callback-conversion-const-parameters-null-bool.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+using F = int (*)(int);
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int consume(F f, int n) { return f ? f(n) : 9; }
+int boolean(bool const f, int n) { return f ? n : 9; }
+struct Reader {
+  int operator()(F f, int n) const { return consume(f,n); }
+  int read(F f, int n) const { return consume(f,n); }
+};
+struct BooleanReader {
+  int operator()(bool const f, int n) const { return boolean(f,n); }
+  int read(bool const f, int n) const { return boolean(f,n); }
+};
+int main() { BooleanReader reader; F argument = nullptr;
+if (std::invoke(boolean, argument, 3) != 9) return 1;
+if (std::invoke(reader, argument, 3) != 9) return 2;
+if (std::invoke(&BooleanReader::read, reader, argument, 3) != 9) return 3;
+if (std::mem_fn(&BooleanReader::read)(reader, argument, 3) != 9) return 4;
+if (std::invoke(std::mem_fn(&BooleanReader::read), reader, argument, 3) != 9) return 5;
+if (std::ref(boolean)(argument, 3) != 9) return 6;
+if (std::invoke(std::ref(boolean), argument, 3) != 9) return 7;
+if (std::apply(boolean, std::make_tuple(argument, 3)) != 9) return 8;
+if (std::apply(reader, std::make_tuple(argument, 3)) != 9) return 9;
+if (std::apply(std::ref(boolean), std::make_tuple(argument, 3)) != 9) return 10;
+if (std::apply(&BooleanReader::read, std::make_tuple(std::ref(reader), argument, 3)) != 9) return 11;
+if (std::apply(std::mem_fn(&BooleanReader::read), std::make_tuple(std::ref(reader), argument, 3)) != 9) return 12;
+return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "callback-conversion-const-parameters-null-bool" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairFunctionPointerValuesRetainSignatureSources) {
   struct Case {
     const char *Name;
