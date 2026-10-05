@@ -60,6 +60,11 @@ The pinned LLVM object tool performs the rename. Independent checks retain
 member order, object headers, initialized section bytes, machine code,
 relocations, symbol identities and auxiliary records. Zero serialization of
 uninitialized COFF storage is the only admitted section representation change.
+LLVM 20 fills MSVC's zero non-associative section-definition numbers with their
+own section indices. The writer validates that exact serialization change and
+restores the original number fields before the final byte-exact auxiliary
+record audit, for ordinary COFF and bigobj members. Associative COMDAT targets,
+checksums and every other auxiliary field retain their original bytes.
 Both archive indices retain each definition's representative and multiplicity;
 the usual private and host ABI audits run afterward. Unknown template signatures
 or changed implementation records stop the build before publication.

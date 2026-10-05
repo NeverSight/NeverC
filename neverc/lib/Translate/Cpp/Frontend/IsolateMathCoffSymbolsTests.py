@@ -5,12 +5,14 @@ import ast
 from dataclasses import replace
 import hashlib
 from pathlib import Path
+import struct
 import tempfile
 from types import SimpleNamespace
 import unittest
 
 import IsolateMathCoffSymbols as math
-from RewriteSetupCoffSymbols import CoffObject, CoffSection, CoffSymbol
+from RewriteSetupCoffSymbols import CoffObject, CoffSection, CoffSymbol, inspect_archive
+from RewriteSetupCoffSymbolsTests import GUIDS, archive_bytes, bigobj_bytes, object_bytes
 
 
 class MathIsolationTests(unittest.TestCase):
@@ -90,6 +92,117 @@ class MathIsolationTests(unittest.TestCase):
         for names in (["??$pow@NN$0A@@@YANNN@Z"], [old, new], [new]):
             with self.subTest(names=names), self.assertRaises(ValueError):
                 math.checked_names(names)
+
+
+class SectionNumberRestorationTests(unittest.TestCase):
+    def section_symbol(self, section=1, selection=0):
+        auxiliary = struct.pack("<IHHIHBBH", 1, 0, 0, 0, 0, selection, 0, 0)
+        return CoffSymbol(0, ".text", 0, section, 0, 3, (auxiliary,), 0)
+
+    def serialized(self, symbol):
+        auxiliary = bytearray(symbol.aux[0])
+        struct.pack_into("<H", auxiliary, 12, symbol.section & 0xFFFF)
+        struct.pack_into("<H", auxiliary, 16, symbol.section >> 16)
+        return replace(symbol, aux=(bytes(auxiliary),))
+
+    def test_recognizes_only_zero_to_own_section_serialization(self):
+        for section in (1, 0x10001):
+            original = self.section_symbol(section)
+            with self.subTest(section=section):
+                self.assertTrue(math.serialized_section_number(
+                    original, self.serialized(original)))
+                self.assertFalse(math.serialized_section_number(original, original))
+
+    def test_rejects_association_checksum_identity_and_other_number_edits(self):
+        original = self.section_symbol()
+        changed = self.serialized(original)
+        for offset in (0, 4, 8, 12, 14, 16):
+            auxiliary = bytearray(changed.aux[0])
+            auxiliary[offset] ^= 2
+            with self.subTest(offset=offset):
+                self.assertFalse(math.serialized_section_number(
+                    original, replace(changed, aux=(bytes(auxiliary),))))
+        for storage in (2, 103, 105):
+            self.assertFalse(math.serialized_section_number(
+                replace(original, storage=storage), changed))
+        associated = self.section_symbol(selection=5)
+        self.assertFalse(math.serialized_section_number(
+            associated, self.serialized(associated)))
+
+    def archives(self, root, *, checksum=0):
+        old, new = next(iter(math.MATH_RENAMES.items()))
+        auxiliary = self.section_symbol().aux[0]
+        original = object_bytes((old,), contents=b"\xc3", section_name=".text",
+                                extras=((".text", 0, 1, 0, 3, (auxiliary,)),))
+        auxiliary = bytearray(self.serialized(self.section_symbol()).aux[0])
+        struct.pack_into("<I", auxiliary, 8, checksum)
+        changed = object_bytes((new,), contents=b"\xc3", section_name=".text",
+                               extras=((".text", 0, 1, 0, 3, (bytes(auxiliary),)),))
+        before, after = root / "before.lib", root / "after.lib"
+        before.write_bytes(archive_bytes([("math.obj", original, (old,))]))
+        after.write_bytes(archive_bytes([("math.obj", changed, (new,))]))
+        return inspect_archive(before), inspect_archive(after), {old: new}, after
+
+    def test_restores_auxiliary_bytes_without_changing_renames_or_indices(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-math-section-") as directory:
+            before, after, mapping, output = self.archives(Path(directory))
+            with self.assertRaisesRegex(ValueError, "auxiliary"):
+                math.verify_pair(before, after, mapping)
+            self.assertEqual(math.restore_section_numbers(
+                before, after, mapping, output), 1)
+            restored = inspect_archive(output)
+            self.assertEqual(math.verify_pair(before, restored, mapping),
+                             {next(iter(mapping)): 1})
+            self.assertEqual(restored.members[0][1].symbols[-1].aux,
+                             before.members[0][1].symbols[-1].aux)
+
+    def test_other_auxiliary_changes_remain_rejected_without_modifying_output(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-math-section-") as directory:
+            before, after, mapping, output = self.archives(Path(directory), checksum=1)
+            original = output.read_bytes()
+            with self.assertRaisesRegex(ValueError, "auxiliary"):
+                math.restore_section_numbers(before, after, mapping, output)
+                math.verify_pair(before, inspect_archive(output), mapping)
+            self.assertEqual(output.read_bytes(), original)
+
+    def test_bigobj_symbol_slots_keep_file_records_and_guid_storage(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-math-bigobj-") as directory:
+            root = Path(directory)
+            old, new = next(iter(math.MATH_RENAMES.items()))
+            original = self.section_symbol()
+            original = replace(original, name=".rdata", aux=(
+                struct.pack("<IHHIHBBH", len(GUIDS) * 16, 0, 0, 0, 0, 0, 0, 0),))
+            changed = self.serialized(original)
+            paths = []
+            for label, name, symbol in (("before", old, original),
+                                        ("after", new, changed)):
+                payload = bigobj_bytes(extras=(
+                    (name, 0, 1, 0x20, 2, ()),
+                    (".rdata", 0, 1, 0, 3, (symbol.aux[0] + bytes(2),))))
+                path = root / (label + ".lib")
+                path.write_bytes(archive_bytes([
+                    ("math.obj", payload, (*GUIDS, name))]))
+                paths.append(path)
+            before, after = map(inspect_archive, paths)
+            self.assertEqual(math.restore_section_numbers(
+                before, after, {old: new}, paths[1]), 1)
+            restored = inspect_archive(paths[1])
+            self.assertEqual(math.verify_pair(before, restored, {old: new}), {old: 1})
+            self.assertEqual(restored.members[0][1].symbols[-1].aux, original.aux)
+
+    def test_member_and_symbol_count_edits_fail_before_restoration(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-math-section-") as directory:
+            before, after, mapping, output = self.archives(Path(directory))
+            name, obj = after.members[0]
+            cases = [replace(after, members=after.members * 2),
+                     replace(after, members=[(name, replace(
+                         obj, symbols=obj.symbols + (obj.symbols[-1],)))])]
+            original = output.read_bytes()
+            for changed in cases:
+                with self.subTest(members=len(changed.members)):
+                    with self.assertRaisesRegex(ValueError, "count"):
+                        math.restore_section_numbers(before, changed, mapping, output)
+                    self.assertEqual(output.read_bytes(), original)
 
 
 class MathSourceTests(unittest.TestCase):

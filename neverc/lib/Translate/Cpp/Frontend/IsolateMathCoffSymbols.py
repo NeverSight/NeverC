@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 
 from AuditArchive import symbol_rows
@@ -106,6 +107,60 @@ def verify_pair(before, after, mapping):
     return dict(sorted(hits.items()))
 
 
+def serialized_section_number(before, after):
+    if (before.storage != 3 or before.section <= 0 or before.kind or before.value
+            or len(before.aux) != 1 or len(after.aux) != 1):
+        return False
+    original, changed = before.aux[0], after.aux[0]
+    if (len(original) != 18 or len(changed) != 18
+            or original[14] == 5 or original[12:14] != b"\0\0"
+            or original[16:18] != b"\0\0"):
+        return False
+    expected = bytearray(original)
+    struct.pack_into("<H", expected, 12, before.section & 0xFFFF)
+    struct.pack_into("<H", expected, 16, before.section >> 16)
+    return changed == expected
+
+
+def restore_section_numbers(before, after, mapping, output):
+    # LLVM 20 COFFWriter fills a non-associative section definition's Number
+    # with its own section index. MSVC writes zero. Restore only that exact
+    # serialization change, keeping the final auxiliary comparison byte exact.
+    if before.machine != after.machine or len(before.members) != len(after.members):
+        fail("archive machine or member count changed")
+    restorations, members = [], []
+    for ordinal, ((_, old), (name, new)) in enumerate(
+            zip(before.members, after.members)):
+        symbols = []
+        if len(old.symbols) != len(new.symbols):
+            fail("member " + str(ordinal) + ": symbol count changed")
+        for left, right in zip(old.symbols, new.symbols):
+            if left.aux != right.aux and serialized_section_number(left, right):
+                restorations.append((ordinal, new.bigobj, left, right))
+                right = replace(right, aux=left.aux)
+            symbols.append(right)
+        members.append((name, replace(new, symbols=tuple(symbols))))
+    if not restorations:
+        return 0
+    # Validate every code byte, relocation, symbol identity and archive index
+    # before changing the fresh output. Other auxiliary edits still fail here.
+    verify_pair(before, replace(after, members=members), mapping)
+    with Path(output).open("r+b") as stream:
+        for ordinal, bigobj, left, right in restorations:
+            member_at = after.member_offsets[ordinal] + 60
+            stream.seek(member_at + (48 if bigobj else 8))
+            symbol_at = struct.unpack("<I", stream.read(4))[0]
+            aux_at = member_at + symbol_at + (right.index + 1) * (20 if bigobj else 18)
+            stream.seek(aux_at)
+            if stream.read(18) != right.aux[0]:
+                fail("output section auxiliary record changed before restoration")
+            stream.seek(aux_at + 12)
+            stream.write(left.aux[0][12:14])
+            stream.seek(aux_at + 16)
+            stream.write(left.aux[0][16:18])
+    return len(restorations)
+
+
 def run(command):
     result = subprocess.run([str(argument) for argument in command],
                             capture_output=True, text=True, timeout=600,
@@ -130,6 +185,9 @@ def isolate(source, output, objcopy, nm):
         else:
             shutil.copyfile(source, output)
         after = inspect_archive(output)
+        restored = restore_section_numbers(before, after, mapping, output)
+        if restored:
+            after = inspect_archive(output)
         hits = verify_pair(before, after, mapping)
         expected = Counter()
         for (name, kind), count in inventory.items():
@@ -146,6 +204,7 @@ def isolate(source, output, objcopy, nm):
         return {"schema": "neverc.math-coff-isolation.v1",
                 "input_sha256": before.sha256, "output_sha256": after.sha256,
                 "members": len(after.members), "renames": mapping,
+                "restored_section_numbers": restored,
                 "symbol_hits": hits, "section_and_auxiliary_checks": "passed",
                 "native_nm_inventory": "passed"}
     except BaseException:

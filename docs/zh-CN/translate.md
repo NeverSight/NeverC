@@ -28,7 +28,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 和 `std::logical_not` 支持普通函数指针值，包括 `noexcept` 签名及有类型的 `const` 实参。透明调用接纳函数名、兼容签名以及与回调配对的 `nullptr`。存储的函数对象和 `std::invoke` 保留经检查的转换、实参副作用、别名及临时对象清理。逻辑调用会求值两个实参；这些操作不会调用指针所指向的函数，回调排序仍受既有边界限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
-Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 符号隔离还会恢复普通 COFF 与 bigobj 静态库中 MSVC 原有的非关联节记录编号，使最终附加记录逐字节保持一致。
+[Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 
 按值回调实参在 invoke、apply、函数对象、成员函数、mem_fn 以及直接或经 invoke 调用的引用包装器中，统一按实际选定的形参类型转换。经检查的转换支持函数名衰变、兼容函数指针去除 `noexcept`、`nullptr` 转为函数指针，以及函数或函数指针转为 `bool`；空函数指针转为 false。值形参的顶层 `const` 不改变转换，原始签名、嵌套限定及精确引用绑定仍须检查。
 

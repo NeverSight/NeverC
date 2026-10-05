@@ -28,7 +28,8 @@ Core v2 接受經過驗證的空與非空 `<tuple>` 值，包括建構、賦值�
 
 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 與 `std::logical_not` 支援一般函式指標值，包括 `noexcept` 簽章與具型別的 `const` 引數。透明呼叫接納函式名稱、相容簽章及與回呼配對的 `nullptr`。儲存的函式物件與 `std::invoke` 保留經檢查的轉換、引數副作用、別名及暫存物件清理。邏輯呼叫會求值兩個引數；這些操作不會呼叫指標所指向的函式，回呼排序仍受既有邊界限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
-Windows 建置保留 Microsoft SDK 原有的內部 `log10`/`pow` 範本，並隔離其編譯後的符號，以保留 SDK 特有的計算及浮點狀態行為。實際 SDK 與執行階段差分檢查須由實作此變更的版本通過原生 CI 驗證。 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+Windows 建置保留 Microsoft SDK 原有的內部 `log10`/`pow` 範本，並隔離其編譯後的符號，以保留 SDK 特有的計算及浮點狀態行為。實際 SDK 與執行階段差分檢查須由實作此變更的版本通過原生 CI 驗證。 符號隔離也會還原一般 COFF 與 bigobj 靜態函式庫中 MSVC 原有的非關聯節記錄編號，使最終附加記錄逐位元組保持一致。
+[Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 
 按值回呼引數在 invoke、apply、函式物件、成員函式、mem_fn 以及直接或經 invoke 呼叫的參考包裝器中，統一按實際選定的參數型別轉換。經檢查的轉換支援函式名稱衰變、相容函式指標移除 `noexcept`、`nullptr` 轉為函式指標，以及函式或函式指標轉為 `bool`；空函式指標轉為 false。值參數的頂層 `const` 不改變轉換，原始簽章、巢狀限定與精確參考繫結仍須檢查。
 

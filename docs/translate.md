@@ -321,6 +321,9 @@ Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks
 require the implementing revision’s native CI.
+Symbol isolation also restores MSVC’s original non-associative section-record
+numbers in ordinary COFF and bigobj archives, keeping the final auxiliary
+records byte exact.
 [Windows ABI](../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference

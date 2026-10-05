@@ -28,7 +28,8 @@ Core v2 は、構築、代入、ファクトリー、交換、比較、`get` を
 
 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or`、`std::logical_not` は通常の関数ポインター値をサポートし、`noexcept` シグネチャと型付きの `const` 引数も含まれます。透過的な呼び出しは関数名、互換シグネチャ、コールバックと組み合わせた `nullptr` を受け入れます。格納された関数オブジェクトと `std::invoke` は検証済みの変換、引数の副作用、エイリアス、一時オブジェクトの後処理を保持します。論理呼び出しは両方の引数を評価します。これらの操作はポインターの参照先の関数を呼び出さず、コールバックの順序比較には既存の制約が引き続き適用されます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
-Windows ビルドは Microsoft SDK の元の内部 `log10`/`pow` テンプレートを保持し、コンパイル済みのシンボルを分離することで SDK 固有の計算と浮動小数点状態を保ちます。実際の SDK と実行時の差分検証には、この変更を実装したリビジョンのネイティブ CI が必要です。 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+Windows ビルドは Microsoft SDK の元の内部 `log10`/`pow` テンプレートを保持し、コンパイル済みのシンボルを分離することで SDK 固有の計算と浮動小数点状態を保ちます。実際の SDK と実行時の差分検証には、この変更を実装したリビジョンのネイティブ CI が必要です。 シンボル分離は通常の COFF と bigobj アーカイブで MSVC の元の非関連セクション記録番号も復元し、最終的な補助記録をバイト単位で保持します。
+[Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 
 invoke、apply、関数オブジェクト、メンバー関数、mem_fn、直接または invoke 経由の参照ラッパーでは、値渡しコールバック引数を実際に選択されたパラメーター型へ一貫して変換します。検証済みの変換は、関数名のポインター化、互換関数ポインターからの `noexcept` の除去、`nullptr` から関数ポインターへの変換、関数または関数ポインターから `bool` への変換をサポートします。ヌル関数ポインターは false になります。値パラメーターのトップレベル `const` は変換を変えません。元のシグネチャ、入れ子の修飾、厳密な参照束縛は引き続き検証されます。
 

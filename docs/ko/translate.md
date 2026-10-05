@@ -28,7 +28,8 @@ Core v2는 생성, 대입, 팩토리, 교환, 비교와 `get`을 포함해 인�
 
 `std::equal_to`, `std::not_equal_to`, `std::logical_and`, `std::logical_or`, `std::logical_not`은 일반 함수 포인터 값을 지원하며 `noexcept` 시그니처와 타입이 지정된 `const` 인수도 포함합니다. 투명 호출은 함수 이름, 호환 시그니처와 콜백에 짝지어진 `nullptr`를 허용합니다. 저장된 함수 객체와 `std::invoke`는 검사된 변환, 인수의 부수 효과, 별칭과 임시 객체 정리를 보존합니다. 논리 호출은 두 인수를 모두 평가합니다. 이 연산은 포인터가 가리키는 함수를 호출하지 않으며 콜백 순서 비교에는 기존 제한이 적용됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
-Windows 빌드는 Microsoft SDK의 기존 내부 `log10`/`pow` 템플릿을 보존하고 컴파일된 심볼을 격리하여 SDK 고유의 계산과 부동소수점 상태 동작을 유지합니다. 실제 SDK와 런타임 차이 검사는 이 변경을 구현한 리비전의 네이티브 CI에서 검증해야 합니다. [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+Windows 빌드는 Microsoft SDK의 기존 내부 `log10`/`pow` 템플릿을 보존하고 컴파일된 심볼을 격리하여 SDK 고유의 계산과 부동소수점 상태 동작을 유지합니다. 실제 SDK와 런타임 차이 검사는 이 변경을 구현한 리비전의 네이티브 CI에서 검증해야 합니다. 심볼 격리는 일반 COFF 및 bigobj 아카이브에서 MSVC의 원래 비연관 섹션 레코드 번호도 복원하여 최종 보조 레코드를 바이트 단위로 보존합니다.
+[Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 
 invoke, apply, 함수 객체, 멤버 함수, mem_fn과 직접 또는 invoke로 호출하는 참조 래퍼는 값 전달 콜백 인수를 실제 선택된 매개변수 형식으로 일관되게 변환합니다. 검사된 변환은 함수 이름의 포인터 변환, 호환 함수 포인터의 `noexcept` 제거, `nullptr`의 함수 포인터 변환과 함수 또는 함수 포인터의 `bool` 변환을 지원합니다. 널 함수 포인터는 false로 변환됩니다. 값 매개변수의 최상위 `const`는 변환을 바꾸지 않으며 원래 시그니처, 중첩 한정과 정확한 참조 바인딩 검사는 유지됩니다.
 
