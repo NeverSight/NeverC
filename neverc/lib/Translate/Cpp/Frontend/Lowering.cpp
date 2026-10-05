@@ -1380,14 +1380,20 @@ class FunctionLowering {
       reject(L, "functional invoke",
              "The checked function object arity must match its arguments.");
     discardFunctionalObject(Call->getArg(0));
+    auto Sources = captureUtilityInvocationArguments(
+        Call, 1, Call->getNumArgs() - 1);
     auto Left = snapshot(cast(
-        expression(Call->getArg(1)),
+        utilityConstructorArgumentValue(
+            std::move(Sources[0]),
+            Call->getDirectCallee()->getParamDecl(1)->getType(), L),
         type(Approved.Method->getParamDecl(0)->getType()
                  .getNonReferenceType(), L), L), L);
     std::optional<Expression> Right;
     if (!Unary)
       Right = snapshot(cast(
-          expression(Call->getArg(2)),
+          utilityConstructorArgumentValue(
+              std::move(Sources[1]),
+              Call->getDirectCallee()->getParamDecl(2)->getType(), L),
           type(Approved.Method->getParamDecl(1)->getType()
                    .getNonReferenceType(), L), L), L);
     return functionalOperationValues(L, std::move(Left), std::move(Right),
@@ -1641,7 +1647,34 @@ class FunctionLowering {
                                    std::nullopt) {
     auto L = Call->getExprLoc();
     Expression Receiver;
-    if (Info.ObjectWrapper) {
+    std::vector<Expression> Sources;
+    const bool SDKInvocation = Info.Method && !Info.SelectedCopies.empty();
+    if (SDKInvocation) {
+      const unsigned OperatorOffset = isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
+      const auto ReceiverParameter =
+          Call->getDirectCallee()
+              ->getParamDecl(ArgumentOffset - 1 - OperatorOffset)
+              ->getType();
+      auto ReceiverSource = captureUtilityConstructorArgument(
+          Call->getArg(ArgumentOffset - 1), ReceiverParameter);
+      Sources = captureUtilityInvocationArguments(
+          Call, ArgumentOffset, Info.Method->getNumParams());
+      if (Info.ObjectWrapper)
+        Receiver = snapshot(
+            Expression{{"kind", "member"},
+                       {"type", type(Info.ObjectWrapper->PointerType, L)},
+                       {"name", "nct_reference_wrapper_pointer"},
+                       {"args", json::Array{
+                                    dereference(std::move(ReceiverSource), L)}},
+                       {"loc", A.loc(L)}},
+            L);
+      else if (Info.ObjectIsPointer)
+        Receiver = snapshot(utilityConstructorArgumentValue(
+                                std::move(ReceiverSource), ReceiverParameter, L),
+                            L);
+      else
+        Receiver = std::move(ReceiverSource);
+    } else if (Info.ObjectWrapper) {
       auto Wrapper = lvalue(Info.Object);
       Receiver = snapshot(
           Expression{{"kind", "member"},
@@ -1656,6 +1689,8 @@ class FunctionLowering {
       Receiver = address(lvalue(Info.Object), Info.Object->getType(), L);
     }
     if (Info.Method) {
+      if (SDKInvocation)
+        beginFullExpression();
       json::Array Arguments;
       Expression Result;
       const bool HasRecordResult = recordValue(Info.Method->getReturnType());
@@ -1679,9 +1714,19 @@ class FunctionLowering {
           L));
       for (unsigned I = 0; I < Info.Method->getNumParams(); ++I) {
         const auto Parameter = Info.Method->getParamDecl(I)->getType();
-        Arguments.push_back(
-            cast(argument(Call->getArg(I + ArgumentOffset), Parameter),
-                 type(parameterType(Parameter), L), L));
+        if (SDKInvocation) {
+          const unsigned OperatorOffset = isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
+          Arguments.push_back(utilityInvocationArgument(
+              std::move(Sources[I]),
+              Call->getDirectCallee()
+                  ->getParamDecl(I + ArgumentOffset - OperatorOffset)
+                  ->getType(),
+              Parameter, Info.SelectedCopies[I], L));
+        } else {
+          Arguments.push_back(
+              cast(argument(Call->getArg(I + ArgumentOffset), Parameter),
+                   type(parameterType(Parameter), L), L));
+        }
       }
       chargeCall(Arguments, L);
       json::Object Instruction{{"op", "call"},
@@ -1694,6 +1739,8 @@ class FunctionLowering {
         Instruction["target"] = json::Object(Result);
       }
       Body.push_back(std::move(Instruction));
+      if (SDKInvocation)
+        endFullExpression();
       if (Info.Method->getReturnType()->isReferenceType())
         return dereference(std::move(Result), L);
       return Result;
@@ -3269,23 +3316,34 @@ class FunctionLowering {
           CallableType->isFunctionType()
               ? CallableType->getAs<FunctionProtoType>()
               : CallableType->getPointeeType()->getAs<FunctionProtoType>();
-      if (!Prototype || Prototype->isVariadic() ||
+      const auto Copies = approvedFunctionalInvokeSelectedCopies(
+          A.S, A.Sources, Call, A.Context);
+      if (!Copies || !Prototype || Prototype->isVariadic() ||
           Prototype->getNumParams() + 1 != Call->getNumArgs())
         reject(L, "functional invoke",
                "A checked fixed-arity function or function pointer is required.");
-      auto Callable = snapshot(CallableType->isFunctionType()
-                                   ? functionValue(Call->getArg(0))
-                                   : expression(Call->getArg(0)),
+      const auto CallableParameter =
+          Call->getDirectCallee()->getParamDecl(0)->getType();
+      auto CallableSource =
+          captureUtilityConstructorArgument(Call->getArg(0), CallableParameter);
+      auto Sources = captureUtilityInvocationArguments(
+          Call, 1, Prototype->getNumParams());
+      auto Callable = snapshot(utilityConstructorArgumentValue(
+                                   std::move(CallableSource), CallableParameter, L),
                                L);
+      beginFullExpression();
       json::Array Arguments;
       for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
-        auto Parameter = Prototype->getParamType(I);
-        Arguments.push_back(cast(argument(Call->getArg(I + 1), Parameter),
-                                 type(parameterType(Parameter), L), L));
+        Arguments.push_back(utilityInvocationArgument(
+            std::move(Sources[I]),
+            Call->getDirectCallee()->getParamDecl(I + 1)->getType(),
+            Prototype->getParamType(I), (*Copies)[I], L));
       }
-      return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                              Prototype->getReturnType(), L,
-                              std::move(Destination));
+      auto Result = emitIndirectCall(std::move(Callable), std::move(Arguments),
+                                     Prototype->getReturnType(), L,
+                                     std::move(Destination));
+      endFullExpression();
+      return Result;
     }
     case UtilityOperation::FunctionalInvokeObject: {
       auto Approved = approvedFunctionalInvokeObjectOperation(
@@ -3309,9 +3367,15 @@ class FunctionLowering {
       if (!Info || !Call->getNumArgs())
         reject(L, "functional reference invoke",
                "A checked callable std::reference_wrapper is required.");
-      auto Wrapper = lvalue(Call->getArg(0));
+      auto WrapperAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto Sources = captureUtilityInvocationArguments(
+          Call, 1, Call->getNumArgs() - 1);
+      const unsigned OperatorOffset = isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
       auto Referent = snapshot(
-          ReferenceMember(std::move(Wrapper), Info->Wrapper), L);
+          ReferenceMember(dereference(std::move(WrapperAddress), L),
+                          Info->Wrapper),
+          L);
       if (Info->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
         if (!Info->Operation || !Info->Method)
           reject(L, "functional reference invoke",
@@ -3321,18 +3385,32 @@ class FunctionLowering {
           reject(L, "functional reference invoke",
                  "The checked function object arity must match its arguments.");
         auto Left = snapshot(cast(
-            expression(Call->getArg(1)),
+            utilityConstructorArgumentValue(
+                std::move(Sources[0]),
+                Call->getDirectCallee()
+                    ->getParamDecl(1 - OperatorOffset)
+                    ->getType(), L),
             type(Info->Method->getParamDecl(0)->getType()
                      .getNonReferenceType(), L), L), L);
         std::optional<Expression> Right;
         if (!Unary)
           Right = snapshot(cast(
-              expression(Call->getArg(2)),
+              utilityConstructorArgumentValue(
+                  std::move(Sources[1]),
+                  Call->getDirectCallee()
+                      ->getParamDecl(2 - OperatorOffset)
+                      ->getType(), L),
               type(Info->Method->getParamDecl(1)->getType()
                        .getNonReferenceType(), L), L), L);
         return functionalOperationValues(L, std::move(Left),
                                          std::move(Right), *Info->Operation);
       }
+      Expression Callable;
+      if (Info->Kind != FunctionalReferenceInvokeKind::UserFunctionObject)
+        Callable = Info->Kind == FunctionalReferenceInvokeKind::Function
+                       ? std::move(Referent)
+                       : snapshot(dereference(std::move(Referent), L), L);
+      beginFullExpression();
       if (Info->Kind == FunctionalReferenceInvokeKind::UserFunctionObject) {
         if (!Info->Method ||
             Info->Method->getNumParams() + 1 != Call->getNumArgs())
@@ -3363,9 +3441,15 @@ class FunctionLowering {
             L));
         for (unsigned I = 0; I < Info->Method->getNumParams(); ++I) {
           const auto Parameter = Info->Method->getParamDecl(I)->getType();
-          Arguments.push_back(
-              cast(argument(Call->getArg(I + 1), Parameter),
-                   type(parameterType(Parameter), L), L));
+          const auto *Copy = I < Info->SelectedCopies.size()
+                                 ? Info->SelectedCopies[I]
+                                 : nullptr;
+          Arguments.push_back(utilityInvocationArgument(
+              std::move(Sources[I]),
+              Call->getDirectCallee()
+                  ->getParamDecl(I + 1 - OperatorOffset)
+                  ->getType(),
+              Parameter, Copy, L));
         }
         chargeCall(Arguments, L);
         json::Object Instruction{{"op", "call"},
@@ -3378,6 +3462,7 @@ class FunctionLowering {
           Instruction["target"] = json::Object(Result);
         }
         Body.push_back(std::move(Instruction));
+        endFullExpression();
         if (Info->Method->getReturnType()->isReferenceType())
           return dereference(std::move(Result), L);
         return Result;
@@ -3391,19 +3476,24 @@ class FunctionLowering {
           Prototype->getNumParams() + 1 != Call->getNumArgs())
         reject(L, "functional reference invoke",
                "A checked fixed-arity function pointer is required.");
-      auto Callable =
-          Info->Kind == FunctionalReferenceInvokeKind::Function
-              ? std::move(Referent)
-              : snapshot(dereference(std::move(Referent), L), L);
       json::Array Arguments;
       for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
         const auto Parameter = Prototype->getParamType(I);
-        Arguments.push_back(cast(argument(Call->getArg(I + 1), Parameter),
-                                 type(parameterType(Parameter), L), L));
+        const auto *Copy = I < Info->SelectedCopies.size()
+                               ? Info->SelectedCopies[I]
+                               : nullptr;
+        Arguments.push_back(utilityInvocationArgument(
+            std::move(Sources[I]),
+            Call->getDirectCallee()
+                ->getParamDecl(I + 1 - OperatorOffset)
+                ->getType(),
+            Parameter, Copy, L));
       }
-      return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                              Prototype->getReturnType(), L,
-                              std::move(Destination));
+      auto Result = emitIndirectCall(std::move(Callable), std::move(Arguments),
+                                     Prototype->getReturnType(), L,
+                                     std::move(Destination));
+      endFullExpression();
+      return Result;
     }
     case UtilityOperation::FunctionalInvokeMember: {
       const auto Info = approvedFunctionalMemberInvokeCall(
@@ -9782,12 +9872,15 @@ class FunctionLowering {
       const auto ReferenceCallable = approvedUtilityTupleApplyReferenceCall(
           A.S, A.Sources, Call, A.Context);
       if (ReferenceCallable) {
-        auto Wrapper = lvalue(Call->getArg(0));
-        auto Referent = snapshot(
-            ReferenceMember(std::move(Wrapper), ReferenceCallable->Wrapper), L);
+        auto WrapperAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
+        auto Referent = snapshot(
+            ReferenceMember(dereference(std::move(WrapperAddress), L),
+                            ReferenceCallable->Wrapper),
+            L);
         if (ReferenceCallable->Kind ==
             FunctionalReferenceInvokeKind::FunctionObject) {
           if (!ReferenceCallable->Operation || !ReferenceCallable->Method ||
@@ -9830,6 +9923,12 @@ class FunctionLowering {
                 Tuple->size())
           reject(L, "utility tuple apply",
                  "The referenced callback arity differs from the tuple.");
+        Expression Callable;
+        if (!Method)
+          Callable = ReferenceCallable->Kind ==
+                             FunctionalReferenceInvokeKind::Function
+                         ? std::move(Referent)
+                         : snapshot(dereference(std::move(Referent), L), L);
         json::Array Arguments;
         for (unsigned I = 0; I < Tuple->size(); ++I) {
           const auto Parameter = Method ? Method->getParamDecl(I)->getType()
@@ -9891,11 +9990,6 @@ class FunctionLowering {
             return FinishInvocation(dereference(std::move(Result), L));
           return FinishInvocation(std::move(Result));
         }
-        auto Callable =
-            ReferenceCallable->Kind ==
-                    FunctionalReferenceInvokeKind::Function
-                ? std::move(Referent)
-                : snapshot(dereference(std::move(Referent), L), L);
         return FinishInvocation(emitIndirectCall(
             std::move(Callable), std::move(Arguments),
             Prototype->getReturnType(), L, std::move(Destination)));
@@ -9941,19 +10035,24 @@ class FunctionLowering {
         reject(L, "utility tuple apply",
                "The selected tuple-like callback is unavailable.");
       Expression Callable;
+      Expression CallableSource;
       Expression Receiver;
+      const auto CallableParameter =
+          Call->getDirectCallee()->getParamDecl(0)->getType();
       if (Method) {
         Receiver = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       } else {
-        Callable = snapshot(CallableType->isFunctionType()
-                                ? functionValue(Call->getArg(0))
-                                : expression(Call->getArg(0)),
-                            L);
+        CallableSource = captureUtilityConstructorArgument(
+            Call->getArg(0), CallableParameter);
       }
       auto TupleAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto TupleValue = dereference(std::move(TupleAddress), L);
+      if (!Method)
+        Callable = snapshot(utilityConstructorArgumentValue(
+                                 std::move(CallableSource), CallableParameter, L),
+                             L);
       json::Array Arguments;
       for (unsigned I = 0; I < Tuple->size(); ++I) {
         const auto Parameter = Prototype ? Prototype->getParamType(I)
@@ -22156,6 +22255,53 @@ class FunctionLowering {
     if (ParameterType->getPointeeType()->isFunctionType())
       return snapshot(expression(Arg), Arg->getExprLoc());
     return argument(Arg, ParameterType);
+  }
+
+  std::vector<Expression>
+  captureUtilityInvocationArguments(const CallExpr *Call, unsigned Offset,
+                                    unsigned Count) {
+    const auto *Function = Call->getDirectCallee();
+    const unsigned OperatorOffset = isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
+    const auto L = Call->getExprLoc();
+    if (!Function || Offset < OperatorOffset ||
+        Offset + Count != Call->getNumArgs() ||
+        Function->getNumParams() + OperatorOffset != Call->getNumArgs())
+      reject(L, "functional invoke arguments",
+             "The exact SDK forwarding parameter slots are required.");
+    std::vector<Expression> Arguments;
+    Arguments.reserve(Count);
+    for (unsigned I = 0; I < Count; ++I) {
+      const auto Parameter =
+          Function->getParamDecl(I + Offset - OperatorOffset)->getType();
+      if (!Parameter->isReferenceType())
+        reject(L, "functional invoke arguments",
+               "SDK forwarding arguments require reference parameters.");
+      Arguments.push_back(captureUtilityConstructorArgument(
+          Call->getArg(I + Offset), Parameter));
+    }
+    return Arguments;
+  }
+
+  Expression utilityInvocationArgument(Expression Source, QualType Forwarded,
+                                       QualType Parameter,
+                                       const CXXConstructExpr *Copy,
+                                       SourceLocation L) {
+    if (Parameter->isReferenceType())
+      return snapshot(cast(std::move(Source), type(Parameter, L), L), L);
+    if (recordValue(Parameter)) {
+      auto Place = objectTemporary(Parameter, L);
+      if (Copy)
+        constructMemorySource(Place, Parameter, Copy->getConstructor(),
+                              std::move(Source), L, Copy);
+      else
+        assign(Place, dereference(std::move(Source), L), L);
+      return snapshot(
+          address(std::move(Place), Parameter.getUnqualifiedType(), L), L);
+    }
+    return snapshot(
+        cast(utilityConstructorArgumentValue(std::move(Source), Forwarded, L),
+             type(Parameter, L), L),
+        L);
   }
   Expression utilityConstructorArgumentValue(Expression Pointer,
                                              QualType ParameterType,

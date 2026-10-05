@@ -134,6 +134,13 @@ swapping, comparison, `make_pair` and `get`. Tuple metadata and
 `integer_sequence::size()` remain compile-time values. The authenticated
 87-file closure adds no libc++ runtime dependency; standard-function addresses
 remain rejected.
+Pair and tuple value elements also admit checked fixed-arity ordinary function
+pointers, including nested pair, tuple and array fields. Construction,
+assignment, factories, projection and swap preserve the pointer value; exact
+compatible conversions include function-name decay, `nullptr`, removal of
+`noexcept` and conversion to `bool`. Equality and inequality compare compatible
+callback signatures. Original signature, alias, bound, exception and definition
+source checks still apply.
 Direct element-wise pair construction and `std::make_pair` also admit
 source-owned nontrivial standard-layout record fields when the selected pinned
 pair initializer constructs each such field through its source-owned copy or
@@ -263,6 +270,19 @@ including authenticated extra constructor defaults. Their default temporaries
 survive the callback and parameter destruction, then finish inside the SDK
 invocation before the caller continues. Caller-created callable and source
 temporaries, reference results and returned records retain their outer lifetime.
+The same selected by-value constructor and extra-default handling applies to
+`std::invoke` on functions, function pointers, source function objects, member
+functions and `mem_fn`, and to direct or invoked `reference_wrapper` calls.
+All caller arguments are evaluated before the SDK constructs callback parameters;
+constructor-default temporaries survive the call and parameter destruction, then
+finish before the caller continues. Caller temporaries and returned values retain
+their outer lifetime, and unevaluated queries keep their separate source rules.
+SDK calls retain argument bindings before invocation, then read forwarded scalar
+values, function-pointer variables, wrapper bindings and receiver pointers after
+all caller arguments have been evaluated. The selected function pointer is
+captured before callback parameter construction. Prvalue callables keep their
+captured value, and ordinary indirect calls retain their callee-before-arguments
+evaluation rule.
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
 tuple/pair sources plus scalar and recursively composite arrays, evaluates all
 sources once before reading their elements, and constructs the exact

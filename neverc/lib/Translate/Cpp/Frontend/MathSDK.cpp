@@ -2826,6 +2826,44 @@ static bool utilityScalarDirectConversion(const ASTContext &Context,
   return true;
 }
 
+static bool utilityCallbackDirectConversion(const ASTContext &Context,
+                                            QualType From, QualType To) {
+  if (From.isNull() || To.isNull() || From.isVolatileQualified() ||
+      To.isVolatileQualified() || From.isRestrictQualified() ||
+      To.isRestrictQualified() || From.getAddressSpace() != LangAS::Default ||
+      To.getAddressSpace() != LangAS::Default)
+    return false;
+  From = From.getCanonicalType().getUnqualifiedType();
+  To = To.getCanonicalType().getUnqualifiedType();
+  if (To->isBooleanType())
+    return From->isFunctionType() || From->isFunctionPointerType();
+  if (!To->isFunctionPointerType())
+    return false;
+  if (From->isNullPtrType())
+    return true;
+  const auto Source = From->isFunctionType()          ? From
+                      : From->isFunctionPointerType() ? From->getPointeeType()
+                                                      : QualType();
+  const auto Target = To->getPointeeType();
+  const auto *SourcePrototype =
+      Source.isNull() ? nullptr : Source->getAs<FunctionProtoType>();
+  const auto *TargetPrototype = Target->getAs<FunctionProtoType>();
+  return SourcePrototype && TargetPrototype &&
+         (Context.hasSameType(Source, Target) ||
+          (SourcePrototype->isNothrow() && !TargetPrototype->isNothrow() &&
+           Context.hasSameFunctionTypeIgnoringExceptionSpec(Source, Target)));
+}
+
+static bool utilityPairDirectConversion(const ASTContext &Context,
+                                        QualType From, QualType To) {
+  if (From->isFunctionType() || From->isFunctionPointerType() ||
+      To->isFunctionPointerType())
+    return utilityCallbackDirectConversion(Context, From, To);
+  if (utilityScalar(Context, From) || utilityScalar(Context, To))
+    return utilityScalarDirectConversion(Context, From, To);
+  return Context.hasSameUnqualifiedType(From, To);
+}
+
 static bool utilityArrayValue(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type,
                               unsigned Depth = 0) {
@@ -3056,10 +3094,18 @@ static bool utilityPairValue(const State &S, const SourceManager &SM,
                              unsigned Depth) {
   if (Depth > 64 || Type.isNull())
     return false;
+  if (Type->isFunctionPointerType())
+    return utilityArrayStorableValue(S, SM, Context, Type);
   if (utilityArrayValue(S, SM, Context, Type))
     return true;
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
+    return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default &&
+           Array->Record->hasTrivialCopyConstructor() &&
+           Array->Record->hasTrivialDestructor() &&
+           utilityPairValue(S, SM, Context, Array->ElementType, Depth + 1);
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -3076,6 +3122,8 @@ static bool utilityPairAssignableValue(const State &S,
                                        QualType Type, unsigned Depth = 0) {
   if (Depth > 64 || Type.isNull() || Type.isConstQualified())
     return false;
+  if (Type->isFunctionPointerType())
+    return utilityPairValue(S, SM, Context, Type, Depth);
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
   if (const auto Optional =
@@ -3087,6 +3135,10 @@ static bool utilityPairAssignableValue(const State &S,
                                       Depth + 1);
   if (utilityArrayValue(S, SM, Context, Type))
     return utilityArrayTriviallyAssignable(Context, Type);
+  if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
+    return utilityArrayTriviallyAssignable(Context, Type) &&
+           utilityPairAssignableValue(S, SM, Context, Array->ElementType,
+                                      Depth + 1);
   if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -3543,11 +3595,7 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
         continue;
       }
       const bool Convertible =
-          (utilityScalar(Context, SourceValue) ||
-           utilityScalar(Context, Destination))
-              ? utilityScalarDirectConversion(Context, SourceValue,
-                                              Destination)
-              : Context.hasSameUnqualifiedType(SourceValue, Destination);
+          utilityPairDirectConversion(Context, SourceValue, Destination);
       if (!Convertible)
         return std::nullopt;
     }
@@ -3592,9 +3640,7 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
         continue;
       }
       const bool Convertible =
-          (utilityScalar(Context, Argument) || utilityScalar(Context, Element))
-              ? utilityScalarDirectConversion(Context, Argument, Element)
-              : Context.hasSameUnqualifiedType(Argument, Element);
+          utilityPairDirectConversion(Context, Argument, Element);
       if (!Convertible)
         return std::nullopt;
       if (!utilityPairValue(S, SM, Context, Element) && !(*Copies)[I])
@@ -3850,11 +3896,7 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
                                       ? DestinationElement->getPointeeType()
                                       : DestinationElement;
     const bool Convertible =
-        (utilityScalar(Context, SourceValue) ||
-         utilityScalar(Context, DestinationValue))
-            ? utilityScalarDirectConversion(Context, SourceValue,
-                                            DestinationValue)
-            : Context.hasSameUnqualifiedType(SourceValue, DestinationValue);
+        utilityPairDirectConversion(Context, SourceValue, DestinationValue);
     if (!Convertible)
       return std::nullopt;
   }
@@ -3939,6 +3981,9 @@ static bool utilityTupleDirectConversion(const State &S,
                                          const SourceManager &SM,
                                          const ASTContext &Context,
                                          QualType From, QualType To) {
+  if (From->isFunctionType() || From->isFunctionPointerType() ||
+      To->isFunctionPointerType())
+    return utilityCallbackDirectConversion(Context, From, To);
   if (utilityScalar(Context, From) || utilityScalar(Context, To))
     return utilityScalarDirectConversion(Context, From, To);
   return utilityTupleValue(S, SM, Context, From) &&
@@ -11344,6 +11389,67 @@ static const CXXConstructExpr *functionalInvokeSelectedCopy(
   return Construction;
 }
 
+std::optional<std::vector<const CXXConstructExpr *>>
+approvedFunctionalInvokeSelectedCopies(const State &S, const SourceManager &SM,
+                                       const CallExpr *Call,
+                                       const ASTContext &Context) {
+  if (!Call || !Call->getNumArgs())
+    return std::nullopt;
+  const auto Callable = Call->getArg(0)->getType();
+  const auto *Prototype =
+      Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
+      : Callable->isFunctionPointerType()
+          ? Callable->getPointeeType()->getAs<FunctionProtoType>()
+          : nullptr;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Dispatch =
+      approvedFunctionalInvokeDispatch(S, SM, Call, Context, Call->isGLValue());
+  const auto *DispatchFunction =
+      Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *Body = DispatchFunction
+                         ? dyn_cast<CompoundStmt>(DispatchFunction->getBody())
+                         : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Operation =
+      Return && Return->getRetValue()
+          ? dyn_cast_or_null<CallExpr>(
+                functionalInvokeStrippedExpression(Return->getRetValue()))
+          : nullptr;
+  if (!Prototype || Prototype->isVariadic() || !Function || !DispatchFunction ||
+      !Operation || Operation->getDirectCallee() ||
+      isa<CXXOperatorCallExpr>(Operation) ||
+      Prototype->getNumParams() + 1 != Call->getNumArgs() ||
+      Operation->getNumArgs() != Prototype->getNumParams() ||
+      !Context.hasSameType(Operation->getType(), Call->getType()) ||
+      !approvedFunctionalInvokeArgumentFlow(S, SM, Operation->getCallee(),
+                                            DispatchFunction->getParamDecl(0),
+                                            Callable, Context))
+    return std::nullopt;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+    if (!approvedFunctionalForwardingCall(S, SM, Dispatch->getArg(I),
+                                          Function->getParamDecl(I)))
+      return std::nullopt;
+  std::vector<const CXXConstructExpr *> Copies(Prototype->getNumParams(),
+                                               nullptr);
+  for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
+    const auto Parameter = Prototype->getParamType(I);
+    if (!approvedFunctionalInvokeArgumentFlow(
+            S, SM, Operation->getArg(I), DispatchFunction->getParamDecl(I + 1),
+            Parameter, Context, true))
+      return std::nullopt;
+    if (Parameter->isRecordType()) {
+      Copies[I] = functionalInvokeSelectedCopy(
+          S, SM, Operation->getArg(I), DispatchFunction->getParamDecl(I + 1),
+          Parameter, Dispatch->getArg(I + 1), Context);
+      if (!Copies[I])
+        return std::nullopt;
+    }
+  }
+  return Copies;
+}
+
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
                                            QualType Type) {
   return supportedFunctionalCallableValue(Type, Context) ||
@@ -11926,7 +12032,7 @@ approvedFunctionalMemberInvokeCallImpl(
               ? functionalInvokeSelectedCopy(
                     S, SM, MemberCall->getArg(I),
                     DispatchFunction->getParamDecl(I + 2), Parameter,
-                    ArgumentExpression, Context)
+                    Dispatch->getArg(I + 2), Context)
               : nullptr;
       bool Supported = false;
       if (Parameter->isReferenceType()) {
@@ -11980,7 +12086,8 @@ std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
-  return approvedFunctionalMemberInvokeCallImpl(S, SM, Call, Context);
+  return approvedFunctionalMemberInvokeCallImpl(S, SM, Call, Context,
+                                               std::nullopt, true);
 }
 
 static bool functionalObjectArgumentConversion(
@@ -12102,25 +12209,34 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
              !supportedFunctionalResult(S, SM, Context, Result)))
     return std::nullopt;
 
+  std::vector<const CXXConstructExpr *> SelectedCopies(Method->getNumParams(),
+                                                     nullptr);
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
     const auto *ArgumentExpression = Call->getArg(I + 1);
+    const auto *Copy = Parameter->isRecordType()
+                           ? functionalInvokeSelectedCopy(
+                                 S, SM, Operation->getArg(I + 1),
+                                 DispatchFunction->getParamDecl(I + 1),
+                                 Parameter, Dispatch->getArg(I + 1), Context)
+                           : nullptr;
     const bool Supported =
         Parameter->isReferenceType()
             ? supportedFunctionalInvokeReferenceArgument(
                   S, SM, Context, Parameter, ArgumentExpression)
-            : supportedFunctionalByValue(S, SM, Context, Parameter) &&
+            : (supportedFunctionalByValue(S, SM, Context, Parameter) || Copy) &&
                   functionalMemberValueConversion(
                       Context, ArgumentExpression->getType(), Parameter);
     if (!Supported ||
         !approvedFunctionalInvokeArgumentFlow(
             S, SM, Operation->getArg(I + 1),
-            DispatchFunction->getParamDecl(I + 1), Parameter, Context))
+            DispatchFunction->getParamDecl(I + 1), Parameter, Context, true))
       return std::nullopt;
+    SelectedCopies[I] = Copy;
   }
   return FunctionalMemberInvokeCall{Call->getArg(0), Call->getArg(0), Method,
                                     nullptr, nullptr, {}, std::nullopt,
-                                    false};
+                                    false, std::move(SelectedCopies)};
 }
 
 // A matching value/type is insufficient: decomposition can select a user
@@ -13059,7 +13175,7 @@ approvedFunctionalReferenceDirectInvoke(
               ? functionalInvokeSelectedCopy(
                     S, SM, OperationCall->getArg(I + 1),
                     DispatchFunction->getParamDecl(I + 1), Parameter,
-                    ArgumentExpression, Context)
+                    Dispatch->getArg(I + 1), Context)
               : nullptr;
       Supported =
           (Parameter->isReferenceType()
@@ -13113,7 +13229,7 @@ approvedFunctionalReferenceDirectInvoke(
             ? functionalInvokeSelectedCopy(
                   S, SM, Indirect->getArg(I),
                   DispatchFunction->getParamDecl(I + 1), Parameter,
-                  ArgumentExpression, Context)
+                  Dispatch->getArg(I + 1), Context)
             : nullptr;
     const bool Supported =
         Parameter->isReferenceType()
@@ -13143,7 +13259,7 @@ approvedFunctionalReferenceInvokeCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   if (auto Direct = approvedFunctionalReferenceDirectInvoke(
-          S, SM, Call, Context, true))
+          S, SM, Call, Context, true, true))
     return Direct;
   const auto *Dispatch = approvedFunctionalInvokeDispatch(
       S, SM, Call, Context, Call && Call->isGLValue());
@@ -13168,7 +13284,7 @@ approvedFunctionalReferenceInvokeCall(
                 functionalInvokeStrippedExpression(Return->getRetValue()))
           : nullptr;
   auto Inner = approvedFunctionalReferenceDirectInvoke(
-      S, SM, InnerCall, Context, false);
+      S, SM, InnerCall, Context, false, true);
   if (!Call || !Wrapper || !Inner || !InnerCall ||
       Wrapper->Record->getCanonicalDecl() !=
           Inner->Wrapper.Record->getCanonicalDecl() ||
@@ -13196,7 +13312,9 @@ approvedFunctionalReferenceInvokeCall(
           Parameter->isReferenceType()
               ? supportedFunctionalInvokeReferenceArgument(
                     S, SM, Context, Parameter, ArgumentExpression)
-              : supportedFunctionalByValue(S, SM, Context, Parameter) &&
+              : (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                 (Inner->SelectedCopies.size() == Inner->Method->getNumParams() &&
+                  Inner->SelectedCopies[I])) &&
                     functionalMemberValueConversion(
                         Context, ArgumentExpression->getType(), Parameter);
       if (!Supported)
@@ -29844,6 +29962,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__functional/invoke.h" && Name == "invoke" &&
       Call->getNumArgs() >= 1 &&
       Call->getNumArgs() == Function->getNumParams()) {
+    const auto Copies =
+        approvedFunctionalInvokeSelectedCopies(S, SM, Call, Context);
     const auto Callable = Call->getArg(0)->getType();
     const auto *Prototype =
         Callable->isFunctionType()
@@ -29856,7 +29976,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Result.isNull() && Result->isReferenceType();
     const auto Referent =
         ReferenceResult ? Result->getPointeeType() : QualType();
-    if (!Prototype || Prototype->isVariadic() ||
+    if (!Copies || !Prototype || Prototype->isVariadic() ||
         Prototype->getNumParams() + 1 != Call->getNumArgs() ||
         !Same(Result, Function->getReturnType()) ||
         (ReferenceResult
@@ -29887,7 +30007,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    supportedFunctionalByValue(S, SM, Context, Parameter) &&
+                    (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                     (*Copies)[I]) &&
                     functionalMemberValueConversion(Context, Argument,
                                                     Parameter);
       }
@@ -30138,13 +30259,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                           utilityScalar(Context, Parameter) &&
                           utilityScalarDirectConversion(Context, Element,
                                                         Parameter);
+      const bool Callback =
+          supportedFunctionalByValue(S, SM, Context, Parameter) &&
+          utilityCallbackDirectConversion(Context, Element, Parameter);
       const bool Record =
           Element->isRecordType() && Parameter->isRecordType() &&
           ((supportedFunctionalByValue(S, SM, Context, Parameter) &&
             utilityTupleDirectConversion(S, SM, Context, Element, Parameter)) ||
            approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
                                                  Context));
-      if (!Scalar && !Record)
+      if (!Scalar && !Callback && !Record)
         return std::nullopt;
     }
     return UtilityOperation::TupleApply;

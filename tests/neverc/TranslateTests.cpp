@@ -30604,6 +30604,2303 @@ void f(Reader &reader, Item<int> &item) {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2InvokeConstructorDefaultsPreserveInvocationLifetimes) {
+  const auto Source = tmpFile("invoke-callback-default-lifetime.cpp");
+  const auto Output = tmpFile("invoke-callback-default-lifetime.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int live, calls, drops, copies, bad, parameter_drops;
+struct G {
+  G() noexcept {
+    ++live;
+    ++calls;
+  }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &v, const G &g = G{}) noexcept : value(v.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+  Item(Item &&v) noexcept : value(v.value) {}
+  ~Item() noexcept {
+    if (live)
+      ++parameter_drops;
+  }
+};
+int callback(Item item) noexcept { return item.value + live * 10; }
+int main() {
+  Item t(3);
+  int result = std::invoke(callback, t);
+  return !bad && !live && calls == 1 && drops == 1 && copies == 1 &&
+                 parameter_drops == 1 && result == 13
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "InvokeConstructorDefaultsPreserveInvocationLifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvokeConstructorDefaultsCoverCallableFamilies) {
+  const auto Source = tmpFile("invoke-callable-routes.cpp");
+  const auto Output = tmpFile("invoke-callable-routes.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int live, defaults, drops, copies, moves, parameter_drops, bad, expected;
+bool observing;
+struct Guard {
+  bool tracked;
+  Guard() noexcept : tracked(observing) {
+    ++live;
+    if (tracked)
+      ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    if (tracked)
+      ++drops;
+  }
+};
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++copies;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  Item(Item &&other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++moves;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  ~Item() noexcept {
+    if (observing && live)
+      ++parameter_drops;
+  }
+  int combine(Item other) const noexcept {
+    if (live != expected)
+      ++bad;
+    return value * 10 + other.value + live * 100;
+  }
+};
+int consume(Item first, Item second) noexcept {
+  if (live != expected)
+    ++bad;
+  return first.value * 10 + second.value + live * 100;
+}
+struct Reader {
+  int operator()(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+struct Receiver {
+  int consume(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+void reset(int n) noexcept {
+  observing = true;
+  expected = n;
+  defaults = drops = copies = moves = parameter_drops = bad = 0;
+}
+bool valid(int count, int copy_count, int move_count) noexcept {
+  return !bad && !live && defaults == count && drops == count &&
+         copies == copy_count && moves == move_count &&
+         parameter_drops == count;
+}
+
+int main() {
+  Item first(2), second(3);
+  const Item constant(3);
+  Reader reader;
+  Receiver receiver;
+  int (*pointer)(Item, Item) = consume;
+  auto function = std::ref(consume);
+  auto stored = std::ref(pointer);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Receiver::consume);
+  reset(2);
+  if (std::invoke(consume, first, second) != 223 || !valid(2, 2, 0))
+    return 1;
+  reset(2);
+  if (std::invoke(pointer, first, second) != 223 || !valid(2, 2, 0))
+    return 2;
+  reset(2);
+  if (std::invoke(reader, first, constant) != 223 || !valid(2, 2, 0))
+    return 3;
+  reset(2);
+  if (std::invoke(function, first, second) != 223 || !valid(2, 2, 0))
+    return 4;
+  reset(2);
+  if (std::invoke(stored, first, constant) != 223 || !valid(2, 2, 0))
+    return 5;
+  reset(2);
+  if (std::invoke(object, first, second) != 223 || !valid(2, 2, 0))
+    return 6;
+  reset(2);
+  if (std::invoke(&Receiver::consume, receiver, first, second) != 223 ||
+      !valid(2, 2, 0))
+    return 7;
+  reset(2);
+  if (std::invoke(member, receiver, first, second) != 223 || !valid(2, 2, 0))
+    return 8;
+  reset(2);
+  if (function(first, second) != 223 || !valid(2, 2, 0))
+    return 9;
+  reset(2);
+  if (object(first, constant) != 223 || !valid(2, 2, 0))
+    return 10;
+  reset(2);
+  if (member(receiver, first, second) != 223 || !valid(2, 2, 0))
+    return 11;
+  reset(2);
+  if (std::invoke(consume, std::move(first), std::move(second)) != 223 ||
+      !valid(2, 0, 2))
+    return 12;
+  reset(2);
+  if (std::invoke(consume, Item(2), Item(3)) != 223 || !valid(2, 0, 2))
+    return 13;
+  reset(2);
+  if (std::invoke(reader, std::move(first), std::move(constant)) != 223 ||
+      !valid(2, 1, 1))
+    return 14;
+  observing = false;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "InvokeConstructorDefaultsCoverCallableFamilies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvokeConstructorDefaultsPreserveResults) {
+  const auto Source = tmpFile("invoke-result-boundaries.cpp");
+  const auto Output = tmpFile("invoke-result-boundaries.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int live, defaults, drops, parameters, bad, state, result_alive;
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+    ++state;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++parameters;
+  }
+};
+struct Result {
+  int value;
+  Result(int n) noexcept : value(n) { ++result_alive; }
+  ~Result() noexcept {
+    --result_alive;
+    if (live)
+      ++bad;
+  }
+};
+int scalar(Item item) noexcept { return item.value + live * 10; }
+void empty(Item item) noexcept {
+  if (item.value != 3 || live != 1)
+    ++bad;
+}
+int &reference(Item item) noexcept {
+  state = item.value + live * 10;
+  return state;
+}
+int &&rvalue_reference(Item item) noexcept {
+  state = item.value + live * 10;
+  return std::move(state);
+}
+Result record(Item item) noexcept { return Result(item.value + live * 10); }
+int after() noexcept { return live == 0 && result_alive == 1 ? 0 : 1; }
+int main() {
+  Item item(3);
+  if (std::invoke(scalar, item) != 13 || live || parameters != 1)
+    return 1;
+  if ((std::invoke(empty, item), live) || parameters != 2)
+    return 2;
+  std::invoke(reference, item) += 7;
+  if (state != 21 || live || parameters != 3)
+    return 3;
+  int &&alias = std::invoke(rvalue_reference, item);
+  if (alias != 14 || live || parameters != 4)
+    return 4;
+  alias += 2;
+  if (state != 16)
+    return 5;
+  {
+    auto value = std::invoke(record, item);
+    if (value.value != 13 || live || result_alive != 1 || parameters != 5)
+      return 6;
+  }
+  if (result_alive)
+    return 7;
+  if ((std::invoke(record, item), after()))
+    return 8;
+  return !bad && !live && !result_alive && defaults == 6 && drops == 6 &&
+                 parameters == 6
+             ? 0
+             : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("InvokeConstructorDefaultsPreserveResults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvokeConstructorDefaultsPreserveCallerTemporaries) {
+  const auto Source = tmpFile("invoke-caller-temporaries.cpp");
+  const auto Output = tmpFile("invoke-caller-temporaries.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int outer, outer_drops, live, defaults, drops, parameters, bad;
+struct Outer {
+  Outer() noexcept { ++outer; }
+  ~Outer() noexcept {
+    --outer;
+    ++outer_drops;
+  }
+};
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++defaults;
+    if (outer != 2)
+      ++bad;
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+    if (outer != 2)
+      ++bad;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (outer != 2 || live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live) {
+      ++parameters;
+      if (outer != 2)
+        ++bad;
+    }
+  }
+};
+struct Reader {
+  Reader() noexcept { ++outer; }
+  ~Reader() noexcept {
+    --outer;
+    ++outer_drops;
+    if (live)
+      ++bad;
+  }
+  int operator()(Item item) const noexcept {
+    if (outer != 2 || live != 1)
+      ++bad;
+    return item.value + live * 10 + outer * 100;
+  }
+};
+int after() noexcept { return outer == 2 && !live && drops == 1 ? 0 : 1; }
+int main() {
+  Item item(3);
+  int value = 0;
+  int observed = (value = std::invoke(Reader{}, (Outer{}, item)), after());
+  return !observed && value == 213 && !bad && !outer && !live &&
+                 defaults == 1 && drops == 1 && parameters == 1 &&
+                 outer_drops == 2
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "InvokeConstructorDefaultsPreserveCallerTemporaries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvokeConstructorDefaultsPreserveSelectedArguments) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"complex-selected-defaults", R"cpp(#include <functional>
+#include <tuple>
+int guard_live, box_live, boxes_dropped, parameters, evaluations, bad;
+int table[2] = {2, 3};
+int shared = 5;
+int plus(int n) noexcept { return n + 7; }
+int next() noexcept {
+  ++evaluations;
+  return 4;
+}
+struct Guard {
+  Guard() noexcept { ++guard_live; }
+  ~Guard() noexcept { --guard_live; }
+};
+struct Box {
+  int value;
+  Box(int n) noexcept : value(n) { ++box_live; }
+  ~Box() noexcept {
+    --box_live;
+    ++boxes_dropped;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, int extra = next(), const Box &reference = Box(6),
+       Box owned = Box(7), const int (&array)[2] = table, int &alias = shared,
+       int (*callback)(int) = plus, const Guard &guard = Guard{}) noexcept
+      : value(other.value + extra + reference.value + owned.value + array[0] +
+              array[1] + alias + callback(1)) {
+    if (box_live != 2 || guard_live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (guard_live) {
+      ++parameters;
+      if (box_live < 1 || box_live > 2)
+        ++bad;
+    }
+  }
+};
+int consume(Item item) noexcept {
+  if (guard_live != 1 || box_live < 1 || box_live > 2)
+    ++bad;
+  return item.value + guard_live * 10;
+}
+int main() {
+  Item item(3);
+  int result = std::invoke(consume, item);
+  return result == 48 && !bad && !guard_live && !box_live &&
+                 boxes_dropped == 2 && parameters == 1 && evaluations == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"template-selected-defaults", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int live, drops, parameters, bad;
+template <class T> struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+  }
+};
+template <class T> T choose() noexcept { return T(4); }
+template <class T> struct Item {
+  T value;
+  Item(T n) noexcept : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{},
+       T extra = choose<T>()) noexcept
+      : value(other.value + extra) {
+    if (live != 1)
+      ++bad;
+  }
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{},
+       T extra = choose<T>()) noexcept
+      : value(other.value + extra) {
+    if (live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++parameters;
+  }
+};
+int consume(Item<int> item) noexcept { return item.value + live * 10; }
+int main() {
+  Item<int> item(3);
+  if (std::invoke(consume, item) != 17 || live || drops != 1 || parameters != 1)
+    return 1;
+  if (std::invoke(consume, std::move(item)) != 17 || live || drops != 2 ||
+      parameters != 2)
+    return 2;
+  return !bad ? 0 : 3;
+}
+)cpp"},
+      {"redeclared-selected-defaults", R"cpp(#include <functional>
+#include <tuple>
+int live, drops, parameters, bad;
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept;
+  ~Item() noexcept {
+    if (live)
+      ++parameters;
+  }
+};
+Item::Item(const Item &other, const Guard &guard) noexcept
+    : value(other.value) {
+  if (live != 1)
+    ++bad;
+}
+int consume(Item item) noexcept { return item.value + live * 10; }
+int main() {
+  Item item(3);
+  int result = std::invoke(consume, item);
+  return result == 13 && !bad && !live && drops == 1 && parameters == 1 ? 0 : 1;
+}
+)cpp"},
+      {"generated-owner-selected-defaults", R"cpp(#include <functional>
+#include <tuple>
+int live, defaults, drops, copies, parameters, bad;
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+    ++parameters;
+  }
+};
+struct Owner {
+  Item value;
+  Owner(int n) noexcept : value(n) {}
+  Owner(const Owner &) = default;
+};
+int consume(Owner owner) noexcept { return owner.value.value + live * 10; }
+int main() {
+  Owner owner(3);
+  int result = std::invoke(consume, owner);
+  return result == 3 && !bad && !live && defaults == 1 && drops == 1 &&
+                 copies == 1 && parameters == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string(
+            "invoke-InvokeConstructorDefaultsPreserveSelectedArguments-") +
+        Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string(
+            "invoke-InvokeConstructorDefaultsPreserveSelectedArguments-") +
+        Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(
+          "InvokeConstructorDefaultsPreserveSelectedArguments" + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvokeConstructorDefaultsRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"folded-function", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(read, item); }
+)cpp",
+       "TR0201"},
+      {"folded-object", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Item<int> &item) { (void)std::invoke(Reader{}, item); }
+)cpp",
+       "TR0201"},
+      {"folded-invoke-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(std::ref(read), item); }
+)cpp",
+       "TR0201"},
+      {"folded-direct-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) { (void)std::ref(reader)(item); }
+)cpp",
+       "TR0201"},
+      {"folded-invoke-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::invoke(&Reader::read, reader, item);
+}
+)cpp",
+       "TR0201"},
+      {"folded-direct-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::mem_fn (&Reader::read)(reader, item);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-function", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(read, item); }
+)cpp",
+       "TR0201"},
+      {"lambda-object", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Item<int> &item) { (void)std::invoke(Reader{}, item); }
+)cpp",
+       "TR0201"},
+      {"lambda-invoke-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(std::ref(read), item); }
+)cpp",
+       "TR0201"},
+      {"lambda-direct-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) { (void)std::ref(reader)(item); }
+)cpp",
+       "TR0201"},
+      {"lambda-invoke-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::invoke(&Reader::read, reader, item);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-direct-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::mem_fn (&Reader::read)(reader, item);
+}
+)cpp",
+       "TR0201"},
+      {"missing-function", R"cpp(#include <functional>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(read, item); }
+)cpp",
+       "TR0203"},
+      {"missing-object", R"cpp(#include <functional>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Item<int> &item) { (void)std::invoke(Reader{}, item); }
+)cpp",
+       "TR0203"},
+      {"missing-invoke-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(std::ref(read), item); }
+)cpp",
+       "TR0203"},
+      {"missing-direct-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) { (void)std::ref(reader)(item); }
+)cpp",
+       "TR0203"},
+      {"missing-invoke-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::invoke(&Reader::read, reader, item);
+}
+)cpp",
+       "TR0203"},
+      {"missing-direct-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::mem_fn (&Reader::read)(reader, item);
+}
+)cpp",
+       "TR0203"},
+      {"destructor-function", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(read, item); }
+)cpp",
+       "TR0201"},
+      {"destructor-object", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Item<int> &item) { (void)std::invoke(Reader{}, item); }
+)cpp",
+       "TR0201"},
+      {"destructor-invoke-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(Item<int> &item) { (void)std::invoke(std::ref(read), item); }
+)cpp",
+       "TR0201"},
+      {"destructor-direct-wrapper", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) { (void)std::ref(reader)(item); }
+)cpp",
+       "TR0201"},
+      {"destructor-invoke-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::invoke(&Reader::read, reader, item);
+}
+)cpp",
+       "TR0201"},
+      {"destructor-direct-member", R"cpp(#include <functional>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  (void)std::mem_fn (&Reader::read)(reader, item);
+}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("invoke-default-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("invoke-default-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleCatOwnedPairsPreserveConstructorDefaults) {
+  const auto Source = tmpFile("tuple-cat-owned-pair-defaults.cpp");
+  const auto Output = tmpFile("tuple-cat-owned-pair-defaults.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int live, defaults, drops, copies, moves, parameter_drops, bad, expected;
+bool observing;
+struct Guard {
+  bool tracked;
+  Guard() noexcept : tracked(observing) {
+    ++live;
+    if (tracked)
+      ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    if (tracked)
+      ++drops;
+  }
+};
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++copies;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  Item(Item &&other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++moves;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  ~Item() noexcept {
+    if (observing && live)
+      ++parameter_drops;
+  }
+  int combine(Item other) const noexcept {
+    if (live != expected)
+      ++bad;
+    return value * 10 + other.value + live * 100;
+  }
+};
+int consume(Item first, Item second) noexcept {
+  if (live != expected)
+    ++bad;
+  return first.value * 10 + second.value + live * 100;
+}
+struct Reader {
+  int operator()(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+struct Receiver {
+  int consume(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+void reset(int n) noexcept {
+  observing = true;
+  expected = n;
+  defaults = drops = copies = moves = parameter_drops = bad = 0;
+}
+bool valid(int count, int copy_count, int move_count) noexcept {
+  return !bad && !live && defaults == count && drops == count &&
+         copies == copy_count && moves == move_count &&
+         parameter_drops == count;
+}
+
+int main() {
+  std::pair<Item, Item> pair(Item(2), Item(3));
+  reset(1);
+  {
+    auto copy = std::tuple_cat(pair);
+    if (bad || live || defaults != 2 || drops != 2 || copies != 2 || moves ||
+        parameter_drops || std::get<0>(copy).value != 2 ||
+        std::get<1>(copy).value != 3)
+      return 1;
+    auto move = std::tuple_cat(std::move(pair));
+    if (bad || live || defaults != 4 || drops != 4 || copies != 2 ||
+        moves != 2 || parameter_drops || std::get<0>(move).value != 2 ||
+        std::get<1>(move).value != 3)
+      return 2;
+  }
+  observing = false;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-cat-owned-pair-defaults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvokeEvaluatesCallerArgumentsBeforeParameterCopies) {
+  const auto Source = tmpFile("invoke-caller-evaluation.cpp");
+  const auto Output = tmpFile("invoke-caller-evaluation.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int live, defaults, drops, copies, moves, parameter_drops, bad, expected;
+bool observing;
+struct Guard {
+  bool tracked;
+  Guard() noexcept : tracked(observing) {
+    ++live;
+    if (tracked)
+      ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    if (tracked)
+      ++drops;
+  }
+};
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++copies;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  Item(Item &&other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++moves;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  ~Item() noexcept {
+    if (observing && live)
+      ++parameter_drops;
+  }
+  int combine(Item other) const noexcept {
+    if (live != expected)
+      ++bad;
+    return value * 10 + other.value + live * 100;
+  }
+};
+int consume(Item first, Item second) noexcept {
+  if (live != expected)
+    ++bad;
+  return first.value * 10 + second.value + live * 100;
+}
+struct Reader {
+  int operator()(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+struct Receiver {
+  int consume(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+void reset(int n) noexcept {
+  observing = true;
+  expected = n;
+  defaults = drops = copies = moves = parameter_drops = bad = 0;
+}
+bool valid(int count, int copy_count, int move_count) noexcept {
+  return !bad && !live && defaults == count && drops == count &&
+         copies == copy_count && moves == move_count &&
+         parameter_drops == count;
+}
+
+int caller_reads;
+int modify(Item &item) noexcept {
+  ++caller_reads;
+  item.value = 9;
+  return 3;
+}
+int consume_one(Item item, int extra) noexcept {
+  if (live != 1 || caller_reads != 1)
+    ++bad;
+  return item.value * 10 + extra + live * 100;
+}
+struct ReaderOne {
+  int operator()(Item item, int extra) const noexcept {
+    if (live != 1 || caller_reads != 1)
+      ++bad;
+    return item.value * 10 + extra + live * 100;
+  }
+  int read(Item item, int extra) const noexcept {
+    if (live != 1 || caller_reads != 1)
+      ++bad;
+    return item.value * 10 + extra + live * 100;
+  }
+};
+int main() {
+  Item item(2);
+  ReaderOne reader;
+  auto function = std::ref(consume_one);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&ReaderOne::read);
+  reset(1);
+  caller_reads = 0;
+  if (std::invoke(consume_one, item, modify(item)) != 193 || !valid(1, 1, 0))
+    return 1;
+  reset(1);
+  caller_reads = 0;
+  item.value = 2;
+  if (std::invoke(reader, item, modify(item)) != 193 || !valid(1, 1, 0))
+    return 2;
+  reset(1);
+  caller_reads = 0;
+  item.value = 2;
+  if (std::invoke(function, item, modify(item)) != 193 || !valid(1, 1, 0))
+    return 3;
+  reset(1);
+  caller_reads = 0;
+  item.value = 2;
+  if (std::invoke(&ReaderOne::read, reader, item, modify(item)) != 193 ||
+      !valid(1, 1, 0))
+    return 4;
+  reset(1);
+  caller_reads = 0;
+  item.value = 2;
+  if (object(item, modify(item)) != 193 || !valid(1, 1, 0))
+    return 5;
+  reset(1);
+  caller_reads = 0;
+  item.value = 2;
+  if (member(reader, item, modify(item)) != 193 || !valid(1, 1, 0))
+    return 6;
+  observing = false;
+  return item.value == 9 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("invoke-caller-evaluation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairFunctionPointerValuesRetainSignatureSources) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"pair-variadic", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int, ...);
+int callback(int n, ...) { return n; }
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-long-double-signature", R"cpp(#include <utility>
+#include <tuple>
+using F = long double (*)(long double);
+long double callback(long double n) { return n; }
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-folded-signature", R"cpp(#include <utility>
+#include <tuple>
+using I = decltype((sizeof(long double), 1));
+using F = int (*)(I);
+int callback(I n) { return n; }
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-erased-alias-source", R"cpp(#include <utility>
+#include <tuple>
+template<class T> using Pointer = int (*)(int);
+using F = Pointer<decltype((sizeof(long double), 1))>;
+int callback(int n) { return n; }
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-folded-exception-source", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int) noexcept(sizeof(long double) > 0);
+int callback(int n) noexcept { return n; }
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-oversized-signature-bound", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int (&)[65537]);
+int callback(int (&)[65537]) { return 0; }
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleFunctionPointerValuesRetainSignatureSources) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"tuple-variadic", R"cpp(#include <tuple>
+using F = int (*)(int, ...);
+int callback(int n, ...) { return n; }
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-long-double-signature", R"cpp(#include <tuple>
+using F = long double (*)(long double);
+long double callback(long double n) { return n; }
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-folded-signature", R"cpp(#include <tuple>
+using I = decltype((sizeof(long double), 1));
+using F = int (*)(I);
+int callback(I n) { return n; }
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-erased-alias-source", R"cpp(#include <tuple>
+template<class T> using Pointer = int (*)(int);
+using F = Pointer<decltype((sizeof(long double), 1))>;
+int callback(int n) { return n; }
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-folded-exception-source", R"cpp(#include <tuple>
+using F = int (*)(int) noexcept(sizeof(long double) > 0);
+int callback(int n) noexcept { return n; }
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-oversized-signature-bound", R"cpp(#include <tuple>
+using F = int (*)(int (&)[65537]);
+int callback(int (&)[65537]) { return 0; }
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeFunctionPointerValuesRequireDefinitions) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"pair-missing-definition", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int callback(int n);
+int main() { std::pair<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0203"},
+      {"tuple-missing-definition", R"cpp(#include <tuple>
+using F = int (*)(int);
+int callback(int n);
+int main() { std::tuple<F, int> value(callback, 1); return 0; }
+)cpp",
+       "TR0203"},
+      {"pair-missing-template-definition", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+template<class T> int callback(int n);
+int main() { std::pair<F, int> value(callback<int>, 1); return 0; }
+)cpp",
+       "TR0203"},
+      {"tuple-missing-template-definition", R"cpp(#include <tuple>
+using F = int (*)(int);
+template<class T> int callback(int n);
+int main() { std::tuple<F, int> value(callback<int>, 1); return 0; }
+)cpp",
+       "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeFunctionPointerValuesRetainConversions) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"pair-lambda-conversion", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int main() { std::pair<F, int> value([](int n) { return n; }, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-lambda-conversion", R"cpp(#include <tuple>
+using F = int (*)(int);
+int main() { std::tuple<F, int> value([](int n) { return n; }, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-user-conversion", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int callback(int n) { return n; }
+struct Convert { operator F() const { return callback; } };
+int main() { std::pair<F, int> value(Convert{}, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-user-conversion", R"cpp(#include <tuple>
+using F = int (*)(int);
+int callback(int n) { return n; }
+struct Convert { operator F() const { return callback; } };
+int main() { std::tuple<F, int> value(Convert{}, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"pair-signature-reinterpret", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+bool callback(bool n) { return n; }
+int main() { std::pair<F, int> value(reinterpret_cast<F>(callback), 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-signature-reinterpret", R"cpp(#include <tuple>
+using F = int (*)(int);
+bool callback(bool n) { return n; }
+int main() { std::tuple<F, int> value(reinterpret_cast<F>(callback), 1); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleLikeFunctionPointerValuesRetainTemplateDefaults) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"pair-folded-template-default", R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+template<class T = decltype((sizeof(long double), 1))> int callback(int n) { return n; }
+int main() { std::pair<F, int> value(callback<>, 1); return 0; }
+)cpp",
+       "TR0201"},
+      {"tuple-folded-template-default", R"cpp(#include <tuple>
+using F = int (*)(int);
+template<class T = decltype((sizeof(long double), 1))> int callback(int n) { return n; }
+int main() { std::tuple<F, int> value(callback<>, 1); return 0; }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeFunctionPointerSwapsRetainSelectedSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"pair-callback-adl-swap", R"cpp(#include <utility>
+#include <tuple>
+namespace custom {
+struct Argument { int value; };
+using F = int (*)(Argument);
+int callback(Argument value) { return value.value; }
+void swap(F &left, F &right) noexcept { F saved = left; left = right; right = saved; }
+}
+int main() { std::pair<custom::F, int> left(custom::callback, 1), right(custom::callback, 2); left.swap(right); return 0; }
+)cpp",
+       "TR0203"},
+      {"tuple-callback-adl-swap", R"cpp(#include <tuple>
+namespace custom {
+struct Argument { int value; };
+using F = int (*)(Argument);
+int callback(Argument value) { return value.value; }
+void swap(F &left, F &right) noexcept { F saved = left; left = right; right = saved; }
+}
+int main() { std::tuple<custom::F, int> left(custom::callback, 1), right(custom::callback, 2); left.swap(right); return 0; }
+)cpp",
+       "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-value-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairFunctionPointerValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-like-callback-values-pair-lifecycle.cpp");
+  const auto Output = tmpFile("tuple-like-callback-values-pair-lifecycle.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int main() {
+  std::pair<F, int> empty;
+  if (empty.first != nullptr || empty.second != 0) return 1;
+  std::pair<F, int> p(increment, 7);
+  const F pointer = decrement;
+  std::pair<F, int> q(pointer, 9);
+  auto made = std::make_pair(increment, 3);
+  auto copy = p;
+  auto moved = std::move(copy);
+  empty = moved;
+  if (empty.first(empty.second) != 8 || made.first(3) != 4) return 2;
+  p.swap(q);
+  if (p.first(p.second) != 8 || q.first(q.second) != 8) return 3;
+  std::swap(p, q);
+  auto [callback, value] = p;
+  if (callback(value) != 8 || std::get<F>(p)(2) != 3) return 4;
+  const auto &view = p;
+  if (std::get<0>(view)(4) != 5 || std::get<1>(view) != 7) return 5;
+  std::pair<const F, int> frozen(increment, 2);
+  if (frozen.first(frozen.second) != 3) return 6;
+  std::pair<F, int> null(nullptr, 2);
+  auto twin = p;
+  if (null.first != nullptr || p != twin || !(p == twin) || p == q) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-like-callback-values-pair-lifecycle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleFunctionPointerValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-like-callback-values-tuple-lifecycle.cpp");
+  const auto Output = tmpFile("tuple-like-callback-values-tuple-lifecycle.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int main() {
+  std::tuple<F, int> empty;
+  if (std::get<0>(empty) != nullptr || std::get<1>(empty) != 0) return 1;
+  std::tuple<F, int> t(increment, 7);
+  const F pointer = decrement;
+  std::tuple<F, int> q(pointer, 9);
+  auto made = std::make_tuple(increment, 3);
+  auto copy = t;
+  auto moved = std::move(copy);
+  empty = std::move(moved);
+  if (std::get<F>(empty)(std::get<1>(empty)) != 8 || std::get<0>(made)(3) != 4) return 2;
+  t.swap(q);
+  if (std::get<0>(t)(std::get<1>(t)) != 8 || std::get<0>(q)(std::get<1>(q)) != 8) return 3;
+  std::swap(t, q);
+  auto [callback, value] = t;
+  if (callback(value) != 8) return 4;
+  const auto &view = t;
+  if (std::get<0>(view)(4) != 5 || std::get<1>(view) != 7) return 5;
+  std::tuple<const F, int> frozen(increment, 2);
+  if (std::get<0>(frozen)(std::get<1>(frozen)) != 3) return 6;
+  std::tuple<F, int> null(nullptr, 2);
+  auto twin = t;
+  if (std::get<0>(null) != nullptr || t != twin || !(t == twin) || t == q) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-like-callback-values-tuple-lifecycle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleLikeFunctionPointerConversionsRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("tuple-like-callback-values-compatible-conversions.cpp");
+  const auto Output =
+      tmpFile("tuple-like-callback-values-compatible-conversions.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+using N = int (*)(int) noexcept;
+int safe(int n) noexcept { return n + 2; }
+int main() {
+  std::pair<N, short> pn(safe, 4);
+  std::pair<F, long> p(pn);
+  std::pair<F, int> target;
+  target = pn;
+  if (p.first(int(p.second)) != 6 || target.first(target.second) != 6) return 1;
+  std::tuple<N, short> tn(safe, 5);
+  std::tuple<F, long> t(tn);
+  std::tuple<F, int> destination;
+  destination = std::move(tn);
+  if (std::get<0>(t)(int(std::get<1>(t))) != 7 || std::get<0>(destination)(std::get<1>(destination)) != 7) return 2;
+  std::pair<decltype(nullptr), int> np(nullptr, 3);
+  std::pair<F, int> null_pair(np);
+  std::tuple<decltype(nullptr), int> nt(nullptr, 2);
+  std::tuple<F, int> null_tuple(nt);
+  target = np;
+  destination = nt;
+  if (null_pair.first != nullptr || std::get<0>(null_tuple) != nullptr || target.first != nullptr || std::get<0>(destination) != nullptr) return 3;
+  std::pair<bool, int> bp(pn);
+  std::tuple<bool, int> bt(t);
+  if (!bp.first || !std::get<0>(bt)) return 4;
+  std::tuple<F, int> from_pair(pn);
+  if (std::get<0>(from_pair)(std::get<1>(from_pair)) != 6) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "tuple-like-callback-values-compatible-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleLikeFunctionPointerBindingsRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("tuple-like-callback-values-reference-bindings.cpp");
+  const auto Output =
+      tmpFile("tuple-like-callback-values-reference-bindings.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+#include <functional>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int main() {
+  F pointer = increment;
+  F other = decrement;
+  int n = 5;
+  auto tied = std::tie(pointer, n);
+  const auto &view = tied;
+  std::get<0>(view) = decrement;
+  if (pointer(n) != 4) return 1;
+  auto pair = std::make_pair(std::ref(pointer), 6);
+  auto tuple = std::make_tuple(std::ref(pointer), 7);
+  std::get<0>(tuple) = increment;
+  if (pair.first(pair.second) != 7 || pointer(7) != 8) return 2;
+  std::pair<F &, F> mixed(pointer, other);
+  auto bindings = mixed;
+  bindings.second = increment;
+  mixed.swap(bindings);
+  if (mixed.first(2) != 3 || mixed.second(2) != 3 || bindings.second(2) != 1) return 3;
+  std::tuple<F &, F> mixed_tuple(pointer, other);
+  auto tuple_bindings = mixed_tuple;
+  std::get<1>(tuple_bindings) = increment;
+  mixed_tuple.swap(tuple_bindings);
+  if (std::get<0>(mixed_tuple)(2) != 3 || std::get<1>(mixed_tuple)(2) != 3 || std::get<1>(tuple_bindings)(2) != 1) return 4;
+  auto forwarded = std::forward_as_tuple(std::move(pointer), n);
+  std::get<0>(forwarded) = decrement;
+  if (pointer(n) != 4) return 5;
+  std::tuple<F, int> value(tied);
+  std::tuple<const F &, const int &> borrowed(value);
+  if (std::get<0>(borrowed)(std::get<1>(borrowed)) != 4) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-like-callback-values-reference-bindings" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2NestedTupleLikeFunctionPointerValuesRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("tuple-like-callback-values-nested-compositions.cpp");
+  const auto Output =
+      tmpFile("tuple-like-callback-values-nested-compositions.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+#include <array>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int main() {
+  std::pair<F, int> inner(increment, 3);
+  std::pair<decltype(inner), F> p(inner, decrement);
+  auto copy = p;
+  copy.first.first = decrement;
+  if (p.first.first(p.first.second) != 4 || copy.first.first(3) != 2) return 1;
+  p = copy;
+  if (p != copy || p.first.first(3) != 2) return 2;
+  auto t = std::make_tuple(p, increment);
+  auto u = t;
+  std::get<0>(u).first.second = 4;
+  t.swap(u);
+  if (std::get<0>(t).first.second != 4 || std::get<0>(u).first.second != 3) return 3;
+  std::array<F, 2> callbacks{{increment, decrement}};
+  auto composite = std::make_tuple(callbacks, inner);
+  auto composite_copy = composite;
+  if (std::get<0>(composite_copy)[1](3) != 2 || std::get<1>(composite_copy).first(3) != 4) return 4;
+  if (!(composite == composite_copy) || composite != composite_copy) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "tuple-like-callback-values-nested-compositions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleLikeFunctionPointerCallbacksRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("tuple-like-callback-values-tuple-like-callbacks.cpp");
+  const auto Output =
+      tmpFile("tuple-like-callback-values-tuple-like-callbacks.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+#include <array>
+#include <functional>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int calls = 0;
+int consume(F callback, int n) { ++calls; return callback(n); }
+struct Reader {
+  int operator()(F callback, int n) const { return consume(callback, n); }
+  int read(F callback, int n) const { return consume(callback, n); }
+};
+int all(F a, F b, int n, F c) { ++calls; return a(n) + b(n) + c(n); }
+int reseat(F &callback, int n) { callback = decrement; return callback(n); }
+int main() {
+  auto tuple = std::make_tuple(increment, 3);
+  auto pair = std::make_pair(increment, 4);
+  Reader reader;
+  auto wrapped = std::ref(reader);
+  if (std::apply(consume, tuple) != 4 || std::apply(reader, pair) != 5 || std::apply(wrapped, tuple) != 4) return 1;
+  auto member_source = std::make_tuple(std::ref(reader), increment, 5);
+  if (std::apply(&Reader::read, member_source) != 6 || std::apply(std::mem_fn(&Reader::read), member_source) != 6) return 2;
+  std::array<F, 1> array{{decrement}};
+  auto cat = std::tuple_cat(array, pair, std::make_tuple(increment));
+  if (std::apply(all, cat) != 13) return 3;
+  if (std::invoke(std::get<0>(tuple), std::get<1>(tuple)) != 4) return 4;
+  F pointer = increment;
+  auto refs = std::tie(pointer, std::get<1>(tuple));
+  if (std::apply(reseat, refs) != 2 || pointer(3) != 2) return 5;
+  return calls != 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "tuple-like-callback-values-tuple-like-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleLikeFunctionPointerQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-like-callback-values-query-sources.cpp");
+  const auto Output = tmpFile("tuple-like-callback-values-query-sources.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+#include <type_traits>
+#include <functional>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int effects = 0;
+F choose() { ++effects; return increment; }
+int main() {
+  std::pair<F, int> pair(choose(), 3);
+  std::tuple<F, int> tuple(pair);
+  const auto &view = tuple;
+  std::tuple<F> single(increment);
+  static_assert(std::is_same_v<decltype(std::as_const(single)), const std::tuple<F> &>);
+  static_assert(std::is_same_v<decltype(std::move(single)), std::tuple<F> &&>);
+  static_assert(std::is_same_v<decltype(std::forward<std::tuple<F> &>(single)), std::tuple<F> &>);
+  static_assert(std::is_same_v<decltype(std::move_if_noexcept(single)), std::tuple<F> &&>);
+  if (std::get<0>(std::as_const(single))(3) != 4) return 2;
+  static_assert(std::is_same_v<decltype(pair.first), F>);
+  static_assert(std::is_same_v<decltype((pair.first)), F &>);
+  static_assert(std::is_same_v<decltype(std::get<0>(view)), F const &>);
+  static_assert(std::is_same_v<decltype(std::get<F>(std::move(tuple))), F &&>);
+  static_assert(noexcept(std::get<0>(tuple)));
+  static_assert(sizeof(std::get<0>(tuple)) == sizeof(F));
+  static_assert(alignof(decltype(std::get<0>(tuple))) == alignof(F));
+  auto ref = std::ref(std::get<0>(pair));
+  static_assert(std::is_same_v<decltype(ref.get()), F &>);
+  if (effects != 1 || ref.get()(3) != 4) return 1;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-like-callback-values-query-sources" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleLikeFunctionPointerValuesPreserveCallerEvaluation) {
+  const auto Source =
+      tmpFile("tuple-like-callback-values-caller-evaluation.cpp");
+  const auto Output =
+      tmpFile("tuple-like-callback-values-caller-evaluation.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+using F = int (*)(int);
+int increment(int n) { return n + 1; }
+int decrement(int n) { return n - 1; }
+int changes = 0;
+int change(F &callback) { ++changes; callback = decrement; return 3; }
+int main() {
+  F callback = increment;
+  std::pair<F, int> pair(callback, change(callback));
+  if (changes != 1 || pair.first(pair.second) != 2) return 1;
+  callback = increment;
+  std::tuple<F, int> tuple(callback, change(callback));
+  if (changes != 2 || std::get<0>(tuple)(std::get<1>(tuple)) != 2) return 2;
+  callback = increment;
+  auto made_pair = std::make_pair(callback, change(callback));
+  if (changes != 3 || made_pair.first(made_pair.second) != 2) return 3;
+  callback = increment;
+  auto made_tuple = std::make_tuple(callback, change(callback));
+  if (changes != 4 || std::get<0>(made_tuple)(std::get<1>(made_tuple)) != 2) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-like-callback-values-caller-evaluation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeFunctionPointerValuesPreserveSignatures) {
+  const auto Source =
+      tmpFile("tuple-like-callback-values-complex-signatures.cpp");
+  const auto Output =
+      tmpFile("tuple-like-callback-values-complex-signatures.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+using F = int &(*)(int &);
+using Factory = F (*)(int);
+using Array = int (*)(const int (&)[2]);
+int &identity(int &n) { return n; }
+F choose(int) { return identity; }
+int sum(const int (&a)[2]) { return a[0] + a[1]; }
+int main() {
+  std::pair<F, int> p(identity, 3);
+  int n = 4;
+  p.first(n) = 7;
+  if (n != 7) return 1;
+  auto tuple = std::make_tuple(choose, sum);
+  int values[2] = {2, 3};
+  std::get<0>(tuple)(1)(n) = 9;
+  if (n != 9 || std::get<1>(tuple)(values) != 5) return 2;
+  auto cat = std::tuple_cat(std::make_tuple(p.first), tuple);
+  std::get<0>(cat)(n) = 11;
+  if (n != 11 || std::get<1>(cat)(1)(n) != 11 || std::get<2>(cat)(values) != 5) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-like-callback-values-complex-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2InvocationCallableReferencesFollowCallerEvaluation) {
+  const auto Source = tmpFile("callable-forwarding-sequencing.cpp");
+  const auto Output = tmpFile("callable-forwarding-sequencing.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+using F = int (*)(int);
+int first(int n) { return n + 10; }
+int second(int n) { return n + 20; }
+F selected = first;
+int effects = 0;
+int reset() { ++effects; selected = second; return 3; }
+F choose() { ++effects; return selected; }
+int main() {
+  selected = first;
+  if (selected(reset()) != 13 || effects != 1) return 1;
+  selected = first;
+  if (std::invoke(selected, reset()) != 23 || effects != 2) return 2;
+  selected = first;
+  if (std::invoke(choose(), reset()) != 13 || effects != 4) return 3;
+  selected = first;
+  auto wrapper = std::ref(selected);
+  if (wrapper(reset()) != 23 || effects != 5) return 4;
+  selected = first;
+  if (std::invoke(wrapper, reset()) != 23 || effects != 6) return 5;
+  selected = first;
+  if (std::apply(selected, std::make_tuple(reset())) != 23 || effects != 7) return 6;
+  selected = first;
+  if (std::apply(choose(), std::make_tuple(reset())) != 13 || effects != 9) return 7;
+  selected = first;
+  if (std::apply(wrapper, std::make_tuple(reset())) != 23 || effects != 10) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callable-forwarding-sequencing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationWrapperBindingsFollowCallerEvaluation) {
+  const auto Source = tmpFile("wrapper-rebinding-sequencing.cpp");
+  const auto Output = tmpFile("wrapper-rebinding-sequencing.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int first(int n) { return n + 10; }
+int second(int n) { return n + 20; }
+using Functions = std::reference_wrapper<int(int)>;
+int reset(Functions &wrapper) { wrapper = std::ref(second); return 3; }
+struct Reader {
+  int amount;
+  int operator()(int n) const { return n + amount; }
+  int read(int n) const { return n + amount; }
+};
+using Objects = std::reference_wrapper<Reader>;
+int reset_object(Objects &wrapper, Reader &next) { wrapper = std::ref(next); return 3; }
+Reader *selected;
+int reset_pointer(Reader &next) { selected = &next; return 3; }
+int main() {
+  auto functions = std::ref(first);
+  if (functions(reset(functions)) != 23) return 1;
+  functions = std::ref(first);
+  if (std::invoke(functions, reset(functions)) != 23) return 2;
+  functions = std::ref(first);
+  if (std::apply(functions, std::make_tuple(reset(functions))) != 23) return 3;
+  Reader a{10}, b{20};
+  auto object = std::ref(a);
+  if (object(reset_object(object, b)) != 23) return 4;
+  object = std::ref(a);
+  if (std::invoke(object, reset_object(object, b)) != 23) return 5;
+  object = std::ref(a);
+  if (std::apply(object, std::make_tuple(reset_object(object, b))) != 23) return 6;
+  selected = &a;
+  if (std::invoke(&Reader::read, selected, reset_pointer(b)) != 23) return 7;
+  selected = &a;
+  auto member = std::mem_fn(&Reader::read);
+  if (member(selected, reset_pointer(b)) != 23) return 8;
+  selected = &a;
+  if (std::invoke(member, selected, reset_pointer(b)) != 23) return 9;
+  object = std::ref(a);
+  if (std::invoke(&Reader::read, object, reset_object(object, b)) != 23) return 10;
+  object = std::ref(a);
+  if (member(object, reset_object(object, b)) != 23) return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rebinding-sequencing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationStandardObjectsFollowCallerEvaluation) {
+  const auto Source = tmpFile("standard-object-forwarding-sequencing.cpp");
+  const auto Output = tmpFile("standard-object-forwarding-sequencing.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects;
+int change(int &n) { ++effects; n = 9; return 3; }
+int main() {
+  int n = 1;
+  if (std::invoke(std::plus<int>{}, n, change(n)) != 12 || effects != 1) return 1;
+  n = 1;
+  if (std::invoke(std::plus<>{}, n, change(n)) != 12 || effects != 2) return 2;
+  std::plus<int> plus;
+  auto wrapper = std::ref(plus);
+  n = 1;
+  if (std::invoke(wrapper, n, change(n)) != 12 || effects != 3) return 3;
+  n = 1;
+  if (wrapper(n, change(n)) != 12 || effects != 4) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("standard-object-forwarding-sequencing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InvocationCapturesCallableBeforeSelectedCopies) {
+  const auto Source = tmpFile("callable-before-selected-parameter-copies.cpp");
+  const auto Output = tmpFile("callable-before-selected-parameter-copies.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int live, defaults, drops, bad;
+struct Guard {
+  Guard() { ++live; ++defaults; }
+  ~Guard() { --live; ++drops; }
+};
+struct Item;
+using F = int (*)(Item);
+int first(Item value);
+int second(Item value);
+F selected = first;
+struct Item {
+  int value;
+  bool parameter;
+  Item(int n) : value(n), parameter(false) {}
+  Item(const Item &source, const Guard & = Guard()) : value(source.value), parameter(true) { selected = second; }
+  ~Item() { if (parameter && live != 1) ++bad; }
+};
+int first(Item value) { return value.value + (live == 1 ? 10 : 100); }
+int second(Item value) { return value.value + (live == 1 ? 20 : 200); }
+int main() {
+  {
+    Item item(3);
+    selected = first;
+    if (std::invoke(selected, item) != 13 || live != 0 || defaults != 1 || drops != 1 || bad) return 1;
+    auto wrapper = std::ref(selected);
+    selected = first;
+    if (wrapper(item) != 13 || live != 0 || defaults != 2 || drops != 2 || bad) return 2;
+    selected = first;
+    if (std::invoke(wrapper, item) != 13 || live != 0 || defaults != 3 || drops != 3 || bad) return 3;
+    auto tuple = std::tie(item);
+    selected = first;
+    if (std::apply(selected, tuple) != 13 || live != 0 || defaults != 4 || drops != 4 || bad) return 4;
+    selected = first;
+    if (std::apply(wrapper, tuple) != 13 || live != 0 || defaults != 5 || drops != 5 || bad) return 5;
+  }
+  return bad;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callable-before-selected-parameter-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply.cpp");
   const auto Output = tmpFile("tuple-apply.nc");
@@ -39721,8 +42018,8 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint main(){std::tuple<long double>v(1.0L);"
        "return int(std::get<0>(v));}",
        "TR0201"},
-      {"function-pointer",
-       "#include <tuple>\nusing F=int(*)();int main(){std::tuple<F>v;"
+      {"unsupported-function-pointer-signature",
+       "#include <tuple>\nusing F=long double(*)();int main(){std::tuple<F>v;"
        "return std::get<0>(v)==nullptr;}",
        "TR0201"},
       {"record-comparison",
@@ -52713,8 +55010,8 @@ struct Element{int value;};namespace std{inline namespace __1{template<>class re
 using P=std::pair<long double,int>;int f(P&p){static_assert(__is_same(decltype(Reexport::as_const(p)),const P&));return 0;}
 )cpp",
        "TR0201"},
-      {"function-pointer-element", R"cpp(
-using T=std::tuple<int(*)()>;int f(T&t){static_assert(__is_same(decltype(Reexport::as_const(t)),const T&));return 0;}
+      {"unsupported-function-pointer-element", R"cpp(
+using T=std::tuple<long double(*)()>;int f(T&t){static_assert(__is_same(decltype(Reexport::as_const(t)),const T&));return 0;}
 )cpp",
        "TR0201"},
       {"volatile-container", R"cpp(
@@ -53338,9 +55635,9 @@ struct Element{int value;};using W=std::reference_wrapper<Element>;using T=std::
       {"long-double-element", R"cpp(
 using P=std::pair<long double,int>;int f(P&p){static_assert(__is_same(decltype(Alias::move_if_noexcept(p)),P&&));return 0;}
 )cpp", "TR0201"},
-      {"function-pointer-element", R"cpp(
-using T=std::tuple<int(*)()>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),T&&));return 0;}
-)cpp", "TR0203"},
+      {"unsupported-function-pointer-element", R"cpp(
+using T=std::tuple<long double(*)()>;int f(T&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),T&&));return 0;}
+)cpp", "TR0201"},
       {"volatile-container", R"cpp(
 int f(volatile Tuple&t){static_assert(__is_same(decltype(Alias::move_if_noexcept(t)),volatile Tuple&&));return 0;}
 )cpp", "TR0201"},
@@ -54511,8 +56808,8 @@ struct Element{int value[(sizeof(long double),2)];};using Wrapped=std::tuple<std
 using Wide=std::pair<long double,int>;int f(Wide&p){static_assert(__is_same(decltype(Reexport::move(p)),Wide&&));return 0;}
 )cpp",
        "TR0201"},
-      {"function-pointer-element", R"cpp(
-using Callback=int(*)();using T=std::tuple<Callback>;int f(T&t){static_assert(__is_same(decltype(Reexport::move(t)),T&&));return 0;}
+      {"unsupported-function-pointer-element", R"cpp(
+using Callback=long double(*)();using T=std::tuple<Callback>;int f(T&t){static_assert(__is_same(decltype(Reexport::move(t)),T&&));return 0;}
 )cpp",
        "TR0201"},
       {"volatile-container", R"cpp(
@@ -115015,11 +117312,11 @@ int main() {
   trace = 0;
   selected = first;
   int direct = function_reference(argument());
-  score += direct == 13 && trace == 64 && selected == second;
+  score += direct == 23 && trace == 65 && selected == second;
   trace = 0;
   selected = first;
   int invoked = std::invoke(function_reference, argument());
-  score += invoked == 13 && trace == 64 && selected == second;
+  score += invoked == 23 && trace == 65 && selected == second;
   trace = 0;
   recorder_reference(7);
   std::invoke(recorder_reference, 8);
@@ -115052,7 +117349,7 @@ int main() {
   std::invoke(std::ref(choose_reference()),
               reference_argument(first_value)) = 11;
   score += first_value == 11;
-  score += trace == 123;
+  score += trace == 124;
   return score == 28 ? 0 : score;
 }
 )cpp");

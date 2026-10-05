@@ -13084,6 +13084,47 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return false;
     return true;
   }
+
+  bool checkUtilityInvokeConstructions(const CallExpr *Call,
+                                       UtilityOperation Operation) {
+    std::optional<std::vector<const CXXConstructExpr *>> Copies;
+    switch (Operation) {
+    case UtilityOperation::FunctionalInvoke:
+      Copies = approvedFunctionalInvokeSelectedCopies(A.S, A.Sources, Call,
+                                                      A.Context);
+      break;
+    case UtilityOperation::FunctionalInvokeUserObject:
+      if (const auto User =
+              approvedFunctionalUserInvokeCall(A.S, A.Sources, Call, A.Context))
+        Copies = User->SelectedCopies;
+      break;
+    case UtilityOperation::FunctionalInvokeMember:
+      if (const auto Member = approvedFunctionalMemberInvokeCall(
+              A.S, A.Sources, Call, A.Context))
+        Copies = Member->SelectedCopies;
+      break;
+    case UtilityOperation::FunctionalInvokeReference:
+      if (const auto Reference = approvedFunctionalReferenceInvokeCall(
+              A.S, A.Sources, Call, A.Context))
+        Copies = Reference->SelectedCopies;
+      break;
+    default:
+      return true;
+    }
+    if (!Copies) {
+      A.reject(
+          Call->getExprLoc(), "functional invoke construction",
+          "The exact selected callback parameter constructions are required.");
+      return true;
+    }
+    std::set<const CXXConstructExpr *> Seen;
+    for (const auto *Copy : *Copies)
+      if (Copy && Seen.insert(Copy).second &&
+          !checkUtilitySelectedConstruction(Copy, Call->getExprLoc()))
+        return false;
+    return true;
+  }
+
   void queueGenerated(const CXXMethodDecl *Method, SourceLocation L) {
     const FunctionDecl *Definition = nullptr;
     if (Method->isTrivial())
@@ -21348,6 +21389,8 @@ public:
             return false;
           if (*Operation == UtilityOperation::TupleApply &&
               !checkUtilityApplyConstructions(C))
+            return false;
+          if (!checkUtilityInvokeConstructions(C, *Operation))
             return false;
           if (auto Source = algorithmCallableSource(C))
             if (Source->Method)

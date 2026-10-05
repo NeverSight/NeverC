@@ -602,13 +602,27 @@ definitions and destruction remain checked; queries do not evaluate any default.
 `std::pair` supports default, value, converting and copy/move construction,
 copy/move assignment, member and free `swap`, `std::make_pair`, index-based
 `std::get`, `tuple_size` and `tuple_element`. Elements may be admitted integral
-or enum scalars up to 64 bits, `float`, `double`, `nullptr_t`, non-function
-object pointers, source-owned trivial standard-layout records, authenticated
+or enum scalars up to 64 bits, `float`, `double`, `nullptr_t`, object pointers,
+admitted fixed-arity ordinary function pointers, source-owned trivial
+standard-layout records, authenticated
 `std::reference_wrapper` values, admitted `std::array` values, or recursively
 admitted `std::pair` values. Mutation
 requires every recursive leaf to be assignable. Pair objects retain their two
 fields and ordinary value behavior. Type-based `get` is accepted only when
 libc++ resolves it unambiguously.
+
+Function-pointer elements retain their checked signature, original parameter
+and result types, aliases, array bounds, exception specifications and selected
+function definitions. Direct and converting construction, assignments and
+factories accept exact pointer values, function-name decay, `nullptr` to a
+callback pointer, removal of `noexcept` and callback-pointer conversion to
+`bool`. Copy/move, `get`, reference fields and swap preserve pointer values or
+bindings. Nested authenticated pair, tuple and trivial array fields use the
+same value proof. Equality and inequality admit compatible callback signatures;
+ordering comparisons retain their separate supported-leaf requirements.
+Lambda/user conversions, signature reinterpretation, unsupported original
+signature source, missing target definitions, user ADL swap and source SDK
+specializations retain their existing rejection.
 
 Direct `first` and `second` member expressions on admitted trivial-value,
 reference and mixed pairs supply the exact pinned field type source for
@@ -768,7 +782,8 @@ Core v2 accepts the exact top-level angled `<tuple>` entry from the pinned
 embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
 all eight supported targets and contains no platform headers. A retained
 `std::tuple<T...>` may be empty or contain up to 64 admitted values. Elements
-may be admitted scalars, source-owned nonempty standard-layout records,
+may be admitted scalars, admitted fixed-arity ordinary function pointers,
+source-owned nonempty standard-layout records,
 authenticated `std::reference_wrapper` values, admitted `std::array` values,
 recursively admitted `std::pair` values, or nonempty nested tuples. For
 nonempty tuples, the frontend authenticates libc++'s private `__base_` field,
@@ -791,6 +806,12 @@ member and free `swap`, `tuple_size`, `tuple_element`, and index-based or
 unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
+
+Function-pointer tuple elements use the pair value and conversion rules above,
+including compatible heterogeneous construction and assignment, factories,
+nested compositions, `tuple_cat`, reference bindings and equality/inequality.
+Projection and unevaluated queries preserve element cv qualification, value
+category and original signature source without executing operand effects.
 
 Exact admitted index- and unique-type tuple `get` calls supply their pinned SDK
 signature and body source for result-type queries without instantiating an
@@ -931,7 +952,8 @@ preserving pointee qualification and all existing reference-binding checks.
 Volatile, restrict and address-space restrictions remain in force.
 
 Each source element and corresponding callback parameter must be admitted
-scalars connected by a checked direct scalar conversion, or the same complete
+scalars connected by a checked direct scalar conversion, compatible admitted
+function-pointer values, or the same complete
 source-owned standard-layout record type that is trivially copyable and
 destructible, passed by value; the result may be `void`, an admitted scalar,
 or a complete source-owned record value. Nonempty `std::array`, `std::tuple`
@@ -982,6 +1004,13 @@ retain their separate initializer full-expressions. Caller-created callable and
 tuple-like temporaries keep their enclosing full-expression lifetime. Scalar
 results and reference addresses are captured before invocation cleanup; returned
 records retain their ordinary caller-owned destination and lifetime.
+
+Forwarded function-pointer variables and reference-wrapper bindings are read
+after the tuple-like source expression has been evaluated. Prvalue callable
+values are captured when their argument is bound. The selected function pointer
+is captured before constructing callback parameters, so parameter-copy effects
+cannot change which function is called. Plain function and function-pointer
+callbacks also admit the checked callback-value conversions described above.
 
 The proof authenticates the pinned `apply`/invoke helper chain and every selected
 `std::get<I>` declaration, template index and element type, forwarding path,
@@ -4251,8 +4280,11 @@ be admitted by-value scalars with checked direct argument conversions, exact
 fixed-arity ordinary function pointers including function-name decay, or exact
 lvalue or rvalue references to those values, complete fixed arrays or complete
 source-owned records, plus exact by-value complete source-owned standard-layout
-records that are trivially copyable and trivially destructible;
-results may be the corresponding
+records that are trivially copyable and trivially destructible.
+Nontrivial source-record value parameters use the exact copy or move constructor
+selected by the authenticated internal dispatch when that constructor and its
+source-owned dependencies are admitted.
+Results may be the corresponding
 scalar, object-pointer, function-pointer, complete source-owned record value,
 exact lvalue or rvalue reference, or `void`. References retain
 their source storage and qualification. Const lvalue-reference parameters also
@@ -4273,17 +4305,36 @@ nonstatic `operator()` is an admitted defined method. Lvalue, const-lvalue and
 rvalue-qualified overload selection follows Clang's checked dispatch. The
 method may use the same admitted by-value and exact lvalue- or rvalue-reference
 parameter and result boundary as member invocation, including fixed-array and
-source-owned-record reference parameters and results and trivial source-record
+source-owned-record reference parameters and results and admitted source-record
 value parameters, plus complete source-record value results. The callable is retained
 before its arguments, reference results preserve storage identity, and a
 temporary callable is destroyed at its full-expression boundary.
+
+Named functions, stored function pointers, source function objects, direct or
+invoked `reference_wrapper` calls and member-function or `mem_fn` adapters share
+that selected by-value construction rule. The callable and receiver are retained,
+and every caller argument is evaluated once before the internal dispatcher
+constructs callback parameters. Each selected copy or move retains its exact
+forwarded source category and authenticated extra constructor defaults, including
+inherited or instantiated defaults. Default temporaries survive the callback and
+parameter destruction, then finish inside the SDK invocation before the caller
+continues. Forwarded scalar values, function-pointer variables, reference-wrapper
+bindings and receiver pointers are read after all caller arguments have been
+evaluated; prvalue values remain captured at their binding. The selected function
+pointer is captured before callback parameter construction. Ordinary indirect
+calls retain their callee-before-arguments rule. Scalar values, reference
+addresses and record results are retained
+before that cleanup. Caller-created callable, receiver and argument temporaries
+keep their outer full-expression lifetime. By-value SDK record parameters and
+results remain excluded, and unevaluated invocation queries retain their separate
+parameter and materialized-source requirements.
 
 A direct source-written address of an owned nonstatic member function also
 lowers through `std::invoke` when the receiver is an exact-class lvalue,
 full-expression temporary, pointer or admitted `std::reference_wrapper` and the method has fixed-arity
 admitted scalar, object-pointer or fixed-arity ordinary function-pointer
 parameters, either by value with a checked direct conversion or by exact lvalue
-or rvalue reference, including trivial source-record value parameters and
+or rvalue reference, including admitted source-record value parameters and
 references to complete fixed arrays or source-owned records,
 with a scalar, object-pointer, function-pointer, exact
 lvalue- or rvalue-reference including a complete fixed array or source-owned
@@ -4332,7 +4383,8 @@ native `.*` binding to a local reference retains the standard lifetime
 extension. An admitted stored member-function pointer may be called
 with native `(object.*pointer)(arguments...)` or
 `(object_pointer->*pointer)(arguments...)` syntax through the same fixed-arity
-method boundary; a direct source-written member-function address is accepted
+method boundary with trivial source-record value parameters; a direct
+source-written member-function address is accepted
 in the same syntax. Exact full-expression temporary receivers are also
 materialized through this method boundary and destroyed after the call. The receiver is retained before the arguments, const methods
 accept exact const receivers, `&&`-qualified methods require an exact temporary
@@ -4493,7 +4545,7 @@ not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
 receivers, function referents, references to incomplete or runtime-bound
-arrays, nontrivial source-record value parameters,
+arrays, unsupported selected source-record parameter constructors,
 other unsupported reference signatures and variadic targets remain
 outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
