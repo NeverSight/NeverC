@@ -28,6 +28,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 和 `std::logical_not` 支持普通函数指针值，包括 `noexcept` 签名及有类型的 `const` 实参。透明调用接纳函数名、兼容签名以及与回调配对的 `nullptr`。存储的函数对象和 `std::invoke` 保留经检查的转换、实参副作用、别名及临时对象清理。逻辑调用会求值两个实参；这些操作不会调用指针所指向的函数，回调排序仍受既有边界限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+这 14 个一元谓词算法也接纳固定 SDK 的 `std::logical_not<F>` 和透明的 `std::logical_not<>`，用于函数指针元素，包括 `noexcept` 签名、有类型的 `const` 及算法允许的 const 输入。选中的参数保留兼容的 `noexcept` 移除和经检查的指针临时值。元素、替换值与输出存储仍须精确匹配；空范围及调用者临时对象清理保留原有时序，不会调用回调目标。
+
 Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 符号隔离还会恢复普通 COFF 与 bigobj 静态库中 MSVC 原有的非关联节记录编号，使最终附加记录逐字节保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

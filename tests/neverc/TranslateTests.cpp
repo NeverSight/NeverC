@@ -79755,10 +79755,10 @@ volatile int*f(volatile int*p){return std::partition_point(p,p+2,P{});}
 struct R{int v;};struct P{bool operator()(R n)const{return n.v<1;}};
 R*f(R*p){return std::partition_point(p,p+2,P{});}
 )cpp", "TR0203"},
-    {"sdk-callback-element", R"cpp(#include <algorithm>
+    {"sdk-boolean-callback-parameter", R"cpp(#include <algorithm>
 #include <functional>
 using Callback=int(*)(int);
-Callback*f(Callback*p){return std::partition_point(p,p+2,std::logical_not<Callback>{});}
+Callback*f(Callback*p){return std::partition_point(p,p+2,std::logical_not<bool>{});}
 )cpp", "TR0203"},
     {"half-specialization", R"cpp(#include <algorithm>
 struct P{bool operator()(int n)const{return n<1;}};
@@ -145948,6 +145948,196 @@ return !E{}(one,one)||T{}(one)||pointed;}
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("functional-callback-metadata" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmSDKCallbackTyped) {
+  const auto Source = tmpFile("sdk-callback-typed.cpp");
+  const auto Output = tmpFile("sdk-callback-typed.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int calls;int one(int n)noexcept{++calls;return n+1;}int two(int n)noexcept{++calls;return n+2;}
+using P=std::logical_not<F>;
+int main(){N a[]={nullptr,one,two,nullptr};N out[4]{};N yes[4]{},no[4]{};
+P p;N replacement=two;
+if(std::find_if(a,a+4,p)!=a)return 1;
+if(std::find_if_not(a,a+4,p)!=a+1)return 2;
+if(std::all_of(a,a+4,p)||!std::any_of(a,a+4,p)||std::none_of(a,a+4,p))return 3;
+if(std::count_if(a,a+4,p)!=2)return 4;
+if(std::copy_if(a,a+4,out,p)!=out+2||out[0]||out[1])return 5;
+if(std::remove_copy_if(a,a+4,out,p)!=out+2||out[0]!=one||out[1]!=two)return 6;
+if(std::replace_copy_if(a,a+4,out,p,replacement)!=out+4||out[0]!=two||out[1]!=one||out[2]!=two||out[3]!=two)return 7;
+auto ends=std::partition_copy(a,a+4,yes,no,p);
+if(ends.first!=yes+2||ends.second!=no+2||yes[0]||yes[1]||no[0]!=one||no[1]!=two)return 8;
+if(std::is_partitioned(a,a+4,p))return 9;
+N ordered[]={nullptr,nullptr,one,two};
+if(!std::is_partitioned(ordered,ordered+4,p)||std::partition_point(ordered,ordered+4,p)!=ordered+2)return 10;
+N changed[]={nullptr,one,two,nullptr};std::replace_if(changed,changed+4,p,replacement);
+if(changed[0]!=two||changed[1]!=one||changed[2]!=two||changed[3]!=two)return 11;
+if(std::remove_if(a,a+4,p)!=a+2||a[0]!=one||a[1]!=two)return 12;
+return calls?13:0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-callback-typed" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmSDKCallbackTransparent) {
+  const auto Source = tmpFile("sdk-callback-transparent.cpp");
+  const auto Output = tmpFile("sdk-callback-transparent.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int calls;int one(int n)noexcept{++calls;return n+1;}int two(int n)noexcept{++calls;return n+2;}
+using P=std::logical_not<>;
+int main(){N a[]={nullptr,one,two,nullptr};N out[4]{};N yes[4]{},no[4]{};
+P p;N replacement=two;
+if(std::find_if(a,a+4,p)!=a)return 1;
+if(std::find_if_not(a,a+4,p)!=a+1)return 2;
+if(std::all_of(a,a+4,p)||!std::any_of(a,a+4,p)||std::none_of(a,a+4,p))return 3;
+if(std::count_if(a,a+4,p)!=2)return 4;
+if(std::copy_if(a,a+4,out,p)!=out+2||out[0]||out[1])return 5;
+if(std::remove_copy_if(a,a+4,out,p)!=out+2||out[0]!=one||out[1]!=two)return 6;
+if(std::replace_copy_if(a,a+4,out,p,replacement)!=out+4||out[0]!=two||out[1]!=one||out[2]!=two||out[3]!=two)return 7;
+auto ends=std::partition_copy(a,a+4,yes,no,p);
+if(ends.first!=yes+2||ends.second!=no+2||yes[0]||yes[1]||no[0]!=one||no[1]!=two)return 8;
+if(std::is_partitioned(a,a+4,p))return 9;
+N ordered[]={nullptr,nullptr,one,two};
+if(!std::is_partitioned(ordered,ordered+4,p)||std::partition_point(ordered,ordered+4,p)!=ordered+2)return 10;
+N changed[]={nullptr,one,two,nullptr};std::replace_if(changed,changed+4,p,replacement);
+if(changed[0]!=two||changed[1]!=one||changed[2]!=two||changed[3]!=two)return 11;
+if(std::remove_if(a,a+4,p)!=a+2||a[0]!=one||a[1]!=two)return 12;
+return calls?13:0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-callback-transparent" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmSDKCallbackNoexcept) {
+  const auto Source = tmpFile("sdk-callback-noexcept.cpp");
+  const auto Output = tmpFile("sdk-callback-noexcept.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int calls;int one(int n)noexcept{++calls;return n+1;}int two(int n)noexcept{++calls;return n+2;}
+using P=std::logical_not<N>;
+int main(){N a[]={nullptr,one,two,nullptr};N out[4]{};N yes[4]{},no[4]{};
+P p;N replacement=two;
+if(std::find_if(a,a+4,p)!=a)return 1;
+if(std::find_if_not(a,a+4,p)!=a+1)return 2;
+if(std::all_of(a,a+4,p)||!std::any_of(a,a+4,p)||std::none_of(a,a+4,p))return 3;
+if(std::count_if(a,a+4,p)!=2)return 4;
+if(std::copy_if(a,a+4,out,p)!=out+2||out[0]||out[1])return 5;
+if(std::remove_copy_if(a,a+4,out,p)!=out+2||out[0]!=one||out[1]!=two)return 6;
+if(std::replace_copy_if(a,a+4,out,p,replacement)!=out+4||out[0]!=two||out[1]!=one||out[2]!=two||out[3]!=two)return 7;
+auto ends=std::partition_copy(a,a+4,yes,no,p);
+if(ends.first!=yes+2||ends.second!=no+2||yes[0]||yes[1]||no[0]!=one||no[1]!=two)return 8;
+if(std::is_partitioned(a,a+4,p))return 9;
+N ordered[]={nullptr,nullptr,one,two};
+if(!std::is_partitioned(ordered,ordered+4,p)||std::partition_point(ordered,ordered+4,p)!=ordered+2)return 10;
+N changed[]={nullptr,one,two,nullptr};std::replace_if(changed,changed+4,p,replacement);
+if(changed[0]!=two||changed[1]!=one||changed[2]!=two||changed[3]!=two)return 11;
+if(std::remove_if(a,a+4,p)!=a+2||a[0]!=one||a[1]!=two)return 12;
+return calls?13:0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-callback-noexcept" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmSDKCallbackConstValues) {
+  const auto Source = tmpFile("sdk-callback-const-values.cpp");
+  const auto Output = tmpFile("sdk-callback-const-values.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int calls;int one(int n)noexcept{++calls;return n+1;}int two(int n)noexcept{++calls;return n+2;}
+using P=std::logical_not<const F>;
+int main(){const N a[]={nullptr,one,two,nullptr};N out[4]{},yes[4]{},no[4]{};P p;N replacement=two;
+if(std::find_if(a,a+4,p)!=a||std::find_if_not(a,a+4,p)!=a+1)return 1;
+if(std::all_of(a,a+4,p)||!std::any_of(a,a+4,p)||std::none_of(a,a+4,p)||std::count_if(a,a+4,p)!=2)return 2;
+if(std::copy_if(a,a+4,out,p)!=out+2||out[0]||out[1])return 3;
+if(std::remove_copy_if(a,a+4,out,p)!=out+2||out[0]!=one||out[1]!=two)return 4;
+if(std::replace_copy_if(a,a+4,out,p,replacement)!=out+4||out[0]!=two||out[1]!=one||out[2]!=two||out[3]!=two)return 5;
+auto ends=std::partition_copy(a,a+4,yes,no,p);
+if(ends.first!=yes+2||ends.second!=no+2||yes[0]||yes[1]||no[0]!=one||no[1]!=two)return 6;
+const N ordered[]={nullptr,nullptr,one,two};
+if(std::is_partitioned(a,a+4,p)||!std::is_partitioned(ordered,ordered+4,p)||std::partition_point(ordered,ordered+4,p)!=ordered+2)return 7;
+return calls?8:0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-callback-const-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmSDKCallbackEmptyEffects) {
+  const auto Source = tmpFile("sdk-callback-empty-effects.cpp");
+  const auto Output = tmpFile("sdk-callback-empty-effects.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int calls;int one(int n)noexcept{++calls;return n+1;}int two(int n)noexcept{++calls;return n+2;}
+int factories,live,destroyed;
+struct Token{Token(){++live;}~Token(){--live;++destroyed;}};
+using P=std::logical_not<F>;P predicate(){++factories;return P{};}
+int main(){N a[1]={nullptr},out[1]{},yes[1]{},no[1]{};N replacement=one;
+if(std::find_if(a,a,predicate())!=a||std::find_if_not(a,a,predicate())!=a)return 1;
+if(!std::all_of(a,a,predicate())||std::any_of(a,a,predicate())||!std::none_of(a,a,predicate()))return 2;
+if(std::count_if(a,a,predicate())||std::copy_if(a,a,out,predicate())!=out)return 3;
+if(std::remove_copy_if(a,a,out,predicate())!=out||std::replace_copy_if(a,a,out,predicate(),replacement)!=out)return 4;
+auto ends=std::partition_copy(a,a,yes,no,predicate());
+if(ends.first!=yes||ends.second!=no||!std::is_partitioned(a,a,predicate())||std::partition_point(a,a,predicate())!=a)return 5;
+std::replace_if(a,a,predicate(),replacement);if(std::remove_if(a,a,predicate())!=a||factories!=14)return 6;
+N sparse[]={nullptr,one,nullptr};
+auto count=std::count_if(sparse,sparse+3,(Token(),predicate()));
+if(count!=2||factories!=15||live||destroyed!=1||calls)return 7;
+return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("sdk-callback-empty-effects" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

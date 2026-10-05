@@ -6088,8 +6088,7 @@ are accepted; reference parameters, incompatible signatures and conversions to
 `bool` remain rejected.
 The same loop, helper and identity-projection proofs apply. One by-value object
 retains its state across visits, and empty ranges initialize it without calls.
-The translator passes pointer values without invoking their targets. SDK
-function objects retain their scalar input boundary.
+The translator passes pointer values without invoking their targets. Pinned SDK `logical_not` also accepts the callback boundary described below.
 The replacement algorithms authenticate the exact conditional stores and
 iterator increments. `replace_if` writes through a mutable scalar input pointer;
 `replace_copy_if` accepts a separate writable scalar output with checked direct
@@ -6109,8 +6108,8 @@ and Boolean output remain rejected. A pointer-typed
 replacement value may itself be null. Predicate state persists across visits;
 each store rereads its input or replacement after the predicate returns, retaining
 changes through independently held pointers and input/output replacement aliases.
-Empty ranges initialize the predicate without calls or stores. SDK function
-objects retain their scalar input boundary, and pointer targets are not invoked.
+Empty ranges initialize the predicate without calls or stores. Pinned SDK `logical_not` also accepts the callback boundary below; pointer
+targets are not invoked.
 `copy_if` and `remove_copy_if` also accept the same source predicate objects. Their exact
 conditional copy loops and both iterator increments are authenticated; output
 storage accepts checked direct scalar conversions. Only kept elements advance
@@ -6134,7 +6133,7 @@ One by-value predicate retains its state, and copies reread selected elements
 after it returns, preserving writes through an independently held input pointer.
 The returned iterator advances only for retained elements. Empty ranges
 initialize the object without invoking it or writing output; pointed-to
-functions are not invoked by the translator. SDK objects keep scalar inputs.
+functions are not invoked by the translator. Pinned SDK `logical_not` also accepts the callback boundary below.
 `is_partitioned` authenticates both direct predicate call sites and the exact
 two-scan control flow. Both scans use the same parameter object and selected
 method; the first false element is tested once, then skipped before the tail
@@ -6164,7 +6163,7 @@ contains both final pointers. Reference predicate arguments, incompatible
 predicate signatures, different input/output storage types and Boolean outputs
 remain rejected. Empty
 ranges initialize the object without calls or stores; pointer targets are not
-invoked by the translator. SDK function objects retain their scalar boundary.
+invoked by the translator. Pinned SDK `logical_not` also accepts the callback boundary below.
 `remove_if` authenticates the exact reference-parameter `find_if` specialization,
 its selected predicate call, the subsequent scan and the exact scalar or
 function-pointer move stores.
@@ -6180,8 +6179,24 @@ search and subsequent scan require the same selected method and compatible
 by-value pointer parameter, including checked removal of `noexcept`; the SDK
 `move` proof retains the exact element type. Pointer targets are not invoked by
 the translator. Reference predicate arguments, incompatible pointer signatures,
-user-defined conversions and Boolean parameters remain rejected;
-SDK predicate objects retain their scalar boundary.
+user-defined conversions and Boolean parameters remain rejected.
+
+All fourteen unary predicate algorithms described above also accept pinned
+`std::logical_not<F>` objects for admitted ordinary fixed-arity function-pointer
+elements, including `noexcept` signatures, typed top-level `const`, const input
+storage where the algorithm permits it, and transparent `std::logical_not<>`.
+The actual selected method parameter is checked before the body's built-in
+Boolean conversion. Compatible removal of `noexcept` may create an exact
+reference-bound pointer temporary; its source conversion and lifetime remain
+checked independently of the SDK method and loop authentication. Source-defined
+predicate reference parameters retain their existing rejection boundary.
+Element, replacement and output storage still require the exact pointer type;
+replacement function designators, `nullptr` replacement types and Boolean
+outputs retain the same separate boundaries. Empty ranges construct the
+predicate once without calls or stores, and caller full-expression cleanup
+retains its ordinary timing. These SDK predicates test pointer values without
+invoking the pointed-to functions.
+
 Source-owned class-template predicates additionally support checked concrete
 primary, partial and full class specializations with an in-class non-template
 call operator. Type and value parameters, defaults, each concrete receiver's

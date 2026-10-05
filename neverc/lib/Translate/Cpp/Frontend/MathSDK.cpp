@@ -15768,6 +15768,12 @@ utilityAlgorithmCallbackArgumentConversion(const ASTContext &Context,
          utilityCallbackDirectConversion(Context, From, To);
 }
 
+static bool utilityAlgorithmPredicateTemporaryType(const ASTContext &Context,
+                                                   QualType Type) {
+  return utilityScalar(Context, Type) ||
+         utilityCallbackEqualityType(Context, Type, Type).has_value();
+}
+
 static const CXXOperatorCallExpr *
 utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
                               const CallExpr *Call, QualType Object,
@@ -15822,7 +15828,8 @@ utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
   while (Argument) {
     if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument)) {
       if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
-          !utilityScalar(Context, Temporary->getType()))
+          !utilityAlgorithmPredicateTemporaryType(Context,
+                                                  Temporary->getType()))
         return nullptr;
       Argument = Temporary->getSubExpr();
       continue;
@@ -16780,7 +16787,8 @@ static const CXXOperatorCallExpr *utilityAlgorithmPartitionPointPredicate(
   while (Argument) {
     if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument)) {
       if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
-          !utilityScalar(Context, Temporary->getType()))
+          !utilityAlgorithmPredicateTemporaryType(Context,
+                                                  Temporary->getType()))
         return nullptr;
       Argument = Temporary->getSubExpr();
       continue;
@@ -16889,7 +16897,8 @@ utilityAlgorithmPartitionPredicate(const FunctionDecl *Function,
       if (const auto *Temporary =
               dyn_cast<MaterializeTemporaryExpr>(Argument)) {
         if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
-            !utilityScalar(Context, Temporary->getType()))
+            !utilityAlgorithmPredicateTemporaryType(Context,
+                                                    Temporary->getType()))
           return nullptr;
         Argument = Temporary->getSubExpr();
         continue;
@@ -17189,7 +17198,8 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
       if (const auto *Temporary =
               dyn_cast<MaterializeTemporaryExpr>(Argument)) {
         if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
-            !utilityScalar(Context, Temporary->getType()))
+            !utilityAlgorithmPredicateTemporaryType(Context,
+                                                    Temporary->getType()))
           return false;
         Argument = Temporary->getSubExpr();
         continue;
@@ -19429,7 +19439,6 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   }
   const auto Pointer = Function->getParamDecl(0)->getType();
   const bool CallbackElements =
-      !SDKObject &&
       (Find || FindNot || None || All || Any || Count || Copy || RemoveCopy ||
        Replacement || Partitioned || PartitionPoint || PartitionCopy ||
        Remove) &&
@@ -19578,9 +19587,13 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     if (!SDKOperation ||
         SDKOperation->Operation != FunctionalOperation::LogicalNot ||
         !SDKOperation->ResultType->isBooleanType() ||
-        !utilityScalarDirectConversion(
-            Context, Pointer->getPointeeType(),
-            Method->getParamDecl(0)->getType().getNonReferenceType()))
+        (!utilityScalarDirectConversion(
+             Context, Pointer->getPointeeType(),
+             Method->getParamDecl(0)->getType().getNonReferenceType()) &&
+         !(CallbackElements &&
+           utilityAlgorithmCallbackArgumentConversion(
+               Context, Pointer->getPointeeType(),
+               Method->getParamDecl(0)->getType().getNonReferenceType()))))
       return std::nullopt;
   } else {
     if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
@@ -19598,8 +19611,11 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
            (CallbackElements &&
             utilityAlgorithmCallbackArgumentConversion(Context, From, To));
   };
-  const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
-                                         : Method->getParamDecl(0)->getType();
+  // SDK logical operators convert the parameter to bool inside their body.
+  // Check the selected parameter before that operation-level conversion.
+  const auto ArgumentType =
+      SDKOperation ? Method->getParamDecl(0)->getType().getNonReferenceType()
+                   : Method->getParamDecl(0)->getType();
   if (!PredicateConversion(Pointer->getPointeeType(), ArgumentType))
     return std::nullopt;
   if (!Composed && !Remove && !PartitionPoint) {
@@ -19608,7 +19624,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       if (const auto *Temporary =
               dyn_cast<MaterializeTemporaryExpr>(Argument)) {
         if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
-            !utilityScalar(Context, Temporary->getType()))
+            !utilityAlgorithmPredicateTemporaryType(Context,
+                                                    Temporary->getType()))
           return std::nullopt;
         Argument = Temporary->getSubExpr();
         continue;

@@ -317,6 +317,14 @@ aliases and temporary cleanup. Logical calls evaluate both arguments; callback
 targets are never invoked, and callback ordering retains its existing boundary.
 See the [functional objects](../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional) contract.
 
+The 14 unary predicate algorithms also accept pinned `std::logical_not<F>`
+and transparent `std::logical_not<>` for function-pointer elements, including
+`noexcept` signatures, typed `const` and permitted const input. The selected
+parameter preserves compatible removal of `noexcept` and checked pointer
+temporaries. Element, replacement and output storage remain exact; empty ranges
+and caller temporary cleanup retain their timing, and callback targets are not
+invoked.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks
