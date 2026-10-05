@@ -3935,6 +3935,23 @@ transparent calls retain Clang's selected common pointer type. The generated
 comparison uses the same verified pointer boundary as ordinary scalar
 comparisons, including the profile's native address order for complete object
 pointers.
+`std::equal_to`, `std::not_equal_to`, `std::logical_and`, `std::logical_or`
+and `std::logical_not` additionally accept fixed-arity ordinary function-pointer
+values, including `noexcept` signatures and typed top-level `const` arguments.
+Transparent calls also accept function designators, compatible signatures and
+`nullptr` paired with a callback operand. Their selected built-in operation and
+exact forwarding calls retain the same SDK authentication. Typed parameter
+conversions and transparent common-pointer conversions preserve checked removal
+of `noexcept`. Stored, copied, assigned and by-value objects use the same one-byte
+carrier, and `std::invoke` follows the same checked argument conversions.
+Receiver and argument expressions evaluate once. Reference-bound pointer values
+are read after all arguments are captured, preserving aliases modified by another
+argument; function designators preserve their selected identity without runtime
+function-reference storage. Both logical arguments evaluate before the result,
+and full-expression temporary cleanup retains its ordinary timing. Callback
+targets are never invoked by these operations. Function-pointer ordering remains
+outside this support.
+
 The nine comparison and logical objects also accept a top-level `const` on
 their typed scalar or admitted pointer template argument. Their selected
 operator still returns `bool`, with the same input conversion and one-time

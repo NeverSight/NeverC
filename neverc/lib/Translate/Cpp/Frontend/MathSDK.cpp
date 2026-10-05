@@ -409,6 +409,19 @@ static bool supportedFunctionalCallableValue(QualType Type,
           Type->isFunctionPointerType());
 }
 
+static bool supportedFunctionalCallbackOperation(llvm::StringRef Name,
+                                                 QualType Type,
+                                                 const ASTContext &Context) {
+  if ((Name != "equal_to" && Name != "not_equal_to" && Name != "logical_and" &&
+       Name != "logical_or" && Name != "logical_not") ||
+      Type.isNull() || Type.hasQualifiers() || !Type->isFunctionPointerType())
+    return false;
+  const auto *Prototype = Type->getPointeeType()->getAs<FunctionProtoType>();
+  return Prototype && !Prototype->isVariadic() &&
+         Context.getTypeSize(Type) == Context.getTypeSize(Context.VoidPtrTy) &&
+         Context.getTypeAlign(Type) == Context.getTypeAlign(Context.VoidPtrTy);
+}
+
 static bool functionalObjectName(llvm::StringRef Name) {
   return Name == "plus" || Name == "minus" || Name == "multiplies" ||
          Name == "divides" || Name == "modulus" || Name == "negate" ||
@@ -727,6 +740,7 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
       return std::nullopt;
   } else if (!(supportedFunctionalScalar(ValueType, Context) ||
                supportedFunctionalPointerComparison(Name, ValueType, Context) ||
+               supportedFunctionalCallbackOperation(Name, ValueType, Context) ||
                ((Name == "equal_to" || Name == "not_equal_to" ||
                  Name == "less" || Name == "greater" || Name == "less_equal" ||
                  Name == "greater_equal" || Name == "logical_and" ||
@@ -738,6 +752,8 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                 (supportedFunctionalScalar(ValueType.getUnqualifiedType(),
                                            Context) ||
                  supportedFunctionalPointerComparison(
+                     Name, ValueType.getUnqualifiedType(), Context) ||
+                 supportedFunctionalCallbackOperation(
                      Name, ValueType.getUnqualifiedType(), Context)))) ||
              (integralFunctionalObject(Definition->getName()) &&
               !ValueType->isIntegralType(Context))) {
@@ -1848,6 +1864,15 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
                                    Context.getSizeType()};
   }
   const bool Transparent = !ValueType.isNull() && ValueType->isVoidType();
+  bool CallbackOperands = false;
+  for (const auto *Parameter : Method->parameters()) {
+    auto ParameterType =
+        Parameter->getType().getNonReferenceType().getUnqualifiedType();
+    if (ParameterType->isFunctionType())
+      ParameterType = Context.getPointerType(ParameterType);
+    CallbackOperands |= supportedFunctionalCallbackOperation(
+        Record->getName(), ParameterType, Context);
+  }
   auto SupportedScalar = [&](QualType Type) {
     if (Type.isNull())
       return false;
@@ -1856,8 +1881,13 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
         Type.getAddressSpace() != LangAS::Default)
       return false;
     Type = Type.getUnqualifiedType();
+    const auto CallbackType =
+        Type->isFunctionType() ? Context.getPointerType(Type) : Type;
     return supportedFunctionalPointerComparison(Record->getName(), Type,
                                                 Context) ||
+           supportedFunctionalCallbackOperation(Record->getName(), CallbackType,
+                                                Context) ||
+           (CallbackOperands && Type->isNullPtrType()) ||
            (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
            Type->isSpecificBuiltinType(BuiltinType::Float) ||
            Type->isSpecificBuiltinType(BuiltinType::Double);
@@ -12165,8 +12195,18 @@ static bool functionalObjectArgumentConversion(
       Operation.LeftType->isFunctionPointerType() &&
       Context.hasSameType(To, Operation.LeftType) &&
       (Context.hasSameType(From, To) || From->isNullPtrType());
+  const bool CallbackBooleanOperation =
+      Operation.Operation == FunctionalOperation::Equal ||
+      Operation.Operation == FunctionalOperation::NotEqual ||
+      Operation.Operation == FunctionalOperation::LogicalAnd ||
+      Operation.Operation == FunctionalOperation::LogicalOr ||
+      Operation.Operation == FunctionalOperation::LogicalNot;
   return utilityScalarDirectConversion(Context, From, To) ||
-         ExactFunctionPointerHash;
+         ExactFunctionPointerHash ||
+         (CallbackBooleanOperation &&
+          ((From->isFunctionType() && To->isFunctionType() &&
+            Context.hasSameType(From, To)) ||
+           utilityCallbackDirectConversion(Context, From, To)));
 }
 
 std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(

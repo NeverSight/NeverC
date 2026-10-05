@@ -308,6 +308,15 @@ See the [optional](../utils/translate-frontends/docs/cpp-core-v2.md#value-option
 and [vector](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 contracts.
 
+`std::equal_to`, `std::not_equal_to`, `std::logical_and`, `std::logical_or`
+and `std::logical_not` support ordinary function-pointer values, including
+`noexcept` signatures and typed `const` arguments. Transparent calls accept
+function designators, compatible signatures and `nullptr` paired with a callback.
+Stored objects and `std::invoke` preserve checked conversions, operand effects,
+aliases and temporary cleanup. Logical calls evaluate both arguments; callback
+targets are never invoked, and callback ordering retains its existing boundary.
+See the [functional objects](../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional) contract.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

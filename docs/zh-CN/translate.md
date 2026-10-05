@@ -26,6 +26,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 经过检查的普通函数指针值也可存入 `std::optional` 和 `std::vector`，包括 `noexcept` 签名及已接纳的复合、嵌套 vector 元素。构造、复制、修改和 swap 保留指针值。optional 转换保留空源并转换所含指针值；回调相等比较接纳兼容签名、函数名和 `nullptr`。vector emplace 支持经检查的回调转换，并在扩容和移位时保留别名输入。回调排序、可能抛异常的 optional 访问及既有的 vector 分配函数定义要求仍受各自边界限制。 `find_if`、`find_if_not`、`none_of`、`all_of`、`any_of`、`count_if`、`copy_if`、`remove_copy_if`、`is_partitioned`、`partition_point`、`partition_copy`、`replace_if`、`replace_copy_if` 和 `remove_if` 的源代码谓词对象也接纳兼容的 `noexcept` 函数指针到普通函数指针参数的经检查转换；元素、替换值及输出存储类型仍须精确匹配。 [optional](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional) · [vector](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 
+`std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 和 `std::logical_not` 支持普通函数指针值，包括 `noexcept` 签名及有类型的 `const` 实参。透明调用接纳函数名、兼容签名以及与回调配对的 `nullptr`。存储的函数对象和 `std::invoke` 保留经检查的转换、实参副作用、别名及临时对象清理。逻辑调用会求值两个实参；这些操作不会调用指针所指向的函数，回调排序仍受既有边界限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 
 按值回调实参在 invoke、apply、函数对象、成员函数、mem_fn 以及直接或经 invoke 调用的引用包装器中，统一按实际选定的形参类型转换。经检查的转换支持函数名衰变、兼容函数指针去除 `noexcept`、`nullptr` 转为函数指针，以及函数或函数指针转为 `bool`；空函数指针转为 false。值形参的顶层 `const` 不改变转换，原始签名、嵌套限定及精确引用绑定仍须检查。

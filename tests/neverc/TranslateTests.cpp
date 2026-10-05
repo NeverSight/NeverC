@@ -119953,9 +119953,9 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint load(volatile int&v){return v;}int main(){"
        "volatile int v=3;return std::invoke(load,v);}",
        "TR0201"},
-      {"invoke-nontrivial-record-value-parameter",
+      {"invoke-record-copy-with-throw",
        "#include <functional>\nstruct R{int n;R(int v):n(v){}"
-       "R(const R&r):n(r.n){}~R(){}};int load(R r){return r.n;}"
+       "R(const R&r):n(r.n){throw 1;}~R(){}};int load(R r){return r.n;}"
        "int main(){R r{3};return std::invoke(load,r);}",
        "TR0201"},
       {"invoke-variadic",
@@ -145756,6 +145756,198 @@ static_assert(!noexcept(std::copy_if(a,a+3,out,p)));return pointed_calls;}
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("algorithm-predicate-noexcept-templates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalCallbackEquality) {
+  const auto Source = tmpFile("functional-callback-equality.cpp");
+  const auto Output = tmpFile("functional-callback-equality.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int calls;int one(int x)noexcept{++calls;return x+1;}int two(int x)noexcept{++calls;return x+2;}
+int main(){F f=one;N n=one;std::equal_to<F>same;std::not_equal_to<F>different;
+if(!same(f,n)||same(f,two)||!different(f,two)||different(f,n))return 1;
+if(!std::equal_to<>{}(f,n)||std::not_equal_to<>{}(n,f)||std::equal_to<>{}(n,nullptr))return 2;
+return calls;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-callback-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalCallbackLogical) {
+  const auto Source = tmpFile("functional-callback-logical.cpp");
+  const auto Output = tmpFile("functional-callback-logical.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed;int one(int x)noexcept{++pointed;return x+1;}int two(int x)noexcept{++pointed;return x+2;}
+int factories;F yes(){++factories;return one;}F no(){++factories;return nullptr;}bool flag(){++factories;return true;}
+int main(){std::logical_and<F>both;std::logical_or<const F>either;std::logical_not<N>none;
+if(both(no(),yes())||factories!=2)return 1;factories=0;
+if(!either(yes(),no())||factories!=2)return 2;factories=0;
+if(!none(nullptr)||none(one))return 3;
+if(std::logical_and<>{}(no(),flag())||factories!=2)return 4;factories=0;
+if(!std::logical_or<>{}(yes(),nullptr)||factories!=1)return 5;
+if(std::logical_not<const F>{}(one)||!std::logical_not<>{}(F{}))return 6;
+return pointed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-callback-logical" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalCallbackDesignators) {
+  const auto Source = tmpFile("functional-callback-designators.cpp");
+  const auto Output = tmpFile("functional-callback-designators.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed;int one(int x)noexcept{++pointed;return x+1;}int two(int x)noexcept{++pointed;return x+2;}
+using Fn=int(int)noexcept;
+int live,dead;struct Token{Token(){++live;}~Token(){--live;++dead;}};
+int main(){if(!std::equal_to<>{}(one,one)||std::not_equal_to<>{}(one,one)||std::equal_to<>{}(one,two))return 1;
+if(!std::invoke(std::equal_to<>{},one,one)||std::invoke(std::not_equal_to<F>{},one,one))return 2;
+if(std::invoke(std::logical_not<>{},std::move(one))||std::logical_not<>{}(std::as_const(one)))return 3;
+if(!std::equal_to<>{}(std::forward<Fn>(one),std::move(one)))return 4;
+bool equal=std::equal_to<>{}((Token{},one),std::as_const(one));
+if(!equal||live||dead!=1)return 5;
+if(std::logical_and<>{}(nullptr,one)||!std::logical_or<>{}(one,nullptr))return 6;
+return pointed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-callback-designators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalCallbackStorage) {
+  const auto Source = tmpFile("functional-callback-storage.cpp");
+  const auto Output = tmpFile("functional-callback-storage.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed;int one(int x)noexcept{++pointed;return x+1;}int two(int x)noexcept{++pointed;return x+2;}
+std::equal_to<F>same;
+std::not_equal_to<const N>different;
+bool compare(std::equal_to<F>object,F a,F b){return object(a,b);}
+int main(){auto copied=same;std::equal_to<F>moved(std::move(copied));copied=moved;moved=std::move(copied);
+if(!compare(moved,one,one)||compare(same,one,two)||!different(one,two))return 1;
+if(!std::invoke(same,one,one)||std::invoke(different,one,one))return 2;
+N n=one;const F f=one;
+if(!std::equal_to<const F>{}(n,f)||std::not_equal_to<N>{}(n,one))return 3;
+static_assert(sizeof(std::equal_to<F>)==1);static_assert(alignof(std::logical_not<N>)==1);
+return pointed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-callback-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalCallbackEffects) {
+  const auto Source = tmpFile("functional-callback-effects.cpp");
+  const auto Output = tmpFile("functional-callback-effects.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed;int one(int x)noexcept{++pointed;return x+1;}int two(int x)noexcept{++pointed;return x+2;}
+F current=one;int lefts,rights,receivers,bad;
+F&left(){++lefts;return current;}F&right(){++rights;current=two;return current;}
+std::equal_to<F>equality;
+std::equal_to<F>&object(){++receivers;return equality;}
+F argument(){if(receivers!=1)++bad;return one;}
+int live,dead;struct Token{Token(){++live;}~Token(){--live;++dead;}};
+int main(){if(!std::equal_to<F>{}(left(),right())||lefts!=1||rights!=1)return 1;
+current=one;lefts=rights=0;
+if(!std::invoke(std::equal_to<F>{},left(),right())||lefts!=1||rights!=1)return 2;
+if(!object()(argument(),argument())||receivers!=1||bad)return 3;
+bool direct=std::equal_to<>{}((Token{},one),one);
+if(!direct||live||dead!=1)return 4;
+bool invoked=std::invoke(std::equal_to<>{},(Token{},one),one);
+if(!invoked||live||dead!=2)return 5;
+return pointed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-callback-effects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalCallbackMetadata) {
+  const auto Source = tmpFile("functional-callback-metadata.cpp");
+  const auto Output = tmpFile("functional-callback-metadata.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed;int one(int x)noexcept{++pointed;return x+1;}int two(int x)noexcept{++pointed;return x+2;}
+int main(){using E=std::equal_to<const F>;using T=std::logical_not<N>;
+if(std::invoke(T{},one))return 2;
+if(std::equal_to<>{}(one,nullptr))return 3;
+static_assert(std::is_empty<E>::value);static_assert(std::is_trivially_copyable<T>::value);
+static_assert(__is_same(decltype(E{}(one,one)),bool));static_assert(__is_same(decltype(std::invoke(T{},one)),bool));
+static_assert(__is_same(decltype(std::equal_to<>{}(one,nullptr)),bool));
+static_assert(!noexcept(E{}(one,one)));static_assert(!noexcept(std::invoke(T{},one)));
+return !E{}(one,one)||T{}(one)||pointed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-callback-metadata" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

@@ -1310,6 +1310,11 @@ class FunctionLowering {
       return functionalOperationValues(L, std::move(Left), std::nullopt, Info);
     }
     auto Argument = [&](unsigned Index) {
+      if (Method->getParamDecl(Index)
+              ->getType()
+              .getNonReferenceType()
+              ->isFunctionType())
+        return snapshot(expression(Call->getArg(Index + 1)), L);
       auto Address = snapshot(
           bind(Call->getArg(Index + 1), Method->getParamDecl(Index)->getType()),
           L);
@@ -1382,20 +1387,27 @@ class FunctionLowering {
     discardFunctionalObject(Call->getArg(0));
     auto Sources = captureUtilityInvocationArguments(
         Call, 1, Call->getNumArgs() - 1);
-    auto Left = snapshot(cast(
-        utilityConstructorArgumentValue(
-            std::move(Sources[0]),
-            Call->getDirectCallee()->getParamDecl(1)->getType(), L),
-        type(Approved.Method->getParamDecl(0)->getType()
-                 .getNonReferenceType(), L), L), L);
+    auto ParameterValueType = [&](unsigned Index) {
+      auto Type =
+          Approved.Method->getParamDecl(Index)->getType().getNonReferenceType();
+      if (Type->isFunctionType())
+        Type = A.Context.getPointerType(Type);
+      return type(Type, L);
+    };
+    auto Left = snapshot(
+        cast(utilityConstructorArgumentValue(
+                 std::move(Sources[0]),
+                 Call->getDirectCallee()->getParamDecl(1)->getType(), L),
+             ParameterValueType(0), L),
+        L);
     std::optional<Expression> Right;
     if (!Unary)
-      Right = snapshot(cast(
-          utilityConstructorArgumentValue(
-              std::move(Sources[1]),
-              Call->getDirectCallee()->getParamDecl(2)->getType(), L),
-          type(Approved.Method->getParamDecl(1)->getType()
-                   .getNonReferenceType(), L), L), L);
+      Right = snapshot(
+          cast(utilityConstructorArgumentValue(
+                   std::move(Sources[1]),
+                   Call->getDirectCallee()->getParamDecl(2)->getType(), L),
+               ParameterValueType(1), L),
+          L);
     return functionalOperationValues(L, std::move(Left), std::move(Right),
                                      Info);
   }

@@ -4997,12 +4997,12 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
   return Target;
 }
 
-static bool functionalHashCallSource(Adapter &A, const CallExpr *Call) {
+static bool functionalObjectCallSource(Adapter &A, const CallExpr *Call) {
   if (!isa_and_nonnull<CXXOperatorCallExpr>(Call))
     return false;
   const auto Operation =
       approvedFunctionalOperation(A.S, A.Sources, Call, A.Context);
-  if (!Operation || Operation->Operation != FunctionalOperation::Hash)
+  if (!Operation)
     return false;
   const auto *Target = functionalObjectInvokeTargetSource(
       A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()),
@@ -7456,7 +7456,8 @@ public:
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
         utilityArrayCallSource(A, Call) ||
-        utilityValueAdapterSource(A, Call))
+        utilityValueAdapterSource(A, Call) ||
+        functionalObjectCallSource(A, Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return prototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -13449,7 +13450,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Source = applySource(Call);
     return Source ? Source->Result : QualType();
   }
-  QualType applyExpressionSource(const Expr *Expression) {
+  QualType utilityExpressionResultSource(const Expr *Expression) {
     const auto Original = Expression->getType();
     for (unsigned Depth = 0; Depth < 64; ++Depth) {
       if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
@@ -13459,21 +13460,29 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
         Expression = Cast->getSubExpr();
       else {
-        const auto Result =
-            applyResultSource(dyn_cast<CallExpr>(Expression));
-        return !Result.isNull() &&
-                       A.Context.hasSameType(Original, Result.getNonReferenceType())
-                   ? Result : QualType();
+        const auto *Call = dyn_cast<CallExpr>(Expression);
+        auto Result = applyResultSource(Call);
+        if (Result.isNull() && functionalObjectCallSource(A, Call))
+          // The exact operation proves this scalar result and SDK signature.
+          // Retain caller operands rather than private trailing-return sugar.
+          Result = A.Context.getCanonicalType(
+              Call->getDirectCallee()->getReturnType());
+        return !Result.isNull() && A.Context.hasSameType(
+                                       Original, Result.getNonReferenceType())
+                   ? Result
+                   : QualType();
       }
       A.chargeExpansion(1, Expression->getExprLoc());
     }
     return {};
   }
-  void collectOperationTypeSource(QualType InputType, SourceLocation L, bool Layout) {
+  void collectOperationTypeSource(QualType InputType, SourceLocation L,
+                                  bool Layout) {
     if (ActiveOperationSources.empty() || InputType.isNull())
       return;
     std::set<std::pair<const Type *, bool>> Seen;
-    auto Collect = [&](auto &&Self, QualType T, bool NeedLayout, unsigned Depth) -> void {
+    auto Collect = [&](auto &&Self, QualType T, bool NeedLayout,
+                       unsigned Depth) -> void {
       if (T.isNull() || !Seen.insert({T.getTypePtr(), NeedLayout}).second)
         return;
       if (Depth >= 64) {
@@ -13516,10 +13525,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Deduced = dyn_cast<DecltypeType>(Raw)) {
         registerDecltypeCallResult(Deduced->getUnderlyingExpr());
         operationExpressionDependency(Deduced->getUnderlyingExpr());
-        // apply's deduced scalar result retains a private SDK decltype/declval
-        // spelling. Only this checked call supplies that sugar's source; keep
-        // the actual query expression and authenticated target result instead.
-        const auto Result = applyExpressionSource(Deduced->getUnderlyingExpr());
+        // Deduced utility results can retain private SDK decltype spellings.
+        // Only this checked call supplies that sugar's source; keep the actual
+        // query expression and authenticated scalar result instead.
+        const auto Result = utilityExpressionResultSource(Deduced->getUnderlyingExpr());
         if (!Result.isNull() &&
             A.Context.hasSameType(Result, Deduced->getUnderlyingType())) {
           Self(Self, Result, NeedLayout, Depth + 1);
@@ -13941,7 +13950,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             functionalFunctionInvokeSource(A, Call) ||
             !applyResultSource(Call).isNull() ||
             functionalObjectInvokeSource(A, Call) ||
-            functionalHashCallSource(A, Call))
+            functionalObjectCallSource(A, Call))
           if (const auto *Reference = directFunctionReference(Call)) {
             auto [Entry, Inserted] =
                 AuthenticatedUtilityReferences.emplace(Reference, Call);
@@ -14229,15 +14238,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         }
       };
       if (const auto *E = dyn_cast<Expr>(S)) {
-        const auto Result = applyExpressionSource(E);
+        const auto Result = utilityExpressionResultSource(E);
         const auto *Reference = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts());
         const auto Callee = AuthenticatedUtilityReferences.find(Reference);
         if (!Result.isNull()) {
           collectOperationTypeSource(Result.getNonReferenceType(), E->getExprLoc(), true);
         } else if (Callee != AuthenticatedUtilityReferences.end() &&
-                   !applyResultSource(Callee->second).isNull()) {
+                   (!applyResultSource(Callee->second).isNull() ||
+                    functionalObjectCallSource(A, Callee->second))) {
           // This exact callee reference/decay owns a pinned SDK signature.
-          // Retain its caller's types, not the private result's declval calls.
+          // Retain its caller's types, not private result declval/forward calls.
           // Written template arguments and actual operands are still visited.
           for (const auto *Argument : Callee->second->arguments())
             collectOperationTypeSource(Argument->getType(), E->getExprLoc(), true);
