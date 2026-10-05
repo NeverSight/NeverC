@@ -575,15 +575,29 @@ the same selection check because their parameter and return types can introduce
 ADL swap candidates.
 Source-owned standard-layout record leaves require that selection too.
 Trivial records use element-wise value exchange; admitted
-nontrivial records invoke their selected move constructor, two move assignments
+nontrivial records invoke their selected copy or move constructor and assignments
 and temporary destructor for each element. User ADL swaps and specializations
 remain rejected. Each array expression is evaluated once, and elements are
 swapped in nested index order. Volatile or const leaves remain outside this
 boundary.
 Exact generic `std::swap` of a source-owned nontrivial standard-layout record
-also invokes the selected supported move constructor and two move assignments,
+also invokes the selected supported copy or move constructor and two assignments,
 then destroys the temporary. Both arguments are evaluated once, including
 self-swap. User ADL swaps and source specializations remain rejected.
+
+These selected constructors may have extra defaulted parameters. The exact
+pinned swap body retains each selected argument in its original parameter
+scope, including scalar and pointer values, fixed-array and object references,
+record values and temporaries admitted by the ordinary constructor boundary.
+Each swap evaluates these defaults once. Reference-bound default temporaries
+are destroyed at the end of the temporary object's construction declaration,
+before either assignment; the swap temporary is destroyed after the second
+assignment. Array elements and pair fields finish those lifetimes before the
+next element or field. Outer operand temporaries retain the caller's lifetime.
+Selected copy fallback and const-qualified source references preserve their
+actual operations. These checked swap signatures may be potentially throwing
+because of their defaults or cleanup. Default source, substitutions, selected
+definitions and destruction remain checked; queries do not evaluate any default.
 
 `std::pair` supports default, value, converting and copy/move construction,
 copy/move assignment, member and free `swap`, `std::make_pair`, index-based
@@ -638,13 +652,27 @@ whole-pair copies and moves. Converting construction from another admitted
 pair also proves the pinned pair constructor's owned-field projections and exact
 selected source-owned copy/move constructor for each owned destination field.
 Value and reference sources preserve their checked cv and value categories;
-reference destination fields keep their bindings. Same-type and compatible
+reference destination fields keep their bindings. These selected element
+constructors may have extra defaulted parameters, retaining each actual
+per-use argument and original parameter scope. Defaults can use the same
+scalar, pointer, fixed-array reference, record reference, record value and
+temporary forms as ordinary source-owned constructors. Each member initializer
+finishes its default temporaries before constructing the next field. Selected
+copy fallback, generated element constructors, inherited defaults and concrete
+class-template constructors retain their ordinary source and destruction checks.
+Direct construction and `make_pair` evaluate every caller argument once before
+constructing any field. Bound lvalues retain their aliases, so a later field
+initializer observes changes to its source made by an earlier constructor;
+scalar prvalues retain the values captured during argument evaluation.
+Array arguments to `make_pair` decay to their checked element pointer types.
+Outer argument temporaries retain the caller's full-expression lifetime.
+Same-type and compatible
 heterogeneous pair assignment proves the pinned pair body's two field writes,
 return and selected source-owned field assignments. Assignment writes owned
 fields or referents in first-then-second order without rebinding references.
 Member and free pair swap accept nontrivial source-owned fields when the pinned
-swap selects supported move construction and assignments. They invoke those
-operations for each field in order, then destroy its temporary. Reference
+swap selects supported copy or move construction and assignments. They invoke
+those operations for each field in order, then destroy its temporary. Reference
 fields keep their bindings, including self-swap.
 
 Authenticated `std::reference_wrapper` values are admitted in ordinary
@@ -790,8 +818,16 @@ copy or move constructor, with the original element type, cv qualification and
 value category. The factory must forward each argument into that selected
 constructor; owned elements can share a result with `ref`/`cref` elements. The
 tuple constructs each field in place and destroys owned fields in reverse order.
-Default, whole-tuple copy/move, converting and assignment operations on such
-records remain outside this boundary.
+Selected element constructors may have extra defaulted parameters. Each actual
+per-use default retains its original parameter scope, source, converted value
+and temporary destruction checks, including ordinary record values and fixed
+array references. Defaults finish their temporary cleanup at the end of each
+leaf member initializer, before the next element construction. Direct
+construction and `make_tuple` evaluate every caller argument once before
+constructing elements, preserving bound lvalue aliases, captured scalar
+prvalues and outer argument temporaries. Same-type whole-tuple copy/move and
+concatenation follow the selected-operation proofs below. Default, converting
+and assignment operations on such records remain restricted.
 
 Member and free tuple swap authenticate the concrete SDK delegation through
 `__tuple_impl`, each indexed `__tuple_leaf`, its exact value projection and the
@@ -898,9 +934,12 @@ Each source element and corresponding callback parameter must be admitted
 scalars connected by a checked direct scalar conversion, or the same complete
 source-owned standard-layout record type that is trivially copyable and
 destructible, passed by value; the result may be `void`, an admitted scalar,
-or a complete source-owned record value. Nonempty `std::array` and `std::tuple` sources also
-admit source-owned nontrivial record elements by value when the actual callback
-selects a checked copy or move constructor. Exact lvalue- or rvalue-reference
+or a complete source-owned record value. Nonempty `std::array`, `std::tuple`
+and `std::pair` sources also admit source-owned nontrivial record elements by
+value when the actual callback selects a checked copy or move constructor.
+Owned fields and stored reference fields use the same selected construction
+proof for named functions, stored function pointers, source function objects,
+`ref`/`cref` wrappers, member functions and `mem_fn` adapters. Exact lvalue- or rvalue-reference
 parameters and results are also admitted for supported scalar, object-pointer,
 function-pointer, complete fixed-array, authenticated `std::array` and
 source-owned record referents. A `const T&` callback parameter also binds an
@@ -930,6 +969,19 @@ accessing its synthetic carrier. A record parameter receives its own copied
 object, while a record result constructs directly in the caller's destination
 and keeps its ordinary full-expression cleanup. References preserve the
 selected element or callback result storage, qualification and value category.
+
+Selected callback copy/move constructors may have extra authenticated default
+arguments under the ordinary source-construction boundary. Each selected
+expression retains its actual parameter scope, original types, defaults,
+completed body and cleanup sources, including class-template and generated
+memberwise operations. The defaults of callback parameters share the SDK
+invocation's return full-expression: reference-bound default temporaries remain
+alive during the callback and parameter destruction, then are destroyed before
+the `apply` call returns to its caller. Defaults of generated member initializers
+retain their separate initializer full-expressions. Caller-created callable and
+tuple-like temporaries keep their enclosing full-expression lifetime. Scalar
+results and reference addresses are captured before invocation cleanup; returned
+records retain their ordinary caller-owned destination and lifetime.
 
 The proof authenticates the pinned `apply`/invoke helper chain and every selected
 `std::get<I>` declaration, template index and element type, forwarding path,
@@ -2298,6 +2350,12 @@ unchanged; the source expression is evaluated once. An rvalue element may
 select its copy constructor when it has no move constructor. Converting
 construction, assignment and swap still require their existing trivial element
 boundary.
+These selected element constructors retain the extra defaults described above,
+including source-owned generated constructors and concrete class-template
+constructors. Each element's default temporaries finish before the next
+element; outer tuple or array argument temporaries retain the caller's
+full-expression lifetime. `tuple_cat` checks these defaults through the exact
+selected result constructor for both tuple and array sources.
 
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element
@@ -2374,7 +2432,7 @@ array reference retain their source behavior. Unproved selected constructors,
 including declarations without an available body, remain rejected.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
 Member and free array swap also admit source-owned nontrivial record elements
-when the pinned `swap_ranges` and `iter_swap` chain selects supported move
+when the pinned `swap_ranges` and `iter_swap` chain selects supported copy or move
 construction and assignments. Each element swap destroys its temporary before
 the next element; zero-length arrays instantiate no element swap. User ADL
 swaps and source specializations remain rejected.
@@ -2445,9 +2503,11 @@ No query evaluates an operand, default argument, element operation or cleanup.
 Receiver and peer expressions retain their independent source and lifetime
 checks, and independent swap addresses remain rejected. Existing SDK bodies
 must still pass their ordinary selected-operation proof. Evaluated swap keeps
-its existing one-reference element-constructor and lifetime requirements; a
-query selecting an extra constructor default does not extend that runtime
-lowering. Native const, reference-binding and extent diagnostics remain intact.
+its checked selected element-constructor and lifetime requirements, including
+the [extra constructor defaults](#scalar-utilities-and-pairs-from-utility)
+admitted by the ordinary construction boundary. A signature-only query supplies
+no runtime body or argument execution. Native const, reference-binding and
+extent diagnostics remain intact.
 
 An array can also supply the element pack to `std::apply` through the
 [checked tuple, pair and array callable boundary](#value-tuples-from-tuple).

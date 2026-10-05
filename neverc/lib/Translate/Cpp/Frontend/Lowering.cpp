@@ -1712,8 +1712,9 @@ class FunctionLowering {
     auto LeftPointer = snapshot(address(std::move(LeftValue), Element, L), L);
     auto RightPointer = snapshot(address(std::move(RightValue), Element, L), L);
     auto Temporary = objectTemporary(Element, L);
-    constructMemorySource(json::Object(Temporary), Element,
-                          Selected.Constructor, json::Object(LeftPointer), L);
+    constructSelectedMemorySource(json::Object(Temporary), Element,
+                                  Selected.Construction,
+                                  json::Object(LeftPointer), L);
     assignMemorySource(dereference(json::Object(LeftPointer), L), Element,
                        Selected.FirstAssignment,
                        dereference(json::Object(RightPointer), L), L);
@@ -9436,21 +9437,25 @@ class FunctionLowering {
         reject(
             L, "utility make_pair",
             "The selected std::make_pair element construction is unavailable.");
+      const auto *Function = Call->getDirectCallee();
+      std::vector<Expression> Arguments;
+      for (unsigned I = 0; I != 2; ++I)
+        Arguments.push_back(captureUtilityConstructorArgument(
+            Call->getArg(I), Function->getParamDecl(I)->getType()));
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Field = I ? Pair->Second : Pair->First;
         if (!Field->getType()->isReferenceType()) {
           const auto *Copy = (*Copies)[I];
           if (Copy) {
-            const auto *Constructor = Copy->getConstructor();
-            const auto Referent =
-                Constructor->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
+            constructSelectedMemorySource(
                 fieldStorage(json::Object(Place), Field, L), Field->getType(),
-                Constructor,
-                snapshot(address(lvalue(Call->getArg(I)), Referent, L), L), L);
+                Copy, std::move(Arguments[I]), L);
           } else {
-            initialize(fieldStorage(json::Object(Place), Field, L),
-                       Call->getArg(I), L);
+            auto Value = utilityConstructorArgumentValue(
+                std::move(Arguments[I]),
+                Function->getParamDecl(I)->getType(), L);
+            assign(fieldStorage(json::Object(Place), Field, L),
+                   cast(std::move(Value), type(Field->getType(), L), L), L);
           }
           continue;
         }
@@ -9460,7 +9465,8 @@ class FunctionLowering {
         if (!Wrapper)
           reject(L, "utility make_pair",
                  "A reference pair requires checked reference wrappers.");
-        auto Value = expression(Call->getArg(I));
+        auto Value = utilityConstructorArgumentValue(
+            std::move(Arguments[I]), Function->getParamDecl(I)->getType(), L);
         auto Pointer = ReferenceMember(std::move(Value), *Wrapper);
         assign(fieldStorage(json::Object(Place), Field, L),
                cast(std::move(Pointer), type(Field->getType(), L), L), L);
@@ -9489,21 +9495,25 @@ class FunctionLowering {
           (!Copies->empty() && Copies->size() != Tuple->Elements.size()))
         reject(L, "utility make_tuple",
                "The selected std::make_tuple element construction is unavailable.");
+      const auto *Function = Call->getDirectCallee();
+      std::vector<Expression> Arguments;
+      for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+        Arguments.push_back(captureUtilityConstructorArgument(
+            Call->getArg(I), Function->getParamDecl(I)->getType()));
       for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
         const auto *Field = Tuple->Elements[I];
         if (!Field->getType()->isReferenceType()) {
           const auto *Copy = Copies->empty() ? nullptr : (*Copies)[I];
           if (Copy) {
-            const auto *Constructor = Copy->getConstructor();
-            const auto Referent =
-                Constructor->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
+            constructSelectedMemorySource(
                 fieldStorage(json::Object(Place), Field, L), Field->getType(),
-                Constructor,
-                snapshot(address(lvalue(Call->getArg(I)), Referent, L), L), L);
+                Copy, std::move(Arguments[I]), L);
           } else {
-            initialize(fieldStorage(json::Object(Place), Field, L),
-                       Call->getArg(I), L);
+            auto Value = utilityConstructorArgumentValue(
+                std::move(Arguments[I]),
+                Function->getParamDecl(I)->getType(), L);
+            assign(fieldStorage(json::Object(Place), Field, L),
+                   cast(std::move(Value), type(Field->getType(), L), L), L);
           }
           continue;
         }
@@ -9513,7 +9523,8 @@ class FunctionLowering {
         if (!Wrapper)
           reject(L, "utility make_tuple",
                  "A reference tuple requires checked reference wrappers.");
-        auto Value = expression(Call->getArg(I));
+        auto Value = utilityConstructorArgumentValue(
+            std::move(Arguments[I]), Function->getParamDecl(I)->getType(), L);
         auto Pointer = ReferenceMember(std::move(Value), *Wrapper);
         assign(fieldStorage(json::Object(Place), Field, L),
                cast(std::move(Pointer), type(Field->getType(), L), L), L);
@@ -9589,8 +9600,8 @@ class FunctionLowering {
               const auto *Constructor = Copy->getConstructor();
               const auto Referent =
                   Constructor->getParamDecl(0)->getType()->getPointeeType();
-              constructMemorySource(
-                  std::move(Destination), Source.ArrayElementType, Constructor,
+              constructSelectedMemorySource(
+                  std::move(Destination), Source.ArrayElementType, Copy,
                   snapshot(address(std::move(Element), Referent, L), L), L);
             } else {
               assign(std::move(Destination), std::move(Element), L);
@@ -9610,8 +9621,8 @@ class FunctionLowering {
             const auto *Constructor = Copy->getConstructor();
             const auto Referent =
                 Constructor->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
-                std::move(Destination), Element->getType(), Constructor,
+            constructSelectedMemorySource(
+                std::move(Destination), Element->getType(), Copy,
                 snapshot(address(std::move(Field), Referent, L), L), L);
           } else {
             assign(std::move(Destination), std::move(Field), L);
@@ -9646,8 +9657,21 @@ class FunctionLowering {
                      quantity(Index, type(A.Context.getSizeType(), L), L),
                      type(Element, L), L);
       };
+      bool InvocationFullExpression = false;
+      auto FinishInvocation = [&](Expression Result) {
+        // Calls have already captured their scalar result, reference address
+        // or record destination. Defaults belong to the SDK return expression,
+        // while the caller's tuple and callable retain their outer lifetime.
+        if (InvocationFullExpression)
+          endFullExpression();
+        return Result;
+      };
       auto ApplyRecordArgument = [&](Expression Element, QualType Parameter,
                                      const CXXConstructExpr *Copy) {
+        if (!InvocationFullExpression) {
+          beginFullExpression();
+          InvocationFullExpression = true;
+        }
         auto Place = objectTemporary(Parameter, L);
         if (Copy) {
           const auto Source =
@@ -9655,7 +9679,7 @@ class FunctionLowering {
                   ->getPointeeType();
           constructMemorySource(
               Place, Parameter, Copy->getConstructor(),
-              snapshot(address(std::move(Element), Source, L), L), L);
+              snapshot(address(std::move(Element), Source, L), L), L, Copy);
         } else {
           // Even a trivial copy creates an independent callback parameter.
           assign(Place, std::move(Element), L);
@@ -9730,7 +9754,7 @@ class FunctionLowering {
                   std::move(Element), Parameter, Copy));
             } else {
               Arguments.push_back(
-                  cast(std::move(Element), type(Parameter, L), L));
+                  snapshot(cast(std::move(Element), type(Parameter, L), L), L));
             }
           }
           chargeCall(Arguments, L);
@@ -9745,8 +9769,8 @@ class FunctionLowering {
           }
           Body.push_back(std::move(Instruction));
           if (Method->getReturnType()->isReferenceType())
-            return dereference(std::move(Result), L);
-          return Result;
+            return FinishInvocation(dereference(std::move(Result), L));
+          return FinishInvocation(std::move(Result));
         }
         if (Destination || !MemberCallable->Field ||
             Tuple->size() != 1)
@@ -9826,7 +9850,7 @@ class FunctionLowering {
                 std::move(Element), Parameter, Copy));
           } else {
             Arguments.push_back(
-                cast(std::move(Element), type(Parameter, L), L));
+                snapshot(cast(std::move(Element), type(Parameter, L), L), L));
           }
         }
         if (Method) {
@@ -9864,17 +9888,17 @@ class FunctionLowering {
           }
           Body.push_back(std::move(Instruction));
           if (Method->getReturnType()->isReferenceType())
-            return dereference(std::move(Result), L);
-          return Result;
+            return FinishInvocation(dereference(std::move(Result), L));
+          return FinishInvocation(std::move(Result));
         }
         auto Callable =
             ReferenceCallable->Kind ==
                     FunctionalReferenceInvokeKind::Function
                 ? std::move(Referent)
                 : snapshot(dereference(std::move(Referent), L), L);
-        return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                                Prototype->getReturnType(), L,
-                                std::move(Destination));
+        return FinishInvocation(emitIndirectCall(
+            std::move(Callable), std::move(Arguments),
+            Prototype->getReturnType(), L, std::move(Destination)));
       }
       const auto ObjectOperation = approvedUtilityTupleApplyObjectOperation(
           A.S, A.Sources, Call, A.Context);
@@ -9947,7 +9971,7 @@ class FunctionLowering {
           Arguments.push_back(
               ApplyRecordArgument(std::move(Element), Parameter, Copy));
         } else {
-          Arguments.push_back(cast(std::move(Element), type(Parameter, L), L));
+          Arguments.push_back(snapshot(cast(std::move(Element), type(Parameter, L), L), L));
         }
       }
       if (Method) {
@@ -9983,12 +10007,12 @@ class FunctionLowering {
         }
         Body.push_back(std::move(Instruction));
         if (Method->getReturnType()->isReferenceType())
-          return dereference(std::move(Result), L);
-        return Result;
+          return FinishInvocation(dereference(std::move(Result), L));
+        return FinishInvocation(std::move(Result));
       }
-      return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                              Prototype->getReturnType(), L,
-                              std::move(Destination));
+      return FinishInvocation(emitIndirectCall(
+          std::move(Callable), std::move(Arguments),
+          Prototype->getReturnType(), L, std::move(Destination)));
     }
     case UtilityOperation::TupleSwap:
     case UtilityOperation::PairSwap: {
@@ -21985,7 +22009,8 @@ class FunctionLowering {
   }
   void constructMemorySource(Expression Place, QualType T,
                              const CXXConstructorDecl *Constructor,
-                             Expression SourcePointer, SourceLocation L) {
+                             Expression SourcePointer, SourceLocation L,
+                             const CXXConstructExpr *Selected = nullptr) {
     if (!Constructor || !T->isRecordType() ||
         T->getAsCXXRecordDecl()->getCanonicalDecl() !=
             Constructor->getParent()->getCanonicalDecl() ||
@@ -21997,7 +22022,10 @@ class FunctionLowering {
       return;
     }
     if (!supportedConstructor(Constructor) || !Constructor->hasBody() ||
-        Constructor->getNumParams() != 1 ||
+        !Constructor->getNumParams() ||
+        (Selected ? Selected->getConstructor() != Constructor ||
+                        Selected->getNumArgs() != Constructor->getNumParams()
+                  : Constructor->getNumParams() != 1) ||
         !Constructor->getParamDecl(0)->getType()->isReferenceType())
       reject(L, "memory construction",
              "Unsupported selected source constructor.");
@@ -22008,11 +22036,27 @@ class FunctionLowering {
         snapshot(cast(std::move(SourcePointer),
                       type(Constructor->getParamDecl(0)->getType(), L), L),
                  L));
+    for (unsigned I = 1; I < Constructor->getNumParams(); ++I)
+      Args.push_back(argument(Selected->getArg(I),
+                              Constructor->getParamDecl(I)->getType()));
     chargeCall(Args, L);
     Body.push_back(json::Object{{"op", "call"},
                                 {"callee", A.name(Constructor)},
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
+  }
+
+  void constructSelectedMemorySource(Expression Place, QualType T,
+                                     const CXXConstructExpr *Construction,
+                                     Expression SourcePointer,
+                                     SourceLocation L) {
+    // The selected declaration or member initializer is a full-expression in
+    // the SDK body. Its defaults finish before the next operation, while the
+    // caller's already evaluated operands retain their enclosing lifetime.
+    beginFullExpression();
+    constructMemorySource(std::move(Place), T, Construction->getConstructor(),
+                          std::move(SourcePointer), L, Construction);
+    endFullExpression();
   }
   void assignMemorySource(Expression Place, QualType T,
                           const CXXMethodDecl *Method, Expression Source,
@@ -22104,6 +22148,27 @@ class FunctionLowering {
                               ParameterType.getUnqualifiedType(), L), L);
     }
     return expression(Arg);
+  }
+  Expression captureUtilityConstructorArgument(const Expr *Arg,
+                                                QualType ParameterType) {
+    // SDK pair and tuple adapters have reference parameters. Capture every
+    // caller operand before any element construction, retaining aliases.
+    if (ParameterType->getPointeeType()->isFunctionType())
+      return snapshot(expression(Arg), Arg->getExprLoc());
+    return argument(Arg, ParameterType);
+  }
+  Expression utilityConstructorArgumentValue(Expression Pointer,
+                                             QualType ParameterType,
+                                             SourceLocation L) {
+    const auto Source = ParameterType->getPointeeType();
+    if (Source->isFunctionType())
+      return Pointer;
+    auto Value = dereference(std::move(Pointer), L);
+    if (const auto *Array = A.Context.getAsConstantArrayType(Source))
+      return decay(std::move(Value),
+                   type(A.Context.getPointerType(Array->getElementType()), L),
+                   L);
+    return Value;
   }
   void chargeCall(const json::Array &Args, SourceLocation L) {
     std::size_t Nodes = 1;
@@ -22379,26 +22444,32 @@ class FunctionLowering {
         initializeZero(Member(Pair->First), Pair->First->getType(), L);
         initializeZero(Member(Pair->Second), Pair->Second->getType(), L);
         return;
-      case UtilityPairConstruction::Elements:
+      case UtilityPairConstruction::Elements: {
+        std::vector<Expression> Arguments;
+        for (unsigned I = 0; I != 2; ++I)
+          Arguments.push_back(captureUtilityConstructorArgument(
+              C->getArg(I), C->getConstructor()->getParamDecl(I)->getType()));
         for (unsigned I = 0; I != 2; ++I) {
           const auto *Field = I ? Pair->Second : Pair->First;
           if (Field->getType()->isReferenceType())
-            assign(Member(Field), bind(C->getArg(I), Field->getType()), L);
-          else if (PairCopies.size() == 2 && PairCopies[I]) {
-            const auto *Constructor = PairCopies[I]->getConstructor();
-            const auto Referent =
-                Constructor->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
-                Member(Field), Field->getType(), Constructor,
-                snapshot(address(lvalue(C->getArg(I)), Referent, L), L), L);
-          } else if (recordValue(Field->getType()))
-            initialize(Member(Field), C->getArg(I), L);
-          else
             assign(Member(Field),
-                   cast(expression(C->getArg(I)), type(Field->getType(), L), L),
+                   cast(std::move(Arguments[I]), type(Field->getType(), L), L),
                    L);
+          else if (PairCopies.size() == 2 && PairCopies[I]) {
+            constructSelectedMemorySource(Member(Field), Field->getType(),
+                                          PairCopies[I],
+                                          std::move(Arguments[I]), L);
+          } else {
+            auto Value = utilityConstructorArgumentValue(
+                std::move(Arguments[I]),
+                C->getConstructor()->getParamDecl(I)->getType(), L);
+            assign(Member(Field),
+                   cast(std::move(Value), type(Field->getType(), L), L),
+                   L);
+          }
         }
         return;
+      }
       case UtilityPairConstruction::CopyOrMove: {
         auto Source = expression(C->getArg(0));
         assign(std::move(Place), std::move(Source), L);
@@ -22418,8 +22489,8 @@ class FunctionLowering {
             const auto *Selected = Copy->getConstructor();
             const auto Referent =
                 Selected->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
-                Member(Field), Field->getType(), Selected,
+            constructSelectedMemorySource(
+                Member(Field), Field->getType(), Copy,
                 snapshot(address(std::move(Value), Referent, L), L), L);
           } else {
             assign(Member(Field), std::move(Value), L);
@@ -22467,11 +22538,12 @@ class FunctionLowering {
           if (SourceField->getType()->isReferenceType())
             Value = dereference(std::move(Value), L);
           if (PairCopies.size() == 2 && PairCopies[I]) {
-            const auto *Selected = PairCopies[I]->getConstructor();
+            const auto *Copy = PairCopies[I];
+            const auto *Selected = Copy->getConstructor();
             const auto Referent =
                 Selected->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
-                Member(DestinationField), DestinationField->getType(), Selected,
+            constructSelectedMemorySource(
+                Member(DestinationField), DestinationField->getType(), Copy,
                 snapshot(address(std::move(Value), Referent, L), L), L);
             continue;
           }
@@ -22511,34 +22583,37 @@ class FunctionLowering {
         for (const auto *Element : Tuple->Elements)
           initializeZero(Member(Element), Element->getType(), L);
         return;
-      case UtilityTupleConstruction::Elements:
+      case UtilityTupleConstruction::Elements: {
         if (C->getNumArgs() != Tuple->Elements.size() ||
             (!TupleSelectedCopies.empty() &&
              TupleSelectedCopies.size() != Tuple->Elements.size()))
           reject(L, "utility tuple construction",
                  "The constructor and tuple element counts differ.");
+        std::vector<Expression> Arguments;
+        for (unsigned I = 0; I < C->getNumArgs(); ++I)
+          Arguments.push_back(captureUtilityConstructorArgument(
+              C->getArg(I), C->getConstructor()->getParamDecl(I)->getType()));
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
           if (Tuple->Elements[I]->getType()->isReferenceType())
             assign(Member(Tuple->Elements[I]),
-                   bind(C->getArg(I), Tuple->Elements[I]->getType()), L);
+                   cast(std::move(Arguments[I]),
+                        type(Tuple->Elements[I]->getType(), L), L), L);
           else if (!TupleSelectedCopies.empty() && TupleSelectedCopies[I]) {
-            const auto *Constructor =
-                TupleSelectedCopies[I]->getConstructor();
-            const auto Referent =
-                Constructor->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
+            constructSelectedMemorySource(
                 Member(Tuple->Elements[I]), Tuple->Elements[I]->getType(),
-                Constructor,
-                snapshot(address(lvalue(C->getArg(I)), Referent, L), L), L);
-          } else if (recordValue(Tuple->Elements[I]->getType()))
-            initialize(Member(Tuple->Elements[I]), C->getArg(I), L);
-          else
+                TupleSelectedCopies[I], std::move(Arguments[I]), L);
+          } else {
+            auto Value = utilityConstructorArgumentValue(
+                std::move(Arguments[I]),
+                C->getConstructor()->getParamDecl(I)->getType(), L);
             assign(Member(Tuple->Elements[I]),
-                   cast(expression(C->getArg(I)),
+                   cast(std::move(Value),
                         type(Tuple->Elements[I]->getType(), L), L),
                    L);
+          }
         }
         return;
+      }
       case UtilityTupleConstruction::CopyOrMove:
         assign(std::move(Place), expression(C->getArg(0)), L);
         return;
@@ -22556,8 +22631,8 @@ class FunctionLowering {
             const auto *Selected = Copy->getConstructor();
             const auto Referent =
                 Selected->getParamDecl(0)->getType()->getPointeeType();
-            constructMemorySource(
-                Member(Field), Field->getType(), Selected,
+            constructSelectedMemorySource(
+                Member(Field), Field->getType(), Copy,
                 snapshot(address(std::move(Value), Referent, L), L), L);
           } else {
             assign(Member(Field), std::move(Value), L);

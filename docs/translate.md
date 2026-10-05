@@ -125,9 +125,11 @@ supported targets.
 
 Core v2 also accepts the pinned `<utility>` header. Scalar `move`, `forward`,
 `move_if_noexcept`, `as_const`, `exchange` and `swap` lower directly. Exact
-generic swaps of source-owned records invoke selected supported move
-construction, assignments and temporary destruction. Scalar or recursively
-admitted composite `std::pair` construction, assignment,
+generic swaps of source-owned records invoke selected supported copy or move
+construction, assignments and temporary destruction. Extra constructor defaults
+retain their original parameter scope and finish their temporary cleanup before
+the assignments, including native-array, array and pair element swaps. Scalar or
+recursively admitted composite `std::pair` construction, assignment,
 swapping, comparison, `make_pair` and `get`. Tuple metadata and
 `integer_sequence::size()` remain compile-time values. The authenticated
 87-file closure adds no libc++ runtime dependency; standard-function addresses
@@ -142,7 +144,13 @@ source-owned element constructors; reference fields keep their bindings. Pair
 converting construction from another admitted pair also selects and proves
 each owned field's source-owned copy or move constructor. Value and reference
 sources retain their checked cv and value categories; reference destination
-fields retain their bindings. Same-type and compatible heterogeneous pair
+fields retain their bindings. Selected element constructors can have extra
+defaults with their original parameter scope and per-use source checks. Each
+member initializer destroys its default temporaries before the next field.
+Direct construction and `make_pair` evaluate all caller arguments once before
+constructing fields, preserving lvalue aliases, captured prvalue values and
+outer temporary lifetimes. Array factory arguments decay to element pointers.
+Same-type and compatible heterogeneous pair
 assignment also proves the pinned pair body and invokes each selected
 source-owned field assignment in order, including writes through reference
 fields. Member and free pair swap also accept nontrivial source-owned fields
@@ -207,7 +215,14 @@ and leaf constructors select supported source-owned element constructors.
 Mixed scalar and reference elements retain their values and bindings, and an
 rvalue may select an element's copy constructor when no move is available.
 The source tuple is evaluated once; owned fields are constructed in element
-order and destroyed in reverse order. Other owning tuple constructors remain
+order and destroyed in reverse order. Selected element constructors may have
+extra defaults with their original parameter scope and per-use source checks.
+Each leaf member initializer finishes default temporary cleanup before the
+next element. Direct construction and `make_tuple` evaluate all caller
+arguments once before constructing elements, retaining aliases, captured
+prvalues and outer temporary lifetimes. The same default and lifetime rules
+apply to selected result constructors in `tuple_cat`, including array sources.
+Other owning tuple constructors remain
 restricted.
 Ordinary value tuples may likewise copy or convert referent values from
 all-reference or mixed tuple/pair sources during construction and assignment.
@@ -242,6 +257,12 @@ results remain excluded.
 The callable and source object are each evaluated once, and the selected
 `get` operations require exact SDK declaration, index and forwarding proof
 before lowering to a scalar operation, member projection or ordinary call.
+Source-owned record value parameters also use the selected copy or move
+constructor for owned or reference tuple/pair fields and array elements,
+including authenticated extra constructor defaults. Their default temporaries
+survive the callback and parameter destruction, then finish inside the SDK
+invocation before the caller continues. Caller-created callable and source
+temporaries, reference results and returned records retain their outer lifetime.
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
 tuple/pair sources plus scalar and recursively composite arrays, evaluates all
 sources once before reading their elements, and constructs the exact

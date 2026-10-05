@@ -29497,6 +29497,1113 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ApplyConstructorDefaultsPreserveInvocationLifetimes) {
+  const auto Source = tmpFile("apply-callback-default-lifetime.cpp");
+  const auto Output = tmpFile("apply-callback-default-lifetime.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int live, calls, drops, copies, bad, parameter_drops;
+struct G {
+  G() noexcept {
+    ++live;
+    ++calls;
+  }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &v, const G &g = G{}) noexcept : value(v.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+  Item(Item &&v) noexcept : value(v.value) {}
+  ~Item() noexcept {
+    if (live)
+      ++parameter_drops;
+  }
+};
+int callback(Item item) noexcept { return item.value + live * 10; }
+int main() {
+  std::tuple<Item> t(Item(3));
+  int result = std::apply(callback, t);
+  return !bad && !live && calls == 1 && drops == 1 && copies == 1 &&
+                 parameter_drops == 1 && result == 13
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "ApplyConstructorDefaultsPreserveInvocationLifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ApplyConstructorDefaultsCoverCallableFamilies) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"callable-tuple-routes", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int live, defaults, drops, copies, moves, parameter_drops, bad, expected;
+bool observing;
+struct Guard {
+  bool tracked;
+  Guard() noexcept : tracked(observing) {
+    ++live;
+    if (tracked)
+      ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    if (tracked)
+      ++drops;
+  }
+};
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++copies;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  Item(Item &&other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++moves;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  ~Item() noexcept {
+    if (observing && live)
+      ++parameter_drops;
+  }
+  int combine(Item other) const noexcept {
+    if (live != expected)
+      ++bad;
+    return value * 10 + other.value + live * 100;
+  }
+};
+int consume(Item first, Item second) noexcept {
+  if (live != expected)
+    ++bad;
+  return first.value * 10 + second.value + live * 100;
+}
+struct Reader {
+  int operator()(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+struct Receiver {
+  int consume(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+void reset(int n) noexcept {
+  observing = true;
+  expected = n;
+  defaults = drops = copies = moves = parameter_drops = bad = 0;
+}
+bool valid(int count, int copy_count, int move_count) noexcept {
+  return !bad && !live && defaults == count && drops == count &&
+         copies == copy_count && moves == move_count &&
+         parameter_drops == count;
+}
+
+int main() {
+  std::tuple<Item, Item> row(Item(2), Item(3));
+  const std::tuple<Item, Item> constant(Item(2), Item(3));
+  Reader reader;
+  Receiver receiver;
+  Item first(2), second(3);
+  auto references = std::tie(first, second);
+  auto member_arguments = std::tie(receiver, first, second);
+  auto function = std::ref(consume);
+  int (*pointer)(Item, Item) = consume;
+  auto stored = std::ref(pointer);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Receiver::consume);
+  reset(2);
+  if (std::apply(consume, row) != 223 || !valid(2, 2, 0))
+    return 1;
+  reset(2);
+  if (std::apply(reader, constant) != 223 || !valid(2, 2, 0))
+    return 2;
+  reset(2);
+  if (std::apply(function, row) != 223 || !valid(2, 2, 0))
+    return 3;
+  reset(2);
+  if (std::apply(stored, constant) != 223 || !valid(2, 2, 0))
+    return 4;
+  reset(2);
+  if (std::apply(object, row) != 223 || !valid(2, 2, 0))
+    return 5;
+  reset(2);
+  if (std::apply(&Receiver::consume, member_arguments) != 223 ||
+      !valid(2, 2, 0))
+    return 6;
+  reset(2);
+  if (std::apply(member, member_arguments) != 223 || !valid(2, 2, 0))
+    return 7;
+  reset(2);
+  if (std::apply(function, std::move(row)) != 223 || !valid(2, 0, 2))
+    return 8;
+  reset(2);
+  if (std::apply(object, std::move(row)) != 223 || !valid(2, 0, 2))
+    return 9;
+  reset(2);
+  if (std::apply(consume, std::move(constant)) != 223 || !valid(2, 2, 0))
+    return 10;
+  reset(2);
+  if (std::apply(reader, std::move(references)) != 223 || !valid(2, 2, 0))
+    return 11;
+  observing = false;
+  return 0;
+}
+)cpp"},
+      {"callable-pair-array-routes", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int live, defaults, drops, copies, moves, parameter_drops, bad, expected;
+bool observing;
+struct Guard {
+  bool tracked;
+  Guard() noexcept : tracked(observing) {
+    ++live;
+    if (tracked)
+      ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    if (tracked)
+      ++drops;
+  }
+};
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++copies;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  Item(Item &&other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (observing) {
+      ++moves;
+      if (live < 1 || live > expected)
+        ++bad;
+    }
+  }
+  ~Item() noexcept {
+    if (observing && live)
+      ++parameter_drops;
+  }
+  int combine(Item other) const noexcept {
+    if (live != expected)
+      ++bad;
+    return value * 10 + other.value + live * 100;
+  }
+};
+int consume(Item first, Item second) noexcept {
+  if (live != expected)
+    ++bad;
+  return first.value * 10 + second.value + live * 100;
+}
+struct Reader {
+  int operator()(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+struct Receiver {
+  int consume(Item first, Item second) const noexcept {
+    if (live != expected)
+      ++bad;
+    return first.value * 10 + second.value + live * 100;
+  }
+};
+void reset(int n) noexcept {
+  observing = true;
+  expected = n;
+  defaults = drops = copies = moves = parameter_drops = bad = 0;
+}
+bool valid(int count, int copy_count, int move_count) noexcept {
+  return !bad && !live && defaults == count && drops == count &&
+         copies == copy_count && moves == move_count &&
+         parameter_drops == count;
+}
+
+int main() {
+  std::pair<Item, Item> pair(Item(2), Item(3));
+  std::array<Item, 2> array{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(2), Item(3)}};
+  Reader reader;
+  auto function = std::ref(consume);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Item::combine);
+  reset(2);
+  if (std::apply(consume, pair) != 223 || !valid(2, 2, 0))
+    return 1;
+  reset(2);
+  if (std::apply(object, pair) != 223 || !valid(2, 2, 0))
+    return 2;
+  reset(1);
+  if (std::apply(&Item::combine, pair) != 123 || !valid(1, 1, 0))
+    return 3;
+  reset(1);
+  if (std::apply(member, pair) != 123 || !valid(1, 1, 0))
+    return 4;
+  reset(2);
+  if (std::apply(function, std::move(pair)) != 223 || !valid(2, 0, 2))
+    return 5;
+  reset(2);
+  if (std::apply(reader, array) != 223 || !valid(2, 2, 0))
+    return 6;
+  reset(2);
+  if (std::apply(function, constant) != 223 || !valid(2, 2, 0))
+    return 7;
+  reset(2);
+  if (std::apply(object, std::move(array)) != 223 || !valid(2, 0, 2))
+    return 8;
+  reset(1);
+  if (std::apply(&Item::combine, array) != 123 || !valid(1, 1, 0))
+    return 9;
+  reset(1);
+  if (std::apply(member, std::move(array)) != 123 || !valid(1, 0, 1))
+    return 10;
+  observing = false;
+  return 0;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("apply-ApplyConstructorDefaultsCoverCallableFamilies-") +
+        Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("apply-ApplyConstructorDefaultsCoverCallableFamilies-") +
+        Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(
+          "ApplyConstructorDefaultsCoverCallableFamilies" + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ApplyConstructorDefaultsPreserveResults) {
+  const auto Source = tmpFile("apply-result-boundaries.cpp");
+  const auto Output = tmpFile("apply-result-boundaries.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int live, defaults, drops, parameters, bad, state, result_alive;
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+    ++state;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++parameters;
+  }
+};
+struct Result {
+  int value;
+  Result(int n) noexcept : value(n) { ++result_alive; }
+  ~Result() noexcept {
+    --result_alive;
+    if (live)
+      ++bad;
+  }
+};
+int scalar(Item item) noexcept { return item.value + live * 10; }
+void empty(Item item) noexcept {
+  if (item.value != 3 || live != 1)
+    ++bad;
+}
+int &reference(Item item) noexcept {
+  state = item.value + live * 10;
+  return state;
+}
+int &&rvalue_reference(Item item) noexcept {
+  state = item.value + live * 10;
+  return std::move(state);
+}
+Result record(Item item) noexcept { return Result(item.value + live * 10); }
+int after() noexcept { return live == 0 && result_alive == 1 ? 0 : 1; }
+int main() {
+  Item item(3);
+  auto row = std::tie(item);
+  if (std::apply(scalar, row) != 13 || live || parameters != 1)
+    return 1;
+  if ((std::apply(empty, row), live) || parameters != 2)
+    return 2;
+  std::apply(reference, row) += 7;
+  if (state != 21 || live || parameters != 3)
+    return 3;
+  int &&alias = std::apply(rvalue_reference, row);
+  if (alias != 14 || live || parameters != 4)
+    return 4;
+  alias += 2;
+  if (state != 16)
+    return 5;
+  {
+    auto value = std::apply(record, row);
+    if (value.value != 13 || live || result_alive != 1 || parameters != 5)
+      return 6;
+  }
+  if (result_alive)
+    return 7;
+  if ((std::apply(record, row), after()))
+    return 8;
+  return !bad && !live && !result_alive && defaults == 6 && drops == 6 &&
+                 parameters == 6
+             ? 0
+             : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("ApplyConstructorDefaultsPreserveResults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ApplyConstructorDefaultsPreserveCallerTemporaries) {
+  const auto Source = tmpFile("apply-caller-temporaries.cpp");
+  const auto Output = tmpFile("apply-caller-temporaries.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int outer, outer_drops, live, defaults, drops, parameters, bad;
+struct Outer {
+  Outer() noexcept { ++outer; }
+  ~Outer() noexcept {
+    --outer;
+    ++outer_drops;
+  }
+};
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++defaults;
+    if (outer != 2)
+      ++bad;
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+    if (outer != 2)
+      ++bad;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    if (outer != 2 || live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live) {
+      ++parameters;
+      if (outer != 2)
+        ++bad;
+    }
+  }
+};
+struct Reader {
+  Reader() noexcept { ++outer; }
+  ~Reader() noexcept {
+    --outer;
+    ++outer_drops;
+    if (live)
+      ++bad;
+  }
+  int operator()(Item item) const noexcept {
+    if (outer != 2 || live != 1)
+      ++bad;
+    return item.value + live * 10 + outer * 100;
+  }
+};
+int after() noexcept { return outer == 2 && !live && drops == 1 ? 0 : 1; }
+int main() {
+  Item item(3);
+  int value = 0;
+  int observed =
+      (value = std::apply(Reader{}, (Outer{}, std::tie(item))), after());
+  return !observed && value == 213 && !bad && !outer && !live &&
+                 defaults == 1 && drops == 1 && parameters == 1 &&
+                 outer_drops == 2
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "ApplyConstructorDefaultsPreserveCallerTemporaries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ApplyConstructorDefaultsPreserveSelectedArguments) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"complex-selected-defaults", R"cpp(#include <tuple>
+int guard_live, box_live, boxes_dropped, parameters, evaluations, bad;
+int table[2] = {2, 3};
+int shared = 5;
+int plus(int n) noexcept { return n + 7; }
+int next() noexcept {
+  ++evaluations;
+  return 4;
+}
+struct Guard {
+  Guard() noexcept { ++guard_live; }
+  ~Guard() noexcept { --guard_live; }
+};
+struct Box {
+  int value;
+  Box(int n) noexcept : value(n) { ++box_live; }
+  ~Box() noexcept {
+    --box_live;
+    ++boxes_dropped;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, int extra = next(), const Box &reference = Box(6),
+       Box owned = Box(7), const int (&array)[2] = table, int &alias = shared,
+       int (*callback)(int) = plus, const Guard &guard = Guard{}) noexcept
+      : value(other.value + extra + reference.value + owned.value + array[0] +
+              array[1] + alias + callback(1)) {
+    if (box_live != 2 || guard_live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (guard_live) {
+      ++parameters;
+      if (box_live < 1 || box_live > 2)
+        ++bad;
+    }
+  }
+};
+int consume(Item item) noexcept {
+  if (guard_live != 1 || box_live < 1 || box_live > 2)
+    ++bad;
+  return item.value + guard_live * 10;
+}
+int main() {
+  Item item(3);
+  auto arguments = std::tie(item);
+  int result = std::apply(consume, arguments);
+  return result == 48 && !bad && !guard_live && !box_live &&
+                 boxes_dropped == 2 && parameters == 1 && evaluations == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"template-selected-defaults", R"cpp(#include <tuple>
+#include <utility>
+int live, drops, parameters, bad;
+template <class T> struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+  }
+};
+template <class T> T choose() noexcept { return T(4); }
+template <class T> struct Item {
+  T value;
+  Item(T n) noexcept : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{},
+       T extra = choose<T>()) noexcept
+      : value(other.value + extra) {
+    if (live != 1)
+      ++bad;
+  }
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{},
+       T extra = choose<T>()) noexcept
+      : value(other.value + extra) {
+    if (live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++parameters;
+  }
+};
+int consume(Item<int> item) noexcept { return item.value + live * 10; }
+int main() {
+  Item<int> item(3);
+  auto arguments = std::tie(item);
+  if (std::apply(consume, arguments) != 17 || live || drops != 1 ||
+      parameters != 1)
+    return 1;
+  auto moving = std::forward_as_tuple(std::move(item));
+  if (std::apply(consume, std::move(moving)) != 17 || live || drops != 2 ||
+      parameters != 2)
+    return 2;
+  return !bad ? 0 : 3;
+}
+)cpp"},
+      {"redeclared-selected-defaults", R"cpp(#include <tuple>
+int live, drops, parameters, bad;
+struct Guard {
+  Guard() noexcept { ++live; }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept;
+  ~Item() noexcept {
+    if (live)
+      ++parameters;
+  }
+};
+Item::Item(const Item &other, const Guard &guard) noexcept
+    : value(other.value) {
+  if (live != 1)
+    ++bad;
+}
+int consume(Item item) noexcept { return item.value + live * 10; }
+int main() {
+  Item item(3);
+  auto arguments = std::tie(item);
+  int result = std::apply(consume, arguments);
+  return result == 13 && !bad && !live && drops == 1 && parameters == 1 ? 0 : 1;
+}
+)cpp"},
+      {"generated-owner-selected-defaults", R"cpp(#include <tuple>
+int live, defaults, drops, copies, parameters, bad;
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++defaults;
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &other, const Guard &guard = Guard{}) noexcept
+      : value(other.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+    ++parameters;
+  }
+};
+struct Owner {
+  Item value;
+  Owner(int n) noexcept : value(n) {}
+  Owner(const Owner &) = default;
+};
+int consume(Owner owner) noexcept { return owner.value.value + live * 10; }
+int main() {
+  Owner owner(3);
+  auto arguments = std::tie(owner);
+  int result = std::apply(consume, arguments);
+  return result == 3 && !bad && !live && defaults == 1 && drops == 1 &&
+                 copies == 1 && parameters == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string(
+            "apply-ApplyConstructorDefaultsPreserveSelectedArguments-") +
+        Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string(
+            "apply-ApplyConstructorDefaultsPreserveSelectedArguments-") +
+        Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(
+          "ApplyConstructorDefaultsPreserveSelectedArguments" + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ApplyConstructorDefaultsRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"folded-function-array", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(std::array<Item<int>, 1> &arguments) {
+  (void)std::apply(read, arguments);
+}
+)cpp",
+       "TR0201"},
+      {"folded-object-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(std::tuple<Item<int>> &arguments) {
+  (void)std::apply(Reader{}, arguments);
+}
+)cpp",
+       "TR0201"},
+      {"folded-wrapper-pair", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> first, Item<int> second) {
+  return first.value + second.value;
+}
+void f(std::pair<Item<int> &, Item<int> &> &arguments) {
+  (void)std::apply(std::ref(read), arguments);
+}
+)cpp",
+       "TR0201"},
+      {"folded-member-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = (sizeof(long double), 0)) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  auto arguments = std::tie(reader, item);
+  (void)std::apply(std::mem_fn(&Reader::read), arguments);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-function-array", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(std::array<Item<int>, 1> &arguments) {
+  (void)std::apply(read, arguments);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-object-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(std::tuple<Item<int>> &arguments) {
+  (void)std::apply(Reader{}, arguments);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-wrapper-pair", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> first, Item<int> second) {
+  return first.value + second.value;
+}
+void f(std::pair<Item<int> &, Item<int> &> &arguments) {
+  (void)std::apply(std::ref(read), arguments);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-member-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  Item(
+      Item &&other, int extra = [] { return 0; }()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  auto arguments = std::tie(reader, item);
+  (void)std::apply(std::mem_fn(&Reader::read), arguments);
+}
+)cpp",
+       "TR0201"},
+      {"missing-function-array", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(std::array<Item<int>, 1> &arguments) {
+  (void)std::apply(read, arguments);
+}
+)cpp",
+       "TR0203"},
+      {"missing-object-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(std::tuple<Item<int>> &arguments) {
+  (void)std::apply(Reader{}, arguments);
+}
+)cpp",
+       "TR0203"},
+      {"missing-wrapper-pair", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> first, Item<int> second) {
+  return first.value + second.value;
+}
+void f(std::pair<Item<int> &, Item<int> &> &arguments) {
+  (void)std::apply(std::ref(read), arguments);
+}
+)cpp",
+       "TR0203"},
+      {"missing-member-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  Item(Item &&other, int extra = missing<T>()) noexcept
+      : value(other.value + extra) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  auto arguments = std::tie(reader, item);
+  (void)std::apply(std::mem_fn(&Reader::read), arguments);
+}
+)cpp",
+       "TR0203"},
+      {"destructor-function-array", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> item) { return item.value; }
+void f(std::array<Item<int>, 1> &arguments) {
+  (void)std::apply(read, arguments);
+}
+)cpp",
+       "TR0201"},
+      {"destructor-object-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int operator()(Item<int> item) const { return item.value; }
+};
+void f(std::tuple<Item<int>> &arguments) {
+  (void)std::apply(Reader{}, arguments);
+}
+)cpp",
+       "TR0201"},
+      {"destructor-wrapper-pair", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item<int> first, Item<int> second) {
+  return first.value + second.value;
+}
+void f(std::pair<Item<int> &, Item<int> &> &arguments) {
+  (void)std::apply(std::ref(read), arguments);
+}
+)cpp",
+       "TR0201"},
+      {"destructor-member-tuple", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template <class T> struct Guard {
+  Guard() noexcept {}
+  ~Guard() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  Item(Item &&other, const Guard<T> &guard = Guard<T>{}) noexcept
+      : value(other.value) {}
+  ~Item() noexcept {}
+};
+struct Reader {
+  int read(Item<int> item) const { return item.value; }
+};
+void f(Reader &reader, Item<int> &item) {
+  auto arguments = std::tie(reader, item);
+  (void)std::apply(std::mem_fn(&Reader::read), arguments);
+}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("apply-default-guard-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("apply-default-guard-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply.cpp");
   const auto Output = tmpFile("tuple-apply.nc");
@@ -34035,7 +35142,8 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OwnedTupleWholeCopyRejectsDefaultArgumentEffects) {
+TEST_F(TranslateTest,
+       CoreV2OwnedTupleWholeCopyPreservesDefaultArgumentEffects) {
   const auto Source = tmpFile("owned-tuple-whole-copy-default-argument.cpp");
   const auto Output = tmpFile("owned-tuple-whole-copy-default-argument.nc");
   writeFile(Source, R"cpp(#include <tuple>
@@ -34057,10 +35165,913 @@ int main() {
 )cpp");
   auto Result =
       translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
-  expectCode(Result, "TR0203");
-  expectNoArtifacts(Output);
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("owned-tuple-whole-copy-default-argument" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+TEST_F(TranslateTest, CoreV2OwnedTupleConstructorDefaultsPreserveLifetimes) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"lifetimes", R"cpp(#include <tuple>
+#include <utility>
+int live, calls, drops, copies, moves, bad, events[96], count;
+int outer_live, outer_drops, expected_outer, operands, picks;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++calls;
+    note(1);
+  }
+  ~Guard() noexcept(false) {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct Outer {
+  Outer() noexcept { ++outer_live; }
+  ~Outer() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &v, const Guard & = Guard{}, int = 0) noexcept
+      : value(v.value) {
+    ++copies;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+  }
+  Item(Item &&v, const Guard & = Guard{}, int = 0) noexcept : value(v.value) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+    v.value = -1;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+  }
+};
+Item make(int n, const Outer & = Outer{}) noexcept {
+  ++operands;
+  return Item(n);
+}
+void reset() { calls = drops = copies = moves = count = 0; }
+bool good(int c, int m) {
+  if (copies != c || moves != m || calls != c + m || drops != c + m || live ||
+      bad || count != 3 * (c + m))
+    return false;
+  for (int i = 0; i < count; ++i)
+    if (events[i] != i % 3 + 1)
+      return false;
+  return true;
+}
+using Tuple = std::tuple<Item, Item>;
+Tuple &pick(Tuple &p) noexcept {
+  ++picks;
+  return p;
+}
+Tuple &view(Tuple &p, const Outer &outer = Outer{}) noexcept {
+  ++picks;
+  return p;
+}
+int main() {
+  expected_outer = 2;
+  Tuple p(make(1), make(2));
+  if (!good(0, 2) || operands != 2 || outer_live || outer_drops != 2 ||
+      std::get<0>(p).value != 1 || std::get<1>(p).value != 2)
+    return 1;
+  reset();
+  auto q = std::make_tuple(make(3), make(4));
+  if (!good(0, 2) || operands != 4 || outer_live || outer_drops != 4 ||
+      std::get<0>(q).value != 3 || std::get<1>(q).value != 4)
+    return 2;
+  expected_outer = 0;
+  reset();
+  Tuple c(p);
+  if (!good(2, 0) || std::get<0>(c).value != 1 || std::get<1>(c).value != 2)
+    return 3;
+  reset();
+  Tuple m(std::move(pick(c)));
+  if (!good(0, 2) || picks != 1 || std::get<0>(m).value != 1 ||
+      std::get<1>(m).value != 2 || std::get<0>(c).value != -1 ||
+      std::get<1>(c).value != -1)
+    return 4;
+  reset();
+  const Item fixed(7);
+  Item mutable_item(8);
+  std::tuple<Item, Item &> mixed(fixed, mutable_item);
+  if (!good(1, 0) || std::get<0>(mixed).value != 7)
+    return 5;
+  std::get<1>(mixed).value = 9;
+  return mutable_item.value == 9 ? 0 : 6;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("tuple-construction-lifetimes-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("tuple-construction-lifetimes-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("tuple-construction-lifetimes-") + Case.Name +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
 }
 
+TEST_F(TranslateTest, CoreV2TupleCatConstructorDefaultsPreserveLifetimes) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"tuple-cat-lifetimes", R"cpp(#include <tuple>
+#include <utility>
+int live, calls, drops, copies, moves, bad, events[96], count;
+int outer_live, outer_drops, expected_outer, operands, picks;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++calls;
+    note(1);
+  }
+  ~Guard() noexcept(false) {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct Outer {
+  Outer() noexcept { ++outer_live; }
+  ~Outer() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &v, const Guard & = Guard{}, int = 0) noexcept
+      : value(v.value) {
+    ++copies;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+  }
+  Item(Item &&v, const Guard & = Guard{}, int = 0) noexcept : value(v.value) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+    v.value = -1;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+  }
+};
+Item make(int n, const Outer & = Outer{}) noexcept {
+  ++operands;
+  return Item(n);
+}
+void reset() { calls = drops = copies = moves = count = 0; }
+bool good(int c, int m) {
+  if (copies != c || moves != m || calls != c + m || drops != c + m || live ||
+      bad || count != 3 * (c + m))
+    return false;
+  for (int i = 0; i < count; ++i)
+    if (events[i] != i % 3 + 1)
+      return false;
+  return true;
+}
+using Tuple = std::tuple<Item, Item>;
+Tuple &pick(Tuple &p) noexcept {
+  ++picks;
+  return p;
+}
+Tuple &view(Tuple &p, const Outer &outer = Outer{}) noexcept {
+  ++picks;
+  return p;
+}
+int main() {
+  expected_outer = 2;
+  Tuple p(make(1), make(2));
+  if (!good(0, 2) || outer_live || outer_drops != 2)
+    return 1;
+  expected_outer = 0;
+  reset();
+  Tuple q(p);
+  if (!good(2, 0))
+    return 2;
+  reset();
+  expected_outer = 2;
+  auto result = std::tuple_cat(view(p), std::move(view(q)));
+  return good(2, 2) && picks == 2 && !outer_live && outer_drops == 4 &&
+                 std::get<0>(result).value == 1 &&
+                 std::get<1>(result).value == 2 &&
+                 std::get<2>(result).value == 1 &&
+                 std::get<3>(result).value == 2 && std::get<0>(p).value == 1 &&
+                 std::get<1>(q).value == -1
+             ? 0
+             : 3;
+}
+)cpp"},
+      {"array-cat-defaults", R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+int live, calls, drops, copies, moves, bad, events[96], count;
+int outer_live, outer_drops, expected_outer, operands, picks;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++calls;
+    note(1);
+  }
+  ~Guard() noexcept(false) {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct Outer {
+  Outer() noexcept { ++outer_live; }
+  ~Outer() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &v, const Guard & = Guard{}, int = 0) noexcept
+      : value(v.value) {
+    ++copies;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+  }
+  Item(Item &&v, const Guard & = Guard{}, int = 0) noexcept : value(v.value) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+    v.value = -1;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+  }
+};
+Item make(int n, const Outer & = Outer{}) noexcept {
+  ++operands;
+  return Item(n);
+}
+void reset() { calls = drops = copies = moves = count = 0; }
+bool good(int c, int m) {
+  if (copies != c || moves != m || calls != c + m || drops != c + m || live ||
+      bad || count != 3 * (c + m))
+    return false;
+  for (int i = 0; i < count; ++i)
+    if (events[i] != i % 3 + 1)
+      return false;
+  return true;
+}
+using Tuple = std::tuple<Item, Item>;
+Tuple &pick(Tuple &p) noexcept {
+  ++picks;
+  return p;
+}
+Tuple &view(Tuple &p, const Outer &outer = Outer{}) noexcept {
+  ++picks;
+  return p;
+}
+int main() {
+  std::array<Item, 2> a{{Item(1), Item(2)}};
+  reset();
+  auto copied = std::tuple_cat(a);
+  if (!good(2, 0) || std::get<0>(copied).value != 1 ||
+      std::get<1>(copied).value != 2)
+    return 1;
+  reset();
+  auto moved = std::tuple_cat(std::move(a));
+  return good(0, 2) && std::get<0>(moved).value == 1 &&
+                 std::get<1>(moved).value == 2 && a[0].value == -1 &&
+                 a[1].value == -1
+             ? 0
+             : 2;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("tuple-cat-construction-lifetimes-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("tuple-cat-construction-lifetimes-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("tuple-cat-construction-lifetimes-") + Case.Name +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2OwnedTupleConstructorDefaultsPreserveSelectedArguments) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"copy-fallback", R"cpp(#include <tuple>
+#include <utility>
+int live, calls, drops, copies, bad;
+struct G {
+  G() noexcept {
+    ++live;
+    ++calls;
+  }
+  ~G() noexcept(false) {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &v, const G &g = G{}) noexcept : value(v.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::tuple<Item, Item> p(a, b);
+  copies = calls = drops = 0;
+  std::tuple<Item, Item> q(std::move(p));
+  return !bad && !live && copies == 2 && calls == 2 && drops == 2 &&
+                 std::get<0>(q).value == 1 && std::get<1>(q).value == 2 &&
+                 std::get<0>(p).value == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"generated-elements-focused", R"cpp(#include <tuple>
+#include <utility>
+int live, calls, drops, copies, moves, bad, events[96], count;
+int outer_live, outer_drops, expected_outer, operands, picks;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++calls;
+    note(1);
+  }
+  ~Guard() noexcept(false) {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct Outer {
+  Outer() noexcept { ++outer_live; }
+  ~Outer() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &v, const Guard & = Guard{}, int = 0) noexcept
+      : value(v.value) {
+    ++copies;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+  }
+  Item(Item &&v, const Guard & = Guard{}, int = 0) noexcept : value(v.value) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+    v.value = -1;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+  }
+};
+Item make(int n, const Outer & = Outer{}) noexcept {
+  ++operands;
+  return Item(n);
+}
+void reset() { calls = drops = copies = moves = count = 0; }
+bool good(int c, int m) {
+  if (copies != c || moves != m || calls != c + m || drops != c + m || live ||
+      bad || count != 3 * (c + m))
+    return false;
+  for (int i = 0; i < count; ++i)
+    if (events[i] != i % 3 + 1)
+      return false;
+  return true;
+}
+struct Owner {
+  Item value;
+};
+int main() {
+  Owner a{{1}}, b{{2}};
+  std::tuple<Owner, Owner> p(std::move(a), std::move(b));
+  if (!good(0, 2) || std::get<0>(p).value.value != 1 ||
+      std::get<1>(p).value.value != 2)
+    return 1;
+  reset();
+  std::tuple<Owner, Owner> q(p);
+  return good(2, 0) && std::get<0>(q).value.value == 1 &&
+                 std::get<1>(q).value.value == 2
+             ? 0
+             : 2;
+}
+)cpp"},
+      {"parameter-default-types", R"cpp(#include <tuple>
+#include <utility>
+int numbers[2] = {3, 5}, array_calls, record_calls, calls, live, drops, bad;
+int (&array_source() noexcept)[2] {
+  ++array_calls;
+  return numbers;
+}
+struct G {
+  int value;
+  G(int n = 6) noexcept : value(n) { ++live; }
+  G(const G &g) noexcept : value(g.value) { ++live; }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+G seed(7);
+const G &record_source() noexcept {
+  ++record_calls;
+  return seed;
+}
+int plus(int n) noexcept { return n + 1; }
+using Callback = int (*)(int) noexcept;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&v, int (&a)[2] = array_source(), const G &r = record_source(),
+       G g = seed, Callback f = &plus, const G &t = G{}) noexcept
+      : value(v.value + a[0] + r.value + g.value + f(t.value)) {
+    ++calls;
+    if (live != 3)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::tuple<Item, Item> p(Item(1), Item(2));
+  if (bad || calls != 2 || array_calls != 2 || record_calls != 2 || live != 1 ||
+      drops != 4 || std::get<0>(p).value != 25 || std::get<1>(p).value != 26)
+    return 1;
+  calls = array_calls = record_calls = drops = 0;
+  auto q = std::make_tuple(Item(3), Item(4));
+  return !bad && calls == 2 && array_calls == 2 && record_calls == 2 &&
+                 live == 1 && drops == 4 && std::get<0>(q).value == 27 &&
+                 std::get<1>(q).value == 28
+             ? 0
+             : 2;
+}
+)cpp"},
+      {"redeclared-default", R"cpp(#include <tuple>
+#include <utility>
+int defaults, copies, moves;
+int next() noexcept {
+  ++defaults;
+  return 0;
+}
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &, int = next()) noexcept;
+  Item(Item &&v, int = next()) noexcept : value(v.value) {
+    ++moves;
+    v.value = -1;
+  }
+};
+Item::Item(const Item &v, int) noexcept : value(v.value) { ++copies; }
+int main() {
+  Item a(1), b(2);
+  std::tuple<Item, Item> p(a, b);
+  std::tuple<Item, Item> q(p);
+  auto r = std::make_tuple(Item(3), Item(4));
+  return defaults == 6 && copies == 4 && moves == 2 &&
+                 std::get<1>(q).value == 2 && std::get<0>(r).value == 3
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"class-template-default", R"cpp(#include <tuple>
+#include <utility>
+int calls, live, drops, bad;
+struct G {
+  G() noexcept {
+    ++live;
+    ++calls;
+  }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, const G &g = G{}) noexcept : value(v.value) {
+    if (live != 1)
+      ++bad;
+  }
+  Item(Item &&v, const G &g = G{}) noexcept : value(v.value) {
+    if (live != 1)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::tuple<Item<int>, Item<int>> p(Item<int>(1), Item<int>(2));
+  auto q = std::make_tuple(std::get<0>(p), std::get<1>(p));
+  return !bad && !live && calls == 4 && drops == 4 &&
+                 std::get<0>(q).value == 1 && std::get<1>(q).value == 2
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"potentially-throwing-source-copy", R"cpp(#include <tuple>
+int copies;
+struct R {
+  int n;
+  R(int x) : n(x) {}
+  R(const R &x) : n(x.n) { ++copies; }
+  ~R() {}
+};
+int main() {
+  R r(1);
+  std::tuple<R> a(r);
+  std::tuple<R> b(a);
+  return copies == 2 && std::get<0>(a).n == 1 && std::get<0>(b).n == 1 ? 0 : 1;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("tuple-construction-default-") +
+                                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("tuple-construction-default-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("tuple-construction-default-") + Case.Name +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TupleConstructionEvaluatesCallerArgumentsBeforeMembers) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"argument-boundary", R"cpp(#include <tuple>
+#include <utility>
+int operands, moves, bad;
+int later() noexcept {
+  ++operands;
+  return 7;
+}
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&v) noexcept : value(v.value) {
+    ++moves;
+    if (operands != 1)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::tuple<Item, int> p(Item(1), later());
+  if (bad || operands != 1 || moves != 1 || std::get<0>(p).value != 1 ||
+      std::get<1>(p) != 7)
+    return 1;
+  operands = moves = 0;
+  auto q = std::make_tuple(Item(2), later());
+  return !bad && operands == 1 && moves == 1 && std::get<0>(q).value == 2 &&
+                 std::get<1>(q) == 7
+             ? 0
+             : 2;
+}
+)cpp"},
+      {"aliases-and-values", R"cpp(#include <tuple>
+#include <utility>
+int source = 1, operands, moves, bad;
+int selected() noexcept {
+  source = 9;
+  return 0;
+}
+int later() noexcept {
+  ++operands;
+  return source;
+}
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&v, int = selected()) noexcept : value(v.value) {
+    ++moves;
+    if (operands != 1)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::tuple<Item, int> p(Item(1), later());
+  if (std::get<1>(p) != 1 || bad || moves != 1)
+    return 1;
+  source = 1;
+  operands = moves = 0;
+  auto q = std::make_tuple(Item(2), later());
+  if (std::get<1>(q) != 1 || bad || moves != 1)
+    return 2;
+  source = 1;
+  operands = 1;
+  moves = 0;
+  std::tuple<Item, int> r(Item(3), source);
+  if (std::get<1>(r) != 9 || bad || moves != 1)
+    return 3;
+  source = 1;
+  moves = 0;
+  auto s = std::make_tuple(Item(4), source);
+  return std::get<1>(s) == 9 && !bad && moves == 1 ? 0 : 4;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("tuple-construction-arguments-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("tuple-construction-arguments-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("tuple-construction-arguments-") + Case.Name +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedTupleConstructorDefaultsRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"folded-elements", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { std::tuple<Item<int>, Item<int>> q(a, b); }
+)cpp",
+       "TR0201"},
+      {"folded-whole", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(std::tuple<Item<int>, Item<int>> &p) {
+  std::tuple<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0201"},
+      {"folded-factory", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_tuple(a, b); }
+)cpp",
+       "TR0201"},
+      {"folded-cat", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(std::tuple<Item<int>, Item<int>> &p) { auto q = std::tuple_cat(p); }
+)cpp",
+       "TR0201"},
+      {"lambda-elements", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { std::tuple<Item<int>, Item<int>> q(a, b); }
+)cpp",
+       "TR0201"},
+      {"lambda-whole", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(std::tuple<Item<int>, Item<int>> &p) {
+  std::tuple<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-factory", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_tuple(a, b); }
+)cpp",
+       "TR0201"},
+      {"lambda-cat", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(std::tuple<Item<int>, Item<int>> &p) { auto q = std::tuple_cat(p); }
+)cpp",
+       "TR0201"},
+      {"missing-default-whole", R"cpp(#include <tuple>
+#include <utility>
+int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = missing()) noexcept : value(v.value + n) {}
+  Item(Item &&v, int n = missing()) noexcept : value(v.value + n) {}
+};
+void f(std::tuple<Item<int>, Item<int>> &p) {
+  std::tuple<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0203"},
+      {"missing-default-factory", R"cpp(#include <tuple>
+#include <utility>
+int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = missing()) noexcept : value(v.value + n) {}
+  Item(Item &&v, int n = missing()) noexcept : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_tuple(a, b); }
+)cpp",
+       "TR0203"},
+      {"default-destructor-factory", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct G {
+  G() noexcept {}
+  ~G() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+  Item(Item &&v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_tuple(a, b); }
+)cpp",
+       "TR0201"},
+      {"default-destructor-cat", R"cpp(#include <tuple>
+#include <utility>
+template <class T> struct G {
+  G() noexcept {}
+  ~G() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+  Item(Item &&v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+};
+void f(std::tuple<Item<int>, Item<int>> &p) { auto q = std::tuple_cat(p); }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("owned-tuple-default-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("owned-tuple-default-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
 TEST_F(TranslateTest, CoreV2TupleCatOwnedTupleSourcesCopyMoveAndDestroy) {
   const auto Source = tmpFile("tuple-cat-owned-tuple-sources.cpp");
   const auto Output = tmpFile("tuple-cat-owned-tuple-sources.nc");
@@ -34816,6 +36827,1596 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OwnedPairConstructorDefaultsPreserveLifetimes) {
+  const auto Source = tmpFile("pair-construction-default-lifetimes.cpp");
+  const auto Output = tmpFile("pair-construction-default-lifetimes.nc");
+  writeFile(Source, R"cpp(#include <utility>
+int live, calls, drops, copies, moves, bad, events[96], count;
+int outer_live, outer_drops, expected_outer, operands, picks;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++calls;
+    note(1);
+  }
+  ~Guard() noexcept(false) {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct Outer {
+  Outer() noexcept { ++outer_live; }
+  ~Outer() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &v, const Guard & = Guard{}, int = 0) noexcept
+      : value(v.value) {
+    ++copies;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+  }
+  Item(Item &&v, const Guard & = Guard{}, int = 0) noexcept : value(v.value) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+    v.value = -1;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+  }
+};
+Item make(int n, const Outer & = Outer{}) noexcept {
+  ++operands;
+  return Item(n);
+}
+void reset() { calls = drops = copies = moves = count = 0; }
+bool good(int c, int m) {
+  if (copies != c || moves != m || calls != c + m || drops != c + m || live ||
+      bad || count != 3 * (c + m))
+    return false;
+  for (int i = 0; i < count; ++i)
+    if (events[i] != i % 3 + 1)
+      return false;
+  return true;
+}
+using Pair = std::pair<Item, Item>;
+Pair &pick(Pair &p) noexcept {
+  ++picks;
+  return p;
+}
+int main() {
+  expected_outer = 2;
+  Pair p(make(1), make(2));
+  if (!good(0, 2) || operands != 2 || outer_live || outer_drops != 2 ||
+      p.first.value != 1 || p.second.value != 2)
+    return 1;
+  reset();
+  auto q = std::make_pair(make(3), make(4));
+  if (!good(0, 2) || operands != 4 || outer_live || outer_drops != 4 ||
+      q.first.value != 3 || q.second.value != 4)
+    return 2;
+  expected_outer = 0;
+  reset();
+  Pair c(p);
+  if (!good(2, 0) || c.first.value != 1 || c.second.value != 2)
+    return 3;
+  reset();
+  Pair m(std::move(pick(c)));
+  if (!good(0, 2) || picks != 1 || m.first.value != 1 || m.second.value != 2 ||
+      c.first.value != -1 || c.second.value != -1)
+    return 4;
+  std::pair<Item &, Item &> refs(m.first, m.second);
+  reset();
+  Pair converted(refs);
+  if (!good(2, 0) || converted.first.value != 1 || converted.second.value != 2)
+    return 5;
+  reset();
+  Pair copied_references(std::move(refs));
+  if (!good(2, 0) || m.first.value != 1 || m.second.value != 2 ||
+      copied_references.second.value != 2)
+    return 6;
+  reset();
+  const Item fixed(7);
+  Item mutable_item(8);
+  std::pair<Item, Item &> mixed(fixed, mutable_item);
+  if (!good(1, 0) || mixed.first.value != 7)
+    return 7;
+  mixed.second.value = 9;
+  return mutable_item.value == 9 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pair-construction-default-lifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2OwnedPairConstructorDefaultsPreserveSelectedArguments) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"copy-fallback", R"cpp(#include <utility>
+int live, calls, drops, copies, bad;
+struct G {
+  G() noexcept {
+    ++live;
+    ++calls;
+  }
+  ~G() noexcept(false) {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &v, const G &g = G{}) noexcept : value(v.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::pair<Item, Item> p(a, b);
+  copies = calls = drops = 0;
+  std::pair<Item, Item> q(std::move(p));
+  return !bad && !live && copies == 2 && calls == 2 && drops == 2 &&
+                 q.first.value == 1 && q.second.value == 2 && p.first.value == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"generated-elements-focused", R"cpp(#include <utility>
+int live, calls, drops, copies, moves, bad, events[96], count;
+int outer_live, outer_drops, expected_outer, operands, picks;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++live;
+    ++calls;
+    note(1);
+  }
+  ~Guard() noexcept(false) {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct Outer {
+  Outer() noexcept { ++outer_live; }
+  ~Outer() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(const Item &v, const Guard & = Guard{}, int = 0) noexcept
+      : value(v.value) {
+    ++copies;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+  }
+  Item(Item &&v, const Guard & = Guard{}, int = 0) noexcept : value(v.value) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++bad;
+    v.value = -1;
+  }
+  ~Item() noexcept {
+    if (live)
+      ++bad;
+  }
+};
+Item make(int n, const Outer & = Outer{}) noexcept {
+  ++operands;
+  return Item(n);
+}
+void reset() { calls = drops = copies = moves = count = 0; }
+bool good(int c, int m) {
+  if (copies != c || moves != m || calls != c + m || drops != c + m || live ||
+      bad || count != 3 * (c + m))
+    return false;
+  for (int i = 0; i < count; ++i)
+    if (events[i] != i % 3 + 1)
+      return false;
+  return true;
+}
+struct Owner {
+  Item value;
+};
+int main() {
+  Owner a{{1}}, b{{2}};
+  std::pair<Owner, Owner> p(std::move(a), std::move(b));
+  if (!good(0, 2) || p.first.value.value != 1 || p.second.value.value != 2)
+    return 1;
+  reset();
+  std::pair<Owner, Owner> q(p);
+  return good(2, 0) && q.first.value.value == 1 && q.second.value.value == 2
+             ? 0
+             : 2;
+}
+)cpp"},
+      {"parameter-default-types", R"cpp(#include <utility>
+int numbers[2] = {3, 5}, array_calls, record_calls, calls, live, drops, bad;
+int (&array_source() noexcept)[2] {
+  ++array_calls;
+  return numbers;
+}
+struct G {
+  int value;
+  G(int n = 6) noexcept : value(n) { ++live; }
+  G(const G &g) noexcept : value(g.value) { ++live; }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+G seed(7);
+const G &record_source() noexcept {
+  ++record_calls;
+  return seed;
+}
+int plus(int n) noexcept { return n + 1; }
+using Callback = int (*)(int) noexcept;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&v, int (&a)[2] = array_source(), const G &r = record_source(),
+       G g = seed, Callback f = &plus, const G &t = G{}) noexcept
+      : value(v.value + a[0] + r.value + g.value + f(t.value)) {
+    ++calls;
+    if (live != 3)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::pair<Item, Item> p(Item(1), Item(2));
+  if (bad || calls != 2 || array_calls != 2 || record_calls != 2 || live != 1 ||
+      drops != 4 || p.first.value != 25 || p.second.value != 26)
+    return 1;
+  calls = array_calls = record_calls = drops = 0;
+  auto q = std::make_pair(Item(3), Item(4));
+  return !bad && calls == 2 && array_calls == 2 && record_calls == 2 &&
+                 live == 1 && drops == 4 && q.first.value == 27 &&
+                 q.second.value == 28
+             ? 0
+             : 2;
+}
+)cpp"},
+      {"redeclared-default", R"cpp(#include <utility>
+int defaults, copies, moves;
+int next() noexcept {
+  ++defaults;
+  return 0;
+}
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &, int = next()) noexcept;
+  Item(Item &&v, int = next()) noexcept : value(v.value) {
+    ++moves;
+    v.value = -1;
+  }
+};
+Item::Item(const Item &v, int) noexcept : value(v.value) { ++copies; }
+int main() {
+  Item a(1), b(2);
+  std::pair<Item, Item> p(a, b);
+  std::pair<Item, Item> q(p);
+  auto r = std::make_pair(Item(3), Item(4));
+  return defaults == 6 && copies == 4 && moves == 2 && q.second.value == 2 &&
+                 r.first.value == 3
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"class-template-default", R"cpp(#include <utility>
+int calls, live, drops, bad;
+struct G {
+  G() noexcept {
+    ++live;
+    ++calls;
+  }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, const G &g = G{}) noexcept : value(v.value) {
+    if (live != 1)
+      ++bad;
+  }
+  Item(Item &&v, const G &g = G{}) noexcept : value(v.value) {
+    if (live != 1)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::pair<Item<int>, Item<int>> p(Item<int>(1), Item<int>(2));
+  auto q = std::make_pair(p.first, p.second);
+  return !bad && !live && calls == 4 && drops == 4 && q.first.value == 1 &&
+                 q.second.value == 2
+             ? 0
+             : 1;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("pair-construction-default-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pair-construction-default-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(
+          std::string("pair-construction-default-") + Case.Name + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2PairConstructionEvaluatesCallerArgumentsBeforeMembers) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"argument-boundary", R"cpp(#include <utility>
+int operands, moves, bad;
+int later() noexcept {
+  ++operands;
+  return 7;
+}
+struct Item {
+  int value;
+  Item(int n) noexcept : value(n) {}
+  Item(Item &&v) noexcept : value(v.value) {
+    ++moves;
+    if (operands != 1)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::pair<Item, int> p(Item(1), later());
+  if (bad || operands != 1 || moves != 1 || p.first.value != 1 || p.second != 7)
+    return 1;
+  operands = moves = 0;
+  auto q = std::make_pair(Item(2), later());
+  return !bad && operands == 1 && moves == 1 && q.first.value == 2 &&
+                 q.second == 7
+             ? 0
+             : 2;
+}
+)cpp"},
+      {"aliases-and-values", R"cpp(#include <utility>
+int source = 1, operands, moves, bad;
+int selected() noexcept {
+  source = 9;
+  return 0;
+}
+int later() noexcept {
+  ++operands;
+  return source;
+}
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&v, int = selected()) noexcept : value(v.value) {
+    ++moves;
+    if (operands != 1)
+      ++bad;
+    v.value = -1;
+  }
+};
+int main() {
+  std::pair<Item, int> p(Item(1), later());
+  if (p.second != 1 || bad || moves != 1)
+    return 1;
+  source = 1;
+  operands = moves = 0;
+  auto q = std::make_pair(Item(2), later());
+  if (q.second != 1 || bad || moves != 1)
+    return 2;
+  source = 1;
+  operands = 1;
+  moves = 0;
+  std::pair<Item, int> r(Item(3), source);
+  if (r.second != 9 || bad || moves != 1)
+    return 3;
+  source = 1;
+  moves = 0;
+  auto s = std::make_pair(Item(4), source);
+  return s.second == 9 && !bad && moves == 1 ? 0 : 4;
+}
+)cpp"},
+      {"decayed-array", R"cpp(#include <utility>
+int main() {
+  auto p = std::make_pair("abc", 3);
+  return p.first[1] == 'b' && p.second == 3 ? 0 : 1;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-construction-arguments-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-construction-arguments-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("pair-construction-arguments-") + Case.Name +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedPairConstructorDefaultsRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"folded-elements", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { std::pair<Item<int>, Item<int>> q(a, b); }
+)cpp",
+       "TR0201"},
+      {"folded-whole", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(std::pair<Item<int>, Item<int>> &p) {
+  std::pair<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0201"},
+      {"folded-converting", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(std::pair<Item<int> &, Item<int> &> &p) {
+  std::pair<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0201"},
+      {"folded-factory", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = (sizeof(long double), 0)) noexcept
+      : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_pair(a, b); }
+)cpp",
+       "TR0201"},
+      {"lambda-elements", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { std::pair<Item<int>, Item<int>> q(a, b); }
+)cpp",
+       "TR0201"},
+      {"lambda-whole", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(std::pair<Item<int>, Item<int>> &p) {
+  std::pair<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-converting", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(std::pair<Item<int> &, Item<int> &> &p) {
+  std::pair<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-factory", R"cpp(#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(
+      const Item &v, int n = []() { return 0; }()) noexcept
+      : value(v.value + n) {}
+  Item(Item &&v, int n = []() { return 0; }()) noexcept : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_pair(a, b); }
+)cpp",
+       "TR0201"},
+      {"missing-default-whole", R"cpp(#include <utility>
+int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = missing()) noexcept : value(v.value + n) {}
+  Item(Item &&v, int n = missing()) noexcept : value(v.value + n) {}
+};
+void f(std::pair<Item<int>, Item<int>> &p) {
+  std::pair<Item<int>, Item<int>> q(p);
+}
+)cpp",
+       "TR0203"},
+      {"missing-default-factory", R"cpp(#include <utility>
+int missing() noexcept;
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, int n = missing()) noexcept : value(v.value + n) {}
+  Item(Item &&v, int n = missing()) noexcept : value(v.value + n) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_pair(a, b); }
+)cpp",
+       "TR0203"},
+      {"default-destructor-elements", R"cpp(#include <utility>
+template <class T> struct G {
+  G() noexcept {}
+  ~G() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+  Item(Item &&v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+};
+void f(Item<int> &a, Item<int> &b) { std::pair<Item<int>, Item<int>> q(a, b); }
+)cpp",
+       "TR0201"},
+      {"default-destructor-factory", R"cpp(#include <utility>
+template <class T> struct G {
+  G() noexcept {}
+  ~G() noexcept { (void)sizeof(long double); }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(const Item &v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+  Item(Item &&v, const G<T> &g = G<T>{}) noexcept : value(v.value) {}
+};
+void f(Item<int> &a, Item<int> &b) { auto q = std::make_pair(a, b); }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("owned-pair-default-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("owned-pair-default-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+TEST_F(TranslateTest, CoreV2OwnedSwapConstructorDefaultsPreserveLifetimes) {
+  const auto Source = tmpFile("owned-swap-constructor-defaults.cpp");
+  const auto Output = tmpFile("owned-swap-constructor-defaults.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+int events[256], count;
+int defaults, live, drops, moves, assignments, destructions, scalar_defaults;
+int failures, operands, outer_live, outer_drops, expected_outer;
+void note(int n) { events[count++] = n; }
+struct Guard {
+  Guard() noexcept {
+    ++defaults;
+    ++live;
+    note(1);
+  }
+  ~Guard() noexcept {
+    --live;
+    ++drops;
+    note(3);
+  }
+};
+struct OuterGuard {
+  OuterGuard() noexcept { ++outer_live; }
+  ~OuterGuard() noexcept {
+    --outer_live;
+    ++outer_drops;
+  }
+};
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item &other) noexcept : value(other.value) {}
+  Item(Item &&other, const Guard &guard = Guard{},
+       int n = (++scalar_defaults, 0)) noexcept
+      : value(other.value + n) {
+    ++moves;
+    note(2);
+    if (live != 1 || outer_live != expected_outer)
+      ++failures;
+    other.value = -7;
+  }
+  Item &operator=(Item &&other) noexcept {
+    ++assignments;
+    note(4);
+    if (live || outer_live != expected_outer)
+      ++failures;
+    value = other.value;
+    other.value = -7;
+    return *this;
+  }
+  ~Item() noexcept {
+    ++destructions;
+    note(5);
+  }
+};
+void reset() {
+  count = defaults = drops = moves = assignments = destructions =
+      scalar_defaults = 0;
+  if (live || outer_live)
+    ++failures;
+}
+bool checked(int n) {
+  if (failures || live || outer_live || defaults != n || drops != n ||
+      moves != n || assignments != 2 * n || destructions != n ||
+      scalar_defaults != n || count != 6 * n)
+    return false;
+  const int expected[6] = {1, 2, 3, 4, 4, 5};
+  for (int i = 0; i < count; ++i)
+    if (events[i] != expected[i % 6])
+      return false;
+  return true;
+}
+Item &select(Item &value, const OuterGuard &guard = OuterGuard{}) noexcept {
+  ++operands;
+  return value;
+}
+int reference_defaults, array_defaults, record_defaults, parameter_drops;
+int shared, numbers[2] = {3, 9}, base = 6;
+struct Seed {
+  int value;
+};
+struct Parameter {
+  int value;
+  explicit Parameter(int n) noexcept : value(n) {}
+  ~Parameter() noexcept { ++parameter_drops; }
+};
+int &shared_source() noexcept {
+  ++reference_defaults;
+  return shared;
+}
+int (&array_source() noexcept)[2] {
+  ++array_defaults;
+  return numbers;
+}
+Seed seed_source() noexcept {
+  ++record_defaults;
+  return Seed{4};
+}
+int increment(int n) noexcept { return n + 1; }
+using Callback = int (*)(int) noexcept;
+struct Multi {
+  int value;
+  explicit Multi(int n) noexcept : value(n) {}
+  Multi(Multi &&other, int &counter = shared_source(),
+        int (&row)[2] = array_source(), Seed seed = seed_source(),
+        Parameter parameter = Parameter(7), const Seed &reference = Seed{5},
+        Callback callback = increment, int *pointer = &base) noexcept
+      : value(other.value + row[0] + seed.value + parameter.value +
+              reference.value + callback(1) + *pointer) {
+    ++counter;
+    ++row[0];
+    other.value = -1;
+  }
+  Multi &operator=(Multi &&other) noexcept {
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+};
+int template_defaults;
+template <class T> struct Box {
+  T value;
+  explicit Box(T n) noexcept : value(n) {}
+  Box(Box &&other, T n = (++template_defaults, T{3})) noexcept
+      : value(other.value + n) {
+    other.value = -1;
+  }
+  Box &operator=(Box &&other) noexcept {
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+};
+int redeclared_defaults;
+struct Redeclared {
+  int value;
+  explicit Redeclared(int n) noexcept : value(n) {}
+  Redeclared(Redeclared &&other, int n = (++redeclared_defaults, 4)) noexcept;
+  Redeclared &operator=(Redeclared &&other) noexcept {
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+};
+Redeclared::Redeclared(Redeclared &&other, int n) noexcept
+    : value(other.value + n) {
+  other.value = -1;
+}
+int main() {
+  Item a(1), b(2);
+  reset();
+  std::swap(a, b);
+  if (!checked(1) || a.value != 2 || b.value != 1)
+    return 1;
+  reset();
+  std::swap(a, a);
+  if (!checked(1) || a.value != 2)
+    return 2;
+  reset();
+  expected_outer = 2;
+  std::swap(select(a), select(b));
+  expected_outer = 0;
+  if (!checked(1) || operands != 2 || outer_drops != 2 || a.value != 1 ||
+      b.value != 2)
+    return 3;
+  Item x[2][2] = {{Item(1), Item(2)}, {Item(3), Item(4)}};
+  Item y[2][2] = {{Item(5), Item(6)}, {Item(7), Item(8)}};
+  reset();
+  std::swap(x, y);
+  if (!checked(4) || x[1][1].value != 8 || y[0][0].value != 1)
+    return 4;
+  std::array<Item, 2> left{{Item(9), Item(10)}}, right{{Item(11), Item(12)}};
+  reset();
+  static_assert(noexcept(left.swap(right)) && noexcept(std::swap(left, right)));
+  left.swap(right);
+  if (!checked(2) || left[0].value != 11 || right[1].value != 10)
+    return 5;
+  reset();
+  std::swap(left, right);
+  if (!checked(2) || left[0].value != 9 || right[1].value != 12)
+    return 6;
+  Item p0(13), p1(14), q0(15), q1(16);
+  std::pair<Item, Item> first(p0, p1), second(q0, q1);
+  reset();
+  first.swap(second);
+  if (!checked(2) || first.first.value != 15 || second.second.value != 14)
+    return 7;
+  reset();
+  std::swap(first, second);
+  if (!checked(2) || first.first.value != 13 || second.second.value != 16)
+    return 8;
+  std::pair<Item &, Item &> p(a, b), q(x[0][0], x[0][1]);
+  reset();
+  std::swap(p, q);
+  if (!checked(2) || &p.first != &a || &q.first != &x[0][0] || a.value != 5 ||
+      x[0][0].value != 1)
+    return 9;
+  std::array<Item, 0> empty_left{}, empty_right{};
+  reset();
+  empty_left.swap(empty_right);
+  std::swap(empty_left, empty_right);
+  if (!checked(0))
+    return 10;
+  Multi m(2), n(4);
+  std::swap(m, n);
+  if (m.value != 4 || n.value != 29 || reference_defaults != 1 ||
+      array_defaults != 1 || record_defaults != 1 || parameter_drops != 1 ||
+      shared != 1 || numbers[0] != 4)
+    return 11;
+  Box<int> c(2), d(4);
+  std::swap(c, d);
+  if (c.value != 4 || d.value != 5 || template_defaults != 1)
+    return 12;
+  Redeclared r(6), s(7);
+  (std::swap<Redeclared>)(r, s);
+  if (r.value != 7 || s.value != 10 || redeclared_defaults != 1)
+    return 13;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("owned-swap-constructor-defaults" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2OwnedSwapConstructorDefaultsPreserveSelectedArguments) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"copy-fallback-array-lifetimes", R"cpp(#include <array>
+#include <utility>
+int calls, live, drops, copies, assigns, bad;
+struct G {
+  G() noexcept {
+    ++calls;
+    ++live;
+  }
+  ~G() noexcept(false) {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &t, const G &g = G{}) noexcept : value(t.value) {
+    ++copies;
+    if (live != 1)
+      ++bad;
+  }
+  Item &operator=(const Item &t) noexcept {
+    ++assigns;
+    if (live)
+      ++bad;
+    value = t.value;
+    return *this;
+  }
+};
+void reset() { calls = drops = copies = assigns = 0; }
+bool good() {
+  return calls == 2 && live == 0 && drops == 2 && copies == 2 && assigns == 4 &&
+         bad == 0;
+}
+int main() {
+  Item s(9), t(10);
+  std::swap(s, t);
+  std::swap(s, t);
+  if (!good() || s.value != 9 || t.value != 10)
+    return 4;
+  reset();
+  Item a[2] = {Item(1), Item(2)}, b[2] = {Item(3), Item(4)};
+  std::swap(a, b);
+  if (!good() || a[0].value != 3 || b[1].value != 2)
+    return 1;
+  std::array<Item, 2> x{{Item(5), Item(6)}}, y{{Item(7), Item(8)}};
+  reset();
+  static_assert(!noexcept(x.swap(y)) && !noexcept(std::swap(x, y)));
+  std::swap(x, y);
+  if (!good() || x[0].value != 7 || y[1].value != 6)
+    return 2;
+  std::pair<Item &, Item &> p(a[0], a[1]), q(b[0], b[1]);
+  reset();
+  p.swap(q);
+  if (!good() || a[0].value != 1 || b[1].value != 4)
+    return 3;
+  reset();
+  std::swap(p, q);
+  return good() && a[0].value == 3 && b[1].value == 2 ? 0 : 5;
+}
+)cpp"},
+      {"generated-destructor-default", R"cpp(#include <array>
+#include <utility>
+int calls, live, drops, moves, assigns, destructions, bad;
+struct G {
+  G() noexcept {
+    ++calls;
+    ++live;
+  }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Inner {
+  int value;
+  Inner(int n) noexcept : value(n) {}
+  Inner(Inner &&v, const G &g = G{}) noexcept : value(v.value) {
+    ++moves;
+    if (live != 1)
+      ++bad;
+    v.value = -1;
+  }
+  Inner &operator=(Inner &&v) noexcept {
+    ++assigns;
+    if (live)
+      ++bad;
+    value = v.value;
+    v.value = -1;
+    return *this;
+  }
+  ~Inner() noexcept {
+    ++destructions;
+    if (live)
+      ++bad;
+  }
+};
+struct Owner {
+  Inner value;
+};
+Owner a{{1}}, b{{2}};
+int main() {
+  std::swap(a, b);
+  if (a.value.value != 2 || b.value.value != 1 || moves != 1 || assigns != 2 ||
+      destructions != 1 || calls != 1 || drops != 1 || live || bad)
+    return 1;
+  return 0;
+}
+)cpp"},
+      {"generated-element-default", R"cpp(#include <utility>
+int live, drops, moves, assigns, bad;
+struct G {
+  G() noexcept { ++live; }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+struct Inner {
+  int value;
+  Inner(int n) : value(n) {}
+  Inner(Inner &&t, const G &g = G{}) noexcept : value(t.value) {
+    ++moves;
+    if (live != 1)
+      ++bad;
+    t.value = -1;
+  }
+  Inner &operator=(Inner &&t) noexcept {
+    ++assigns;
+    if (live)
+      ++bad;
+    value = t.value;
+    t.value = -1;
+    return *this;
+  }
+};
+struct Owner {
+  Inner value;
+};
+int main() {
+  Owner a{Inner(1)}, b{Inner(2)};
+  std::swap(a, b);
+  return a.value.value == 2 && b.value.value == 1 && live == 0 && drops == 1 &&
+                 moves == 1 && assigns == 2 && bad == 0
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"assignment-fallback-array", R"cpp(#include <utility>
+int defaults, moves, assigns;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int = (++defaults, 0)) noexcept : value(t.value) { ++moves; }
+  Item &operator=(const Item &t) noexcept {
+    ++assigns;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  Item a[2] = {Item(1), Item(2)}, b[2] = {Item(3), Item(4)};
+  std::swap(a, b);
+  return a[0].value == 3 && b[1].value == 2 && defaults == 2 && moves == 2 &&
+                 assigns == 4
+             ? 0
+             : 1;
+}
+)cpp"},
+
+      {"array-only-default", R"cpp(#include <array>
+#include <utility>
+int calls;
+int numbers[2] = {3, 5};
+int (&source() noexcept)[2] {
+  ++calls;
+  return numbers;
+}
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int (&a)[2] = source()) noexcept : value(t.value + a[0]) {
+    ++a[0];
+    t.value = -1;
+  }
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    t.value = -1;
+    return *this;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::swap(a, b);
+  return a.value == 2 && b.value == 4 && calls == 1 && numbers[0] == 4 ? 0 : 1;
+}
+)cpp"},
+      {"const-default-temporary", R"cpp(#include <array>
+#include <utility>
+int live, drops, calls, bad;
+struct G {
+  int value;
+  G(int n) noexcept : value(n) { ++live; }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(Item &&t, const G &g = G(4)) noexcept : value(t.value + g.value) {
+    ++calls;
+    if (live != 1)
+      ++bad;
+  }
+  Item &operator=(Item &&t) noexcept {
+    if (live)
+      ++bad;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  Item<int> a(1), b(2);
+  std::swap(a, b);
+  return a.value == 2 && b.value == 5 && live == 0 && drops == 1 &&
+                 calls == 1 && bad == 0
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"by-value-nontrivial-default", R"cpp(#include <array>
+#include <utility>
+int live, drops, copies, bad;
+struct G {
+  int value;
+  G(int n) noexcept : value(n) { ++live; }
+  G(const G &g) noexcept : value(g.value) {
+    ++live;
+    ++copies;
+  }
+  ~G() noexcept {
+    --live;
+    ++drops;
+  }
+};
+G seed(4);
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, G g = seed) noexcept : value(t.value + g.value) {
+    if (live != 2)
+      ++bad;
+  }
+  Item &operator=(Item &&t) noexcept {
+    if (live != 1)
+      ++bad;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::swap(a, b);
+  return a.value == 2 && b.value == 5 && live == 1 && drops == 1 &&
+                 copies == 1 && bad == 0
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"alias-mutating-default", R"cpp(#include <array>
+#include <utility>
+struct Item;
+Item *current;
+int alter() noexcept;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int = alter()) noexcept : value(t.value) { t.value = -1; }
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    t.value = -1;
+    return *this;
+  }
+};
+int alter() noexcept {
+  current->value = 9;
+  return 0;
+}
+int main() {
+  Item a(1), b(2);
+  current = &a;
+  std::swap(a, b);
+  return a.value == 2 && b.value == 9 ? 0 : 1;
+}
+)cpp"},
+      {"pair-independent-defaults", R"cpp(#include <array>
+#include <utility>
+int first, second;
+struct A {
+  int value;
+  A(int n) : value(n) {}
+  A(A &&a, int = (++first, 0)) noexcept : value(a.value) {}
+  A &operator=(A &&a) noexcept {
+    value = a.value;
+    return *this;
+  }
+};
+struct B {
+  int value;
+  B(int n) : value(n) {}
+  B(B &&b, int = (++second, 0)) noexcept : value(b.value) {}
+  B &operator=(B &&b) noexcept {
+    value = b.value;
+    return *this;
+  }
+};
+int main() {
+  A a(1), b(2);
+  B c(3), d(4);
+  std::pair<A &, B &> p(a, c), q(b, d);
+  p.swap(q);
+  return a.value == 2 && b.value == 1 && c.value == 4 && d.value == 3 &&
+                 first == 1 && second == 1
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"copy-fallback", R"cpp(#include <array>
+#include <utility>
+int defaults, copies, assigns;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &t, int = (++defaults, 0)) noexcept : value(t.value) {
+    ++copies;
+  }
+  Item &operator=(const Item &t) noexcept {
+    ++assigns;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::swap(a, b);
+  return a.value == 2 && b.value == 1 && defaults == 1 && copies == 1 &&
+                 assigns == 2
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"const-move", R"cpp(#include <array>
+#include <utility>
+int defaults, moves, assigns;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item &&t, int = (++defaults, 0)) noexcept : value(t.value) {
+    ++moves;
+  }
+  Item &operator=(const Item &&t) noexcept {
+    ++assigns;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::swap(a, b);
+  return a.value == 2 && b.value == 1 && defaults == 1 && moves == 1 &&
+                 assigns == 2
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"move-copy-assignment", R"cpp(#include <array>
+#include <utility>
+int defaults, moves, assigns;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int = (++defaults, 0)) noexcept : value(t.value) { ++moves; }
+  Item &operator=(const Item &t) noexcept {
+    ++assigns;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::swap(a, b);
+  return a.value == 2 && b.value == 1 && defaults == 1 && moves == 1 &&
+                 assigns == 2
+             ? 0
+             : 1;
+}
+)cpp"},
+      {"throwing-default-signature", R"cpp(#include <array>
+int calls, live, drops, bad;
+struct G {
+  G() noexcept(false) {
+    ++calls;
+    ++live;
+  }
+  ~G() noexcept(false) {
+    --live;
+    ++drops;
+  }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, const G &g = G{}) noexcept : value(t.value) {
+    if (live != 1)
+      ++bad;
+  }
+  Item &operator=(Item &&t) noexcept {
+    if (live)
+      ++bad;
+    value = t.value;
+    return *this;
+  }
+};
+int main() {
+  std::array<Item, 2> a{{Item(1), Item(2)}}, b{{Item(3), Item(4)}};
+  static_assert(!noexcept(a.swap(b)) && !noexcept(std::swap(a, b)));
+  a.swap(b);
+  return a[0].value == 3 && b[1].value == 2 && calls == 2 && live == 0 &&
+                 drops == 2 && bad == 0
+             ? 0
+             : 1;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("owned-swap-default-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("owned-swap-default-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(std::string("owned-swap-default-") +
+                                      Case.Name + Optimization);
+      auto Compile =
+          compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedSwapConstructorDefaultsRequireSource) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"throwing-default-body", R"cpp(#include <utility>
+int selected() { throw 1; }
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&v, int n = selected()) noexcept : value(v.value + n) {}
+  Item &operator=(Item &&v) noexcept {
+    value = v.value;
+    return *this;
+  }
+};
+int main() {
+  Item a(1), b(2);
+  std::swap(a, b);
+  return 0;
+}
+)cpp",
+       "TR0201"},
+      {"folded-default-direct", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = (sizeof(long double), 0)) noexcept
+      : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) { std::swap(a, b); }
+)cpp",
+       "TR0201"},
+      {"folded-default-native-array", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = (sizeof(long double), 0)) noexcept
+      : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) {
+  Item x[1] = {Item(1)}, y[1] = {Item(2)};
+  std::swap(x, y);
+}
+)cpp",
+       "TR0201"},
+      {"folded-default-array", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = (sizeof(long double), 0)) noexcept
+      : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) {
+  std::array<Item, 1> x{{Item(1)}}, y{{Item(2)}};
+  x.swap(y);
+}
+)cpp",
+       "TR0201"},
+      {"folded-default-pair", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = (sizeof(long double), 0)) noexcept
+      : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) {
+  std::pair<Item &, int> x(a, 1), y(b, 2);
+  std::swap(x, y);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-default-direct", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = []() { return 0; }()) noexcept : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) { std::swap(a, b); }
+)cpp",
+       "TR0201"},
+      {"lambda-default-native-array", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = []() { return 0; }()) noexcept : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) {
+  Item x[1] = {Item(1)}, y[1] = {Item(2)};
+  std::swap(x, y);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-default-array", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = []() { return 0; }()) noexcept : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) {
+  std::array<Item, 1> x{{Item(1)}}, y{{Item(2)}};
+  x.swap(y);
+}
+)cpp",
+       "TR0201"},
+      {"lambda-default-pair", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = []() { return 0; }()) noexcept : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) {
+  std::pair<Item &, int> x(a, 1), y(b, 2);
+  std::swap(x, y);
+}
+)cpp",
+       "TR0201"},
+      {"template-folded-default", R"cpp(#include <array>
+#include <utility>
+template <class T> struct Item {
+  T value;
+  Item(T n) : value(n) {}
+  Item(Item &&t, T n = (sizeof(long double), 0)) noexcept
+      : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item<int> &a, Item<int> &b) { std::swap(a, b); }
+)cpp",
+       "TR0201"},
+      {"default-call-definition", R"cpp(#include <array>
+#include <utility>
+int missing() noexcept;
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = missing()) noexcept : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) { std::swap(a, b); }
+)cpp",
+       "TR0203"},
+      {"default-destructor-body", R"cpp(#include <array>
+#include <utility>
+template <class T> struct G {
+  G() noexcept {}
+  ~G() noexcept { (void)sizeof(long double); }
+};
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, const G<int> &g = G<int>{}) noexcept : value(t.value) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+void f(Item &a, Item &b) { std::swap(a, b); }
+)cpp",
+       "TR0201"},
+      {"source-swap-specialization", R"cpp(#include <array>
+#include <utility>
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(Item &&t, int n = 0) noexcept : value(t.value + n) {}
+  Item &operator=(Item &&t) noexcept {
+    value = t.value;
+    return *this;
+  }
+};
+namespace std {
+template <> void swap<Item>(Item &, Item &) noexcept {}
+} // namespace std
+void f(Item &a, Item &b) { std::swap(a, b); }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("owned-swap-default-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("owned-swap-default-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
 TEST_F(TranslateTest, CoreV2OwnedArrayAndScalarSwapCallsSelectedOperations) {
   const auto Source = tmpFile("owned-array-swap.cpp");
   const auto Output = tmpFile("owned-array-swap.nc");
@@ -36108,11 +39709,6 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
   };
   const Rejection Cases[] = {
       {"quoted", "#include \"tuple\"\nint main(){return 0;}", "TR0201"},
-      {"nontrivial-whole-copy",
-       "#include <tuple>\nstruct R{int n;R(int x):n(x){}"
-       "R(const R&x):n(x.n){}~R(){}};int main(){R r(1);"
-       "std::tuple<R>a(r);std::tuple<R>b(a);return std::get<0>(b).n;}",
-       "TR0203"},
       {"empty-record",
        "#include <tuple>\nstruct E{};int main(){std::tuple<E>v{E{}};"
        "return sizeof(v);}",

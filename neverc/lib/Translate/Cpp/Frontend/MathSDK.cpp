@@ -2908,6 +2908,26 @@ static bool utilityPairSourceOwnedValue(const State &S, const SourceManager &SM,
          utilityArrayStorableValue(S, SM, Context, Type);
 }
 
+static bool utilitySelectedSourceConstructorArguments(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  if (!Constructor || !Construction->getNumArgs() ||
+      Construction->getNumArgs() != Constructor->getNumParams())
+    return false;
+  // The owning SDK body proves the explicit source operand independently.
+  // Retain every omitted parameter's actual, per-use Sema expression.
+  for (unsigned I = 1; I < Construction->getNumArgs(); ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Construction->getArg(I));
+    if (!Default || Default->getParam() != Constructor->getParamDecl(I) ||
+        !S.owns(SM, Default->getParam()->getLocation()) ||
+        !selectedDefaultArgument(Default, Context))
+      return false;
+  }
+  return true;
+}
+
 bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
                                  const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -3142,13 +3162,14 @@ approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
       }
     const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
     const auto *Source =
-        Copy && Copy->getNumArgs() == 1 ? Copy->getArg(0) : nullptr;
-    const auto Parameter = Selected && Selected->getNumParams() == 1
+        Copy && Copy->getNumArgs() != 0 ? Copy->getArg(0) : nullptr;
+    const auto Parameter = Selected && Selected->getNumParams() != 0
                                ? Selected->getParamDecl(0)->getType()
                                : QualType();
     const auto *Direct =
         Source ? dyn_cast<DeclRefExpr>(Source->IgnoreParenImpCasts()) : nullptr;
     if (!Selected || !Source || Parameter.isNull() ||
+        !utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
         !Parameter->isReferenceType() || !Selected->isCopyOrMoveConstructor() ||
         !supportedConstructor(Selected) ||
         (!Selected->isTrivial() && !Selected->hasBody()) ||
@@ -3239,11 +3260,11 @@ approvedUtilityPairSelectedWholeCopies(const State &S, const SourceManager &SM,
         functionalInvokeStrippedExpression(Initializers[I]->getInit()));
     const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
     const auto *Source =
-        Copy && Copy->getNumArgs() == 1
+        Copy && Copy->getNumArgs() != 0
             ? dyn_cast_or_null<MemberExpr>(
                   functionalInvokeStrippedExpression(Copy->getArg(0)))
             : nullptr;
-    const auto *SelectedParameter = Selected && Selected->getNumParams() == 1
+    const auto *SelectedParameter = Selected && Selected->getNumParams() != 0
                                         ? Selected->getParamDecl(0)
                                         : nullptr;
     const auto SelectedType =
@@ -3259,6 +3280,7 @@ approvedUtilityPairSelectedWholeCopies(const State &S, const SourceManager &SM,
     }
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Base);
     if (!Copy || !Selected || !Source || !SelectedParameter ||
+        !utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
         SelectedType.isNull() || !SelectedType->isReferenceType() ||
         !Selected->isCopyOrMoveConstructor() ||
         !supportedConstructor(Selected) ||
@@ -3269,7 +3291,9 @@ approvedUtilityPairSelectedWholeCopies(const State &S, const SourceManager &SM,
         !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
         !Context.hasSameUnqualifiedType(Source->getType(), Element) ||
         !Context.hasSameType(SelectedType->getPointeeType(),
-                             Source->getType()) ||
+                             Copy->getArg(0)->getType()) ||
+        !Copy->getArg(0)->getType().isAtLeastAsQualifiedAs(Source->getType(),
+                                                        Context) ||
         Source->getMemberDecl() != Fields[I] || Source->isArrow() ||
         Source->isXValue() != Move || !Reference ||
         Reference->getDecl() != SourceParameter)
@@ -3340,13 +3364,13 @@ approvedUtilityPairSelectedConvertingCopies(
     const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
         functionalInvokeStrippedExpression(Initializers[I]->getInit()));
     const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
-    const auto *SelectedParameter = Selected && Selected->getNumParams() == 1
+    const auto *SelectedParameter = Selected && Selected->getNumParams() != 0
                                         ? Selected->getParamDecl(0)
                                         : nullptr;
     const auto SelectedType =
         SelectedParameter ? SelectedParameter->getType() : QualType();
     const auto *Argument =
-        Copy && Copy->getNumArgs() == 1 ? Copy->getArg(0) : nullptr;
+        Copy && Copy->getNumArgs() != 0 ? Copy->getArg(0) : nullptr;
     const Expr *Source = functionalInvokeStrippedExpression(Argument);
     const auto *Forward = dyn_cast_or_null<CallExpr>(Source);
     if (Forward) {
@@ -3376,6 +3400,7 @@ approvedUtilityPairSelectedConvertingCopies(
     const bool SourceLValue = !Parameter->isRValueReferenceType() ||
                               SourceType->isLValueReferenceType();
     if (!Copy || !Selected || !SelectedParameter || SelectedType.isNull() ||
+        !utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
         !SelectedType->isReferenceType() ||
         !Selected->isCopyOrMoveConstructor() ||
         !supportedConstructor(Selected) ||
@@ -4345,17 +4370,18 @@ approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
                        !utilityTupleValue(S, SM, Context, Field->getType());
     const auto *Copy = dyn_cast<CXXConstructExpr>(Element);
     const auto *Source = utilityTupleGeneratedMember(
-        Copy && Copy->getNumArgs() == 1 ? Copy->getArg(0) : Element, Field,
+        Copy && Copy->getNumArgs() != 0 ? Copy->getArg(0) : Element, Field,
         LeafConstructor->getParamDecl(0), Context);
     if (!Source)
       return std::nullopt;
     if (Owned) {
       const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
       const auto Referent =
-          Selected && Selected->getNumParams() == 1
+          Selected && Selected->getNumParams() != 0
               ? Selected->getParamDecl(0)->getType()->getPointeeType()
               : QualType();
-      if (!Copy || Copy->getNumArgs() != 1 || !Selected ||
+      if (!Copy || !Selected ||
+          !utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
           Copy->getConstructionKind() != CXXConstructionKind::Complete ||
           !Selected->isCopyOrMoveConstructor() ||
           !supportedConstructor(Selected) ||
@@ -10316,7 +10342,7 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
     MixedReferencePair = Pair.has_value();
   }
   if (Pair) {
-    if (!ReferencePair && !MixedReferencePair &&
+    if (!AllowNontrivialTupleElements && !ReferencePair && !MixedReferencePair &&
         (!utilityTupleValue(S, SM, Context, Pair->First->getType()) ||
          !utilityTupleValue(S, SM, Context, Pair->Second->getType())))
       return std::nullopt;
@@ -10404,13 +10430,14 @@ approvedUtilityTupleSelectedCopies(
             functionalInvokeStrippedExpression(Initializer->getInit()));
       }
     const auto *Constructor = Copy ? Copy->getConstructor() : nullptr;
-    const auto *Argument = Copy && Copy->getNumArgs() == 1
+    const auto *Argument = Copy && Copy->getNumArgs() != 0
                                ? Copy->getArg(0)
                                : nullptr;
-    const auto Parameter = Constructor && Constructor->getNumParams() == 1
+    const auto Parameter = Constructor && Constructor->getNumParams() != 0
                                ? Constructor->getParamDecl(0)->getType()
                                : QualType();
     if (!Constructor || !Argument || Parameter.isNull() ||
+        !utilitySelectedSourceConstructorArguments(S, SM, Copy, Context) ||
         !Parameter->isReferenceType() ||
         !Constructor->isCopyOrMoveConstructor() ||
         !supportedConstructor(Constructor) ||
@@ -11265,7 +11292,7 @@ approvedUtilityMakeTupleSelectedCopies(
 static bool approvedFunctionalInvokeArgumentFlow(
     const State &S, const SourceManager &SM, const Expr *Expression,
     const ParmVarDecl *Parameter, QualType Target,
-    const ASTContext &Context) {
+    const ASTContext &Context, bool AllowConstructorDefaults = false) {
   if (functionalInvokeParameterReference(Expression, Parameter) ||
       approvedFunctionalForwardingCall(S, SM, Expression, Parameter))
     return true;
@@ -11280,9 +11307,12 @@ static bool approvedFunctionalInvokeArgumentFlow(
   const auto *Definition = Target->getAsCXXRecordDecl();
   Definition = Definition ? Definition->getDefinition() : nullptr;
   return Construction && Constructor && Definition &&
-         Construction->getNumArgs() == 1 &&
+         (AllowConstructorDefaults
+              ? utilitySelectedSourceConstructorArguments(S, SM, Construction,
+                                                           Context)
+              : Construction->getNumArgs() == 1 &&
+                    Constructor->getNumParams() == 1) &&
          Constructor->isCopyOrMoveConstructor() &&
-         Constructor->getNumParams() == 1 &&
          Constructor->getParent()->getCanonicalDecl() ==
              Definition->getCanonicalDecl() &&
          S.owns(SM, Constructor->getLocation()) &&
@@ -11298,7 +11328,7 @@ static const CXXConstructExpr *functionalInvokeSelectedCopy(
       functionalInvokeStrippedExpression(Argument));
   if (!Construction || !ForwardedSource ||
       !approvedFunctionalInvokeArgumentFlow(
-          S, SM, Argument, ForwardedParameter, Target, Context))
+          S, SM, Argument, ForwardedParameter, Target, Context, true))
     return nullptr;
   const auto *Constructor = Construction->getConstructor();
   const auto Source = Constructor->getParamDecl(0)->getType();
@@ -11912,7 +11942,8 @@ approvedFunctionalMemberInvokeCallImpl(
       if (!Supported ||
           !approvedFunctionalInvokeArgumentFlow(
               S, SM, MemberCall->getArg(I),
-              DispatchFunction->getParamDecl(I + 2), Parameter, Context))
+              DispatchFunction->getParamDecl(I + 2), Parameter, Context,
+              AllowSelectedCopies))
         return std::nullopt;
       SelectedCopies[I] = Copy;
     }
@@ -12589,8 +12620,8 @@ const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
   if (!Apply || Index >= Apply->Tuple.size() || !Operation ||
       Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
       Parameter.isNull() || !Parameter->isRecordType() ||
-      !Context.hasSameUnqualifiedType(Apply->Tuple.elementType(Index),
-                                      Parameter))
+      !Context.hasSameUnqualifiedType(
+          Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter))
     return nullptr;
   return functionalInvokeSelectedCopy(
       S, SM, Operation->getArg(Index + Offset),
@@ -12689,7 +12720,7 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
     if (!Supported ||
         !approvedFunctionalInvokeArgumentFlow(
             S, SM, Operation->getArg(I + 1),
-            DispatchFunction->getParamDecl(I + 1), Parameter, Context))
+            DispatchFunction->getParamDecl(I + 1), Parameter, Context, true))
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{
@@ -12796,8 +12827,7 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
       const auto Parameter = Member->Method->getParamDecl(I - 1)->getType();
       if (!Parameter->isReferenceType() &&
           !supportedFunctionalByValue(S, SM, Context, Parameter) &&
-          (!Apply->Tuple.ArrayElements ||
-           Member->SelectedCopies.size() != Member->Method->getNumParams() ||
+          (Member->SelectedCopies.size() != Member->Method->getNumParams() ||
            !Member->SelectedCopies[I - 1]))
         return std::nullopt;
     }
@@ -13041,7 +13071,8 @@ approvedFunctionalReferenceDirectInvoke(
                          Context, ArgumentExpression->getType(), Parameter)) &&
           approvedFunctionalInvokeArgumentFlow(
               S, SM, OperationCall->getArg(I + 1),
-              DispatchFunction->getParamDecl(I + 1), Parameter, Context);
+              DispatchFunction->getParamDecl(I + 1), Parameter, Context,
+              AllowSelectedCopies);
       SelectedCopies[I] = Copy;
     }
     if (Supported)
@@ -13276,8 +13307,7 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
     } else {
       Supported =
           (supportedFunctionalByValue(S, SM, Context, Target) ||
-           (Apply->Tuple.ArrayElements &&
-            Reference->SelectedCopies.size() == Arity &&
+           (Reference->SelectedCopies.size() == Arity &&
             Reference->SelectedCopies[I] &&
             Context.hasSameUnqualifiedType(Element, Target))) &&
           functionalMemberValueConversion(Context, Element, Target);
@@ -13722,16 +13752,35 @@ approvedUtilityOwnedSwap(const State &S, const SourceManager &SM,
           : nullptr;
   const auto *Constructor =
       Construction ? Construction->getConstructor() : nullptr;
+  auto SourceReference = [&](QualType Parameter) {
+    if (!Parameter->isReferenceType())
+      return false;
+    const auto Referent = Parameter->getPointeeType();
+    return (Context.hasSameType(Referent, Type) ||
+            Context.hasSameType(Referent, Type.withConst())) &&
+           (Parameter->isRValueReferenceType() || Referent.isConstQualified());
+  };
   if (!Temporary || !Context.hasSameType(Temporary->getType(), Type) ||
-      !Construction || Construction->getNumArgs() != 1 || !Constructor ||
-      !Constructor->isMoveConstructor() || !supportedConstructor(Constructor) ||
+      !Construction || !Constructor || !Construction->getNumArgs() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !Constructor->isCopyOrMoveConstructor() ||
+      !supportedConstructor(Constructor) ||
       (!Constructor->isTrivial() && !Constructor->hasBody()) ||
       !S.owns(SM, Constructor->getLocation()) ||
       Constructor->getParent()->getCanonicalDecl() !=
           Type->getAsCXXRecordDecl()->getCanonicalDecl() ||
-      !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
-                           Context.getRValueReferenceType(Type)))
+      !SourceReference(Constructor->getParamDecl(0)->getType()))
     return std::nullopt;
+
+  // Retain Sema's actual argument at each omitted parameter. Its per-use
+  // expression can differ from the written default, including temporaries.
+  for (unsigned I = 1; I < Construction->getNumArgs(); ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Construction->getArg(I));
+    if (!Default || Default->getParam() != Constructor->getParamDecl(I) ||
+        !S.owns(SM, Default->getParam()->getLocation()) ||
+        !selectedDefaultArgument(Default, Context))
+      return std::nullopt;
+  }
 
   auto SelectedMove = [&](const Expr *Expression, const ValueDecl *Source) {
     const auto *Move = dyn_cast_or_null<CallExpr>(
@@ -13779,19 +13828,20 @@ approvedUtilityOwnedSwap(const State &S, const SourceManager &SM,
     if (!Operation || Operation->getOperator() != OO_Equal || !Method ||
         !Destination || Destination->getDecl() != Destinations[I] ||
         !SelectedMove(Operation->getArg(1), Sources[I]) ||
-        !Method->isMoveAssignmentOperator() || !supportedAssignment(Method) ||
+        (!Method->isMoveAssignmentOperator() &&
+         !Method->isCopyAssignmentOperator()) ||
+        !supportedAssignment(Method) ||
         (!Method->isTrivial() && !Method->hasBody()) ||
         !S.owns(SM, Method->getLocation()) || Method->getNumParams() != 1 ||
         Method->getParent()->getCanonicalDecl() !=
             Type->getAsCXXRecordDecl()->getCanonicalDecl() ||
-        !Context.hasSameType(Method->getParamDecl(0)->getType(),
-                             Context.getRValueReferenceType(Type)) ||
+        !SourceReference(Method->getParamDecl(0)->getType()) ||
         !Context.hasSameType(Operation->getType(), Type) ||
         !Operation->isLValue())
       return std::nullopt;
     Assignments[I] = Method;
   }
-  return UtilityOwnedSwapOperations{Constructor, Assignments[0],
+  return UtilityOwnedSwapOperations{Construction, Assignments[0],
                                     Assignments[1]};
 }
 
@@ -13865,6 +13915,7 @@ struct UtilitySwapProofContext {
   llvm::DenseMap<Key, unsigned> Completed;
   bool AllowOwnedLeaf = false;
   std::optional<UtilityOwnedSwapOperations> OwnedLeaf;
+  std::vector<UtilityOwnedSwapOperations> Operations;
 };
 
 static bool approvedUtilityOptionalSwapBody(
@@ -13950,6 +14001,7 @@ approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
       auto Owned = approvedUtilityOwnedSwap(S, SM, Function, Type, Context);
       if (Owned) {
         Proof->OwnedLeaf = *Owned;
+        Proof->Operations.push_back(*Owned);
         return true;
       }
     }
@@ -14025,15 +14077,19 @@ approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
     auto Element = Field->getType();
     if (Element->isReferenceType())
       Element = Element->getPointeeType();
-    if (!Call || Call->getNumArgs() != 2 ||
-        !(utilityPairSourceOwnedValue(S, SM, Context, Element)
-              ? approvedUtilityOwnedSwap(S, SM, Call->getDirectCallee(),
-                                         Element, Context)
-                    .has_value()
-              : approvedUtilityPairElementSwap(S, SM, Call->getDirectCallee(),
-                                               Field->getType(), Context,
-                                               Depth + 1, Proof)))
+    if (!Call || Call->getNumArgs() != 2)
       return false;
+    if (utilityPairSourceOwnedValue(S, SM, Context, Element)) {
+      const auto Owned = approvedUtilityOwnedSwap(
+          S, SM, Call->getDirectCallee(), Element, Context);
+      if (!Owned)
+        return false;
+      Proof->Operations.push_back(*Owned);
+    } else if (!approvedUtilityPairElementSwap(
+                   S, SM, Call->getDirectCallee(), Field->getType(), Context,
+                   Depth + 1, Proof)) {
+      return false;
+    }
     const auto *Left = dyn_cast_or_null<MemberExpr>(
         functionalInvokeStrippedExpression(Call->getArg(0)));
     const auto *Right = dyn_cast_or_null<MemberExpr>(
@@ -15375,6 +15431,70 @@ approvedUtilityOptionalSwapBody(const State &S, const SourceManager &SM,
       return false;
   }
   return true;
+}
+
+std::optional<std::vector<UtilityOwnedSwapOperations>>
+approvedUtilitySwapOperations(const State &S, const SourceManager &SM,
+                              const CallExpr *Call, UtilityOperation Operation,
+                              const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function)
+    return std::nullopt;
+  // Signature-only array queries can leave this wrapper or member lazy. Their
+  // exception/operation source is checked separately; no body supplies a
+  // runtime constructor default until Sema instantiates an evaluated call.
+  if ((Operation == UtilityOperation::ArraySwap ||
+       Operation == UtilityOperation::ArrayMemberSwap) && !Function->hasBody())
+    return std::vector<UtilityOwnedSwapOperations>{};
+  UtilitySwapProofContext Proof;
+  bool Valid = false;
+  switch (Operation) {
+  case UtilityOperation::OwnedSwap:
+  case UtilityOperation::NativeOwnedArraySwap: {
+    if (Function->getNumParams() != 2 ||
+        !Function->getParamDecl(0)->getType()->isLValueReferenceType())
+      return std::nullopt;
+    const auto Type = Function->getParamDecl(0)->getType()->getPointeeType();
+    const auto Selected = Operation == UtilityOperation::OwnedSwap
+        ? approvedUtilityOwnedSwap(S, SM, Function, Type, Context)
+        : approvedUtilityNativeArrayOwnedSwap(S, SM, Function, Type, Context);
+    if (!Selected)
+      return std::nullopt;
+    return std::vector<UtilityOwnedSwapOperations>{*Selected};
+  }
+  case UtilityOperation::ArrayMemberSwap:
+    Valid = approvedUtilityArraySwapBody(
+        S, SM, dyn_cast<CXXMethodDecl>(Function), Context, 0, &Proof);
+    break;
+  case UtilityOperation::PairMemberSwap:
+    Valid = approvedUtilityPairSwapBody(
+        S, SM, dyn_cast<CXXMethodDecl>(Function), Context, 0, &Proof);
+    break;
+  case UtilityOperation::TupleMemberSwap:
+    Valid = approvedUtilityTupleSwapBody(
+        S, SM, dyn_cast<CXXMethodDecl>(Function), Context, 0, &Proof);
+    break;
+  case UtilityOperation::OptionalMemberSwap:
+    Valid = approvedUtilityOptionalSwapBody(
+        S, SM, dyn_cast<CXXMethodDecl>(Function), Context, 0, &Proof);
+    break;
+  case UtilityOperation::ArraySwap:
+  case UtilityOperation::PairSwap:
+  case UtilityOperation::TupleSwap:
+  case UtilityOperation::OptionalSwap:
+    if (Function->getNumParams() != 2 ||
+        !Function->getParamDecl(0)->getType()->isLValueReferenceType())
+      return std::nullopt;
+    Valid = approvedUtilityPairElementSwap(
+        S, SM, Function, Function->getParamDecl(0)->getType()->getPointeeType(),
+        Context, 0, &Proof);
+    break;
+  default:
+    return std::vector<UtilityOwnedSwapOperations>{};
+  }
+  if (!Valid)
+    return std::nullopt;
+  return std::move(Proof.Operations);
 }
 
 // These adapters authenticate the concrete SDK call graph without traversing
@@ -30212,7 +30332,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::ArrayGet;
   }
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
-  if (!Prototype || !Prototype->isNothrow())
+  // Exact swap bodies are authenticated below. Constructor defaults and their
+  // cleanup can make these signatures potentially throwing; their actual
+  // source operations still need the ordinary admission checks. Other scalar
+  // adapters retain their nothrow contract.
+  if (!Prototype || (!Prototype->isNothrow() && Name != "swap"))
     return std::nullopt;
   auto ReferenceResult = [&] {
     auto Result = Function->getReturnType();
@@ -30292,10 +30416,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Left->getPointeeType(), Right->getPointeeType()) &&
         Same(Call->getArg(0)->getType(), Left->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), Right->getPointeeType())) {
-      if (utilityScalar(Context, Left->getPointeeType()) ||
-          (Left->getPointeeType()->isFunctionPointerType() &&
-           approvedUtilityNativeArrayAssociatedSwap(
-               S, SM, Function, Left->getPointeeType(), Context)))
+      if (Prototype->isNothrow() &&
+          (utilityScalar(Context, Left->getPointeeType()) ||
+           (Left->getPointeeType()->isFunctionPointerType() &&
+            approvedUtilityNativeArrayAssociatedSwap(
+                S, SM, Function, Left->getPointeeType(), Context))))
         return UtilityOperation::Swap;
       auto ArrayLeaf = [&](QualType Current) {
         uint64_t Elements = 1;
@@ -30328,7 +30453,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         else
           break;
       }
-      if (!Element.isNull() && !Element.isConstQualified() &&
+      if (Prototype->isNothrow() && !Element.isNull() &&
+          !Element.isConstQualified() &&
           !Element.isVolatileQualified() &&
           (utilityScalar(Context, Element) ||
            Element->isFunctionPointerType() ||

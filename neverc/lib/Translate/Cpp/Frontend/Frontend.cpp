@@ -12949,6 +12949,141 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "The selected parameter and call argument slot must agree.");
   }
 
+  bool checkUtilitySelectedConstruction(const CXXConstructExpr *Construction,
+                                        SourceLocation L) {
+    if (!Construction)
+      return true;
+    A.chargeExpansion(1, L);
+    checkConstruction(Construction, L);
+    // The authenticated SDK body supplies this source-owned constructor use.
+    // Defaults still follow ordinary source and lifetime checks in the actual
+    // selected parameter scope, using the source caller's diagnostic location.
+    for (unsigned I = 1; I < Construction->getNumArgs(); ++I)
+      if (!traverseDefaultArgument(
+              const_cast<CXXDefaultArgExpr *>(
+                  cast<CXXDefaultArgExpr>(Construction->getArg(I))), L))
+        return false;
+    return true;
+  }
+
+  bool checkUtilityPairFactory(const CallExpr *Call) {
+    auto Pair = approvedUtilityPairRecord(
+        A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+    if (!Pair)
+      Pair = approvedUtilityReferencePairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+    if (!Pair)
+      Pair = approvedUtilityMixedReferencePairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+    const auto Copies =
+        Pair ? approvedUtilityMakePairSelectedCopies(
+                   A.S, A.Sources, Call, *Pair, A.Context)
+             : std::nullopt;
+    if (!Copies) {
+      A.reject(Call->getExprLoc(), "utility pair construction",
+               "The exact selected pair element constructions are required.");
+      return true;
+    }
+    for (const auto *Copy : *Copies)
+      if (!checkUtilitySelectedConstruction(Copy, Call->getExprLoc()))
+        return false;
+    return true;
+  }
+
+  bool checkUtilitySwapOperations(const CallExpr *Call,
+                                 UtilityOperation Operation) {
+    const auto Operations = approvedUtilitySwapOperations(
+        A.S, A.Sources, Call, Operation, A.Context);
+    const auto L = Call->getExprLoc();
+    if (!Operations) {
+      A.reject(L, "utility swap construction",
+               "The exact selected swap construction graph is required.");
+      return true;
+    }
+    std::set<const CXXConstructExpr *> Seen;
+    for (const auto &Selected : *Operations) {
+      const auto *Construction = Selected.Construction;
+      if (!Seen.insert(Construction).second)
+        continue;
+      if (!checkUtilitySelectedConstruction(Construction, L))
+        return false;
+      for (const auto *Assignment : {Selected.FirstAssignment,
+                                    Selected.SecondAssignment})
+        if (defaultedAssignment(Assignment))
+          queueGenerated(Assignment, L);
+    }
+    return true;
+  }
+
+  bool checkUtilityTupleConstructions(const CallExpr *Call,
+                                      UtilityOperation Operation) {
+    if (Operation != UtilityOperation::MakeTuple &&
+        Operation != UtilityOperation::TupleCat)
+      return true;
+    std::optional<std::vector<const CXXConstructExpr *>> Copies;
+    if (Operation == UtilityOperation::MakeTuple) {
+      auto Tuple = approvedUtilityTupleRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
+        Tuple = approvedUtilityReferenceTupleRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
+        Tuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (Tuple)
+        Copies = approvedUtilityMakeTupleSelectedCopies(
+            A.S, A.Sources, Call, *Tuple, A.Context);
+    } else if (const auto Cat =
+                   approvedUtilityTupleCatCall(A.S, A.Sources, Call, A.Context)) {
+      Copies = Cat->SelectedCopies;
+    }
+    if (!Copies) {
+      A.reject(Call->getExprLoc(), "utility tuple construction",
+               "The exact selected tuple element constructions are required.");
+      return true;
+    }
+    for (const auto *Copy : *Copies)
+      if (!checkUtilitySelectedConstruction(Copy, Call->getExprLoc()))
+        return false;
+    return true;
+  }
+
+  bool checkUtilityApplyConstructions(const CallExpr *Call) {
+    std::vector<const CXXConstructExpr *> Copies;
+    if (const auto Member = approvedUtilityTupleApplyMemberCall(
+            A.S, A.Sources, Call, A.Context)) {
+      Copies = Member->SelectedCopies;
+    } else if (const auto Reference = approvedUtilityTupleApplyReferenceCall(
+                   A.S, A.Sources, Call, A.Context)) {
+      Copies = Reference->SelectedCopies;
+    } else {
+      const auto User =
+          approvedUtilityTupleApplyUserCall(A.S, A.Sources, Call, A.Context);
+      const auto Callable = Call->getArg(0)->getType();
+      const auto *Prototype =
+          Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
+          : Callable->isFunctionPointerType()
+              ? Callable->getPointeeType()->getAs<FunctionProtoType>()
+              : nullptr;
+      const auto *Method = User ? User->Method : nullptr;
+      const unsigned Arity = Prototype ? Prototype->getNumParams()
+                             : Method  ? Method->getNumParams()
+                                       : 0;
+      for (unsigned I = 0; I < Arity; ++I) {
+        const auto Parameter = Prototype ? Prototype->getParamType(I)
+                                         : Method->getParamDecl(I)->getType();
+        if (Parameter->isRecordType())
+          Copies.push_back(approvedUtilityTupleApplySelectedCopy(
+              A.S, A.Sources, Call, I, Parameter, A.Context));
+      }
+    }
+    std::set<const CXXConstructExpr *> Seen;
+    for (const auto *Copy : Copies)
+      if (Copy && Seen.insert(Copy).second &&
+          !checkUtilitySelectedConstruction(Copy, Call->getExprLoc()))
+        return false;
+    return true;
+  }
   void queueGenerated(const CXXMethodDecl *Method, SourceLocation L) {
     const FunctionDecl *Definition = nullptr;
     if (Method->isTrivial())
@@ -12995,6 +13130,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     const CXXConstructorDecl *ArrayElementConstructor = nullptr;
+    std::vector<const CXXConstructExpr *> PairSelectedCopies;
     std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
         (approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
@@ -13006,7 +13142,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
          approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context,
+                                         &PairSelectedCopies) ||
          approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context,
                                           &TupleSelectedCopies) ||
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context,
@@ -13028,9 +13165,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (ArrayElementConstructor &&
           defaultedCopyOrMoveConstructor(ArrayElementConstructor))
         queueGenerated(ArrayElementConstructor, L);
+      for (const auto *Copy : PairSelectedCopies)
+        if (!checkUtilitySelectedConstruction(Copy, L))
+          return;
       for (const auto *Copy : TupleSelectedCopies)
-        if (Copy && defaultedCopyOrMoveConstructor(Copy->getConstructor()))
-          queueGenerated(Copy->getConstructor(), L);
+        if (!checkUtilitySelectedConstruction(Copy, L))
+          return;
       return;
     }
     if (A.S.coreV2() && concreteMemberFunctionTemplate(Constructor))
@@ -19057,8 +19197,13 @@ public:
     return TraverseStmt(Temporary->getSubExpr());
   }
   bool TraverseCXXDefaultArgExpr(CXXDefaultArgExpr *Default) {
+    return traverseDefaultArgument(Default);
+  }
+  bool traverseDefaultArgument(CXXDefaultArgExpr *Default,
+                               SourceLocation AuthenticatedUse = {}) {
     const auto *P = Default->getParam();
-    auto L = Default->getUsedLocation();
+    auto L = AuthenticatedUse.isValid() ? AuthenticatedUse
+                                      : Default->getUsedLocation();
     if (L.isInvalid() && P)
       L = P->getLocation();
     auto SavedOwner = ImplicitInitializerOwner;
@@ -21194,6 +21339,16 @@ public:
       if (A.S.coreV2())
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
+          if (!checkUtilitySwapOperations(C, *Operation))
+            return false;
+          if (*Operation == UtilityOperation::MakePair &&
+              !checkUtilityPairFactory(C))
+            return false;
+          if (!checkUtilityTupleConstructions(C, *Operation))
+            return false;
+          if (*Operation == UtilityOperation::TupleApply &&
+              !checkUtilityApplyConstructions(C))
+            return false;
           if (auto Source = algorithmCallableSource(C))
             if (Source->Method)
               AlgorithmPredicateMethods.emplace(

@@ -1127,7 +1127,7 @@ struct UtilityPairRecord {
   const clang::FieldDecl *First, *Second;
 };
 struct UtilityOwnedSwapOperations {
-  const clang::CXXConstructorDecl *Constructor;
+  const clang::CXXConstructExpr *Construction;
   const clang::CXXMethodDecl *FirstAssignment, *SecondAssignment;
 };
 std::optional<UtilityOwnedSwapOperations>
@@ -1142,6 +1142,11 @@ std::optional<UtilityOwnedSwapOperations> approvedUtilityNativeArrayOwnedSwap(
 std::optional<UtilityOwnedSwapOperations>
 approvedUtilityArrayOwnedSwap(const State &S, const clang::SourceManager &SM,
                               const clang::CXXMethodDecl *Method,
+                              const clang::ASTContext &Context);
+std::optional<std::vector<UtilityOwnedSwapOperations>>
+approvedUtilitySwapOperations(const State &S, const clang::SourceManager &SM,
+                              const clang::CallExpr *Call,
+                              UtilityOperation Operation,
                               const clang::ASTContext &Context);
 const clang::CXXMethodDecl *
 approvedUtilityOwnedFillN(const State &S, const clang::SourceManager &SM,
