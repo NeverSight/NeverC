@@ -90049,18 +90049,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2UserObjectInvokeQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-adapter", R"cpp(
-int f(F&c){static_assert(__is_same(decltype(std::invoke(c,1)),int));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter", R"cpp(
-int f(F&c){int n=c(1);static_assert(__is_same(decltype(std::invoke(c,1)),int));return n;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-int f(F&c){int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(c,short(1))),int));return n;}
-)cpp", "TR0203"},
-      {"different-callable-category", R"cpp(
-int f(F&c,const F&v){int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(v,1)),int));return n;}
-)cpp", "TR0203"},
       {"independent-invoke-address", R"cpp(
 int f(F&c){int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(c,1)),int));static_assert(sizeof(&std::invoke<F&,int>)>0);return n;}
 )cpp", "TR0201"},
@@ -90128,7 +90116,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(F&c){int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(c,arg())),int));return n;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-F&source(F&c)noexcept;int f(F&c){int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(source(c),1)),int));return n;}
+F&source(F&c)noexcept;int f(F&c){int n=std::invoke(c,1);static_assert(__is_same(decltype(std::invoke(source(c),1)),int));return source(c)(n);}
 )cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
@@ -90326,7 +90314,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,arg(),2)),int));return n;}
 )cpp", "TR0203"},
       {"missing-callable-definition", R"cpp(
-F&source()noexcept;int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(source(),1,2)),int));return n;}
+F&source()noexcept;int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(source(),1,2)),int));return source()(n,2);}
 )cpp", "TR0203"},
       {"unsupported-scalar", R"cpp(
 int f(){std::plus<long double> v;auto n=std::invoke(v,1.0L,2.0L);static_assert(__is_same(decltype(std::invoke(v,1.0L,2.0L)),long double));return n;}
@@ -147221,6 +147209,308 @@ int declared(long double)noexcept;using R=decltype(std::invoke(declared,1));int 
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
     EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
                 Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryCategories) {
+  const auto Source = tmpFile("user-callable-signature-query-categories.cpp");
+  const auto Output = tmpFile("user-callable-signature-query-categories.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int effects=0;
+struct R{int operator()(int)&noexcept{++effects;return 1;}int operator()(int)const&noexcept{++effects;return 2;}int operator()(int)&&noexcept{++effects;return 3;}};
+int main(){R r;const R c{};
+static_assert(__is_same(decltype(std::invoke(r,short(1))),int));
+static_assert(__is_same(decltype(std::invoke(c,1)),int));
+static_assert(__is_same(decltype(std::invoke(std::move(r),1)),int));
+static_assert(noexcept(std::invoke(r,1))&&noexcept(std::invoke(c,1))&&noexcept(std::invoke(std::move(r),1)));
+static_assert(sizeof(std::invoke(r,1))==sizeof(int));
+return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("user-callable-signature-query-categories" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryReferences) {
+  const auto Source = tmpFile("user-callable-signature-query-references.cpp");
+  const auto Output = tmpFile("user-callable-signature-query-references.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{int&operator()(int&n)const noexcept{++effects;return n;}};
+int main(){int n=3;R r;
+static_assert(__is_same(decltype(std::invoke(r,n)),int&));
+static_assert(__is_same(decltype(std::invoke(R{},n)),int&));
+static_assert(noexcept(std::invoke(r,n)));
+static_assert(sizeof(std::invoke(r,n))==sizeof(int));
+return effects==0&&n==3?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("user-callable-signature-query-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryCleanup) {
+  const auto Source = tmpFile("user-callable-signature-query-cleanup.cpp");
+  const auto Output = tmpFile("user-callable-signature-query-cleanup.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{R(){++effects;}~R()noexcept{++effects;}int operator()(int)const noexcept{++effects;return 1;}};
+int argument()noexcept{++effects;return 1;}
+static_assert(__is_same(decltype(std::invoke(R{},argument())),int));
+static_assert(!noexcept(std::invoke(R{},argument())));
+static_assert(sizeof(std::invoke(R{},argument()))==sizeof(int));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("user-callable-signature-query-cleanup" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryVoid) {
+  const auto Source = tmpFile("user-callable-signature-query-void.cpp");
+  const auto Output = tmpFile("user-callable-signature-query-void.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{void operator()(int)const noexcept{++effects;}};
+static_assert(__is_same(decltype(std::invoke(R{},1)),void));
+static_assert(noexcept(std::invoke(R{},1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("user-callable-signature-query-void" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryReferenceTypes) {
+  const auto Source =
+      tmpFile("user-callable-signature-query-reference-types.cpp");
+  const auto Output =
+      tmpFile("user-callable-signature-query-reference-types.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct V{int n;};using A=int[3];using Callback=int(*)(int)noexcept;
+struct R{V&operator()(V&n)const noexcept{++effects;return n;}};
+struct Array{A&operator()(A&n)const noexcept{++effects;return n;}};
+struct Pointer{Callback operator()(Callback n)const noexcept{++effects;return n;}};
+int source(int n)noexcept{++effects;return n;}
+int main(){V v{3};A a{1,2,3};Callback p=source;
+static_assert(__is_same(decltype(std::invoke(R{},v)),V&));
+static_assert(__is_same(decltype(std::invoke(Array{},a)),A&));
+static_assert(__is_same(decltype(std::invoke(Pointer{},p)),Callback));
+static_assert(sizeof(std::invoke(Array{},a))==sizeof(A));
+static_assert(noexcept(std::invoke(R{},v))&&noexcept(std::invoke(Array{},a))&&noexcept(std::invoke(Pointer{},p)));
+return effects==0&&v.n==3&&a[1]==2&&p==source?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("user-callable-signature-query-reference-types" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryOutOfLine) {
+  const auto Source = tmpFile("user-callable-signature-query-out-of-line.cpp");
+  const auto Output = tmpFile("user-callable-signature-query-out-of-line.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;using Result=int;
+struct R{Result operator()(short n)const noexcept;};
+Result R::operator()(short n)const noexcept{++effects;return n;}
+static_assert(__is_same(decltype(std::invoke(R{},1)),Result));
+static_assert(noexcept(std::invoke(R{},1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("user-callable-signature-query-out-of-line" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryDeclvalReceiver) {
+  const auto Source =
+      tmpFile("user-callable-signature-query-declval-receiver.cpp");
+  const auto Output =
+      tmpFile("user-callable-signature-query-declval-receiver.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int effects=0;struct R{int operator()(int)&noexcept{++effects;return 1;}long operator()(int)const&{++effects;return 2;}short operator()(int)&&noexcept{++effects;return 3;}};
+static_assert(__is_same(decltype(std::invoke(std::declval<R&>(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::declval<const R&>(),1)),long));
+static_assert(__is_same(decltype(std::invoke(std::declval<R>(),1)),short));
+static_assert(noexcept(std::invoke(std::declval<R&>(),1)));
+static_assert(!noexcept(std::invoke(std::declval<const R&>(),1)));
+static_assert(noexcept(std::invoke(std::declval<R>(),1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "user-callable-signature-query-declval-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCallableSignatureQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"argument-default", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept{return 1;}};int arg(int n=sizeof(long double))noexcept{return n;}int main(){static_assert(sizeof(std::invoke(R{},arg()))==sizeof(int));return 0;}
+)cpp"},
+      {"argument-expression", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept{return 1;}};int main(){static_assert(sizeof(std::invoke(R{},(sizeof(long double),1)))==sizeof(int));return 0;}
+)cpp"},
+      {"by-value-parameter", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct V{int n;};struct R{int operator()(V)const noexcept{return 1;}};int main(){static_assert(sizeof(std::invoke(R{},V{}))==sizeof(int));return 0;}
+)cpp"},
+      {"by-value-result", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct V{int n;};struct R{V operator()(int)const noexcept{return V{};}};int main(){static_assert(__is_same(decltype(std::invoke(R{},1)),V));return 0;}
+)cpp"},
+      {"cast-invoke-callee", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept{return 1;}};using I=int(*)(R&,int&&)noexcept;int main(){R r;static_assert(sizeof(static_cast<I>(&std::invoke<R&,int>)(r,1))==sizeof(int));return 0;}
+)cpp"},
+      {"destructor-body", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{~R()noexcept{long double hidden=0;}int operator()(int)const noexcept{return 1;}};int main(){static_assert(sizeof(std::invoke(R{},1))==sizeof(int));return 0;}
+)cpp"},
+      {"independent-invoke-address", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept{return 1;}};int main(){R r;static_assert(sizeof(std::invoke(r,1))==sizeof(int));static_assert(sizeof(&std::invoke<R&,int>)>0);return 0;}
+)cpp"},
+      {"lazy-method-template", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{template<class T>int operator()(T)const noexcept{return 1;}};int main(){static_assert(sizeof(std::invoke(R{},1))==sizeof(int));return 0;}
+)cpp"},
+      {"method-body", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept{long double hidden=0;return 1;}};int main(){static_assert(sizeof(std::invoke(R{},1))==sizeof(int));return 0;}
+)cpp"},
+      {"method-exception", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept(sizeof(long double)>0){return 1;}};int main(){static_assert(noexcept(std::invoke(R{},1)));return 0;}
+)cpp"},
+      {"method-return-alias", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using T=decltype((sizeof(long double),int{}));struct R{T operator()(int)const noexcept{return 1;}};int main(){static_assert(sizeof(std::invoke(R{},1))==sizeof(int));return 0;}
+)cpp"},
+      {"missing-destructor", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{~R()noexcept;int operator()(int)const noexcept{return 1;}};int main(){static_assert(sizeof(std::invoke(R{},1))==sizeof(int));return 0;}
+)cpp"},
+      {"missing-method-definition", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept;};int main(){static_assert(__is_same(decltype(std::invoke(R{},1)),int));return 0;}
+)cpp"},
+      {"parameter-array-bound", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int a[(sizeof(long double),2)])const noexcept{return a[0];}};int main(){int a[2]{};static_assert(sizeof(std::invoke(R{},a))==sizeof(int));return 0;}
+)cpp"},
+      {"receiver-expression", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)const noexcept{return 1;}};int main(){R r;static_assert(sizeof(std::invoke((sizeof(long double),r),1))==sizeof(int));return 0;}
+)cpp"},
+      {"receiver-template-argument", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using T=decltype((sizeof(long double),int{}));template<class V>struct R{int operator()(int)const noexcept{return 1;}};int main(){R<T> r;static_assert(sizeof(std::invoke(r,1))==sizeof(int));return 0;}
+)cpp"},
+      {"volatile-receiver", R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int operator()(int)volatile noexcept{return 1;}};int main(){volatile R r;static_assert(sizeof(std::invoke(r,1))==sizeof(int));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("user-callable-signature-query-reject-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("user-callable-signature-query-reject-") +
+                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE((Result.out + Result.err).find("TR0201") != std::string::npos ||
+                (Result.out + Result.err).find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
   }

@@ -370,6 +370,15 @@ and constant `sizeof` queries execute no object construction, destruction or
 callback. Independent SDK function addresses, replaced declarations and
 unsupported written types retain their existing restrictions.
 
+Unevaluated `std::invoke` queries for supported source-owned function objects
+now use the actual selected `operator()` signature even when the SDK adapter
+body has not been generated. Lvalue, const and rvalue overloads retain their
+exact result and exception sources, including scalar, callback, array-reference,
+record-reference and `void` results. The selected source method still requires
+a fully checked definition. Query operands execute no callbacks, construction
+or cleanup. By-value record parameters/results and lazy source method templates
+retain their separate adapter requirements.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

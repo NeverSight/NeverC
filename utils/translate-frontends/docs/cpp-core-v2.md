@@ -4173,6 +4173,23 @@ that lexical call, so independent SDK addresses, cast or indirect callees,
 source replacements, volatile or unsupported types retain their separate
 boundaries.
 
+Exact lexical unevaluated `std::invoke` queries around admitted source-owned
+record callables can also consume the pinned trait chain's actually selected
+`operator()` without completing an unused SDK adapter body. The selected method
+must be an owned ordinary call operator with an already available definition,
+matching receiver record, argument count, original result type and value
+category. Its scalar, callback, `void`, array-reference and record-reference
+signature retains its original aliases and exception sources. The selected
+source definition remains an independent completed dependency; caller receiver
+and argument expressions, written template arguments, defaults and temporary
+cleanup keep their normal checks. No query executes those operands. The exact
+substituted SDK `declval` operands prove receiver category, overload selection
+and argument flow, and the public invocability exception trait remains pinned.
+This signature path does not complete a lazy source method body and excludes
+by-value record parameters/results; their materialized adapter path below keeps
+its existing construction proof. Independent SDK addresses, cast/indirect
+callees, volatile receivers and source replacements receive no exemption.
+
 Materialized `std::invoke` adapters around admitted source-owned record
 callables also support result-source queries. The exact receiver, selected
 `operator()` and argument flow keep their runtime checks, including lvalue,
@@ -4187,10 +4204,10 @@ exception expression remain checked. Reading the adapter's body does not supply
 that source proof. Caller expressions, initializers, written types, selected
 defaults and temporary destruction also remain independent sources. `decltype`,
 result traits, `sizeof`, `alignof`, array extents and `noexcept` execute none of
-their effects. Each callable category and argument pack still needs its own
-materialized adapter. Lazy adapters, replaced SDK declarations, independent
-adapter addresses and source methods without a completed definition remain
-rejected.
+their effects. Calls requiring this materialized path still need an adapter
+for each callable category and argument pack. A missing required adapter,
+replaced SDK declarations, independent adapter addresses and source methods
+without a completed definition remain rejected.
 
 Materialized `std::invoke` adapters around the admitted typed and transparent
 arithmetic, bitwise, comparison and logical function objects also support

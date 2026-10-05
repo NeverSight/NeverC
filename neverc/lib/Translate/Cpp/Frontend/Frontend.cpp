@@ -5339,6 +5339,46 @@ static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
   return Selected;
 }
 
+static const CXXMethodDecl *
+functionalUserInvokeQuerySource(Adapter &A, const CallExpr *Call,
+                                const CallExpr *Selected = nullptr) {
+  if (!Selected)
+    Selected = functionalInvokeQueryTargetSource(A, Call);
+  const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(Selected);
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Operation ? Operation->getDirectCallee() : nullptr);
+  const auto *Record = Call && Call->getNumArgs()
+                           ? Call->getArg(0)->getType()->getAsCXXRecordDecl()
+                           : nullptr;
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Target =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Operation || !Method || !Definition || !Target ||
+      Operation->getOperator() != OO_Call || !ordinaryOperator(Method) ||
+      !Method->hasBody() || !Method->getTypeSourceInfo() ||
+      !A.S.owns(A.Sources, Method->getLocation()) ||
+      !A.S.owns(A.Sources, Definition->getLocation()) ||
+      Call->getArg(0)->getType().isVolatileQualified() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Definition->getCanonicalDecl() ||
+      Target->getNumParams() + 1 != Operation->getNumArgs() ||
+      operationCalleePrototype(Operation) != Target ||
+      Target->getReturnType()->isRecordType() ||
+      !A.Context.hasSameType(Target->getReturnType().getNonReferenceType(),
+                             Call->getType()) ||
+      Expr::getValueKindForType(Target->getReturnType()) !=
+          Call->getValueKind())
+    return nullptr;
+  for (const auto Parameter : Target->param_types())
+    if (Parameter->isRecordType())
+      return nullptr;
+  // The substituted trait already selected the receiver category, overload and
+  // exact declval operand flow. Its source method remains a completed
+  // definition dependency; authentication supplies no SDK or source body
+  // instantiation.
+  return Method;
+}
+
 static QualType declvalQuerySource(Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Reference =
@@ -5439,6 +5479,10 @@ static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
         return {};
     // Keep the caller's original return spelling, including aliases, adjusted
     // types and exception inputs. The SDK's result alias adds no new source.
+    Result = Target->getReturnType();
+  } else if (const auto *Method =
+                 functionalUserInvokeQuerySource(A, Call, Selected)) {
+    Target = Method->getType()->getAs<FunctionProtoType>();
     Result = Target->getReturnType();
   } else {
     if (!functionalObjectStorageSource(A, Value->getAsCXXRecordDecl()))
@@ -14421,6 +14465,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const ValueDecl *UserInvoke = UserMethod;
         if (!ReferenceInvoke) {
           UserInvoke = functionalUserInvokeSource(A, Call);
+          if (!UserInvoke && A.S.UnevaluatedFunctionalCalls.count(Call))
+            UserInvoke = functionalUserInvokeQuerySource(A, Call);
           if (!UserInvoke)
             if (const auto *Apply = applySource(Call))
               UserInvoke = Apply->UserMethod;
