@@ -409,6 +409,17 @@ static bool supportedFunctionalCallableValue(QualType Type,
           Type->isFunctionPointerType());
 }
 
+static bool supportedFunctionalPointerLogical(llvm::StringRef Name,
+                                              QualType Type,
+                                              const ASTContext &Context) {
+  if ((Name != "logical_and" && Name != "logical_or" &&
+       Name != "logical_not") ||
+      Type.isNull() || Type.hasQualifiers())
+    return false;
+  return Type->isNullPtrType() ||
+         supportedFunctionalPointerComparison("equal_to", Type, Context);
+}
+
 static bool supportedFunctionalCallbackOperation(llvm::StringRef Name,
                                                  QualType Type,
                                                  const ASTContext &Context) {
@@ -740,6 +751,7 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
       return std::nullopt;
   } else if (!(supportedFunctionalScalar(ValueType, Context) ||
                supportedFunctionalPointerComparison(Name, ValueType, Context) ||
+               supportedFunctionalPointerLogical(Name, ValueType, Context) ||
                supportedFunctionalCallbackOperation(Name, ValueType, Context) ||
                ((Name == "equal_to" || Name == "not_equal_to" ||
                  Name == "less" || Name == "greater" || Name == "less_equal" ||
@@ -752,6 +764,8 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                 (supportedFunctionalScalar(ValueType.getUnqualifiedType(),
                                            Context) ||
                  supportedFunctionalPointerComparison(
+                     Name, ValueType.getUnqualifiedType(), Context) ||
+                 supportedFunctionalPointerLogical(
                      Name, ValueType.getUnqualifiedType(), Context) ||
                  supportedFunctionalCallbackOperation(
                      Name, ValueType.getUnqualifiedType(), Context)))) ||
@@ -1885,6 +1899,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
         Type->isFunctionType() ? Context.getPointerType(Type) : Type;
     return supportedFunctionalPointerComparison(Record->getName(), Type,
                                                 Context) ||
+           supportedFunctionalPointerLogical(Record->getName(), Type,
+                                             Context) ||
            supportedFunctionalCallbackOperation(Record->getName(), CallbackType,
                                                 Context) ||
            (CallbackOperands && Type->isNullPtrType()) ||

@@ -146733,3 +146733,288 @@ int wide(long double n)noexcept{return int(n);}using Q=decltype(std::invoke(wide
     EXPECT_FALSE(fs::exists(Output.string() + ".map.json"));
   }
 }
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerTyped) {
+  const auto Source = tmpFile("functional-object-pointer-typed.cpp");
+  const auto Output = tmpFile("functional-object-pointer-typed.nc");
+  writeFile(Source, R"cpp(#include <functional>
+struct R { int value; };
+int effects=0;
+R* pointer(R*p){++effects;return p;}
+int main(){R r{7};R*p=&r;R*z=nullptr;const R*c=p;
+std::logical_and<R*> both;std::logical_or<const R*> either;std::logical_not<R*> empty;
+if(!both(p,p)||both(p,z)||!either(c,nullptr)||!empty(z)||empty(p))return 1;
+if(!std::invoke(both,p,p)||std::invoke(both,p,z)||!std::invoke(either,c,nullptr)||!std::invoke(empty,z))return 2;
+effects=0;if(!both(pointer(p),pointer(p))||effects!=2)return 3;
+effects=0;if(both(pointer(z),pointer(p))||effects!=2)return 4;
+return r.value==7?0:5;}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-typed" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerVoid) {
+  const auto Source = tmpFile("functional-object-pointer-void.cpp");
+  const auto Output = tmpFile("functional-object-pointer-void.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int main(){int value=4;void*p=&value;void*z=nullptr;const void*c=p;
+const std::logical_and<void*> both;std::logical_or<const void*> either;std::logical_not<const void*> empty;
+std::logical_not<void* const> constValue;
+if(!both(p,p)||both(p,z)||!either(c,nullptr)||!empty(z)||empty(p)||!constValue(z))return 1;
+if(!std::invoke(both,p,p)||!std::invoke(either,c,nullptr)||!std::invoke(empty,z)||!std::invoke(constValue,z))return 2;
+return value==4?0:3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-void" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerQuery) {
+  const auto Source = tmpFile("functional-object-pointer-query.cpp");
+  const auto Output = tmpFile("functional-object-pointer-query.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+int effects=0;
+const void* pointer(){++effects;return nullptr;}
+int main(){std::logical_not<const void*> empty;const std::logical_and<const void*> both;
+static_assert(__is_same(decltype(empty(pointer())),bool));
+static_assert(__is_same(decltype(std::invoke(empty,pointer())),bool));
+static_assert(__is_same(decltype(std::invoke(both,pointer(),nullptr)),bool));
+static_assert(!noexcept(empty(pointer())));
+static_assert(sizeof(std::invoke(empty,pointer()))==sizeof(bool));
+static_assert(std::is_same<decltype(std::invoke(empty,pointer())),bool>::value);
+return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-query" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerTransparent) {
+  const auto Source = tmpFile("functional-object-pointer-transparent.cpp");
+  const auto Output = tmpFile("functional-object-pointer-transparent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int main(){int n=1;int*p=&n;int*z=nullptr;void*v=p;
+std::logical_and<> both;std::logical_or<> either;std::logical_not<> empty;
+if(!both(p,v)||both(p,nullptr)||!either(nullptr,p)||!empty(z)||empty(v))return 1;
+if(!std::invoke(both,p,v)||std::invoke(both,p,nullptr)||!std::invoke(either,nullptr,v)||!std::invoke(empty,z))return 2;
+static_assert(__is_same(decltype(std::invoke(both,p,nullptr)),bool));
+static_assert(noexcept(std::invoke(either,p,nullptr)));
+return n==1?0:3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-transparent" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerNullptr) {
+  const auto Source = tmpFile("functional-object-pointer-nullptr.cpp");
+  const auto Output = tmpFile("functional-object-pointer-nullptr.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using N=decltype(nullptr);
+int effects=0;
+N value(){++effects;return nullptr;}
+int main(){N n=nullptr;std::logical_not<N> empty;std::logical_and<N> both;std::logical_or<const N> either;
+if(!empty(n)||both(n,nullptr)||either(n,nullptr))return 1;
+if(!std::invoke(empty,n)||std::invoke(both,n,nullptr)||std::invoke(either,n,nullptr))return 2;
+if(!std::logical_not<>{}(nullptr)||std::logical_and<>{}(nullptr,nullptr)||std::logical_or<>{}(nullptr,nullptr))return 3;
+static_assert(__is_same(decltype(std::invoke(empty,value())),bool));
+static_assert(sizeof(std::logical_not<>{}(value()))==sizeof(bool));
+return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-nullptr" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"class-specialization", R"cpp(#include <functional>
+#include <type_traits>
+namespace std{template<>struct logical_not<void*>{bool operator()(void*const&)const{return false;}};}int f(void*p){return std::logical_not<void*>{}(p);}
+)cpp"},
+      {"hidden-alias", R"cpp(#include <functional>
+#include <type_traits>
+using P=decltype((sizeof(long double),static_cast<void*>(nullptr)));int f(P p){return std::logical_not<P>{}(p);}
+)cpp"},
+      {"hidden-argument", R"cpp(#include <functional>
+#include <type_traits>
+int f(void*p){static_assert(__is_same(decltype(std::logical_not<void*>{}((sizeof(long double),p))),bool));return 0;}
+)cpp"},
+      {"hidden-cleanup", R"cpp(#include <functional>
+#include <type_traits>
+struct R{~R()noexcept{long double hidden=0;}};void* pointer(R r=R{}){return nullptr;}int f(){static_assert(__is_same(decltype(std::invoke(std::logical_not<void*>{},pointer())),bool));return 0;}
+)cpp"},
+      {"hidden-default", R"cpp(#include <functional>
+#include <type_traits>
+void* pointer(int n=sizeof(long double)){return nullptr;}int f(){static_assert(__is_same(decltype(std::logical_not<void*>{}(pointer())),bool));return 0;}
+)cpp"},
+      {"incomplete-pointee", R"cpp(#include <functional>
+#include <type_traits>
+struct R;int f(R*p){return std::logical_not<R*>{}(p);}
+)cpp"},
+      {"invoke-address", R"cpp(#include <functional>
+#include <type_traits>
+int f(){static_assert(sizeof(&std::invoke<std::logical_not<void*>&,void*&>)>0);return 0;}
+)cpp"},
+      {"member-address", R"cpp(#include <functional>
+#include <type_traits>
+int f(){static_assert(sizeof(&std::logical_not<void*>::operator())>0);return 0;}
+)cpp"},
+      {"method-specialization", R"cpp(#include <functional>
+#include <type_traits>
+namespace std{template<>constexpr bool logical_not<void*>::operator()(void*const&p)const{return p!=nullptr;}}int f(void*p){return std::logical_not<void*>{}(p);}
+)cpp"},
+      {"pointer-arithmetic-call", R"cpp(#include <functional>
+#include <type_traits>
+int f(int*p){return *std::plus<>{}(p,1);}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <type_traits>
+struct R{operator void*()const{return nullptr;}};using T=decltype(std::invoke(std::logical_not<void*>{},R{}));int f(){return 0;}
+)cpp"},
+      {"void-ordering", R"cpp(#include <functional>
+#include <type_traits>
+int f(void*p,void*q){return std::less<void*>{}(p,q);}
+)cpp"},
+      {"volatile-pointee", R"cpp(#include <functional>
+#include <type_traits>
+int f(volatile int*p){return std::logical_not<volatile int*>{}(p);}
+)cpp"},
+      {"volatile-value", R"cpp(#include <functional>
+#include <type_traits>
+int f(int*volatile&p){return std::logical_not<int*volatile>{}(p);}
+)cpp"},
+      {"wide-pointee", R"cpp(#include <functional>
+#include <type_traits>
+int f(long double*p){return std::logical_not<long double*>{}(p);}
+)cpp"},
+  };
+  for (const auto &C : Cases) {
+    SCOPED_TRACE(C.Name);
+    const auto Source = tmpFile(
+        std::string("functional-object-pointer-guard-") + C.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("functional-object-pointer-guard-") + C.Name + ".nc");
+    writeFile(Source, C.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerRanges) {
+  const auto Source = tmpFile("functional-object-pointer-ranges.cpp");
+  const auto Output = tmpFile("functional-object-pointer-ranges.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <algorithm>
+int main(){int n=1;int*p=&n;int* a[4]={p,nullptr,p,nullptr};int* output[4]={};
+std::logical_not<int*> empty;
+if(std::find_if(a,a+4,empty)!=a+1)return 1;
+if(std::find_if_not(a,a+4,empty)!=a)return 2;
+if(std::count_if(a,a+4,empty)!=2||std::none_of(a,a+4,empty)||std::all_of(a,a+4,empty)||!std::any_of(a,a+4,empty))return 3;
+if(std::copy_if(a,a+4,output,empty)!=output+2||output[0]!=nullptr||output[1]!=nullptr)return 4;
+if(std::remove_copy_if(a,a+4,output,empty)!=output+2||output[0]!=p||output[1]!=p)return 5;
+int* b[4]={nullptr,nullptr,p,p};if(!std::is_partitioned(b,b+4,empty)||std::partition_point(b,b+4,empty)!=b+2)return 6;
+int* yes[4]={};int* no[4]={};auto split=std::partition_copy(a,a+4,yes,no,empty);
+if(split.first!=yes+2||split.second!=no+2||yes[0]!=nullptr||no[0]!=p)return 7;
+std::replace_copy_if(a,a+4,output,empty,p);if(output[0]!=p||output[1]!=p||output[2]!=p||output[3]!=p)return 8;
+std::replace_if(a,a+4,empty,p);if(std::count_if(a,a+4,empty)!=0)return 9;
+a[1]=nullptr;a[3]=nullptr;if(std::remove_if(a,a+4,empty)!=a+2||a[0]!=p||a[1]!=p)return 10;
+if(std::find_if(a,a,empty)!=a||std::count_if(a,a,empty)!=0)return 11;
+void* v[3]={p,nullptr,p};if(std::count_if(v,v+3,std::logical_not<void*>{})!=1)return 12;
+if(std::count_if(v,v+3,std::logical_not<>{})!=1)return 13;
+return n==1?0:14;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalObjectPointerConvertedValues) {
+  const auto Source = tmpFile("functional-object-pointer-converted.cpp");
+  const auto Output = tmpFile("functional-object-pointer-converted.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int cleanup=0;
+struct R{void* pointer;operator void*()const{++effects;return pointer;}~R(){++cleanup;}};
+int main(){int n=1;std::logical_not<void*> empty;std::logical_and<void*> both;
+bool a=empty(R{nullptr});if(!a||effects!=1||cleanup!=1)return 1;
+effects=0;cleanup=0;bool b=both(R{nullptr},R{&n});
+if(b||effects!=2||cleanup!=2)return 2;
+return n==1?0:3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-object-pointer-converted" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}

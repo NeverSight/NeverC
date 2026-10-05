@@ -344,6 +344,15 @@ checks the pinned SDK result and dispatch declarations without executing the
 callable, defaults or temporary cleanup. Caller definitions, written aliases
 and operand sources keep their existing checks.
 
+Typed and transparent `std::logical_and`, `std::logical_or` and
+`std::logical_not` also accept supported complete object pointers, `void*` and
+`decltype(nullptr)` values, including admitted `const` types. Direct calls,
+`std::invoke` and their type queries keep the same Boolean conversions and
+argument evaluation. The fourteen supported unary predicate algorithms accept
+pinned `std::logical_not` on object-pointer and `void*` ranges. Incomplete or
+volatile pointees, user-defined conversions and replaced SDK declarations
+retain their existing checks.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

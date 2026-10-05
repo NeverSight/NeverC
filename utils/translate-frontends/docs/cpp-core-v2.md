@@ -3935,6 +3935,19 @@ transparent calls retain Clang's selected common pointer type. The generated
 comparison uses the same verified pointer boundary as ordinary scalar
 comparisons, including the profile's native address order for complete object
 pointers.
+Typed and transparent `logical_and`, `logical_or` and `logical_not` also
+accept admitted complete object pointers, `void *` and `decltype(nullptr)`
+values, including admitted top-level `const` and const pointees. Their exact
+SDK signatures and selected built-in Boolean operations retain the ordinary
+conversion checks. Direct calls and `std::invoke` capture every argument once;
+logical operations still capture both arguments before forming the result.
+These values also use the signature-only query proof below. Evaluated arguments
+may use already-admitted source-owned conversions; conversion calls and
+full-expression cleanup retain their ordinary source validation. Signature-only
+`std::invoke` queries retain the direct-conversion requirement. This support
+does not require dereferencing a pointee. Incomplete or volatile pointees,
+unsupported qualifiers, source replacements and independent SDK member
+addresses retain their existing boundaries.
 `std::equal_to`, `std::not_equal_to`, `std::logical_and`, `std::logical_or`
 and `std::logical_not` additionally accept fixed-arity ordinary function-pointer
 values, including `noexcept` signatures and typed top-level `const` arguments.
@@ -6221,6 +6234,14 @@ outputs retain the same separate boundaries. Empty ranges construct the
 predicate once without calls or stores, and caller full-expression cleanup
 retains its ordinary timing. These SDK predicates test pointer values without
 invoking the pointed-to functions.
+
+The same fourteen unary predicate algorithms accept pinned typed or
+transparent `std::logical_not` on ranges of admitted complete object pointers
+or `void *`. The selected SDK method and exact scalar pointer conversion
+remain authenticated before the built-in Boolean test. Element, replacement
+and output storage keep their existing exact types and source checks. Empty
+ranges preserve predicate initialization without calls or stores; the
+operations test pointer values without dereferencing their pointees.
 
 Source-owned class-template predicates additionally support checked concrete
 primary, partial and full class specializations with an in-class non-template
