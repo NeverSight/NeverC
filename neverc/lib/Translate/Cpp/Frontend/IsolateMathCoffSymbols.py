@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolate four MSVC math templates while retaining their compiled SDK bodies."""
+"""Isolate known MSVC math templates while retaining their compiled SDK bodies."""
 
 import argparse
 from collections import Counter
@@ -17,6 +17,7 @@ from RewriteSetupCoffSymbols import inspect_archive
 
 MATH_RENAMES = {
     "??$log10@H$0A@@@YANH@Z": "??$neverc_cpp_log10@H$0A@@@YANH@Z",
+    "??$log10@_J$0A@@@YAN_J@Z": "??$neverc_cpp_log10@_J$0A@@@YAN_J@Z",
     "??$pow@HH$0A@@@YANHH@Z": "??$neverc_cpp_pow@HH$0A@@@YANHH@Z",
     "??$pow@MH$0A@@@YANMH@Z": "??$neverc_cpp_pow@MH$0A@@@YANMH@Z",
     "??$pow@NH$0A@@@YANNH@Z": "??$neverc_cpp_pow@NH$0A@@@YANNH@Z",

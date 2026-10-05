@@ -93,6 +93,15 @@ class MathIsolationTests(unittest.TestCase):
             with self.subTest(names=names), self.assertRaises(ValueError):
                 math.checked_names(names)
 
+    def test_signed_64_bit_log10_keeps_exact_signature_and_private_identity(self):
+        old = "??$log10@_J$0A@@@YAN_J@Z"
+        new = "??$neverc_cpp_log10@_J$0A@@@YAN_J@Z"
+        self.assertEqual(math.checked_names([old, "other"]), {old: new})
+        for names in (["??$log10@_K$0A@@@YAN_K@Z"],
+                      ["??$log10@_J$0A@@@YAM_J@Z"], [old, new], [new]):
+            with self.subTest(names=names), self.assertRaises(ValueError):
+                math.checked_names(names)
+
 
 class SectionNumberRestorationTests(unittest.TestCase):
     def section_symbol(self, section=1, selection=0):
