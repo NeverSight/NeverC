@@ -76522,9 +76522,11 @@ TEST_F(TranslateTest,
       {"reference",
        "struct F { bool operator()(const Callback&) & { return true; } };",
        "input", "output", "F{}", "replacement", false},
-      {"input-conversion",
-       "struct F { bool operator()(Callback) & { return true; } };", "safe",
-       "safe_output", "F{}", "safe_replacement", false},
+      {"input-user-conversion",
+       "struct Input { operator Callback() const { return one; } };"
+       "Input converted[2], converted_output[2], converted_replacement;"
+       "struct F { bool operator()(Callback) & { return true; } };", "converted",
+       "converted_output", "F{}", "converted_replacement", false},
       {"replacement-conversion",
        "struct F { bool operator()(Callback) & { return true; } };", "input",
        "output", "F{}", "safe_replacement", false},
@@ -78962,8 +78964,9 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackRemoveObjectsRequireExactTypes) {
   } Cases[] = {
       {"reference", "struct F { bool operator()(const Callback&) & { return true; } };",
        "input", "F{}"},
-      {"input-conversion", "struct F { bool operator()(Callback) & { return true; } };",
-       "safe", "F{}"},
+      {"input-user-conversion", "struct Input { operator Callback() const { return one; } };"
+       "Input converted[2];struct F { bool operator()(Callback) & { return true; } };",
+       "converted", "F{}"},
       {"bool-conversion", "struct F { bool operator()(bool) & { return true; } };",
        "input", "F{}"},
       {"method-template", "struct F { template<class T> bool operator()(T) & { return true; } };",
@@ -81328,6 +81331,797 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CallbackContainersCapacity) {
+  const auto Source = tmpFile("callback-containers-capacity.cpp");
+  const auto Output = tmpFile("callback-containers-capacity.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::vector<F>a(3);if(a[0]!=nullptr||a[2]!=nullptr)return 1;a[1]=one;int effects=0;a.reserve((++effects,40));if(effects!=1||a.capacity()<40||a.size()!=3||a[1](3)!=4)return 2;a.resize(7);if(a[3]!=nullptr||a[6]!=nullptr||a[1](3)!=4)return 3;a.resize(2);a.shrink_to_fit();if(a.size()!=2||a[1](3)!=4)return 4;a.clear();return a.empty()?0:5;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-capacity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersComplexSignatures) {
+  const auto Source = tmpFile("callback-containers-complex-signatures.cpp");
+  const auto Output = tmpFile("callback-containers-complex-signatures.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+struct R{int value;};using Ref=int&(*)(int&);using Array=int(*)(const int(&)[2]);using Object=R(*)(const R&);int& identity(int&x){return x;}int sum(const int(&x)[2]){return x[0]+x[1];}R copy(const R&r){return R{r.value+1};}
+int main(){std::vector<Ref>r{identity};int x=3;r[0](x)=7;if(x!=7)return 1;std::vector<Array>a{sum};const int values[2]{3,4};if(a[0](values)!=7)return 2;std::vector<Object>o{copy};R value{4};if(o[0](value).value!=5)return 3;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-complex-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersCompositions) {
+  const auto Source = tmpFile("callback-containers-compositions.cpp");
+  const auto Output = tmpFile("callback-containers-compositions.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <array>
+#include <optional>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){std::vector<std::array<F,2>>a;a.push_back(std::array<F,2>{{one,nullptr}});auto b=a;if(a!=b||a[0][0](3)!=4)return 1;b[0][1]=two;if(a==b)return 2;std::vector<std::pair<F,int>>p;p.push_back(std::pair<F,int>{one,4});auto q=p;if(p!=q||p[0].first(3)!=4)return 3;q[0].first=two;if(p==q)return 4;std::vector<std::optional<F>>o;o.push_back(std::optional<F>{one});o.push_back(std::optional<F>{});o.push_back(std::optional<F>{nullptr});auto r=o;if(r!=o||(*r[0])(3)!=4||r[1]||!r[2]||*r[2]!=nullptr)return 5;r[0]=two;if(r==o)return 6;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-compositions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersEmplacement) {
+  const auto Source = tmpFile("callback-containers-emplacement.cpp");
+  const auto Output = tmpFile("callback-containers-emplacement.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}int two(int x){return x+2;}
+int main(){std::vector<F>a;a.emplace_back();if(a[0]!=nullptr)return 1;N n=one;const N cn=one;a.emplace_back(one);a.emplace_back(cn);a.emplace_back(nullptr);int reads=0;a.emplace(a.begin()+1,(++reads,n));a.emplace(a.begin()+2,two);a.emplace(a.begin()+3,nullptr);if(reads!=1||a.size()!=7||a[1](3)!=4||a[2](3)!=5||a[3]!=nullptr||a[4](3)!=4||a[5](3)!=4||a[6]!=nullptr)return 2;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-emplacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersEquality) {
+  const auto Source = tmpFile("callback-containers-equality.cpp");
+  const auto Output = tmpFile("callback-containers-equality.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){std::vector<F>a{one,nullptr},b{one,nullptr},c{two,nullptr};return a==b&&!(a!=b)&&a!=c?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersFactoryConversions) {
+  const auto Source = tmpFile("callback-containers-factory-conversions.cpp");
+  const auto Output = tmpFile("callback-containers-factory-conversions.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}
+int main(){std::vector<F>a;a.emplace_back(one);N n=one;a.emplace_back(n);a.emplace_back(nullptr);if(a[0](3)!=4||a[1](3)!=4||a[2]!=nullptr)return 1;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-factory-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersLifecycle) {
+  const auto Source = tmpFile("callback-containers-lifecycle.cpp");
+  const auto Output = tmpFile("callback-containers-lifecycle.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <utility>
+using F=int(*)(int); int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){std::vector<F> a{one,nullptr,two};auto b=a;std::vector<F>c(std::move(b));if(c.size()!=3||c.front()(3)!=4||c.back()(3)!=5)return 1;std::vector<F>d;d=c;std::vector<F>e;e=std::move(d);return e.size()==3&&e[1]==nullptr?0:2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-lifecycle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersModifiers) {
+  const auto Source = tmpFile("callback-containers-modifiers.cpp");
+  const auto Output = tmpFile("callback-containers-modifiers.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){std::vector<F> a(2,one);a.insert(a.begin()+1,two);if(a.size()!=3||a[1](3)!=5)return 1;a.erase(a.begin());a.resize(4,nullptr);if(a.size()!=4||a[3]!=nullptr)return 2;a.assign(2,two);return a.size()==2&&a[0](3)==5?0:3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-modifiers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersNested) {
+  const auto Source = tmpFile("callback-containers-nested.cpp");
+  const auto Output = tmpFile("callback-containers-nested.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){std::vector<std::vector<F>>a;a.emplace_back();a[0].push_back(one);a.emplace_back(a[0]);if(a.size()!=2||a[1][0](3)!=4)return 1;auto b=a;if(a!=b)return 2;b[1][0]=two;if(a==b)return 3;a.resize(4);if(!a[3].empty())return 4;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-nested" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersNoexcept) {
+  const auto Source = tmpFile("callback-containers-noexcept.cpp");
+  const auto Output = tmpFile("callback-containers-noexcept.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <utility>
+using F=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}int two(int x)noexcept{return x+2;}
+int main(){std::vector<F>a{one,nullptr},b{two};a.push_back(two);a.emplace(a.begin()+1,one);auto c=a;if(c!=a||c[1](3)!=4||c.back()(3)!=5)return 1;a.swap(b);if(a.size()!=1||a[0](3)!=5||b.size()!=4)return 2;std::swap(a,b);return a.size()==4&&b.size()==1?0:3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-noexcept" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersOptionalConversions) {
+  const auto Source = tmpFile("callback-containers-optional-conversions.cpp");
+  const auto Output = tmpFile("callback-containers-optional-conversions.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}
+int main(){std::optional<N>a{one};const auto ca=a;std::optional<F>b{ca};if(!b||(*b)(3)!=4)return 1;std::optional<F>c(std::move(a));if(!c||(*c)(3)!=4)return 2;std::optional<N>empty;std::optional<F>d{empty};if(d)return 3;d=ca;if(!d||(*d)(3)!=4)return 4;d=empty;if(d)return 5;std::optional<N>null{nullptr};std::optional<bool>truth{ca},falsity{null},absence{empty};if(!truth||!*truth||!falsity||*falsity||absence)return 6;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-optional-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersOptionalEmplacement) {
+  const auto Source = tmpFile("callback-containers-optional-emplacement.cpp");
+  const auto Output = tmpFile("callback-containers-optional-emplacement.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}
+int main(){std::vector<std::optional<F>>a;N n=one;a.emplace_back(n);a.emplace_back(std::in_place,one);a.emplace_back(nullptr);a.emplace_back(std::nullopt);a.emplace(a.begin()+1,std::in_place,n);a.emplace(a.begin()+2,one);if(a.size()!=6||(*a[0])(3)!=4||(*a[1])(3)!=4||(*a[2])(3)!=4||(*a[3])(3)!=4||!a[4]||*a[4]!=nullptr||a[5])return 1;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-optional-emplacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersOptionalEquality) {
+  const auto Source = tmpFile("callback-containers-optional-equality.cpp");
+  const auto Output = tmpFile("callback-containers-optional-equality.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}int two(int x){return x+2;}
+int main(){std::optional<F>a{one},b{one},different{two},null{nullptr},empty;std::optional<N>safe{one};if(a!=b||!(a==b)||a==different||!(a!=different)||a==null||null==empty||empty!=std::nullopt)return 1;if(a!=safe||!(safe==a)||a!=one||one!=a||null!=nullptr||nullptr!=null)return 2;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-optional-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersOptionalFactoriesSwap) {
+  const auto Source =
+      tmpFile("callback-containers-optional-factories-swap.cpp");
+  const auto Output = tmpFile("callback-containers-optional-factories-swap.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}int two(int x){return x+2;}
+int main(){auto a=std::make_optional(one);std::optional<F>b;b.emplace(one);if(!a||(*a)(3)!=4||(*b)(3)!=4)return 1;auto c=std::make_optional<F>(nullptr);if(!c||*c!=nullptr)return 2;N n=one;b.emplace(n);if((*b)(3)!=4)return 3;std::optional<F>d{two};b.swap(d);if((*b)(3)!=5||(*d)(3)!=4)return 4;std::optional<F>empty;std::swap(b,empty);if(b||!empty||(*empty)(3)!=5)return 5;b=one;if(b.value_or(two)(3)!=4||std::optional<F>{}.value_or(two)(3)!=5)return 6;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-optional-factories-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersOptionalStorage) {
+  const auto Source = tmpFile("callback-containers-optional-storage.cpp");
+  const auto Output = tmpFile("callback-containers-optional-storage.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+using F=int(*)(int); int add(int x){return x+1;}
+int main(){std::optional<F> a{add}; if(!a || (*a)(2)!=3) return 1; std::optional<F> b{nullptr};if(!b || *b!=nullptr)return 2; std::optional<F> c;if(c)return 3;c=a;if(!c || (*c)(4)!=5)return 4;c.reset();return c?5:0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-optional-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersRanges) {
+  const auto Source = tmpFile("callback-containers-ranges.cpp");
+  const auto Output = tmpFile("callback-containers-ranges.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){F values[3]{one,nullptr,two};std::vector<F>a(values,values+3);std::vector<F>b(a.begin(),a.end());if(b.size()!=3||b[0](3)!=4||b[1]!=nullptr||b[2](3)!=5)return 1;b.insert(b.begin()+1,values+1,values+3);if(b.size()!=5||b[1]!=nullptr||b[2](3)!=5)return 2;b.assign(a.cbegin(),a.cend());if(b!=a)return 3;b={two,one};return b.size()==2&&b[0](3)==5&&b[1](3)==4?0:4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersStorage) {
+  const auto Source = tmpFile("callback-containers-storage.cpp");
+  const auto Output = tmpFile("callback-containers-storage.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int); int one(int x){return x+1;}
+int main(){std::vector<F> v;v.push_back(one);v.push_back(nullptr);if(v.size()!=2||v[0](3)!=4||v[1]!=nullptr)return 1;v[1]=one;return v.back()(2)==3?0:2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersAliasing) {
+  const auto Source = tmpFile("callback-containers-aliasing.cpp");
+  const auto Output = tmpFile("callback-containers-aliasing.nc");
+  writeFile(Source, R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+using F=int(*)(int);int one(int x){return x+1;}int two(int x){return x+2;}
+int main(){std::vector<F>a;a.reserve(2);a.push_back(one);a.push_back(two);a.emplace(a.begin()+1,a.front());if(a.size()!=3||a[1](3)!=4||a.back()(3)!=5)return 1;a.push_back(a[1]);if(a.back()(3)!=4)return 2;a.resize(10,a[0]);if(a[9](3)!=4)return 3;a.insert(a.begin()+1,3,a.back());if(a.size()!=13||a[1](3)!=4||a[3](3)!=4)return 4;a.assign(2,a.front());if(a.size()!=2||a[0](3)!=4||a[1](3)!=4)return 5;int total=0;for(auto f:a)total+=f(3);for(auto it=a.rbegin();it!=a.rend();++it)total+=(*it)(3);return total==16?0:6;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-containers-aliasing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2CallbackContainersRetainSourceAndOrderingBoundaries) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"vector-callback-order", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::vector<F>a{one},b{one};return a<b;}
+)cpp",
+       "TR0203"},
+      {"nested-vector-callback-order", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::vector<std::vector<F>>a,b;return a<b;}
+)cpp",
+       "TR0203"},
+      {"vector-array-callback-order", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::vector<std::array<F,1>>a,b;return a<b;}
+)cpp",
+       "TR0203"},
+      {"vector-pair-callback-order", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::vector<std::pair<F,int>>a,b;return a<b;}
+)cpp",
+       "TR0203"},
+      {"vector-optional-callback-order", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::vector<std::optional<F>>a,b;return a<b;}
+)cpp",
+       "TR0203"},
+      {"optional-callback-order", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::optional<F>a{one},b{one};return a<b;}
+)cpp",
+       "TR0203"},
+      {"vector-unsupported-signature", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+using Bad=long double(*)();int main(){std::vector<Bad>a;return a.size();}
+)cpp",
+       "TR0201"},
+      {"optional-unsupported-signature", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+using Bad=long double(*)();int main(){std::optional<Bad>a;return a.has_value();}
+)cpp",
+       "TR0201"},
+      {"vector-variadic-signature", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+using Bad=int(*)(int,...);int main(){std::vector<Bad>a;return a.size();}
+)cpp",
+       "TR0201"},
+      {"optional-variadic-signature", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+using Bad=int(*)(int,...);int main(){std::optional<Bad>a;return a.has_value();}
+)cpp",
+       "TR0201"},
+      {"vector-missing-definition", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int missing(int);int main(){std::vector<F>a{missing};return a.size();}
+)cpp",
+       "TR0203"},
+      {"optional-missing-definition", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int missing(int);int main(){std::optional<F>a{missing};return a.has_value();}
+)cpp",
+       "TR0203"},
+      {"vector-user-conversion", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+struct R{operator F()const{return one;}};int main(){std::vector<F>a;a.emplace_back(R{});return a.size();}
+)cpp",
+       "TR0203"},
+      {"optional-user-conversion", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+struct R{operator F()const{return one;}};int main(){std::optional<F>a{R{}};return a.has_value();}
+)cpp",
+       "TR0203"},
+      {"vector-array-nontrivial-default", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+struct R{int n;R():n(3){}};int main(){std::vector<std::array<R,1>>a(2);return a.size();}
+)cpp",
+       "TR0203"},
+      {"optional-throwing-value", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+int main(){std::optional<F>a;return a.value()(3);}
+)cpp",
+       "TR0203"},
+      {"vector-original-array-bound", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+using A=int[(sizeof(long double),2)];using Bad=int(*)(A&);int main(){std::vector<Bad>a;return a.size();}
+)cpp",
+       "TR0201"},
+      {"optional-original-array-bound", R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n){return malloc(n);}
+void operator delete(void *p)noexcept{free(p);}
+#include <vector>
+#include <optional>
+#include <array>
+#include <utility>
+using F=int(*)(int);int one(int x){return x+1;}
+using A=int[(sizeof(long double),2)];using Bad=int(*)(A&);int main(){std::optional<Bad>a;return a.has_value();}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("callback-containers-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("callback-containers-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CallbackContainersAlgorithmNoexceptConversions) {
+  const auto Source = tmpFile("callback-algorithm-noexcept-conversions.cpp");
+  const auto Output = tmpFile("callback-algorithm-noexcept-conversions.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+using F=int(*)(int);using N=int(*)(int)noexcept;int one(int x)noexcept{return x+1;}int two(int x)noexcept{return x+2;}int calls;
+struct SelectOne{bool operator()(F callback)&{++calls;return callback==one;}};
+int main(){N input[4]{one,nullptr,two,one};N replacement=two;std::replace_if(input,input+4,SelectOne{},replacement);if(calls!=4||input[0]!=two||input[1]!=nullptr||input[2]!=two||input[3]!=two)return 1;N original[4]{one,nullptr,two,one};N output[4]{};std::replace_copy_if(original,original+4,output,SelectOne{},replacement);if(calls!=8||output[0]!=two||output[1]!=nullptr||output[3]!=two)return 2;auto end=std::remove_if(original,original+4,SelectOne{});if(calls!=12||end!=original+2||original[0]!=nullptr||original[1]!=two)return 3;return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("callback-algorithm-noexcept-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -81348,9 +82142,9 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedOperations) {
        "#include <optional>\nstruct R{int n;~R(){}};int main(){"
        "std::optional<R>v(R{3});return v->n;}",
        "TR0203"},
-      {"composite-comparison",
+      {"by-value-composite-comparison",
        "#include <optional>\nstruct R{int n;};"
-       "bool operator==(const R&a,const R&b){return a.n==b.n;}"
+       "bool operator==(R a,R b){return a.n==b.n;}"
        "int main(){std::optional<R>a(R{1}),b(R{1});return a==b;}",
        "TR0203"},
       {"throwing-value",
@@ -81361,10 +82155,10 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedOperations) {
        "int f(B*p,D*q){std::optional<B*>a(p);std::optional<D*>b(q);"
        "return a==b;}int main(){return 0;}",
        "TR0203"},
-      {"function-pointer-element",
-       "#include <optional>\nusing F=int(*)();int main(){std::optional<F>v;"
+      {"unsupported-function-pointer-element",
+       "#include <optional>\nusing F=long double(*)();int main(){std::optional<F>v;"
        "return v.has_value();}",
-       "TR0203"},
+       "TR0201"},
       {"standalone-in-place",
        "#include <optional>\nint main(){auto tag=std::in_place;"
        "return sizeof(tag);}",

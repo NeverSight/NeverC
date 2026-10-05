@@ -2785,6 +2785,10 @@ std::optional<QualType> utilityScalarComparisonType(const ASTContext &Context,
   return Context.getCorrespondingUnsignedType(Signed);
 }
 
+static bool utilityCallbackDirectConversion(const ASTContext &Context,
+                                            QualType From, QualType To);
+
+// Algorithm storage and reference proofs require identical callback types.
 std::optional<QualType> utilityCallbackEqualityType(const ASTContext &Context,
                                                     QualType Left,
                                                     QualType Right) {
@@ -2800,6 +2804,31 @@ std::optional<QualType> utilityCallbackEqualityType(const ASTContext &Context,
   Right = Right.getCanonicalType().getUnqualifiedType();
   return Context.hasSameType(Left, Right) ? std::optional<QualType>(Left)
                                           : std::nullopt;
+}
+
+std::optional<QualType> utilityCallbackComparisonType(const ASTContext &Context,
+                                                    QualType Left,
+                                                    QualType Right) {
+  if (Left.isNull() || Right.isNull() || Left->isReferenceType() ||
+      Right->isReferenceType() || Left.isVolatileQualified() ||
+      Right.isVolatileQualified() || Left.isRestrictQualified() ||
+      Right.isRestrictQualified() ||
+      Left.getAddressSpace() != LangAS::Default ||
+      Right.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  Left = Left.getCanonicalType().getUnqualifiedType();
+  Right = Right.getCanonicalType().getUnqualifiedType();
+  if (Left->isFunctionType())
+    Left = Context.getPointerType(Left);
+  if (Right->isFunctionType())
+    Right = Context.getPointerType(Right);
+  if (Left->isFunctionPointerType() &&
+      utilityCallbackDirectConversion(Context, Right, Left))
+    return Left;
+  if (Right->isFunctionPointerType() &&
+      utilityCallbackDirectConversion(Context, Left, Right))
+    return Right;
+  return std::nullopt;
 }
 
 static bool utilityScalarDirectConversion(const ASTContext &Context,
@@ -5874,6 +5903,30 @@ bool approvedUtilityStringDestructor(const State &S, const SourceManager &SM,
          cstddefOrigin(S, SM, Destructor->getLocation(), "libcxx", "string");
 }
 
+static bool utilityVectorArrayValue(const State &S, const SourceManager &SM,
+                                    const ASTContext &Context, QualType Element,
+                                    unsigned Depth = 0) {
+  if (Depth >= 64 || Element.isNull() || Element.isVolatileQualified() ||
+      Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default)
+    return false;
+  if (utilityArrayValue(S, SM, Context, Element) ||
+      Element->isFunctionPointerType())
+    return true;
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (!Record || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialMoveConstructor() || !Record->hasTrivialDestructor())
+    return false;
+  if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
+    return utilityVectorArrayValue(S, SM, Context, Array->ElementType,
+                                   Depth + 1);
+  if (const auto Optional =
+          approvedUtilityOptionalRecord(S, SM, Record, Context))
+    return utilityVectorArrayValue(S, SM, Context, Optional->ElementType,
+                                   Depth + 1);
+  return false;
+}
+
 static bool utilityVectorArrayAssignableElements(const State &S,
                                                  const SourceManager &SM,
                                                  const ASTContext &Context,
@@ -5890,7 +5943,7 @@ static bool utilityVectorArrayAssignableElements(const State &S,
                                                 Nested->ElementType, Depth + 1);
   if (approvedUtilityPairRecord(S, SM, Record, Context))
     return utilityPairAssignableValue(S, SM, Context, Element);
-  return utilityArrayValue(S, SM, Context, Element) &&
+  return utilityVectorArrayValue(S, SM, Context, Element) &&
          utilityArrayTriviallyAssignable(Context, Element);
 }
 
@@ -5900,11 +5953,11 @@ static bool utilityVectorOptionalValue(const State &S, const SourceManager &SM,
   if (Depth >= 64 || Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified())
     return false;
-  if (utilityScalar(Context, Element))
+  if (utilityScalar(Context, Element) || Element->isFunctionPointerType())
     return true;
   const auto *Record = Element->getAsCXXRecordDecl();
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
-    return utilityArrayValue(S, SM, Context, Element) &&
+    return utilityVectorArrayValue(S, SM, Context, Element) &&
            utilityVectorArrayAssignableElements(S, SM, Context,
                                                 Array->ElementType);
   const auto Nested = approvedUtilityOptionalRecord(S, SM, Record, Context);
@@ -5978,7 +6031,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor() && ValueArray &&
-      utilityArrayValue(S, SM, Context, Element) &&
+      utilityVectorArrayValue(S, SM, Context, Element) &&
       utilityVectorArrayAssignableElements(S, SM, Context,
                                            ValueArray->ElementType);
   const auto ValueOptional =
@@ -6065,7 +6118,8 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
-        Element->isObjectPointerType() || TrivialSourceRecord ||
+        Element->isObjectPointerType() || Element->isFunctionPointerType() ||
+        TrivialSourceRecord ||
         ValuePairElement || ValueArrayElement || ValueOptionalElement ||
         OwningElement || SourceOwnedElement) ||
       Element->isIncompleteType())
@@ -6182,7 +6236,7 @@ static bool utilityVectorPairComparable(const State &S, const SourceManager &SM,
     return false;
   if (Element->isPointerType()) {
     if (Element->isFunctionPointerType())
-      return false;
+      return Equality;
     return Equality || (Element->isObjectPointerType() &&
                         !Element->getPointeeType()->isIncompleteType());
   }
@@ -6215,7 +6269,7 @@ static bool utilityVectorArrayComparable(const State &S,
     return false;
   if (Element->isPointerType()) {
     if (Element->isFunctionPointerType())
-      return false;
+      return Equality;
     return Equality || (Element->isObjectPointerType() &&
                         !Element->getPointeeType()->isIncompleteType());
   }
@@ -6371,6 +6425,17 @@ const CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
   return Selected;
 }
 
+static bool utilityVectorCallbackEmplaceArgument(const ASTContext &Context,
+                                                 QualType Element,
+                                                 QualType Parameter,
+                                                 const Expr *Argument) {
+  return !Element.isNull() && Element->isFunctionPointerType() && Argument &&
+         Parameter->isReferenceType() &&
+         Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        Argument->getType()) &&
+         utilityCallbackDirectConversion(Context, Argument->getType(), Element);
+}
+
 std::optional<UtilityVectorOptionalEmplace>
 approvedUtilityVectorOptionalEmplace(const State &S, const SourceManager &SM,
                                      const UtilityVectorRecord &Vector,
@@ -6386,6 +6451,9 @@ approvedUtilityVectorOptionalEmplace(const State &S, const SourceManager &SM,
       !utilityVectorOptionalValue(S, SM, Context, Optional->ElementType))
     return std::nullopt;
   auto ValueArgument = [&](QualType Argument) {
+    if (Optional->ElementType->isFunctionPointerType())
+      return utilityCallbackDirectConversion(Context, Argument,
+                                            Optional->ElementType);
     if (utilityScalar(Context, Optional->ElementType))
       return utilityScalarDirectConversion(Context, Argument,
                                            Optional->ElementType);
@@ -9812,7 +9880,7 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
   }
   if (utilityScalarComparisonType(Context, Left, Right, Ordered))
     return true;
-  if (!Ordered && utilityCallbackEqualityType(Context, Left, Right))
+  if (!Ordered && utilityCallbackComparisonType(Context, Left, Right))
     return true;
 
   const auto LeftArray = approvedUtilityArrayRecord(
@@ -17083,8 +17151,10 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
         break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()) &&
-          !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+          !(Cast->getSubExpr()->getType()->isFunctionPointerType() &&
+            Cast->getType()->isFunctionPointerType() &&
+            utilityCallbackDirectConversion(
+                Context, Cast->getSubExpr()->getType(), Cast->getType())))
         return false;
       Argument = Cast->getSubExpr();
     }
@@ -19477,9 +19547,15 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       if (!S.owns(SM, D->getLocation()))
         return std::nullopt;
   }
+  auto PredicateConversion = [&](QualType From, QualType To) {
+    return InputConversion(From, To) ||
+           (CallbackElements && (Replacement || Remove) &&
+            From->isFunctionPointerType() && To->isFunctionPointerType() &&
+            utilityCallbackDirectConversion(Context, From, To));
+  };
   const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
                                          : Method->getParamDecl(0)->getType();
-  if (!InputConversion(Pointer->getPointeeType(), ArgumentType))
+  if (!PredicateConversion(Pointer->getPointeeType(), ArgumentType))
     return std::nullopt;
   if (!Composed && !Remove && !PartitionPoint) {
     const Expr *Argument = Invocation->getArg(1);
@@ -19495,7 +19571,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
       if (!Cast)
         break;
-      if (!InputConversion(Cast->getSubExpr()->getType(), Cast->getType()))
+      if (!PredicateConversion(Cast->getSubExpr()->getType(), Cast->getType()))
         return std::nullopt;
       Argument = Cast->getSubExpr();
     }
@@ -23864,6 +23940,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorEmplace;
         if (Method->getNumParams() == 2) {
           const auto Parameter = Method->getParamDecl(1)->getType();
+          if (utilityVectorCallbackEmplaceArgument(
+                  Context, Element, Parameter, Call->getArg(1)))
+            return UtilityOperation::VectorEmplace;
           const bool Copyable = CopyableString || CopyableNestedVector ||
                                 Vector->CopyElementConstructor;
           if ((((!Vector->OwningElement || Copyable) &&
@@ -23994,6 +24073,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
       if (Method->getNumParams() == 1) {
         const auto Parameter = Method->getParamDecl(0)->getType();
+        if (utilityVectorCallbackEmplaceArgument(
+                Context, Vector->ElementType, Parameter, Call->getArg(0)))
+          return UtilityOperation::VectorEmplaceBack;
         const bool Copyable = CopyableString || CopyableNestedVector ||
                               Vector->CopyElementConstructor;
         if ((((!Vector->OwningElement || Copyable) &&
@@ -24786,6 +24868,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Left->ElementType->isObjectPointerType() &&
           (Equality ||
            !Left->ElementType->getPointeeType()->isIncompleteType());
+      const bool CallbackElement =
+          Equality && Left->ElementType->isFunctionPointerType();
       const auto ComparisonOperator = Equality ? OO_EqualEqual : OO_Less;
       const auto *MemberComparison = approvedUtilityVectorElementComparison(
           S, SM, *Left, ComparisonOperator, Context);
@@ -24801,7 +24885,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Matching &&
           (Arithmetic || StringElement || PairElement || ArrayElement ||
            OptionalElement || UniquePointerElement || PointerElement ||
-           SourceComparison || NestedRelation))
+           CallbackElement || SourceComparison || NestedRelation))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:
@@ -25155,7 +25239,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     const auto Parameter = Function->getParamDecl(Index)->getType();
     return Parameter->isLValueReferenceType() &&
-           Parameter->getPointeeType().isConstQualified() &&
+           (Parameter->getPointeeType().isConstQualified() ||
+            Parameter->getPointeeType()->isFunctionType()) &&
            !Parameter->getPointeeType().isVolatileQualified() &&
            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                           Call->getArg(Index)->getType()) &&

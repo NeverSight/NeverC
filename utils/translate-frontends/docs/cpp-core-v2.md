@@ -2762,6 +2762,16 @@ shadows and forged declarations remain rejected.
 
 ## Value optionals from `<optional>`
 
+Checked fixed-arity ordinary function pointers, including `noexcept` signatures,
+retain their value through optional construction, copy/move, assignment, reset,
+`emplace`, `make_optional`, `value_or` and authenticated swap. Compatible
+conversions include function-to-pointer decay, `nullptr`, removal of `noexcept`
+and conversion of a contained function-pointer value to `bool`; an empty source
+optional remains empty. Equality and inequality accept compatible callback
+signatures, function designators and null function pointers. Original signature
+and definition sources remain checked. Function-pointer ordering and the
+throwing `value()` accessor remain outside this runtime boundary.
+
 Member and free swap prove the exact SDK engagement tests and value projections.
 When both objects are engaged, the selected element swap must satisfy the same
 recursive SDK operation proof as pairs, arrays and tuples. When only one is
@@ -2784,8 +2794,9 @@ that also includes `<array>`, `<tuple>` and `<utility>` has an identical
 253-file platform-free union closure on all eight targets.
 
 The current element boundary includes at-most-64-bit integral and enumeration
-types, `float`, `double`, object pointers and `nullptr_t`, with optional top-level
-`const`. It also includes source-owned trivial standard-layout records and the
+types, `float`, `double`, object pointers, checked ordinary function pointers
+and `nullptr_t`, with optional top-level `const`. It also includes source-owned
+trivial standard-layout records and the
 admitted array, pair and tuple value domains, recursively. Default and `nullopt`
 construction produce an empty value. Direct, zero- or single-value `in_place`,
 copy and move construction, converting construction from another optional,
@@ -6070,11 +6081,13 @@ or output element remain visible to later stores. Empty ranges still initialize
 the predicate parameter and preserve full-expression temporary cleanup.
 Both replacement forms also accept raw ranges of exact function-pointer
 elements, including `noexcept` signatures, through a source predicate object
-whose selected Boolean operator takes that pointer type by value. Replacement
-values must have the same pointer type; the copy form accepts const input and
-requires a writable raw output of that type. Reference predicate arguments,
-input/output/replacement pointer conversions, function-designator and `nullptr`
-replacement types, and Boolean output remain rejected. A pointer-typed
+whose selected Boolean operator takes a compatible pointer type by value.
+Checked removal of `noexcept` is accepted for that predicate argument.
+Replacement values must have the exact element pointer type; the copy form
+accepts const input and requires a writable raw output of that type. Reference
+predicate arguments, input/output/replacement storage conversions,
+function-designator and `nullptr` replacement types, user-defined conversions,
+and Boolean output remain rejected. A pointer-typed
 replacement value may itself be null. Predicate state persists across visits;
 each store rereads its input or replacement after the predicate returns, retaining
 changes through independently held pointers and input/output replacement aliases.
@@ -6141,10 +6154,11 @@ and full-expression cleanup preserve the same source parameter lifetime.
 Source-owned predicates also accept writable raw ranges of exact
 function-pointer elements, including `noexcept` signatures, with a non-template
 call operator returning `bool` and taking the pointer by value. Both the initial
-search and subsequent scan require that same exact pointer parameter type and
-selected method; the SDK `move` proof retains the exact element type. Pointer
-targets are not invoked by the translator. Reference predicate arguments and
-conversions between pointer signatures or to Boolean parameters remain rejected;
+search and subsequent scan require the same selected method and compatible
+by-value pointer parameter, including checked removal of `noexcept`; the SDK
+`move` proof retains the exact element type. Pointer targets are not invoked by
+the translator. Reference predicate arguments, incompatible pointer signatures,
+user-defined conversions and Boolean parameters remain rejected;
 SDK predicate objects retain their scalar boundary.
 Source-owned class-template predicates additionally support checked concrete
 primary, partial and full class specializations with an in-class non-template
@@ -6633,7 +6647,8 @@ retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
-integer and floating elements, object and void pointer elements, plus
+integer and floating elements, object, void and checked ordinary function-pointer
+elements, plus
 source-owned standard-layout records with trivial default/copy/move
 construction, assignment and destruction. Authenticated `std::pair` values
 whose fields are recursively admitted, assignable values also use this storage
@@ -6651,8 +6666,17 @@ range, and initializer-list `insert`; zero- or one-argument positional
 iterator range, and initializer-list `assign`; single-position and range
 `erase`; member/free swap; and all six vector/vector comparison operators for
 arithmetic and complete object-pointer elements. `void *` elements support
-equality and inequality only. Pointers to incomplete object types and function
-pointer elements remain outside this boundary.
+equality and inequality only. Checked ordinary function-pointer elements,
+including `noexcept` pointers, use the same storage, lifetime and mutation paths.
+Their zero-argument emplace and value initialization produce null pointers;
+checked one-argument emplace also admits function designators, compatible
+`noexcept` removal and `nullptr`. Authenticated array, optional and pair values
+containing callbacks, and nested vectors of callbacks, retain their admitted
+recursive storage and equality operations. Aliased callback inputs are captured
+before growth or element shifting. Function pointers support equality and
+inequality; ordering remains rejected, including through composite elements.
+Pointers to incomplete object types retain their existing restrictions. The
+existing source-defined allocation-function requirement remains in force.
 Insert and positional emplace return mutable iterators. Single-value insertion
 and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through

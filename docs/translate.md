@@ -290,6 +290,21 @@ apply to functions, function objects, member-function and `mem_fn` adapters, and
 direct or invoked reference wrappers through `invoke` and `apply`. A null function
 pointer converts to `false`. Top-level `const` on a value parameter does not alter
 the conversion; original signatures and exact reference bindings remain checked.
+Checked ordinary function-pointer values also use `std::optional` and
+`std::vector` storage, including `noexcept` signatures and admitted composite
+and nested vector elements. Construction, copying, mutation and swap preserve
+pointer values. Optional conversions preserve empty sources and convert contained
+pointer values; callback equality accepts compatible signatures, function names
+and `nullptr`. Vector emplace accepts checked callback conversions and preserves
+aliased inputs through growth and shifts. Callback ordering, throwing optional
+access and the existing vector allocation-definition requirement retain their
+separate boundaries. The source predicate objects of `replace_if`,
+`replace_copy_if` and `remove_if` also accept checked conversion from a compatible
+`noexcept` function pointer to an ordinary function pointer parameter; element,
+replacement and output storage types remain exact.
+See the [optional](../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional)
+and [vector](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
+contracts.
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
 tuple/pair sources plus scalar and recursively composite arrays, evaluates all
 sources once before reading their elements, and constructs the exact

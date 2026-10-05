@@ -2051,7 +2051,7 @@ class FunctionLowering {
       }
       if (!Ordered) {
         if (const auto Common =
-                utilityCallbackEqualityType(A.Context, LeftType, RightType)) {
+                utilityCallbackComparisonType(A.Context, LeftType, RightType)) {
           const auto CommonType = type(*Common, L);
           Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
                               cast(json::Object(RightValue), CommonType, L));
@@ -5164,7 +5164,7 @@ class FunctionLowering {
           A.Context, PointerQualType->getPointeeType(),
           Call->getArg(2)->getType(), false);
       if (!Common)
-        Common = utilityCallbackEqualityType(A.Context,
+        Common = utilityCallbackComparisonType(A.Context,
                                              PointerQualType->getPointeeType(),
                                              Call->getArg(2)->getType());
       const auto SourceComparison =
@@ -5237,7 +5237,7 @@ class FunctionLowering {
           A.Context, PointerQualType->getPointeeType(),
           Call->getArg(2)->getType(), false);
       if (!Common)
-        Common = utilityCallbackEqualityType(A.Context,
+        Common = utilityCallbackComparisonType(A.Context,
                                              PointerQualType->getPointeeType(),
                                              Call->getArg(2)->getType());
       const auto SourceComparison =
@@ -6007,7 +6007,7 @@ class FunctionLowering {
           A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(ValueIndex)->getType(), false);
       if (!Common)
-        Common = utilityCallbackEqualityType(
+        Common = utilityCallbackComparisonType(
             A.Context, CurrentRange.second->getPointeeType(),
             Call->getArg(ValueIndex)->getType());
       if (!Common && !SourceComparison)
@@ -6088,7 +6088,7 @@ class FunctionLowering {
           A.Context, CurrentRange.second->getPointeeType(),
           Call->getArg(OldIndex)->getType(), false);
       if (!Common)
-        Common = utilityCallbackEqualityType(
+        Common = utilityCallbackComparisonType(
             A.Context, CurrentRange.second->getPointeeType(),
             Call->getArg(OldIndex)->getType());
       if (!Common && !SourceComparison)
@@ -6450,7 +6450,7 @@ class FunctionLowering {
             A.Context, FirstRange.second->getPointeeType(),
             Call->getArg(3)->getType(), false);
         if (!Common)
-          Common = utilityCallbackEqualityType(
+          Common = utilityCallbackComparisonType(
               A.Context, FirstRange.second->getPointeeType(),
               Call->getArg(3)->getType());
         if (!Common && !SourceComparison)
@@ -13711,7 +13711,11 @@ class FunctionLowering {
                                   *Vector, L, Argument->getType());
             }
           } else {
-            Value = snapshot(expression(Call->getArg(1)), L);
+            auto Captured = expression(Call->getArg(1));
+            if (Vector->ElementType->isFunctionPointerType())
+              Captured =
+                  cast(std::move(Captured), type(Vector->ElementType, L), L);
+            Value = snapshot(std::move(Captured), L);
           }
         }
       } else {
@@ -15790,7 +15794,11 @@ class FunctionLowering {
             copyVectorElement(json::Object(*Value), lvalue(Argument), *Vector,
                               L, Argument->getType());
         } else {
-          Value = snapshot(expression(Call->getArg(0)), L);
+          auto Captured = expression(Call->getArg(0));
+          if (Vector->ElementType->isFunctionPointerType())
+            Captured =
+                cast(std::move(Captured), type(Vector->ElementType, L), L);
+          Value = snapshot(std::move(Captured), L);
         }
       }
       auto ConstructDirect = [&](Expression Target) {
@@ -21424,8 +21432,11 @@ class FunctionLowering {
                Greater, Equal, L);
       }
     } else {
-      const auto Common = utilityScalarComparisonType(
+      auto Common = utilityScalarComparisonType(
           A.Context, Optional.ElementType, Optional.ElementType, !Equality);
+      if (!Common && Equality)
+        Common = utilityCallbackComparisonType(A.Context, Optional.ElementType,
+                                             Optional.ElementType);
       if (!Common)
         reject(L, "vector optional comparison",
                "The selected optional value comparison is unavailable.");
@@ -21507,6 +21518,7 @@ class FunctionLowering {
         Vector.ElementType->isFloatingType() ||
         Vector.ElementType->isObjectPointerType() ||
         Vector.ElementType->isVoidPointerType() ||
+        (Equality && Vector.ElementType->isFunctionPointerType()) ||
         (Unique && !Unique->CustomDeleter &&
          A.Context.getBaseElementType(Unique->ElementType)->isBuiltinType())) {
       auto ComparableElement = [&](Expression Current) {
