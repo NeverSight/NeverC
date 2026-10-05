@@ -4193,6 +4193,29 @@ by-value record parameters/results; their materialized adapter path below keeps
 its existing construction proof. Independent SDK addresses, cast/indirect
 callees, volatile receivers and source replacements receive no exemption.
 
+Direct calls to admitted `reference_wrapper` objects and outer `std::invoke`
+queries also consume signatures without materializing wrapper or SDK dispatch
+bodies. The exact wrapper operator's substituted private `__invoke_result_t`
+chain must select the admitted function, function-pointer, source-owned call
+operator or scalar SDK function-object target. The private result and public
+outer result families retain their pinned declaration roots and exact `declval`
+operand flow. The wrapper's selected `get` declaration, storage and referent
+remain separately authenticated; source replacements cannot provide metadata.
+The inner invocability variable proves the referent lvalue and argument pack,
+and an outer query independently proves the wrapper category and pack. Exact
+scalar, callback, array-reference, record-reference and `void` results preserve
+the original selected prototype and exception sources. Source-owned operators
+retain their completed definition dependency. This path excludes by-value record
+parameters/results and does not complete a lazy source method template body.
+Exact `move`, `forward`, `as_const` and reference-template `move_if_noexcept`
+casts use the pinned wrapper carrier and trivial lifetime proof alongside the
+adapter's selected prototype and operand flow. They change only the wrapper
+reference view and do not instantiate a call operator or constructor.
+Caller receiver and argument expressions, aliases, initializers, selected
+defaults and temporary cleanup keep their ordinary source checks and execute no
+query effects. Independent wrapper method addresses and indirect SDK calls
+retain their existing restrictions.
+
 Materialized `std::invoke` adapters around admitted source-owned record
 callables also support result-source queries. The exact receiver, selected
 `operator()` and argument flow keep their runtime checks, including lvalue,
@@ -4239,14 +4262,15 @@ and empty storage supply the same result and exception source as an unwrapped
 object. Typed narrowing, transparent promotions and admitted pointer comparisons
 retain their results. Const wrappers, const referents, dereferenced receivers,
 wrapper copies and temporary `ref`/`cref` results keep their selected argument
-pack. Outer `invoke` queries additionally require that precise callable category's
-public adapter and dispatch bodies. The inner invocability variable checks the
-referent reference and argument pack; the outer variable independently checks
+pack. Queries outside the signature-only wrapper proof above additionally require
+that precise callable category's public adapter and dispatch bodies. The inner
+invocability variable checks the referent reference and argument pack; the outer variable independently checks
 the wrapper category and its pack. Each value must agree with the authenticated
 operator prototype. Original wrapper and referent initializers, expressions,
 written types, selected defaults and temporary lifetimes remain independent
-source roots and have no query-time effects. Lazy bodies, replaced SDK
-operators or adapters, source substitutions of either invocability variable,
+source roots and have no query-time effects. Missing bodies required outside
+the signature-only proof, replaced SDK operators or adapters, source
+substitutions of either invocability variable,
 and independent adapter addresses remain rejected.
 
 Materialized direct wrapper calls and outer `std::invoke` calls around admitted
@@ -4266,8 +4290,8 @@ operators and in-class operators of admitted concrete class templates keep their
 normal source checks. `decltype`, result traits, `sizeof`, `alignof`, array
 extents and `noexcept` execute no callable, argument, default or temporary-lifetime
 effects. Original wrapper/referent initializers, expressions and written types
-remain checked. A direct referent call does not supply a lazy wrapper body, and
-a wrapper call does not supply a lazy outer adapter. Replaced SDK declarations,
+remain checked. Calls needing this materialized path retain a separate body
+requirement for the wrapper and each outer adapter. Replaced SDK declarations,
 independent member or adapter addresses, and incomplete source definitions remain
 rejected.
 

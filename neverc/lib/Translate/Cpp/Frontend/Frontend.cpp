@@ -4679,6 +4679,12 @@ static bool utilityValueAdapterSource(
       !Type.isRestrictQualified() && Type.getAddressSpace() == LangAS::Default &&
       functionalObjectStorageSource(A, Type->getAsCXXRecordDecl());
   const auto *Record = Type->getAsCXXRecordDecl();
+  // A wrapper reference cast changes only the carrier's cv/reference view.
+  // Its pinned storage and trivial lifetime remain independent of invocation.
+  const bool FunctionWrapper = ReferenceCast && !Type.isVolatileQualified() &&
+                               !Type.isRestrictQualified() &&
+                               Type.getAddressSpace() == LangAS::Default &&
+                               functionalReferenceDestructionSource(A, Record);
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   // These reference casts consume no constructor or call operator. Keep the
   // source-owned record's layout, written types and operand/lifetime sources
@@ -4700,7 +4706,7 @@ static bool utilityValueAdapterSource(
       Record && *Operation == UtilityOperation::MoveIfNoexcept && !ReferenceCast &&
       utilityUniquePtrConditionalMoveSource(A, Call, Record);
   return (Scalar || FixedArray || FunctionReference || TupleLike ||
-          FunctionObject || OwnedRecord ||
+          FunctionObject || FunctionWrapper || OwnedRecord ||
           ConditionalOwner ||
           (ReferenceCast && utilityUniquePtrSource(A, Record))) &&
          utilitySDKValueAdapterSource(A, Call, *Operation);
@@ -5158,34 +5164,9 @@ functionalObjectQueryTargetSource(Adapter &A, const CallExpr *Call) {
   return Target && operationCalleePrototype(Call) == Target ? Target : nullptr;
 }
 
-static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
-                                                         const CallExpr *Call) {
-  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-  const auto *Reference =
-      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
-  const auto *Arguments =
-      Function ? Function->getTemplateSpecializationArgs() : nullptr;
-  if (!Function || !Reference || Reference->getDecl() != Function ||
-      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
-      !Function->getIdentifier() || Function->getName() != "invoke" ||
-      !Arguments || Arguments->size() != 2 ||
-      Arguments->get(0).getKind() != TemplateArgument::Type ||
-      Arguments->get(1).getKind() != TemplateArgument::Pack ||
-      Call->getNumArgs() != Function->getNumParams() ||
-      Call->getNumArgs() != Arguments->get(1).pack_size() + 1 ||
-      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h", false))
-    return nullptr;
-  const auto Callable = Arguments->get(0).getAsType();
-  const auto &Pack = Arguments->get(1);
-  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
-    const auto Parameter = Function->getParamDecl(I)->getType();
-    if (!Parameter->isReferenceType() ||
-        Parameter->getPointeeType().isVolatileQualified() ||
-        !A.Context.hasSameType(Parameter->getPointeeType(),
-                               Call->getArg(I)->getType()))
-      return nullptr;
-  }
-  QualType Result = Function->getReturnType();
+static const CallExpr *functionalResultQueryTargetSource(
+    Adapter &A, const CallExpr *Call, QualType Result, QualType Callable,
+    const TemplateArgument &Pack, llvm::StringRef AliasName) {
   if (const auto *Elaborated = dyn_cast<ElaboratedType>(Result.getTypePtr()))
     Result = Elaborated->getNamedType();
   const auto *Alias = dyn_cast<TemplateSpecializationType>(Result.getTypePtr());
@@ -5195,7 +5176,7 @@ static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
       AliasTemplate ? A.S.sdkFile(A.Sources, AliasTemplate->getLocation())
                     : std::nullopt;
   if (!Alias || !Alias->isTypeAlias() || !AliasTemplate ||
-      AliasTemplate->getName() != "invoke_result_t" || !AliasOrigin ||
+      AliasTemplate->getName() != AliasName || !AliasOrigin ||
       AliasOrigin->Root != "libcxx" ||
       AliasOrigin->Path != "__type_traits/invoke.h" ||
       !approvedStandardSDKDeclaration(A.S, A.Sources, AliasTemplate) ||
@@ -5208,14 +5189,17 @@ static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
       dyn_cast<ElaboratedType>(Alias->getAliasedType().getTypePtr());
   const auto *Qualifier = Qualified ? Qualified->getQualifier() : nullptr;
   const auto *RecordType = Qualifier ? Qualifier->getAsType() : nullptr;
-  const auto *PublicResult =
-      RecordType ? RecordType->getAsCXXRecordDecl() : nullptr;
-  if (!functionalQueryRecordSource(A, PublicResult, "invoke_result", Callable,
-                                   Pack) ||
-      PublicResult->getNumBases() != 1)
-    return nullptr;
   const auto *PrivateResult =
-      PublicResult->bases_begin()->getType()->getAsCXXRecordDecl();
+      RecordType ? RecordType->getAsCXXRecordDecl() : nullptr;
+  if (AliasName == "invoke_result_t") {
+    const auto *PublicResult = PrivateResult;
+    if (!functionalQueryRecordSource(A, PublicResult, "invoke_result", Callable,
+                                     Pack) ||
+        PublicResult->getNumBases() != 1)
+      return nullptr;
+    PrivateResult =
+        PublicResult->bases_begin()->getType()->getAsCXXRecordDecl();
+  }
   if (!functionalQueryRecordSource(A, PrivateResult, "__invoke_result",
                                    Callable, Pack) ||
       PrivateResult->getNumBases() != 1)
@@ -5339,15 +5323,48 @@ static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
   return Selected;
 }
 
+static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
+                                                         const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!Function || !Reference || Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !Function->getIdentifier() || Function->getName() != "invoke" ||
+      !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Pack ||
+      Call->getNumArgs() != Function->getNumParams() ||
+      Call->getNumArgs() != Arguments->get(1).pack_size() + 1 ||
+      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h", false))
+    return nullptr;
+  const auto Callable = Arguments->get(0).getAsType();
+  const auto &Pack = Arguments->get(1);
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !A.Context.hasSameType(Parameter->getPointeeType(),
+                               Call->getArg(I)->getType()))
+      return nullptr;
+  }
+  return functionalResultQueryTargetSource(A, Call, Function->getReturnType(),
+                                           Callable, Pack, "invoke_result_t");
+}
+
 static const CXXMethodDecl *
 functionalUserInvokeQuerySource(Adapter &A, const CallExpr *Call,
-                                const CallExpr *Selected = nullptr) {
+                                const CallExpr *Selected = nullptr,
+                                const CXXRecordDecl *Receiver = nullptr) {
   if (!Selected)
     Selected = functionalInvokeQueryTargetSource(A, Call);
   const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(Selected);
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
       Operation ? Operation->getDirectCallee() : nullptr);
-  const auto *Record = Call && Call->getNumArgs()
+  const auto *Record = Receiver ? Receiver
+                       : Call && Call->getNumArgs()
                            ? Call->getArg(0)->getType()->getAsCXXRecordDecl()
                            : nullptr;
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
@@ -5377,6 +5394,94 @@ functionalUserInvokeQuerySource(Adapter &A, const CallExpr *Call,
   // definition dependency; authentication supplies no SDK or source body
   // instantiation.
   return Method;
+}
+
+struct FunctionalReferenceQuerySource {
+  QualType Result;
+  const CXXMethodDecl *UserMethod = nullptr;
+};
+
+static FunctionalReferenceQuerySource
+functionalReferenceQuerySource(Adapter &A, const CallExpr *Call) {
+  const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Operation ? Operation->getDirectCallee() : nullptr);
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      A.S, A.Sources, Method ? Method->getParent() : nullptr, A.Context);
+  const auto *Arguments =
+      Method ? Method->getTemplateSpecializationArgs() : nullptr;
+  if (!Operation || !Method || !Wrapper || !Arguments ||
+      Operation->getOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVolatile() || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Pack ||
+      Call->getNumArgs() != Method->getNumParams() + 1 ||
+      Call->getNumArgs() != Arguments->get(0).pack_size() + 1 ||
+      Call->getArg(0)->getType().isVolatileQualified() ||
+      !A.Context.hasSameUnqualifiedType(
+          Call->getArg(0)->getType(),
+          A.Context.getRecordType(Wrapper->Record)) ||
+      !utilitySDKFunctionSource(A, Method, "__functional/reference_wrapper.h",
+                                false))
+    return {};
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !A.Context.hasSameType(Parameter->getPointeeType(),
+                               Call->getArg(I + 1)->getType()))
+      return {};
+  }
+  const CXXMethodDecl *Getter = nullptr;
+  for (const auto *Candidate : Wrapper->Record->methods())
+    if (Candidate->getIdentifier() && Candidate->getName() == "get") {
+      if (Getter)
+        return {};
+      Getter = Candidate;
+    }
+  const auto Callable = A.Context.getLValueReferenceType(Wrapper->ReferentType);
+  if (!Getter || Getter->getNumParams() ||
+      !A.Context.hasSameType(Getter->getReturnType(), Callable) ||
+      !utilitySDKFunctionSource(A, Getter, "__functional/reference_wrapper.h",
+                                false))
+    return {};
+  const auto &Pack = Arguments->get(0);
+  const auto *Selected = functionalResultQueryTargetSource(
+      A, Call, Method->getReturnType(), Callable, Pack, "__invoke_result_t");
+  if (!Selected)
+    return {};
+  const auto Value = Wrapper->ReferentType;
+  const FunctionProtoType *Target = nullptr;
+  FunctionalReferenceQuerySource Source;
+  if (Value->isFunctionType() || Value->isFunctionPointerType()) {
+    const auto Signature =
+        Value->isFunctionType() ? Value : Value->getPointeeType();
+    Target = Signature->getAs<FunctionProtoType>();
+    if (!Target || !ordinaryCallbackPrototype(Target) ||
+        Target->getNumParams() != Selected->getNumArgs() ||
+        Target->getReturnType()->isRecordType() ||
+        isa<CXXOperatorCallExpr>(Selected) || Selected->getDirectCallee() ||
+        !A.Context.hasSameType(
+            Signature, Selected->getCallee()->getType()->getPointeeType()))
+      return {};
+    for (const auto Parameter : Target->param_types())
+      if (Parameter->isRecordType())
+        return {};
+    Source.Result = Target->getReturnType();
+  } else if (const auto *User = functionalUserInvokeQuerySource(
+                 A, Call, Selected, Value->getAsCXXRecordDecl())) {
+    Target = User->getType()->getAs<FunctionProtoType>();
+    Source = {Target->getReturnType(), User};
+  } else if (functionalObjectStorageSource(A, Value->getAsCXXRecordDecl())) {
+    Target = functionalObjectQueryTargetSource(A, Selected);
+    if (Target)
+      Source.Result = A.Context.getCanonicalType(Target->getReturnType());
+  }
+  // Follow the wrapper's actual substituted private result trait, while its
+  // receiver storage and source target keep independent validation roots.
+  return Target && operationCalleePrototype(Selected) == Target &&
+                 functionalInvocabilitySource(A, Call, Callable, Pack, Target)
+             ? Source
+             : FunctionalReferenceQuerySource();
 }
 
 static QualType declvalQuerySource(Adapter &A, const CallExpr *Call) {
@@ -5451,6 +5556,9 @@ static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
     const auto *Reference = directMethodReference(Call);
     if (!Reference || !A.S.owns(A.Sources, Reference->getExprLoc()))
       return {};
+    if (const auto Source = functionalReferenceQuerySource(A, Call);
+        !Source.Result.isNull())
+      return Source.Result;
     const auto *Target = functionalObjectQueryTargetSource(A, Call);
     return Target ? A.Context.getCanonicalType(Target->getReturnType())
                   : QualType();
@@ -5462,6 +5570,15 @@ static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
       Call->getDirectCallee()->getTemplateSpecializationArgs();
   const auto Callable = Arguments->get(0).getAsType();
   const auto Value = Callable.getNonReferenceType();
+  if (const auto Source = functionalReferenceQuerySource(A, Selected);
+      !Source.Result.isNull()) {
+    const auto *Target =
+        Selected->getDirectCallee()->getType()->getAs<FunctionProtoType>();
+    return Target && functionalInvocabilitySource(A, Call, Callable,
+                                                  Arguments->get(1), Target)
+               ? Source.Result
+               : QualType();
+  }
   const FunctionProtoType *Target = nullptr;
   QualType Result;
   if (Value->isFunctionType() || Value->isFunctionPointerType()) {
@@ -14467,8 +14584,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         const ValueDecl *UserInvoke = UserMethod;
         if (!ReferenceInvoke) {
           UserInvoke = functionalUserInvokeSource(A, Call);
-          if (!UserInvoke && A.S.UnevaluatedFunctionalCalls.count(Call))
+          if (!UserInvoke && A.S.UnevaluatedFunctionalCalls.count(Call)) {
             UserInvoke = functionalUserInvokeQuerySource(A, Call);
+            if (!UserInvoke) {
+              auto Source = functionalReferenceQuerySource(A, Call);
+              if (Source.Result.isNull())
+                Source = functionalReferenceQuerySource(
+                    A, functionalInvokeQueryTargetSource(A, Call));
+              UserInvoke = Source.UserMethod;
+            }
+          }
           if (!UserInvoke)
             if (const auto *Apply = applySource(Call))
               UserInvoke = Apply->UserMethod;

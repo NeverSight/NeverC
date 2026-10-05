@@ -83806,7 +83806,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};W source(int&v,Ticket 
 struct Ticket{~Ticket()noexcept;};W source(int&v,Ticket t=Ticket())noexcept{return W(v);}int f(int&v){static_assert(noexcept(source(v).get()));return 0;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-W source(int&v)noexcept;int f(int&v){static_assert(__is_same(decltype(source(v).get()),int&));return 0;}
+W source(int&v)noexcept;int f(int&v){static_assert(__is_same(decltype(source(v).get()),int&));return source(v).get();}
 )cpp", "TR0203"},
       {"conversion-receiver-expression", R"cpp(
 int f(W&w){static_assert(noexcept(static_cast<int&>((sizeof(long double),w))));return 0;}
@@ -83962,12 +83962,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2ReferenceInvokeQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-wrapper-body", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(w(1)),int));return 0;}
-)cpp", "TR0203"},
-      {"different-argument-specialization", R"cpp(
-int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(short(1))),int));return n;}
-)cpp", "TR0203"},
       {"independent-member-address", R"cpp(
 int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));static_assert(sizeof(&W::operator()<int>)>0);return n;}
 )cpp", "TR0201"},
@@ -84011,7 +84005,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(arg())),int));return n;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-W&source(W&w)noexcept;int f(W&w){int n=w(1);static_assert(__is_same(decltype(source(w)(1)),int));return n;}
+W&source(W&w)noexcept;int f(W&w){int n=w(1);static_assert(__is_same(decltype(source(w)(1)),int));return source(w)(n);}
 )cpp", "TR0203"},
       {"operator-specialization", R"cpp(
 namespace std{inline namespace __1{template<>template<>int reference_wrapper<F>::operator()<int>(int&&n)const noexcept{return n;}}}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));return n;}
@@ -85629,24 +85623,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2WrappedObjectInvokeQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-wrapper-body", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(w(1,2)),int));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer-body", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1,2)),int));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-outer-body", R"cpp(
-int f(W&w){int n=w(1,2);static_assert(__is_same(decltype(std::invoke(w,1,2)),int));return n;}
-)cpp", "TR0203"},
-      {"different-inner-pack", R"cpp(
-int f(W&w){int n=w(1,2);static_assert(__is_same(decltype(w(short(1),2)),int));return n;}
-)cpp", "TR0203"},
-      {"different-outer-category", R"cpp(
-int f(W&w,const W&c){int n=std::invoke(w,1,2);static_assert(__is_same(decltype(std::invoke(c,1,2)),int));return n;}
-)cpp", "TR0203"},
-      {"different-referent-qualification", R"cpp(
-int f(F&v){auto w=std::ref(v);int n=w(1,2);static_assert(__is_same(decltype(std::cref(v)(1,2)),int));return n;}
-)cpp", "TR0203"},
       {"operation-specialization", R"cpp(
 namespace std{inline namespace __1{template<>constexpr int plus<int>::operator()(const int&a,const int&b)const{return a+b;}}}int f(W&w){int n=w(1,2);static_assert(__is_same(decltype(w(1,2)),int));return n;}
 )cpp", "TR0201"},
@@ -85732,7 +85708,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=w(1,2);static_assert(__is_same(decltype(w(arg(),2)),int));return n;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-W&source(W&w)noexcept;int f(W&w){int n=std::invoke(w,1,2);static_assert(__is_same(decltype(std::invoke(source(w),1,2)),int));return n;}
+W&source(W&w)noexcept;int f(W&w){int n=std::invoke(w,1,2);static_assert(__is_same(decltype(std::invoke(source(w),1,2)),int));return source(w)(n,2);}
 )cpp", "TR0203"},
       {"unsupported-scalar", R"cpp(
 int f(){std::plus<long double> v;auto w=std::ref(v);auto n=w(1.0L,2.0L);static_assert(__is_same(decltype(w(1.0L,2.0L)),long double));return n;}
@@ -89787,27 +89763,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2WrappedUserObjectInvokeQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-wrapper", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(w(1)),int));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1)),int));return 0;}
-)cpp", "TR0203"},
-      {"direct-method-does-not-supply-wrapper", R"cpp(
-int f(F&c){auto w=std::ref(c);int n=c(1);static_assert(__is_same(decltype(w(1)),int));return n;}
-)cpp", "TR0203"},
-      {"wrapper-does-not-supply-outer", R"cpp(
-int f(W&w){int n=w(1);static_assert(__is_same(decltype(std::invoke(w,1)),int));return n;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(short(1))),int));return n;}
-)cpp", "TR0203"},
-      {"different-outer-callable-category", R"cpp(
-int f(W&w,const W&c){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(c,1)),int));return n;}
-)cpp", "TR0203"},
-      {"different-referent-category", R"cpp(
-int f(F&c){auto w=std::ref(c);int n=w(1);static_assert(__is_same(decltype(std::cref(c)(1)),int));return n;}
-)cpp", "TR0203"},
       {"independent-member-address", R"cpp(
 int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(1)),int));static_assert(sizeof(&W::operator()<int>)>0);return n;}
 )cpp", "TR0201"},
@@ -89875,7 +89830,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=w(1);static_assert(__is_same(decltype(w(arg())),int));return n;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-W&source(W&w)noexcept;int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(source(w),1)),int));return n;}
+W&source(W&w)noexcept;int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(source(w),1)),int));return source(w)(n);}
 )cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
@@ -117955,9 +117910,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2InvokeReferenceQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"direct-call-does-not-supply-adapter-body", R"cpp(
-int f(W&w){int n=w(1);static_assert(__is_same(decltype(std::invoke(w,1)),int));return n;}
-)cpp", "TR0203"},
       {"independent-invoke-address", R"cpp(
 int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),int));static_assert(sizeof(&std::invoke<W&,int>)>0);return n;}
 )cpp", "TR0201"},
@@ -117973,12 +117925,6 @@ namespace std{inline namespace __1{template<>int invoke<W&,int>(W&w,int&&n)noexc
       {"outer-exception-variable-specialization", R"cpp(
 namespace std{inline namespace __1{template<>inline constexpr bool is_nothrow_invocable_v<W&,int> = true;}}int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),int));return n;}
 )cpp", "TR0202"},
-      {"lazy-wrapper-body", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1)),int));return 0;}
-)cpp", "TR0203"},
-      {"different-argument-specialization", R"cpp(
-int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,short(1))),int));return n;}
-)cpp", "TR0203"},
       {"independent-member-address", R"cpp(
 int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),int));static_assert(sizeof(&W::operator()<int>)>0);return n;}
 )cpp", "TR0201"},
@@ -118022,7 +117968,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,arg())),int));return n;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-W&source(W&w)noexcept;int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(source(w),1)),int));return n;}
+W&source(W&w)noexcept;int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(source(w),1)),int));return source(w)(n);}
 )cpp", "TR0203"},
       {"operator-specialization", R"cpp(
 namespace std{inline namespace __1{template<>template<>int reference_wrapper<F>::operator()<int>(int&&n)const noexcept{return n;}}}int f(W&w){int n=std::invoke(w,1);static_assert(__is_same(decltype(std::invoke(w,1)),int));return n;}
@@ -147199,6 +147145,431 @@ int declared(long double)noexcept;using R=decltype(std::invoke(declared,1));int 
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryFunction) {
+  const auto Source = tmpFile("reference-wrapper-signature-query-function.cpp");
+  const auto Output = tmpFile("reference-wrapper-signature-query-function.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int source(int n)noexcept{++effects;return n;}int main(){auto w=std::ref(source);static_assert(__is_same(decltype(w(1)),int));static_assert(noexcept(w(1)));static_assert(sizeof(w(1))==sizeof(int));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-signature-query-function" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryFunctionPointer) {
+  const auto Source =
+      tmpFile("reference-wrapper-signature-query-function-pointer.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-signature-query-function-pointer.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int source(int n)noexcept{++effects;return n;}int main(){auto p=source;auto w=std::ref(p);static_assert(__is_same(decltype(w(1)),int));static_assert(noexcept(w(1)));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-signature-query-function-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQuerySdkObject) {
+  const auto Source =
+      tmpFile("reference-wrapper-signature-query-sdk-object.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-signature-query-sdk-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int argument()noexcept{++effects;return 2;}int main(){std::plus<int> p;auto w=std::ref(p);static_assert(__is_same(decltype(w(argument(),1)),int));static_assert(!noexcept(w(argument(),1)));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-signature-query-sdk-object" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryUserObject) {
+  const auto Source =
+      tmpFile("reference-wrapper-signature-query-user-object.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-signature-query-user-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{int&operator()(int&n)const noexcept{++effects;return n;}};int main(){R r;auto w=std::cref(r);int n=3;static_assert(__is_same(decltype(w(n)),int&));static_assert(noexcept(w(n)));return effects==0&&n==3?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-signature-query-user-object" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryOuterInvoke) {
+  const auto Source =
+      tmpFile("reference-wrapper-signature-query-outer-invoke.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-signature-query-outer-invoke.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{void operator()(int)const noexcept{++effects;}};int main(){R r;auto w=std::ref(r);static_assert(__is_same(decltype(std::invoke(w,1)),void));static_assert(noexcept(std::invoke(w,1)));return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-signature-query-outer-invoke" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryCleanup) {
+  const auto Source = tmpFile("reference-wrapper-signature-query-cleanup.cpp");
+  const auto Output = tmpFile("reference-wrapper-signature-query-cleanup.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int effects,defaults,live,destroyed;
+struct Ticket{Ticket()noexcept{++live;}~Ticket()noexcept{--live;++destroyed;}};
+int target(int n)noexcept{++effects;return n;}
+int arg(Ticket t=Ticket(),int n=(++defaults,3))noexcept{++effects;return n;}
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;
+W&receiver(W&w,Ticket t=Ticket())noexcept{++effects;return w;}
+int main(){auto w=std::ref(target);
+static_assert(__is_same(decltype(receiver(w)(arg())),int));
+static_assert(noexcept(receiver(w)(arg())));
+static_assert(sizeof(std::invoke(receiver(w),arg()))==sizeof(int));
+static_assert(__is_same(decltype(std::declval<W&>()(arg())),int));
+static_assert(__is_same(decltype(w(short(1))),int));
+return effects||defaults||live||destroyed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-signature-query-cleanup" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryReferenceTypes) {
+  const auto Source =
+      tmpFile("reference-wrapper-signature-query-reference-types.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-signature-query-reference-types.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects;struct Box{int n;};using A=int[2];using F=int(int)noexcept;using P=F*;
+int target(int n)noexcept{++effects;return n;}
+A&array(A&a)noexcept{++effects;return a;}
+Box&record(Box&b)noexcept{++effects;return b;}
+P&function(P&pointer)noexcept{++effects;return pointer;}
+int&&moved(int&&n)noexcept{++effects;return static_cast<int&&>(n);}
+int main(){A a{1,2};Box b{3};int n=4;P pointer=target;
+auto wa=std::ref(array);auto wb=std::ref(record);auto wf=std::ref(function);auto wm=std::ref(moved);
+static_assert(__is_same(decltype(wa(a)),A&));
+static_assert(__is_same(decltype(std::invoke(wb,b)),Box&));
+static_assert(__is_same(decltype(wf(pointer)),P&));
+static_assert(__is_same(decltype(wm(static_cast<int&&>(n))),int&&));
+static_assert(noexcept(wa(a))&&noexcept(std::invoke(wb,b))&&noexcept(wf(pointer)));
+return effects||a[0]!=1||b.n!=3||n!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-signature-query-reference-types" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperSignatureQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"adjusted-target-array-bound", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int other(int a[(sizeof(long double),2)])noexcept{return a[0];}int f(int*p){auto w=std::ref(other);int n=0;static_assert(__is_same(decltype(w(p)),int));return n;}
+
+)cpp"},
+      {"argument-expression", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int f(W&w){int n=0;static_assert(__is_same(decltype(w((sizeof(long double),1))),int));return n;}
+
+)cpp"},
+      {"argument-initializer", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int f(W&w){int v=(sizeof(long double),1);int n=0;static_assert(__is_same(decltype(w(v)),int));return n;}
+
+)cpp"},
+      {"argument-written-alias", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+using T=decltype((sizeof(long double),int{}));int f(W&w,T&v){int n=0;static_assert(__is_same(decltype(w(v)),int));return n;}
+
+)cpp"},
+      {"get-specialization", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+namespace std{inline namespace __1{template<>F&reference_wrapper<F>::get()const noexcept{return target;}}}int f(W&w){int n=0;static_assert(__is_same(decltype(w(1)),int));return n;}
+
+)cpp"},
+      {"independent-member-address", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int f(W&w){int n=0;static_assert(__is_same(decltype(w(1)),int));static_assert(sizeof(&W::operator()<int>)>0);return n;}
+
+)cpp"},
+      {"indirect-member-call", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int f(W&w){int n=0;auto member=&W::operator()<int>;static_assert(__is_same(decltype((w.*member)(1)),int));return n;}
+
+)cpp"},
+      {"missing-receiver-definition", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+W&source(W&w)noexcept;int f(W&w){int n=0;static_assert(__is_same(decltype(source(w)(1)),int));return source(w)(n);}
+
+)cpp"},
+      {"missing-temporary-destructor", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=0;static_assert(__is_same(decltype(w(arg())),int));return n;}
+
+)cpp"},
+      {"operator-specialization", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+namespace std{inline namespace __1{template<>template<>int reference_wrapper<F>::operator()<int>(int&&n)const noexcept{return n;}}}int f(W&w){int n=0;static_assert(__is_same(decltype(w(1)),int));return n;}
+
+)cpp"},
+      {"receiver-expression", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int f(W&w){int n=0;static_assert(__is_same(decltype((sizeof(long double),w)(1)),int));return n;}
+
+)cpp"},
+      {"receiver-initializer", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int f(){auto w=std::ref((sizeof(long double),target));int n=0;static_assert(__is_same(decltype(w(1)),int));return n;}
+
+)cpp"},
+      {"receiver-original-exception", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+W&source(W&w)noexcept(sizeof(long double)>0);W&source(W&w)noexcept{return w;}int f(W&w){int n=0;static_assert(__is_same(decltype(source(w)(1)),int));return n;}
+
+)cpp"},
+      {"selected-default", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int arg(int n=sizeof(long double))noexcept{return n;}int f(W&w){int n=0;static_assert(__is_same(decltype(w(arg())),int));return n;}
+
+)cpp"},
+      {"target-original-exception", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+int other(int n)noexcept(sizeof(long double)>0);int other(int n)noexcept{return n;}int f(){auto w=std::ref(other);int n=0;static_assert(__is_same(decltype(w(1)),int));return n;}
+
+)cpp"},
+      {"temporary-destructor-body", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+struct Ticket{~Ticket()noexcept{long double hidden=0;}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=0;static_assert(__is_same(decltype(w(arg())),int));return n;}
+
+)cpp"},
+      {"temporary-destructor-exception", R"cpp(#include <functional>
+#include <type_traits>
+#include <utility>
+using F=int(int)noexcept;using W=std::reference_wrapper<F>;int target(int n)noexcept{return n;}
+
+struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticket())noexcept{return 1;}int f(W&w){int n=0;static_assert(__is_same(decltype(w(arg())),int));return n;}
+
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("reference-wrapper-signature-query-reject-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("reference-wrapper-signature-query-reject-") +
+                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE((Result.out + Result.err).find("TR0201") != std::string::npos ||
+                (Result.out + Result.err).find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryCategories) {
+  const auto Source =
+      tmpFile("reference-wrapper-signature-query-categories.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-signature-query-categories.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n;}
+struct F{int operator()(int)&noexcept{++effects;return 1;}int operator()(int)const&noexcept{++effects;return 2;}};
+int main(){F f;auto w=std::ref(f);const auto c=w;auto v=std::cref(f);std::plus<int>plus;auto p=std::ref(plus);const auto pc=p;auto pv=std::cref(plus);auto q=std::ref(target);
+static_assert(__is_same(decltype(w(short(1))),int));
+static_assert(__is_same(decltype(std::invoke(c,1)),int));
+static_assert(__is_same(decltype(v(1)),int));
+static_assert(__is_same(decltype(std::invoke(std::move(w),1)),int));
+static_assert(__is_same(decltype(std::ref(f)(1)),int));
+static_assert(noexcept(w(1))&&noexcept(std::invoke(c,1))&&noexcept(v(1)));
+static_assert(__is_same(decltype(p(short(1),2)),int));
+static_assert(__is_same(decltype(std::invoke(pc,1,2)),int));
+static_assert(__is_same(decltype(pv(1,2)),int));
+static_assert(__is_same(decltype(std::invoke(std::ref(plus),1,2)),int));
+static_assert(!noexcept(p(1,2))&&!noexcept(std::invoke(pc,1,2)));
+static_assert(__is_same(decltype(std::invoke(q,short(1))),int));
+static_assert(__is_same(decltype(std::invoke(std::move(q),1)),int));
+static_assert(noexcept(std::invoke(std::ref(target),1)));
+return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-signature-query-categories" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryAdapters) {
+  const auto Source = tmpFile("reference-wrapper-signature-query-adapters.cpp");
+  const auto Output = tmpFile("reference-wrapper-signature-query-adapters.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n;}
+struct F{int operator()(int)&noexcept{++effects;return 1;}};
+int main(){using Fn=int(int)noexcept;using W=std::reference_wrapper<Fn>;
+auto w=std::ref(target);const auto c=w;std::plus<int>plus;auto p=std::ref(plus);F f;auto q=std::ref(f);
+static_assert(__is_same(decltype(std::move(w)),W&&));
+static_assert(__is_same(decltype(std::forward<W&>(w)),W&));
+static_assert(__is_same(decltype(std::as_const(w)),const W&));
+static_assert(__is_same(decltype(std::move(w)(1)),int));
+static_assert(__is_same(decltype(std::invoke(std::forward<W>(w),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::as_const(w),1)),int));
+static_assert(__is_same(decltype(std::move_if_noexcept<W&>(w)),W&));
+static_assert(__is_same(decltype(std::invoke(std::move_if_noexcept<W&>(w),1)),int));
+static_assert(__is_same(decltype(std::move(c)(1)),int));
+static_assert(__is_same(decltype(std::invoke(std::move(p),1,2)),int));
+static_assert(__is_same(decltype(std::invoke(std::as_const(q),1)),int));
+static_assert(noexcept(std::move(w)(1))&&noexcept(std::invoke(std::as_const(w),1)));
+return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-signature-query-adapters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
 

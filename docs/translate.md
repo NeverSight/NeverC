@@ -388,6 +388,16 @@ queries of division or remainder by zero. SDK declarations, exception metadata
 and caller-written sources remain checked. Pointer arithmetic and overloaded
 source operators retain their separate requirements.
 
+Admitted `reference_wrapper` calls and outer `std::invoke` queries can now
+use signatures without first calling the wrapper. Function and function-pointer
+referents, supported SDK function objects and defined source-owned call operators
+retain their exact scalar, reference or `void` results and exception sources.
+The pinned private result trait and `get` declaration remain checked alongside
+wrapper storage, caller operands and source definitions. Queries execute no
+callbacks, defaults, conversions or temporary cleanup. By-value record signatures
+and lazy source method templates keep their separate adapter requirements.
+Exact `move`, `forward`, `as_const` and reference-template `move_if_noexcept` casts retain the wrapper’s pinned storage and original operand sources.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks
