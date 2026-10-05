@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Set while a public operation must fail closed on OOM (SetString). Each
+/* Set while a public operation must fail closed on OOM. Each
  * thread needs its own tracker: TLS certificate validation can parse keys on
  * concurrent TCP and QUIC workers. Scratch fallbacks (Karatsuba→schoolbook)
  * do not use ensure_cap, so they cannot false-trigger this. */
@@ -2320,6 +2320,7 @@ void neverc_bigint_gcd(neverc_bigint_t *z, const neverc_bigint_t *x,
 static void bigint_emit_chunks(char *dst, const neverc_bigint_t *v, size_t nch,
                                const neverc_bigint_t *pw2, int k, int base,
                                const char *digits) {
+    if (bigint_oom && *bigint_oom) return;
     if (nch == 1) {
         uint32_t val = (v->len > 0) ? v->digits[0] : 0;   /* v < chunk fits a word */
         for (int d = k - 1; d >= 0; d--) {
@@ -2397,9 +2398,21 @@ int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t c
         if (dc) {
             neverc_bigint_t v2;
             neverc_bigint_init(&v2);
+            /* The void copy/division APIs leave zero or partial temporaries
+             * on allocation failure. Never publish those as formatted digits. */
+            int oom = 0;
+            int *saved_oom = bigint_oom;
+            bigint_oom = &oom;
             neverc_bigint_abs(&v2, x);
             bigint_emit_chunks(dc, &v2, M, pw2, k, base, digits);
+            bigint_oom = saved_oom;
             neverc_bigint_free(&v2);
+            if (oom) {
+                if (saved_oom) *saved_oom = 1;
+                for (int i = 0; i < np; i++) neverc_bigint_free(&pw2[i]);
+                free(dc);
+                return -1;
+            }
 
             size_t total = M * (size_t)k, lead = 0;  /* strip leading zeros */
             while (lead + 1 < total && dc[lead] == '0') lead++;
@@ -2434,7 +2447,12 @@ int neverc_bigint_string(const neverc_bigint_t *x, int base, char *buf, size_t c
 
     neverc_bigint_t v;
     neverc_bigint_init(&v);
-    neverc_bigint_abs(&v, x);
+    if (!bigint_set_checked(&v, x)) {
+        neverc_bigint_free(&v);
+        free(tmp);
+        return -1;
+    }
+    v.neg = 0;
 
     while (v.len > 0) {
         uint32_t rem = 0;                    /* v = v / chunk, rem = v % chunk */
