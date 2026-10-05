@@ -5149,8 +5149,8 @@ static bool functionalQueryDeclvalSource(Adapter &A, const Expr *Expression,
 }
 
 static const FunctionProtoType *
-functionalBooleanQueryTargetSource(Adapter &A, const CallExpr *Call) {
-  if (!approvedFunctionalBooleanQuery(A.S, A.Sources, Call, A.Context))
+functionalObjectQueryTargetSource(Adapter &A, const CallExpr *Call) {
+  if (!approvedFunctionalSignatureQuery(A.S, A.Sources, Call, A.Context))
     return nullptr;
   const auto *Target = functionalObjectInvokeTargetSource(
       A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()),
@@ -5449,10 +5449,11 @@ static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
     return Result;
   if (isa_and_nonnull<CXXOperatorCallExpr>(Call)) {
     const auto *Reference = directMethodReference(Call);
-    return Reference && A.S.owns(A.Sources, Reference->getExprLoc()) &&
-                   functionalBooleanQueryTargetSource(A, Call)
-               ? A.Context.BoolTy
-               : QualType();
+    if (!Reference || !A.S.owns(A.Sources, Reference->getExprLoc()))
+      return {};
+    const auto *Target = functionalObjectQueryTargetSource(A, Call);
+    return Target ? A.Context.getCanonicalType(Target->getReturnType())
+                  : QualType();
   }
   const auto *Selected = functionalInvokeQueryTargetSource(A, Call);
   if (!Selected)
@@ -5487,8 +5488,9 @@ static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
   } else {
     if (!functionalObjectStorageSource(A, Value->getAsCXXRecordDecl()))
       return {};
-    Target = functionalBooleanQueryTargetSource(A, Selected);
-    Result = A.Context.BoolTy;
+    Target = functionalObjectQueryTargetSource(A, Selected);
+    if (Target)
+      Result = A.Context.getCanonicalType(Target->getReturnType());
   }
   return Target && operationCalleePrototype(Selected) == Target &&
                  functionalInvocabilitySource(A, Call, Callable,

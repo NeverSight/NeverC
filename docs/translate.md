@@ -379,6 +379,15 @@ a fully checked definition. Query operands execute no callbacks, construction
 or cleanup. By-value record parameters/results and lazy source method templates
 retain their separate adapter requirements.
 
+All 19 supported arithmetic, bitwise, comparison and logical function-object
+families now supply signatures for direct and `std::invoke` unevaluated queries,
+for both typed and transparent objects. Queries preserve narrowing return types,
+integer promotions, mixed numeric types and admitted object-pointer comparisons.
+They execute no operands, defaults, conversions or temporary cleanup, including
+queries of division or remainder by zero. SDK declarations, exception metadata
+and caller-written sources remain checked. Pointer arithmetic and overloaded
+source operators retain their separate requirements.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

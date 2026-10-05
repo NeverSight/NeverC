@@ -3970,25 +3970,28 @@ their typed scalar or admitted pointer template argument. Their selected
 operator still returns `bool`, with the same input conversion and one-time
 argument evaluation.
 
-Typed and transparent `equal_to`, `not_equal_to`, `logical_and`, `logical_or`
-and `logical_not` also supply Boolean result and exception sources when a
-selected direct call or `std::invoke` occurs only in `decltype`, `noexcept` or
-constant expression-form `sizeof`, including queries nested in result traits
-and type-form size/alignment queries. Scalar, object-pointer and callback
-arguments retain their admitted direct conversions, cv/reference categories
-and exception specifications. These queries do not require an instantiated
-adapter or operator body. The proof follows the pinned `invoke_result_t`,
-`invoke_result`, `__invoke_result`, `enable_if`, `__invokable_r::_Result`,
-`__try_call`, `__invoke` and `declval` declarations to the actual substituted
-operator signature; public invocability metadata must agree with that target.
-No body is completed on behalf of a query. Only exact lexical query call nodes
-receive this signature proof; shared defaults and declaration or lambda bodies
-keep their own evaluation contexts. Original caller aliases, argument
-expressions, selected defaults, adjusted signatures and temporary cleanup
-retain independent source checks without execution. Independent SDK function
-addresses, replaced declarations, user-defined conversions, unsupported
-callback signatures and hidden unsupported source remain rejected. Other
-`invoke`/`apply` callable kinds retain their separate query boundaries.
+All nineteen admitted typed and transparent arithmetic, bitwise, comparison
+and logical function-object families supply exact scalar result and exception
+sources for direct calls or `std::invoke` used only in lexical `decltype`,
+`noexcept` or constant expression-form `sizeof` operands. The actual selected
+SDK signatures retain typed narrowing results, transparent integer promotions,
+mixed numeric types, supported object-pointer comparisons and callback equality
+or logical operations. Integral-only operations require integral operands;
+arithmetic signatures exclude pointer arithmetic and source overloaded operators.
+The pinned public/internal invocation trait chain and actual substituted
+operator signature retain the same source and exception proof without completing
+an unused SDK adapter or operator body. Built-in numeric results must match the
+selected return signature exactly. No query executes operands, defaults,
+conversions or temporary cleanup, including divide/remainder queries with a zero
+operand. Only exact lexical query nodes receive this proof; shared defaults and
+declaration or lambda bodies keep their own evaluation contexts. Original caller
+aliases, expressions, selected defaults, adjusted signatures and cleanup remain
+independent checked sources. Caller-side owned conversions exposed as ordinary
+argument expressions keep those source requirements; unsupported SDK-internal
+conversion flows remain outside the signature proof. Independent SDK addresses,
+source replacements, volatile or unsupported operand types and hidden unsupported
+source remain rejected. Other `invoke`/`apply` callable kinds keep their separate
+query boundaries.
 
 The exact empty specializations may also be stored in local or global objects,
 passed by value, and trivially default/copy/move constructed or copy/move
@@ -4225,8 +4228,8 @@ replacement of that base cannot supply lifecycle metadata. Empty base
 initializer nodes use only the proof for their exact owning object. Original
 callable and argument expressions, written template arguments, initializers, defaults
 and source-owned temporary cleanup remain independently checked and execute no
-query effects. Each callable category and argument pack still needs its own
-materialized adapter.
+query effects. Calls outside the signature-only query proof above still need
+an adapter for each callable category and argument pack.
 
 Direct `reference_wrapper` calls and `std::invoke` calls around wrappers of
 those same arithmetic, bitwise, comparison and logical objects also support

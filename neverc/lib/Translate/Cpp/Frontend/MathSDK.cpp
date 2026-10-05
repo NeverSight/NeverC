@@ -2930,9 +2930,9 @@ static bool utilityCallbackDirectConversion(const ASTContext &Context,
            Context.hasSameFunctionTypeIgnoringExceptionSpec(Source, Target)));
 }
 
-bool approvedFunctionalBooleanQuery(const State &S, const SourceManager &SM,
-                                    const CallExpr *Call,
-                                    const ASTContext &Context) {
+bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
+                                      const CallExpr *Call,
+                                      const ASTContext &Context) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
@@ -2943,17 +2943,30 @@ bool approvedFunctionalBooleanQuery(const State &S, const SourceManager &SM,
       Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
       !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
       !Method->isConstexpr() || !Method->isInlined() ||
-      !Call->getType()->isBooleanType() ||
-      !Method->getReturnType()->isBooleanType() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+      !utilityScalar(Context, Call->getType()) ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !functionalObjectOrigin(S, SM, Method, Object->Record->getName()) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                       Context.getRecordType(Object->Record)))
     return false;
   const auto Name = Object->Record->getName();
-  const bool Unary = Name == "logical_not";
+  const bool Logical =
+      Name == "logical_and" || Name == "logical_or" || Name == "logical_not";
   const bool Equality = Name == "equal_to" || Name == "not_equal_to";
-  if (!Unary && !Equality && Name != "logical_and" && Name != "logical_or")
+  const bool Ordering = Name == "less" || Name == "greater" ||
+                        Name == "less_equal" || Name == "greater_equal";
+  const bool Integral = Name == "modulus" || Name == "bit_and" ||
+                        Name == "bit_or" || Name == "bit_xor" ||
+                        Name == "bit_not";
+  const bool Arithmetic = Name == "plus" || Name == "minus" ||
+                          Name == "multiplies" || Name == "divides" ||
+                          Name == "negate" || Integral;
+  const bool Unary =
+      Name == "logical_not" || Name == "negate" || Name == "bit_not";
+  if (!Logical && !Equality && !Ordering && !Arithmetic)
+    return false;
+  if ((Logical || Equality || Ordering) && !Call->getType()->isBooleanType())
     return false;
   const unsigned Arity = Unary ? 1 : 2;
   if (Method->getNumParams() != Arity || Call->getNumArgs() != Arity + 1)
@@ -2998,14 +3011,40 @@ bool approvedFunctionalBooleanQuery(const State &S, const SourceManager &SM,
       return false;
     Operands[I] = Argument;
   }
-  if (Equality)
-    return utilityScalarComparisonType(Context, Operands[0], Operands[1]) ||
-           utilityCallbackComparisonType(Context, Operands[0], Operands[1]);
+  if (Equality || Ordering)
+    return utilityScalarComparisonType(Context, Operands[0], Operands[1],
+                                       Ordering) ||
+           (Equality &&
+            utilityCallbackComparisonType(Context, Operands[0], Operands[1]));
+  if (Logical) {
+    for (unsigned I = 0; I < Arity; ++I)
+      if (!utilityScalarDirectConversion(Context, Operands[I],
+                                         Context.BoolTy) &&
+          !utilityCallbackDirectConversion(Context, Operands[I],
+                                           Context.BoolTy))
+        return false;
+    return true;
+  }
   for (unsigned I = 0; I < Arity; ++I)
-    if (!utilityScalarDirectConversion(Context, Operands[I], Context.BoolTy) &&
-        !utilityCallbackDirectConversion(Context, Operands[I], Context.BoolTy))
+    if (!Operands[I]->isArithmeticType() ||
+        (Integral && !Operands[I]->isIntegralType(Context)))
       return false;
-  return true;
+  QualType Result;
+  if (!Transparent) {
+    Result = Value.getCanonicalType().getUnqualifiedType();
+  } else if (Unary) {
+    Result = Operands[0].getCanonicalType().getUnqualifiedType();
+    if (Context.isPromotableIntegerType(Result))
+      Result = Context.getPromotedIntegerType(Result);
+  } else if (const auto Common = utilityScalarComparisonType(
+                 Context, Operands[0], Operands[1])) {
+    Result = *Common;
+  }
+  // Only built-in arithmetic and its exact promotion/result signature belong
+  // to this query proof. SDK bodies remain lazy; caller operands keep their
+  // independent source requirements.
+  return !Result.isNull() &&
+         Context.hasSameType(Result, Method->getReturnType());
 }
 
 static bool utilityPairDirectConversion(const ASTContext &Context,

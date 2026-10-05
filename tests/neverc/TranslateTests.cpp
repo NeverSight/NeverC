@@ -90241,18 +90241,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2ObjectInvokeQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-adapter-body", R"cpp(
-int f(F&v){static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter-body", R"cpp(
-int f(F&v){int n=v(1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));return n;}
-)cpp", "TR0203"},
-      {"different-argument-specialization", R"cpp(
-int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,short(1),2)),int));return n;}
-)cpp", "TR0203"},
-      {"different-callable-specialization", R"cpp(
-int f(F&v,const F&c){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(c,1,2)),int));return n;}
-)cpp", "TR0203"},
       {"independent-invoke-address", R"cpp(
 int f(F&v){int n=std::invoke(v,1,2);static_assert(__is_same(decltype(std::invoke(v,1,2)),int));static_assert(sizeof(&std::invoke<F&,int,int>)>0);return n;}
 )cpp", "TR0201"},
@@ -147209,6 +147197,463 @@ int declared(long double)noexcept;using R=decltype(std::invoke(declared,1));int 
     EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
     EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
                 Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryTypedArithmetic) {
+  const auto Source =
+      tmpFile("functional-scalar-signature-query-typed-arithmetic.cpp");
+  const auto Output =
+      tmpFile("functional-scalar-signature-query-typed-arithmetic.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int argument()noexcept{++effects;return 2;}
+static_assert(__is_same(decltype(std::invoke(std::plus<int>{},argument(),1)),int));
+static_assert(__is_same(decltype(std::minus<int>{}(argument(),1)),int));
+static_assert(__is_same(decltype(std::multiplies<int>{}(argument(),1)),int));
+static_assert(__is_same(decltype(std::divides<int>{}(argument(),0)),int));
+static_assert(__is_same(decltype(std::modulus<int>{}(argument(),0)),int));
+static_assert(__is_same(decltype(std::negate<int>{}(argument())),int));
+static_assert(!noexcept(std::invoke(std::plus<int>{},argument(),1)));
+static_assert(sizeof(std::plus<int>{}(argument(),1))==sizeof(int));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "functional-scalar-signature-query-typed-arithmetic" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionalScalarSignatureQueryTransparentArithmetic) {
+  const auto Source =
+      tmpFile("functional-scalar-signature-query-transparent-arithmetic.cpp");
+  const auto Output =
+      tmpFile("functional-scalar-signature-query-transparent-arithmetic.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;short argument()noexcept{++effects;return 2;}
+static_assert(__is_same(decltype(std::invoke(std::plus<>{},argument(),1L)),long));
+static_assert(__is_same(decltype(std::minus<>{}(argument(),1)),int));
+static_assert(__is_same(decltype(std::multiplies<>{}(argument(),1)),int));
+static_assert(__is_same(decltype(std::divides<>{}(argument(),0)),int));
+static_assert(__is_same(decltype(std::modulus<>{}(argument(),0)),int));
+static_assert(__is_same(decltype(std::negate<>{}(argument())),int));
+static_assert(noexcept(std::invoke(std::plus<>{},argument(),1L)));
+static_assert(sizeof(std::negate<>{}(argument()))==sizeof(int));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-transparent-arithmetic" +
+                Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryComparison) {
+  const auto Source =
+      tmpFile("functional-scalar-signature-query-comparison.cpp");
+  const auto Output =
+      tmpFile("functional-scalar-signature-query-comparison.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int argument()noexcept{++effects;return 2;}
+static_assert(__is_same(decltype(std::equal_to<int>{}(argument(),1)),bool));
+static_assert(__is_same(decltype(std::not_equal_to<>{}(argument(),1)),bool));
+static_assert(__is_same(decltype(std::less<int>{}(argument(),1)),bool));
+static_assert(__is_same(decltype(std::greater<>{}(argument(),1)),bool));
+static_assert(__is_same(decltype(std::less_equal<int>{}(argument(),1)),bool));
+static_assert(__is_same(decltype(std::greater_equal<>{}(argument(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::less<>{},argument(),1)),bool));
+static_assert(!noexcept(std::less<int>{}(argument(),1)));
+static_assert(noexcept(std::invoke(std::less<>{},argument(),1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryBitwise) {
+  const auto Source = tmpFile("functional-scalar-signature-query-bitwise.cpp");
+  const auto Output = tmpFile("functional-scalar-signature-query-bitwise.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;unsigned argument()noexcept{++effects;return 2;}
+static_assert(__is_same(decltype(std::bit_and<unsigned>{}(argument(),1)),unsigned));
+static_assert(__is_same(decltype(std::bit_or<>{}(argument(),1)),unsigned));
+static_assert(__is_same(decltype(std::bit_xor<unsigned>{}(argument(),1)),unsigned));
+static_assert(__is_same(decltype(std::bit_not<>{}(argument())),unsigned));
+static_assert(__is_same(decltype(std::invoke(std::bit_and<>{},argument(),1)),unsigned));
+static_assert(noexcept(std::bit_not<>{}(argument())));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-bitwise" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQuerySurface) {
+  const auto Source = tmpFile("functional-scalar-signature-query-surface.cpp");
+  const auto Output = tmpFile("functional-scalar-signature-query-surface.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int arg()noexcept{++effects;return 2;}
+static_assert(__is_same(decltype(std::plus<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::plus<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::plus<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::plus<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::plus<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::plus<>{},arg(),1)));
+static_assert(__is_same(decltype(std::minus<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::minus<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::minus<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::minus<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::minus<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::minus<>{},arg(),1)));
+static_assert(__is_same(decltype(std::multiplies<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::multiplies<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::multiplies<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::multiplies<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::multiplies<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::multiplies<>{},arg(),1)));
+static_assert(__is_same(decltype(std::divides<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::divides<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::divides<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::divides<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::divides<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::divides<>{},arg(),1)));
+static_assert(__is_same(decltype(std::modulus<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::modulus<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::modulus<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::modulus<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::modulus<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::modulus<>{},arg(),1)));
+static_assert(__is_same(decltype(std::negate<int>{}(arg())),int));
+static_assert(__is_same(decltype(std::invoke(std::negate<int>{},arg())),int));
+static_assert(!noexcept(std::invoke(std::negate<int>{},arg())));
+static_assert(__is_same(decltype(std::negate<>{}(arg())),int));
+static_assert(__is_same(decltype(std::invoke(std::negate<>{},arg())),int));
+static_assert(noexcept(std::invoke(std::negate<>{},arg())));
+static_assert(__is_same(decltype(std::bit_and<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_and<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::bit_and<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::bit_and<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_and<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::bit_and<>{},arg(),1)));
+static_assert(__is_same(decltype(std::bit_or<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_or<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::bit_or<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::bit_or<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_or<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::bit_or<>{},arg(),1)));
+static_assert(__is_same(decltype(std::bit_xor<int>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_xor<int>{},arg(),1)),int));
+static_assert(!noexcept(std::invoke(std::bit_xor<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::bit_xor<>{}(arg(),1)),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_xor<>{},arg(),1)),int));
+static_assert(noexcept(std::invoke(std::bit_xor<>{},arg(),1)));
+static_assert(__is_same(decltype(std::bit_not<int>{}(arg())),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_not<int>{},arg())),int));
+static_assert(!noexcept(std::invoke(std::bit_not<int>{},arg())));
+static_assert(__is_same(decltype(std::bit_not<>{}(arg())),int));
+static_assert(__is_same(decltype(std::invoke(std::bit_not<>{},arg())),int));
+static_assert(noexcept(std::invoke(std::bit_not<>{},arg())));
+static_assert(__is_same(decltype(std::equal_to<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::equal_to<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::equal_to<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::equal_to<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::equal_to<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::equal_to<>{},arg(),1)));
+static_assert(__is_same(decltype(std::not_equal_to<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::not_equal_to<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::not_equal_to<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::not_equal_to<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::not_equal_to<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::not_equal_to<>{},arg(),1)));
+static_assert(__is_same(decltype(std::less<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::less<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::less<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::less<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::less<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::less<>{},arg(),1)));
+static_assert(__is_same(decltype(std::greater<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::greater<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::greater<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::greater<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::greater<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::greater<>{},arg(),1)));
+static_assert(__is_same(decltype(std::less_equal<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::less_equal<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::less_equal<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::less_equal<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::less_equal<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::less_equal<>{},arg(),1)));
+static_assert(__is_same(decltype(std::greater_equal<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::greater_equal<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::greater_equal<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::greater_equal<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::greater_equal<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::greater_equal<>{},arg(),1)));
+static_assert(__is_same(decltype(std::logical_and<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::logical_and<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::logical_and<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::logical_and<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::logical_and<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::logical_and<>{},arg(),1)));
+static_assert(__is_same(decltype(std::logical_or<int>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::logical_or<int>{},arg(),1)),bool));
+static_assert(!noexcept(std::invoke(std::logical_or<int>{},arg(),1)));
+static_assert(__is_same(decltype(std::logical_or<>{}(arg(),1)),bool));
+static_assert(__is_same(decltype(std::invoke(std::logical_or<>{},arg(),1)),bool));
+static_assert(noexcept(std::invoke(std::logical_or<>{},arg(),1)));
+static_assert(__is_same(decltype(std::logical_not<int>{}(arg())),bool));
+static_assert(__is_same(decltype(std::invoke(std::logical_not<int>{},arg())),bool));
+static_assert(!noexcept(std::invoke(std::logical_not<int>{},arg())));
+static_assert(__is_same(decltype(std::logical_not<>{}(arg())),bool));
+static_assert(__is_same(decltype(std::invoke(std::logical_not<>{},arg())),bool));
+static_assert(noexcept(std::invoke(std::logical_not<>{},arg())));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-surface" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryPointerComparison) {
+  const auto Source =
+      tmpFile("functional-scalar-signature-query-pointer-comparison.cpp");
+  const auto Output =
+      tmpFile("functional-scalar-signature-query-pointer-comparison.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;int a[2];int*left()noexcept{++effects;return a;}const int*right()noexcept{++effects;return a+1;}
+static_assert(__is_same(decltype(std::less<>{}(left(),right())),bool));
+static_assert(__is_same(decltype(std::invoke(std::greater_equal<>{},left(),right())),bool));
+static_assert(__is_same(decltype(std::greater<int*>{}(left(),left())),bool));
+static_assert(noexcept(std::less<>{}(left(),right())));
+static_assert(!noexcept(std::greater<int*>{}(left(),left())));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "functional-scalar-signature-query-pointer-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryCleanup) {
+  const auto Source = tmpFile("functional-scalar-signature-query-cleanup.cpp");
+  const auto Output = tmpFile("functional-scalar-signature-query-cleanup.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct Ticket{Ticket()noexcept{++effects;}~Ticket()noexcept{++effects;}};
+int argument(Ticket t=Ticket(),int n=(++effects,2))noexcept{++effects;return n;}
+static_assert(__is_same(decltype(std::plus<int>{}(argument(),1)),int));
+static_assert(sizeof(std::invoke(std::bit_not<>{},argument()))==sizeof(int));
+static_assert(noexcept(std::invoke(std::less<>{},argument(),1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-cleanup" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryPromotions) {
+  const auto Source =
+      tmpFile("functional-scalar-signature-query-promotions.cpp");
+  const auto Output =
+      tmpFile("functional-scalar-signature-query-promotions.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using Small=short;int effects=0;Small s()noexcept{++effects;return 2;}float f()noexcept{++effects;return 1;}
+static_assert(__is_same(decltype(std::negate<Small>{}(s())),Small));
+static_assert(__is_same(decltype(std::negate<>{}(s())),int));
+static_assert(__is_same(decltype(std::plus<unsigned char>{}(257,2)),unsigned char));
+static_assert(__is_same(decltype(std::bit_not<>{}(static_cast<unsigned char>(2))),int));
+static_assert(__is_same(decltype(std::plus<>{}(f(),f())),float));
+static_assert(__is_same(decltype(std::invoke(std::multiplies<>{},f(),1.0)),double));
+static_assert(__is_same(decltype(std::bit_or<>{}(2u,1)),unsigned));
+static_assert(__is_same(decltype(std::plus<>{}(true,static_cast<char>(1))),int));
+using Mixed=decltype(2u+1L);static_assert(__is_same(decltype(std::plus<>{}(2u,1L)),Mixed));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-promotions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalScalarSignatureQueryConversions) {
+  const auto Source =
+      tmpFile("functional-scalar-signature-query-conversions.cpp");
+  const auto Output =
+      tmpFile("functional-scalar-signature-query-conversions.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects=0;struct R{R()noexcept{++effects;}~R()noexcept{++effects;}operator int()const noexcept{++effects;return 2;}};
+static_assert(__is_same(decltype(std::plus<int>{}(R{},1)),int));
+static_assert(__is_same(decltype(std::less<int>{}(R{},1)),bool));
+static_assert(sizeof(std::bit_not<int>{}(R{}))==sizeof(int));
+static_assert(!noexcept(std::plus<int>{}(R{},1)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-scalar-signature-query-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionalScalarSignatureQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"argument-body", R"cpp(#include <functional>
+#include <utility>
+int arg()noexcept{long double hidden=0;return 1;}int main(){static_assert(sizeof(std::plus<int>{}(arg(),2))==sizeof(int));return 0;}
+)cpp"},
+      {"argument-default", R"cpp(#include <functional>
+#include <utility>
+int arg(int n=sizeof(long double))noexcept{return n;}int main(){static_assert(sizeof(std::plus<int>{}(arg(),2))==sizeof(int));return 0;}
+)cpp"},
+      {"argument-expression", R"cpp(#include <functional>
+#include <utility>
+int main(){static_assert(sizeof(std::plus<int>{}((sizeof(long double),1),2))==sizeof(int));return 0;}
+)cpp"},
+      {"cast-invoke", R"cpp(#include <functional>
+#include <utility>
+using F=std::plus<int>;using I=int(*)(F&&,int&&,int&&);int main(){static_assert(sizeof(static_cast<I>(&std::invoke<F,int,int>)(F{},1,2))==sizeof(int));return 0;}
+)cpp"},
+      {"destructor-body", R"cpp(#include <functional>
+#include <utility>
+struct R{~R()noexcept{long double hidden=0;}};int arg(R r=R())noexcept{return 1;}int main(){static_assert(sizeof(std::plus<int>{}(arg(),2))==sizeof(int));return 0;}
+)cpp"},
+      {"hidden-alias", R"cpp(#include <functional>
+#include <utility>
+using T=decltype((sizeof(long double),int{}));int main(){static_assert(__is_same(decltype(std::plus<T>{}(1,2)),int));return 0;}
+)cpp"},
+      {"invoke-address", R"cpp(#include <functional>
+#include <utility>
+using F=std::plus<int>;int main(){static_assert(sizeof(&std::invoke<F,int,int>)>0);return 0;}
+)cpp"},
+      {"operator-address", R"cpp(#include <functional>
+#include <utility>
+int main(){static_assert(sizeof(&std::plus<int>::operator())>0);return 0;}
+)cpp"},
+      {"operator-specialization", R"cpp(#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<>constexpr int plus<int>::operator()(const int&a,const int&b)const{return a+b;}}}int main(){static_assert(sizeof(std::plus<int>{}(1,2))==sizeof(int));return 0;}
+)cpp"},
+      {"pointer-arithmetic", R"cpp(#include <functional>
+#include <utility>
+int main(){int a[2]{};static_assert(__is_same(decltype(std::plus<>{}(a,1)),int*));return 0;}
+)cpp"},
+      {"receiver-expression", R"cpp(#include <functional>
+#include <utility>
+int main(){std::plus<int> p;static_assert(sizeof((sizeof(long double),p)(1,2))==sizeof(int));return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <utility>
+struct R{operator int()const noexcept{long double hidden=0;return 1;}};int main(){static_assert(__is_same(decltype(std::plus<int>{}(R{},1)),int));return 0;}
+)cpp"},
+      {"user-defined-operator", R"cpp(#include <functional>
+#include <utility>
+struct R{int n;};int operator+(R a,R b){return a.n+b.n;}int main(){static_assert(__is_same(decltype(std::plus<>{}(R{},R{})),int));return 0;}
+)cpp"},
+      {"volatile-argument", R"cpp(#include <functional>
+#include <utility>
+int main(){volatile int n=1;static_assert(__is_same(decltype(std::plus<>{}(n,2)),int));return 0;}
+)cpp"},
+      {"wide-arithmetic", R"cpp(#include <functional>
+#include <utility>
+int main(){static_assert(__is_same(decltype(std::plus<long double>{}(1,2)),long double));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("functional-scalar-signature-query-reject-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("functional-scalar-signature-query-reject-") +
+                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE((Result.out + Result.err).find("TR0201") != std::string::npos ||
+                (Result.out + Result.err).find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
   }
