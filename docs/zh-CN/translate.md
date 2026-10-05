@@ -26,6 +26,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 经过检查的普通函数指针值也可存入 `std::optional` 和 `std::vector`，包括 `noexcept` 签名及已接纳的复合、嵌套 vector 元素。构造、复制、修改和 swap 保留指针值。optional 转换保留空源并转换所含指针值；回调相等比较接纳兼容签名、函数名和 `nullptr`。vector emplace 支持经检查的回调转换，并在扩容和移位时保留别名输入。回调排序、可能抛异常的 optional 访问及既有的 vector 分配函数定义要求仍受各自边界限制。 `replace_if`、`replace_copy_if` 和 `remove_if` 的源代码谓词对象也接纳兼容的 `noexcept` 函数指针到普通函数指针参数的经检查转换；元素、替换值及输出存储类型仍须精确匹配。 [optional](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional) · [vector](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 
+Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+
 按值回调实参在 invoke、apply、函数对象、成员函数、mem_fn 以及直接或经 invoke 调用的引用包装器中，统一按实际选定的形参类型转换。经检查的转换支持函数名衰变、兼容函数指针去除 `noexcept`、`nullptr` 转为函数指针，以及函数或函数指针转为 `bool`；空函数指针转为 false。值形参的顶层 `const` 不改变转换，原始签名、嵌套限定及精确引用绑定仍须检查。
 
 `std::invoke` 的函数、函数指针、源码函数对象、成员函数和 `mem_fn` 路径，以及直接或经 invoke 的 `reference_wrapper` 调用，使用与 `apply` 相同的选定按值构造及额外默认实参规则。默认实参临时对象在回调和形参析构期间存活，并在 SDK 调用返回之前清理。SDK 先保留实参绑定，在所有调用方实参求值后读取转发的标量值、函数指针变量、包装器绑定和接收对象指针；选定的函数指针在回调形参构造前捕获。纯右值可调用对象保留已捕获的值，普通间接调用仍在实参之前求值被调用函数。

@@ -26,6 +26,8 @@ Core v2는 생성, 대입, 팩토리, 교환, 비교와 `get`을 포함해 인�
 
 검사된 일반 함수 포인터 값은 `std::optional`과 `std::vector`에도 저장할 수 있으며 `noexcept` 시그니처와 지원되는 복합 및 중첩 vector 요소를 포함합니다. 생성, 복사, 변경과 swap은 포인터 값을 유지합니다. optional 변환은 빈 원본을 빈 상태로 유지하고 저장된 포인터 값을 변환합니다. 콜백 동등 비교는 호환 시그니처, 함수 이름과 `nullptr`를 허용합니다. vector emplace는 검사된 콜백 변환을 지원하고 용량 확장 및 요소 이동 중 별칭 입력을 보존합니다. 콜백 순서 비교, 예외를 던질 수 있는 optional 접근과 기존 vector 할당 함수 정의 요건은 각각의 제한을 유지합니다. `replace_if`, `replace_copy_if`, `remove_if`의 소스 정의 조건자 객체는 호환되는 `noexcept` 함수 포인터를 일반 함수 포인터 매개변수로 변환하는 검사된 변환도 허용합니다. 요소, 대체 값과 출력 저장소 타입은 여전히 정확히 일치해야 합니다. [optional](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional) · [vector](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 
+Windows 빌드는 Microsoft SDK의 기존 내부 `log10`/`pow` 템플릿을 보존하고 컴파일된 심볼을 격리하여 SDK 고유의 계산과 부동소수점 상태 동작을 유지합니다. 실제 SDK와 런타임 차이 검사는 이 변경을 구현한 리비전의 네이티브 CI에서 검증해야 합니다. [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+
 invoke, apply, 함수 객체, 멤버 함수, mem_fn과 직접 또는 invoke로 호출하는 참조 래퍼는 값 전달 콜백 인수를 실제 선택된 매개변수 형식으로 일관되게 변환합니다. 검사된 변환은 함수 이름의 포인터 변환, 호환 함수 포인터의 `noexcept` 제거, `nullptr`의 함수 포인터 변환과 함수 또는 함수 포인터의 `bool` 변환을 지원합니다. 널 함수 포인터는 false로 변환됩니다. 값 매개변수의 최상위 `const`는 변환을 바꾸지 않으며 원래 시그니처, 중첩 한정과 정확한 참조 바인딩 검사는 유지됩니다.
 
 `std::invoke`의 함수, 함수 포인터, 소스 함수 객체, 멤버 함수와 `mem_fn` 경로 및 직접 또는 invoke를 통한 `reference_wrapper` 호출은 `apply`와 같은 선택된 값 전달 생성과 추가 기본 인수 규칙을 사용합니다. 기본 인수의 임시 객체는 콜백과 매개변수 소멸 동안 유지되며 SDK 호출이 반환되기 전에 정리됩니다. SDK는 먼저 인수 바인딩을 유지하고, 모든 호출자 인수 평가 후 전달된 스칼라 값, 함수 포인터 변수, 래퍼 바인딩과 수신 객체 포인터를 읽습니다. 선택된 함수 포인터는 콜백 매개변수를 생성하기 전에 캡처됩니다. 순수 오른값 호출 가능 객체는 캡처한 값을 유지하고, 일반 간접 호출은 인수보다 먼저 호출 대상을 평가합니다.

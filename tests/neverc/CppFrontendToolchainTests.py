@@ -43,7 +43,8 @@ class CppFrontendToolchainTests(unittest.TestCase):
         cls.msvc = shutil.which("cl.exe")
         if not cls.msvc:
             raise FileNotFoundError("The MSVC developer environment is required")
-        for tool in (cls.clang, cls.librarian, cls.nm, cls.readobj):
+        for tool in (cls.clang, cls.librarian, cls.nm, cls.readobj,
+                     cls.llvm_root / "bin/llvm-objcopy.exe"):
             if not tool.is_file():
                 raise FileNotFoundError(f"Required CI tool is missing: {tool}")
 
@@ -2377,7 +2378,7 @@ int main() {
                 print(f"MSVC empty literal runtime PASS: {order}; both nonnull, "
                       "NUL-valued and coalesced under /OPT:NOICF", flush=True)
 
-    def test_cmath_explicit_double_calls_preserve_values_and_remove_templates(self):
+    def test_cmath_private_templates_preserve_values_and_sdk_implementation(self):
         # This is a bounded SDK/compiler experiment, not a claim that these
         # fixture flags reproduce every production LLVM compile command.
         expected = {
@@ -2451,7 +2452,7 @@ double (*SIDE_keep_di)(double, int) =
 }
 """
 
-        def wrapper_source(side, changed):
+        def wrapper_source(side):
             expressions = {
                 "LOG_EXPRESSION": "std::log10(SIDE_integer(depth, calls))",
                 "NEGATIVE_AP_EXPRESSION": "std::pow(2, -SIDE_integer(weight, calls))",
@@ -2461,25 +2462,10 @@ double (*SIDE_keep_di)(double, int) =
                 "DOUBLE_EXPRESSION": (
                     "std::pow(SIDE_double(base, a), SIDE_integer(exponent, b))"),
             }
-            if changed:
-                expressions = {
-                    "LOG_EXPRESSION": (
-                        "std::log10(static_cast<double>(SIDE_integer(depth, calls)))"),
-                    "NEGATIVE_AP_EXPRESSION": (
-                        "std::pow(2.0, static_cast<double>(-SIDE_integer(weight, calls)))"),
-                    "POSITIVE_AP_EXPRESSION": (
-                        "std::pow(2.0, static_cast<double>(SIDE_integer(weight, calls)))"),
-                    "FLOAT_EXPRESSION": (
-                        "std::pow(static_cast<double>(SIDE_single(base, a)), "
-                        "static_cast<double>(SIDE_integer(exponent, b)))"),
-                    "DOUBLE_EXPRESSION": (
-                        "std::pow(SIDE_double(base, a), "
-                        "static_cast<double>(SIDE_integer(exponent, b)))"),
-                }
             result = wrappers
             for token, expression in expressions.items():
                 result = result.replace(token, expression)
-            return (result + ("" if changed else escapes)).replace("SIDE", side)
+            return (result + escapes).replace("SIDE", side)
 
         harness = r"""
 #include <cerrno>
@@ -2778,13 +2764,32 @@ int main() {
                             self.assertIn("static_cast<double>(_Left)", body_text)
                             if macro == "_GENERIC_MATH2_BASE":
                                 self.assertIn("static_cast<double>(_Right)", body_text)
-                    for pattern in (r"_GENERIC_MATH1\s*\(\s*log10\s*\)",
-                                    r"_GENERIC_MATH2\s*\(\s*pow\s*\)"):
-                        matches = [(i, line) for i, line in enumerate(lines)
-                                   if re.fullmatch(r"\s*" + pattern + r"\s*", line)]
-                        self.assertEqual(len(matches), 1, (path, pattern))
-                        i, line = matches[0]
+                    matches = [(i, line) for i, line in enumerate(lines)
+                               if re.fullmatch(r"\s*_GENERIC_MATH1\s*\(\s*log10\s*\)\s*", line)]
+                    self.assertEqual(len(matches), 1, (path, "log10"))
+                    i, line = matches[0]
+                    print(f"CMATH actual instantiation {path}:{i + 1}: {line}", flush=True)
+                    pow_macros = [(i, line) for i, line in enumerate(lines)
+                                  if re.fullmatch(r"\s*_GENERIC_MATH2\s*\(\s*pow\s*\)\s*", line)]
+                    pow_functions = [i for i, line in enumerate(lines)
+                                     if re.search(r"\bpow\s*\(\s*_Ty1\s+_Left\s*,\s*_Ty2\s+_Right\s*\)", line)]
+                    self.assertEqual(len(pow_macros) + len(pow_functions), 1, path)
+                    if pow_macros:
+                        i, line = pow_macros[0]
                         print(f"CMATH actual instantiation {path}:{i + 1}: {line}", flush=True)
+                    else:
+                        # Preserve the actual SDK implementation, including any
+                        # integer-exponent shortcut. Its body is compiled as-is;
+                        # never reconstruct it from a downloaded reference tag.
+                        start = pow_functions[0]
+                        braces = 0
+                        for i in range(start, min(len(lines), start + 100)):
+                            print(f"CMATH actual pow body {path}:{i + 1}: {lines[i]}", flush=True)
+                            braces += lines[i].count("{") - lines[i].count("}")
+                            if i > start and braces == 0:
+                                break
+                        else:
+                            self.fail("Unbounded SDK pow body: " + str(path))
                 elif name == "math.h":
                     # The actual UCRT math.h is a forwarding header. Its
                     # included definition file must be in this same trace.
@@ -2818,10 +2823,10 @@ int main() {
                     directory = self.root / "cmath" / configuration
                     original_obj = compile_source(
                         directory / "original", "original",
-                        wrapper_source("neverc_cpp_original", False), msvc, optimized)
+                        wrapper_source("neverc_cpp_original"), msvc, optimized)
                     changed_obj = compile_source(
                         directory / "changed", "changed",
-                        wrapper_source("neverc_cpp_changed", True), msvc, optimized)
+                        wrapper_source("neverc_cpp_changed"), msvc, optimized)
                     host = directory / "host"
                     host_obj = compile_source(
                         host, "host", escapes.replace("SIDE", "host_cmath"), msvc, optimized)
@@ -2832,7 +2837,20 @@ int main() {
                     entry_obj = compile_source(
                         directory, "entry", ENTRY, msvc, optimized, trace=False)
                     original = pack(directory / "original.lib", (entry_obj, original_obj))
-                    changed = pack(directory / "changed.lib", (entry_obj, changed_obj))
+                    changed_input = pack(directory / "changed-input.lib", (entry_obj, changed_obj))
+                    changed = directory / "changed.lib"
+                    math_writer = self.audit.with_name("IsolateMathCoffSymbols.py")
+                    math_report = directory / "math-isolation.json"
+                    self.require_success([
+                        sys.executable, "-E", "-B", math_writer,
+                        "--input", changed_input, "--output", changed,
+                        "--objcopy", self.llvm_root / "bin/llvm-objcopy.exe",
+                        "--nm", self.nm, "--report", math_report])
+                    report = json.loads(math_report.read_text(encoding="utf-8"))
+                    self.assertEqual(set(report["renames"]), set(expected))
+                    self.assertEqual(report["section_and_auxiliary_checks"], "passed")
+                    print("CMATH compiled SDK isolation proof: " +
+                          json.dumps(report, sort_keys=True), flush=True)
                     host_archive = pack(host / "host.lib", (host_obj,))
                     for archive in (original, host_archive):
                         declarations = self.defined_declarations(archive)
@@ -2851,6 +2869,12 @@ int main() {
                                  if line.split()}
                     self.assertFalse(all_names & expected.keys(),
                                      "Changed calls retain an original template D/U: " + inventory)
+                    private_expected = {raw.replace("??$", "??$neverc_cpp_", 1)
+                                        for raw in expected}
+                    self.assertTrue(private_expected <= all_names, inventory)
+                    changed_definitions = self.defined_declarations(changed)
+                    self.assertTrue(private_expected <= changed_definitions.keys(),
+                                    changed_definitions)
                     for host_format in ("nm", "coff-index"):
                         checked = directory / (host_format + "-original.lib")
                         shutil.copyfile(original, checked)
@@ -2882,7 +2906,7 @@ int main() {
                                "/machine:" + machine, "/subsystem:console", "/OPT:NOICF",
                                "/defaultlib:libcmt", "/defaultlib:oldnames",
                                *("/libpath:" + str(path) for path in library_dirs),
-                               harness_obj, original_obj, changed_obj]
+                               harness_obj, original_obj, changed]
                     print("CMATH link: " + subprocess.list2cmdline(
                         [str(argument) for argument in command]), flush=True)
                     self.require_success(command)

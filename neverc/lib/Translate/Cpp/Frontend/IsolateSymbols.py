@@ -8,6 +8,7 @@ import re
 parser = argparse.ArgumentParser()
 parser.add_argument("--source", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
+parser.add_argument("--coff-math", action="store_true")
 args = parser.parse_args()
 
 # LLVM 20.1.8 defines these implementation records/functions in the global
@@ -283,10 +284,9 @@ def isolate_pointer_bounds(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
-def isolate_math_calls(source_root):
-    # The integer/mixed cmath templates convert their arguments to double
-    # before calling the C math overload. Make those same conversions at the
-    # six pinned call sites instead of emitting shared global MSVC templates.
+def isolate_math_calls(source_root, preserve_templates=False):
+    # Non-COFF builds keep the existing double-forwarding isolation. COFF
+    # builds preserve the actual SDK overloads and rename compiled symbols.
     # Keep the original getter, negation and float/half conversion order.
     files = (
         ("llvm/lib/Support/Signals.cpp", (
@@ -317,12 +317,22 @@ def isolate_math_calls(source_root):
             raise SystemExit("Unexpected pinned LLVM math calls in " + str(path)) from error
         counts = [(text.count(before), text.count(after))
                   for before, after in replacements]
-        if all(count == (0, 1) for count in counts):
-            continue
-        if not all(count == (1, 0) for count in counts):
+        original = all(count == (1, 0) for count in counts)
+        rewritten = all(count == (0, 1) for count in counts)
+        if not original and not rewritten:
             raise SystemExit("Unexpected pinned LLVM math calls in " + str(path))
-        for before, after in replacements:
-            text = text.replace(before, after, 1)
+        if preserve_templates:
+            # Recent Microsoft SDKs specialize pow(x, int(2)) as x*x. Keep
+            # their actual behavior and isolate COFF symbols after compilation.
+            if original:
+                continue
+            for before, after in replacements:
+                text = text.replace(after, before, 1)
+        else:
+            if rewritten:
+                continue
+            for before, after in replacements:
+                text = text.replace(before, after, 1)
         updates.append((path, text))
     # Validate all three inputs before changing any math source. Each file is
     # either wholly original or wholly rewritten; partial edits fail closed.
@@ -1531,7 +1541,7 @@ replace_once(debugify, "#define LLVM_TRANSFORMS_UTILS_DEBUGIFY_H",
              "// Private NeverC frontend ABI: this upstream type is global.\n"
              "#define DebugInfoPerPass neverc_cpp_DebugInfoPerPass")
 isolate_pointer_bounds(args.source / "llvm/lib/Transforms/Utils/LoopUtils.cpp")
-isolate_math_calls(args.source)
+isolate_math_calls(args.source, args.coff_math)
 
 symbols = set()
 for header in sorted((args.source / "llvm/include/llvm-c").glob("*.h")):

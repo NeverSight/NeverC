@@ -26,6 +26,8 @@ Core v2 接受經過驗證的空與非空 `<tuple>` 值，包括建構、賦值�
 
 經過檢查的一般函式指標值也可存入 `std::optional` 與 `std::vector`，包括 `noexcept` 簽章及已接納的複合、巢狀 vector 元素。建構、複製、修改與 swap 保留指標值。optional 轉換保留空來源並轉換所含指標值；回呼相等比較接納相容簽章、函式名稱與 `nullptr`。vector emplace 支援經檢查的回呼轉換，並在擴容與移位時保留別名輸入。回呼排序、可能擲出例外的 optional 存取及既有的 vector 配置函式定義要求仍受各自邊界限制。 `replace_if`、`replace_copy_if` 與 `remove_if` 的原始碼述詞物件也接納相容的 `noexcept` 函式指標到一般函式指標參數的經檢查轉換；元素、替換值與輸出儲存型別仍須精確符合。 [optional](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional) · [vector](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 
+Windows 建置保留 Microsoft SDK 原有的內部 `log10`/`pow` 範本，並隔離其編譯後的符號，以保留 SDK 特有的計算及浮點狀態行為。實際 SDK 與執行階段差分檢查須由實作此變更的版本通過原生 CI 驗證。 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+
 按值回呼引數在 invoke、apply、函式物件、成員函式、mem_fn 以及直接或經 invoke 呼叫的參考包裝器中，統一按實際選定的參數型別轉換。經檢查的轉換支援函式名稱衰變、相容函式指標移除 `noexcept`、`nullptr` 轉為函式指標，以及函式或函式指標轉為 `bool`；空函式指標轉為 false。值參數的頂層 `const` 不改變轉換，原始簽章、巢狀限定與精確參考繫結仍須檢查。
 
 `std::invoke` 的函式、函式指標、原始碼函式物件、成員函式與 `mem_fn` 路徑，以及直接或經 invoke 的 `reference_wrapper` 呼叫，使用與 `apply` 相同的選定按值建構及額外預設引數規則。預設引數暫存物件在回呼與參數解構期間存活，並在 SDK 呼叫返回之前清理。SDK 先保留引數繫結，在所有呼叫端引數求值後讀取轉送的純量值、函式指標變數、包裝器繫結與接收物件指標；選定的函式指標在回呼參數建構前擷取。純右值可呼叫物件保留已擷取的值，一般間接呼叫仍在引數之前求值被呼叫函式。

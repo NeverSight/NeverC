@@ -305,6 +305,13 @@ replacement and output storage types remain exact.
 See the [optional](../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional)
 and [vector](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 contracts.
+
+Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
+templates and isolate their compiled symbols, retaining SDK-specific calculations
+and floating-state behavior. The actual SDK and runtime differential checks
+require the implementing revision’s native CI.
+[Windows ABI](../utils/translate-frontends/docs/design.md#private-windows-math-templates).
+
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
 tuple/pair sources plus scalar and recursively composite arrays, evaluates all
 sources once before reading their elements, and constructs the exact

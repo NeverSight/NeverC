@@ -58,6 +58,34 @@ if(NOT _result EQUAL 0)
   message(FATAL_ERROR "Failed to aggregate private frontend static libraries")
 endif()
 if(COFF)
+  # Preserve the actual SDK templates, including integer-exponent shortcuts.
+  # Rename their compiled definitions and references before the Setup writer;
+  # independent record/section proofs and the usual ABI audits still apply.
+  _setup_stage(started math-tests 0)
+  execute_process(COMMAND "${PYTHON}" -E -B "${MATH_TESTS}"
+    RESULT_VARIABLE _result TIMEOUT 120)
+  if(NOT _result EQUAL 0)
+    _setup_stage(failed math-tests "${_result}")
+    message(FATAL_ERROR "Private math archive tests failed: ${_result}")
+  endif()
+  set(_math_isolated "${OUTPUT}.math.tmp")
+  file(REMOVE "${_math_isolated}")
+  _setup_stage(started math-isolation 0)
+  execute_process(COMMAND "${PYTHON}" -E -B "${MATH_WRITER}"
+    --input "${_temporary}" --output "${_math_isolated}"
+    --objcopy "${OBJCOPY}" --nm "${NM}"
+    --report "${OUTPUT}.math-isolation.json"
+    RESULT_VARIABLE _result TIMEOUT 600)
+  if(NOT _result EQUAL 0)
+    _setup_stage(failed math-isolation "${_result}")
+    message(FATAL_ERROR "Private math archive isolation failed: ${_result}")
+  endif()
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E rename
+    "${_math_isolated}" "${_temporary}" RESULT_VARIABLE _result)
+  if(NOT _result STREQUAL "0")
+    _setup_stage(failed math-isolation-publish "${_result}")
+    message(FATAL_ERROR "Cannot stage the isolated private math archive")
+  endif()
   # Both readers are targets of this same pinned private sub-build. Python is
   # the restricted equal-width writer; no objcopy serialization is involved.
   file(SHA256 "${_temporary}" _input_sha256)

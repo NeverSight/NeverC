@@ -146,6 +146,10 @@ function(neverc_setup_builtin_cpp_frontend)
   if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
   endif()
+  set(_math_isolation_args)
+  if(WIN32)
+    list(APPEND _math_isolation_args --coff-math)
+  endif()
   ExternalProject_Add(nevercCppFrontendBuild
     URL "${_url}"
     URL_HASH SHA256=6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d
@@ -155,7 +159,7 @@ function(neverc_setup_builtin_cpp_frontend)
     SOURCE_SUBDIR llvm
     LIST_SEPARATOR "|"
     PATCH_COMMAND "${Python3_EXECUTABLE}" "${_frontend}/IsolateSymbols.py"
-      --source <SOURCE_DIR> --output "${_prefix}"
+      --source <SOURCE_DIR> --output "${_prefix}" ${_math_isolation_args}
     CMAKE_ARGS
       "-DCMAKE_BUILD_TYPE:STRING=${_private_config}"
       "-DLLVM_ENABLE_ASSERTIONS:BOOL=${_private_assertions}"

@@ -48,6 +48,29 @@ failed inspection stops the link. Installed translation does not load external C
 libraries. Existing NeverC runtime and optional plugin dependencies are separate
 from this frontend contract.
 
+### Private Windows math templates
+
+COFF builds preserve the six original LLVM calls to the Microsoft SDK's integer
+and mixed-type `log10`/`pow` overloads. Four checked template symbol identities
+are renamed after compilation, including their definitions, references and
+archive indices. This retains SDK-specific behavior such as `pow(x, int(2))`
+using multiplication rather than a call to the double CRT overload.
+
+The pinned LLVM object tool performs the rename. Independent checks retain
+member order, object headers, initialized section bytes, machine code,
+relocations, symbol identities and auxiliary records. Zero serialization of
+uninitialized COFF storage is the only admitted section representation change.
+Both archive indices retain each definition's representative and multiplicity;
+the usual private and host ABI audits run afterward. Unknown template signatures
+or changed implementation records stop the build before publication.
+
+The native Windows witness consumes and records the runner's actual SDK headers.
+It compares the original and isolated implementations using 2,496 input pairs,
+four rounding modes, two initial exception states, getter counts, exact result
+bits, `errno` and floating exception flags under MSVC and Clang at O0/O2. Native
+verification requires that witness on the implementing revision; a local COFF
+cross-compilation and link check supplies structural evidence only.
+
 ## Pipeline and ownership
 
 ```text
