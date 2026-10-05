@@ -30,6 +30,8 @@ Core v2 接受经过认证的空与非空 `<tuple>` 值，包括构造、赋值�
 
 这 14 个一元谓词算法也接纳固定 SDK 的 `std::logical_not<F>` 和透明的 `std::logical_not<>`，用于函数指针元素，包括 `noexcept` 签名、有类型的 `const` 及算法允许的 const 输入。选中的参数保留兼容的 `noexcept` 移除和经检查的指针临时值。元素、替换值与输出存储仍须精确匹配；空范围及调用者临时对象清理保留原有时序，不会调用回调目标。
 
+有类型和透明的 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 和 `std::logical_not` 也支持仅用于 `decltype`、`noexcept` 和常量 `sizeof` 表达式的直接调用及 `std::invoke`。固定 SDK 的实际替换签名提供布尔结果，无需实例化未使用的适配器或调用运算符函数体。已支持的标量与回调转换保留精确的参数类型和异常说明；调用者别名、操作数、选中的默认实参及临时对象清理仍检查原始来源，查询不会执行它们。独立 SDK 函数地址及替换声明继续受既有边界限制。
+
 Windows 构建保留 Microsoft SDK 原有的内部 `log10`/`pow` 模板，并隔离其编译后的符号，从而保留 SDK 特有的计算及浮点状态行为。真实 SDK 与运行时差分检查须由实现该变更的版本通过原生 CI 验证。 符号隔离还会恢复普通 COFF 与 bigobj 静态库中 MSVC 原有的非关联节记录编号，使最终附加记录逐字节保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

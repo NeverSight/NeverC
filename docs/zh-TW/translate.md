@@ -30,6 +30,8 @@ Core v2 接受經過驗證的空與非空 `<tuple>` 值，包括建構、賦值�
 
 這 14 個一元述詞演算法也接納固定 SDK 的 `std::logical_not<F>` 與透明的 `std::logical_not<>`，用於函式指標元素，包括 `noexcept` 簽章、具型別的 `const` 及演算法允許的 const 輸入。選取的參數保留相容的 `noexcept` 移除與經檢查的指標暫存值。元素、替換值與輸出儲存仍須精確符合；空範圍與呼叫者暫存物件清理保留原有時序，不會呼叫回呼目標。
 
+具型別與透明的 `std::equal_to`、`std::not_equal_to`、`std::logical_and`、`std::logical_or` 與 `std::logical_not` 也支援僅用於 `decltype`、`noexcept` 和常數 `sizeof` 運算式的直接呼叫及 `std::invoke`。固定 SDK 的實際替換簽章提供布林結果，無須具現化未使用的轉接器或呼叫運算子函式本體。已支援的純量與回呼轉換保留精確的參數型別與例外規格；呼叫者別名、運算元、選取的預設引數及暫存物件清理仍檢查原始來源，查詢不會執行它們。獨立 SDK 函式位址與替換宣告繼續受既有邊界限制。
+
 Windows 建置保留 Microsoft SDK 原有的內部 `log10`/`pow` 範本，並隔離其編譯後的符號，以保留 SDK 特有的計算及浮點狀態行為。實際 SDK 與執行階段差分檢查須由實作此變更的版本通過原生 CI 驗證。 符號隔離也會還原一般 COFF 與 bigobj 靜態函式庫中 MSVC 原有的非關聯節記錄編號，使最終附加記錄逐位元組保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

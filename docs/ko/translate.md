@@ -30,6 +30,8 @@ Core v2는 생성, 대입, 팩토리, 교환, 비교와 `get`을 포함해 인�
 
 이 14개 단항 조건자 알고리즘은 함수 포인터 요소에 대해 고정 SDK의 `std::logical_not<F>`와 투명한 `std::logical_not<>`도 허용합니다. `noexcept` 시그니처, 타입이 지정된 `const`와 허용된 const 입력이 포함됩니다. 선택된 매개변수는 호환되는 `noexcept` 제거와 검사된 임시 포인터 값을 보존합니다. 요소, 대체 값과 출력 저장소 타입은 정확히 일치해야 하며, 빈 범위와 호출자의 임시 객체 정리는 기존 시점을 유지하고 콜백 대상 함수를 호출하지 않습니다.
 
+타입이 지정된 형태와 투명한 형태의 `std::equal_to`, `std::not_equal_to`, `std::logical_and`, `std::logical_or`, `std::logical_not`는 `decltype`, `noexcept`, 상수 `sizeof` 표현식에만 쓰이는 직접 호출과 `std::invoke`도 지원합니다. 고정 SDK에서 실제로 치환된 시그니처로 불리언 결과를 검증하며 사용하지 않는 어댑터나 호출 연산자의 본문을 인스턴스화하지 않습니다. 지원되는 스칼라와 콜백 변환은 정확한 매개변수 타입과 예외 명세를 보존합니다. 호출자의 별칭, 피연산자, 선택된 기본 인수와 임시 객체 정리는 원래 소스를 계속 검사하며 쿼리에서는 실행하지 않습니다. 독립적인 SDK 함수 주소와 대체된 선언에는 기존 제한이 적용됩니다.
+
 Windows 빌드는 Microsoft SDK의 기존 내부 `log10`/`pow` 템플릿을 보존하고 컴파일된 심볼을 격리하여 SDK 고유의 계산과 부동소수점 상태 동작을 유지합니다. 실제 SDK와 런타임 차이 검사는 이 변경을 구현한 리비전의 네이티브 CI에서 검증해야 합니다. 심볼 격리는 일반 COFF 및 bigobj 아카이브에서 MSVC의 원래 비연관 섹션 레코드 번호도 복원하여 최종 보조 레코드를 바이트 단위로 보존합니다.
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

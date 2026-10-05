@@ -4903,8 +4903,10 @@ static bool functionalInvocabilitySource(
                        A, Call, Callable, Arguments, Target->isNothrow());
 }
 
-static const FunctionProtoType *functionalObjectInvokeTargetSource(
-    Adapter &A, const CXXMethodDecl *Method, const CXXRecordDecl *Receiver) {
+static const FunctionProtoType *
+functionalObjectInvokeTargetSource(Adapter &A, const CXXMethodDecl *Method,
+                                   const CXXRecordDecl *Receiver,
+                                   bool RequireDefinition = true) {
   const auto Object = functionalObjectStorageSource(A, Receiver);
   if (!Method || !Object)
     return nullptr;
@@ -4987,14 +4989,358 @@ static const FunctionProtoType *functionalObjectInvokeTargetSource(
   // method body and forwarding. Typed objects have no exception specification;
   // transparent objects query their admitted nonthrowing built-in operator.
   // Original argument evaluation retains its independent exception source.
-  if (!Target || (Method->getPrimaryTemplate()
-          ? (Target->getExceptionSpecType() != EST_NoexceptTrue ||
-             !Noexcept || !Noexcept->getValue())
-          : (Target->getExceptionSpecType() != EST_None ||
-             Target->getNoexceptExpr())) ||
-      !utilitySDKFunctionSource(A, Method, "__functional/operations.h"))
+  if (!Target ||
+      (Method->getPrimaryTemplate()
+           ? (Target->getExceptionSpecType() != EST_NoexceptTrue || !Noexcept ||
+              !Noexcept->getValue())
+           : (Target->getExceptionSpecType() != EST_None ||
+              Target->getNoexceptExpr())) ||
+      !utilitySDKFunctionSource(A, Method, "__functional/operations.h",
+                                RequireDefinition))
     return nullptr;
   return Target;
+}
+
+static const CallExpr *functionalQueryDecltypeCall(Adapter &A, QualType Type) {
+  for (unsigned Depth = 0; !Type.isNull() && Depth < 32; ++Depth) {
+    A.chargeExpansion(1, SourceLocation());
+    if (const auto *Deduced = dyn_cast<DecltypeType>(Type.getTypePtr()))
+      return dyn_cast<CallExpr>(
+          Deduced->getUnderlyingExpr()->IgnoreParenImpCasts());
+    const auto Next = Type.getSingleStepDesugaredType(A.Context);
+    if (Next == Type)
+      break;
+    Type = Next;
+  }
+  return nullptr;
+}
+
+static bool functionalQueryArguments(Adapter &A,
+                                     llvm::ArrayRef<TemplateArgument> Actual,
+                                     QualType Callable,
+                                     const TemplateArgument &Arguments,
+                                     bool VoidPrefix = false) {
+  if (Arguments.getKind() != TemplateArgument::Pack)
+    return false;
+  std::vector<QualType> Types;
+  for (const auto &Argument : Actual) {
+    A.chargeExpansion(1, SourceLocation());
+    if (Argument.getKind() == TemplateArgument::Type)
+      Types.push_back(Argument.getAsType());
+    else if (Argument.getKind() == TemplateArgument::Pack) {
+      for (const auto &Element : Argument.pack_elements()) {
+        A.chargeExpansion(1, SourceLocation());
+        if (Element.getKind() != TemplateArgument::Type)
+          return false;
+        Types.push_back(Element.getAsType());
+      }
+    } else
+      return false;
+  }
+  const unsigned Offset = VoidPrefix ? 1 : 0;
+  if (Types.size() != Arguments.pack_size() + 1 + Offset ||
+      (VoidPrefix && !Types[0]->isVoidType()) ||
+      !A.Context.hasSameType(Types[Offset], Callable))
+    return false;
+  for (unsigned I = 0; I < Arguments.pack_size(); ++I)
+    if (Arguments.pack_elements()[I].getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(Types[I + Offset + 1],
+                               Arguments.pack_elements()[I].getAsType()))
+      return false;
+  return true;
+}
+
+static bool functionalQueryRecordSource(Adapter &A, const CXXRecordDecl *Record,
+                                        llvm::StringRef Name, QualType Callable,
+                                        const TemplateArgument &Arguments,
+                                        bool VoidPrefix = false) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+          Record ? Record->getDefinition() : nullptr);
+  if (!Specialization || Specialization->getName() != Name ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getSpecializedTemplateOrPartial()
+          .is<ClassTemplatePartialSpecializationDecl *>() ||
+      !functionalQueryArguments(A, Specialization->getTemplateArgs().asArray(),
+                                Callable, Arguments, VoidPrefix))
+    return false;
+  auto Pinned = [&](const Decl *Declaration) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+    return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
+           Origin && Origin->Root == "libcxx" &&
+           Origin->Path == "__type_traits/invoke.h";
+  };
+  for (const auto *Declaration : Specialization->redecls())
+    if (!Pinned(Declaration))
+      return false;
+  for (const auto *Declaration :
+       Specialization->getSpecializedTemplate()->redecls())
+    if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
+      return false;
+  return true;
+}
+
+static bool functionalQueryVariableSource(Adapter &A, const Expr *Expression,
+                                          llvm::StringRef Name,
+                                          QualType Callable,
+                                          const TemplateArgument &Arguments) {
+  const auto *Reference =
+      Expression ? dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts())
+                 : nullptr;
+  const auto *Variable =
+      Reference ? dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl())
+                : nullptr;
+  if (!Variable || Variable->getName() != Name ||
+      Variable->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Variable->getSpecializedTemplateOrPartial()
+          .is<VarTemplatePartialSpecializationDecl *>() ||
+      !functionalQueryArguments(A, Variable->getTemplateArgs().asArray(),
+                                Callable, Arguments))
+    return false;
+  auto Pinned = [&](const Decl *Declaration) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+    return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
+           Origin && Origin->Root == "libcxx" &&
+           Origin->Path == "__type_traits/invoke.h";
+  };
+  for (const auto *Declaration : Variable->redecls())
+    if (!Pinned(Declaration))
+      return false;
+  for (const auto *Declaration : Variable->getSpecializedTemplate()->redecls())
+    if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
+      return false;
+  return true;
+}
+
+static const Expr *functionalQueryArgument(const Expr *Expression) {
+  for (unsigned Depth = 0; Expression && Depth < 64; ++Depth) {
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+      Expression = Cast->getSubExpr();
+    else if (const auto *Temporary =
+                 dyn_cast<MaterializeTemporaryExpr>(Expression))
+      Expression = Temporary->getSubExpr();
+    else if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+      Expression = Parentheses->getSubExpr();
+    else
+      return Expression;
+  }
+  return nullptr;
+}
+
+static bool functionalQueryDeclvalSource(Adapter &A, const Expr *Expression,
+                                         QualType Expected) {
+  const auto *Call =
+      dyn_cast_or_null<CallExpr>(functionalQueryArgument(Expression));
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  return Call && Function && Function->getIdentifier() &&
+         Function->getName() == "declval" && Call->getNumArgs() == 0 &&
+         Arguments && Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         A.Context.hasSameType(Arguments->get(0).getAsType(), Expected) &&
+         A.Context.hasSameType(Call->getType(),
+                               Expected.getNonReferenceType()) &&
+         (Expected->isLValueReferenceType() ? Call->isLValue()
+                                            : Call->isXValue()) &&
+         utilitySDKFunctionSource(A, Function, "__utility/declval.h", false);
+}
+
+static const FunctionProtoType *
+functionalBooleanQueryTargetSource(Adapter &A, const CallExpr *Call) {
+  if (!approvedFunctionalBooleanQuery(A.S, A.Sources, Call, A.Context))
+    return nullptr;
+  const auto *Target = functionalObjectInvokeTargetSource(
+      A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()),
+      Call->getArg(0)->getType()->getAsCXXRecordDecl(), false);
+  return Target && operationCalleePrototype(Call) == Target ? Target : nullptr;
+}
+
+static bool functionalObjectQuerySource(Adapter &A, const CallExpr *Call) {
+  if (isa_and_nonnull<CXXOperatorCallExpr>(Call)) {
+    const auto *Reference = directMethodReference(Call);
+    return Reference && A.S.owns(A.Sources, Reference->getExprLoc()) &&
+           functionalBooleanQueryTargetSource(A, Call) != nullptr;
+  }
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!Function || !Reference || Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !Function->getIdentifier() ||
+      Function->getName() != "invoke" || !Call->isPRValue() ||
+      !Call->getType()->isBooleanType() || !Arguments ||
+      Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Pack ||
+      Call->getNumArgs() != Function->getNumParams() ||
+      Call->getNumArgs() != Arguments->get(1).pack_size() + 1 ||
+      !utilitySDKFunctionSource(A, Function, "__functional/invoke.h", false))
+    return false;
+  const auto Callable = Arguments->get(0).getAsType();
+  const auto &Pack = Arguments->get(1);
+  if (!functionalObjectStorageSource(
+          A, Callable.getNonReferenceType()->getAsCXXRecordDecl()))
+    return false;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !A.Context.hasSameType(Parameter->getPointeeType(),
+                               Call->getArg(I)->getType()))
+      return false;
+  }
+  QualType Result = Function->getReturnType();
+  if (const auto *Elaborated = dyn_cast<ElaboratedType>(Result.getTypePtr()))
+    Result = Elaborated->getNamedType();
+  const auto *Alias = dyn_cast<TemplateSpecializationType>(Result.getTypePtr());
+  const auto *AliasTemplate =
+      Alias ? Alias->getTemplateName().getAsTemplateDecl() : nullptr;
+  const auto AliasOrigin =
+      AliasTemplate ? A.S.sdkFile(A.Sources, AliasTemplate->getLocation())
+                    : std::nullopt;
+  if (!Alias || !Alias->isTypeAlias() || !AliasTemplate ||
+      AliasTemplate->getName() != "invoke_result_t" || !AliasOrigin ||
+      AliasOrigin->Root != "libcxx" ||
+      AliasOrigin->Path != "__type_traits/invoke.h" ||
+      !approvedStandardSDKDeclaration(A.S, A.Sources, AliasTemplate) ||
+      !functionalQueryArguments(A, Alias->template_arguments(), Callable, Pack))
+    return false;
+  for (const auto *Declaration : AliasTemplate->redecls())
+    if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+      return false;
+  const auto *Qualified =
+      dyn_cast<ElaboratedType>(Alias->getAliasedType().getTypePtr());
+  const auto *Qualifier = Qualified ? Qualified->getQualifier() : nullptr;
+  const auto *RecordType = Qualifier ? Qualifier->getAsType() : nullptr;
+  const auto *PublicResult =
+      RecordType ? RecordType->getAsCXXRecordDecl() : nullptr;
+  if (!functionalQueryRecordSource(A, PublicResult, "invoke_result", Callable,
+                                   Pack) ||
+      PublicResult->getNumBases() != 1)
+    return false;
+  const auto *PrivateResult =
+      PublicResult->bases_begin()->getType()->getAsCXXRecordDecl();
+  if (!functionalQueryRecordSource(A, PrivateResult, "__invoke_result",
+                                   Callable, Pack) ||
+      PrivateResult->getNumBases() != 1)
+    return false;
+  auto Enabled = PrivateResult->bases_begin()->getType();
+  if (const auto *Elaborated = dyn_cast<ElaboratedType>(Enabled.getTypePtr()))
+    Enabled = Elaborated->getNamedType();
+  const auto *Enable =
+      dyn_cast<TemplateSpecializationType>(Enabled.getTypePtr());
+  if (!Enable || !Enable->getTemplateName().getAsTemplateDecl() ||
+      Enable->getTemplateName().getAsTemplateDecl()->getName() != "enable_if" ||
+      Enable->template_arguments().size() != 2 ||
+      Enable->template_arguments()[1].getKind() != TemplateArgument::Type)
+    return false;
+  const auto *EnabledRecord = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Enabled->getAsCXXRecordDecl());
+  if (!EnabledRecord ||
+      EnabledRecord->getSpecializationKind() != TSK_ImplicitInstantiation)
+    return false;
+  const auto EnabledPattern = EnabledRecord->getSpecializedTemplateOrPartial();
+  const auto *EnabledPartial =
+      EnabledPattern.is<ClassTemplatePartialSpecializationDecl *>()
+          ? EnabledPattern.get<ClassTemplatePartialSpecializationDecl *>()
+          : nullptr;
+  if (!EnabledPartial)
+    return false;
+  auto EnabledPinned = [&](const Decl *Declaration) {
+    const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+    return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
+           Origin && Origin->Root == "libcxx" &&
+           Origin->Path == "__type_traits/enable_if.h";
+  };
+  for (const auto *Declaration : EnabledRecord->redecls())
+    if (!EnabledPinned(Declaration))
+      return false;
+  for (const auto *Declaration : EnabledPartial->redecls())
+    if (!EnabledPinned(Declaration))
+      return false;
+  for (const auto *Declaration :
+       EnabledRecord->getSpecializedTemplate()->redecls())
+    if (!EnabledPinned(Declaration) ||
+        !EnabledPinned(Declaration->getTemplatedDecl()))
+      return false;
+  const auto &Condition = Enable->template_arguments()[0];
+  if (Condition.getKind() != TemplateArgument::Expression ||
+      !functionalQueryVariableSource(A, Condition.getAsExpr(),
+                                     "__is_invocable_v", Callable, Pack))
+    return false;
+  const auto SourceResult = Enable->template_arguments()[1].getAsType();
+  const auto *SourceQualified =
+      dyn_cast<ElaboratedType>(SourceResult.getTypePtr());
+  const auto *SourceQualifier =
+      SourceQualified ? SourceQualified->getQualifier() : nullptr;
+  const auto *SourceRecordType =
+      SourceQualifier ? SourceQualifier->getAsType() : nullptr;
+  const auto *Invokable =
+      SourceRecordType ? SourceRecordType->getAsCXXRecordDecl() : nullptr;
+  const auto *ResultAlias =
+      SourceQualified
+          ? dyn_cast<TypedefType>(SourceQualified->getNamedType().getTypePtr())
+          : nullptr;
+  if (!functionalQueryRecordSource(A, Invokable, "__invokable_r", Callable,
+                                   Pack, true) ||
+      !ResultAlias || ResultAlias->getDecl()->getName() != "_Result" ||
+      ResultAlias->getDecl()->getDeclContext() != Invokable ||
+      !approvedStandardSDKDeclaration(A.S, A.Sources, ResultAlias->getDecl()))
+    return false;
+  const auto *Try = functionalQueryDecltypeCall(A, SourceResult);
+  const auto *TryFunction =
+      Try ? dyn_cast_or_null<CXXMethodDecl>(Try->getDirectCallee()) : nullptr;
+  const auto *TryArguments =
+      TryFunction ? TryFunction->getTemplateSpecializationArgs() : nullptr;
+  const auto *Zero =
+      Try && Try->getNumArgs() == 1
+          ? dyn_cast<IntegerLiteral>(Try->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  if (!TryFunction || !TryFunction->isStatic() ||
+      TryFunction->getName() != "__try_call" ||
+      TryFunction->getParent() != Invokable || !Zero ||
+      !Zero->getValue().isZero() || !TryArguments ||
+      !functionalQueryArguments(A, TryArguments->asArray(), Callable, Pack) ||
+      !utilitySDKFunctionSource(A, TryFunction, "__type_traits/invoke.h",
+                                false))
+    return false;
+  const auto *Dispatch =
+      functionalQueryDecltypeCall(A, TryFunction->getReturnType());
+  const auto *DispatchFunction =
+      Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *DispatchArguments =
+      DispatchFunction ? DispatchFunction->getTemplateSpecializationArgs()
+                       : nullptr;
+  if (!DispatchFunction || !DispatchFunction->getIdentifier() ||
+      DispatchFunction->getName() != "__invoke" ||
+      Dispatch->getNumArgs() != Call->getNumArgs() || !DispatchArguments ||
+      !functionalQueryArguments(A, DispatchArguments->asArray(), Callable,
+                                Pack) ||
+      !utilitySDKFunctionSource(A, DispatchFunction, "__type_traits/invoke.h",
+                                false))
+    return false;
+  const auto *Selected =
+      functionalQueryDecltypeCall(A, DispatchFunction->getReturnType());
+  const auto *Target = functionalBooleanQueryTargetSource(A, Selected);
+  if (!Target || Selected->getNumArgs() != Call->getNumArgs() ||
+      !A.Context.hasSameType(Selected->getType(), Call->getType()) ||
+      !functionalInvocabilitySource(A, Call, Callable, Pack, Target))
+    return false;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+    const auto Expected =
+        I == 0 ? Callable : Pack.pack_elements()[I - 1].getAsType();
+    if (!functionalQueryDeclvalSource(A, Dispatch->getArg(I), Expected) ||
+        !functionalQueryDeclvalSource(A, Selected->getArg(I), Expected))
+      return false;
+  }
+  // Every selected node comes from the pinned trait's actual substituted type.
+  // A query never asks Sema to complete an unused invoke or operator body.
+  return true;
 }
 
 static bool functionalObjectCallSource(Adapter &A, const CallExpr *Call) {
@@ -7455,9 +7801,9 @@ public:
         utilityUniquePtrNullOrderingSource(A, Call) ||
         utilityUniquePtrOwnerComparisonSource(A, Call) ||
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
-        utilityArrayCallSource(A, Call) ||
-        utilityValueAdapterSource(A, Call) ||
-        functionalObjectCallSource(A, Call))
+        utilityArrayCallSource(A, Call) || utilityValueAdapterSource(A, Call) ||
+        functionalObjectCallSource(A, Call) ||
+        A.S.UnevaluatedFunctionalCalls.count(Call))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return prototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -10420,7 +10766,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const CallExpr *> ConsumedCallSignatures;
   std::set<const CallExpr *> QueuedCallSignatures;
   std::set<const CallExpr *> CompletedQueryCalls;
-  std::set<const Expr *> IndexedUnevaluatedArraySources;
+  std::set<const Expr *> IndexedUnevaluatedSources;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   std::vector<const CXXMethodDecl *> ConsumedSpecialMemberSignatures;
@@ -13332,14 +13678,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Register(Initializer->getInit());
     }
   }
-  void registerUnevaluatedArraySubscripts(const Expr *Expression) {
+  void registerUnevaluatedOperations(const Expr *Expression) {
     if (!A.S.coreV2())
       return;
     std::vector<const Expr *> Pending{Expression};
     while (!Pending.empty()) {
       const auto *Current = Pending.back();
       Pending.pop_back();
-      if (!Current || !IndexedUnevaluatedArraySources.insert(Current).second)
+      if (!Current || !IndexedUnevaluatedSources.insert(Current).second)
         continue;
       A.chargeExpansion(1, Current->getExprLoc());
       // Follow only lexical expression operands. Selected defaults, declaration
@@ -13350,13 +13696,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Current);
           Call && Call->getOperator() == OO_Subscript)
         A.S.UnevaluatedArraySubscripts.insert(Call);
+      if (const auto *Call = dyn_cast<CallExpr>(Current);
+          Call && functionalObjectQuerySource(A, Call))
+        A.S.UnevaluatedFunctionalCalls.insert(Call);
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
           Pending.push_back(Operand);
     }
   }
   void registerDecltypeCallResult(const Expr *Expression) {
-    registerUnevaluatedArraySubscripts(Expression);
+    registerUnevaluatedOperations(Expression);
     if (!Expression || !Expression->isPRValue() ||
         !Expression->getType()->isRecordType())
       return;
@@ -13462,7 +13811,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       else {
         const auto *Call = dyn_cast<CallExpr>(Expression);
         auto Result = applyResultSource(Call);
-        if (Result.isNull() && functionalObjectCallSource(A, Call))
+        if (Result.isNull() && (functionalObjectCallSource(A, Call) ||
+                                A.S.UnevaluatedFunctionalCalls.count(Call)))
           // The exact operation proves this scalar result and SDK signature.
           // Retain caller operands rather than private trailing-return sugar.
           Result = A.Context.getCanonicalType(
@@ -13946,6 +14296,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             }
         }
         if (ReferenceInvoke || UserInvoke ||
+            A.S.UnevaluatedFunctionalCalls.count(Call) ||
             functionalReferenceAccessSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
             !applyResultSource(Call).isNull() ||
@@ -14245,7 +14596,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           collectOperationTypeSource(Result.getNonReferenceType(), E->getExprLoc(), true);
         } else if (Callee != AuthenticatedUtilityReferences.end() &&
                    (!applyResultSource(Callee->second).isNull() ||
-                    functionalObjectCallSource(A, Callee->second))) {
+                    functionalObjectCallSource(A, Callee->second) ||
+                    A.S.UnevaluatedFunctionalCalls.count(Callee->second))) {
           // This exact callee reference/decay owns a pinned SDK signature.
           // Retain its caller's types, not private result declval/forward calls.
           // Written template arguments and actual operands are still visited.
@@ -20551,11 +20903,11 @@ public:
     if (!S)
       return true;
     if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S))
-      registerUnevaluatedArraySubscripts(Query->getOperand());
+      registerUnevaluatedOperations(Query->getOperand());
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
         Query && Query->getKind() == UETT_SizeOf && !Query->isArgumentType() &&
         !Query->getTypeOfArgument()->isVariablyModifiedType())
-      registerUnevaluatedArraySubscripts(Query->getArgumentExpr());
+      registerUnevaluatedOperations(Query->getArgumentExpr());
     collectOperationSource(S);
     if (!ImplicitInitializerOwner.isValid() && !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;
@@ -20778,6 +21130,7 @@ public:
           Leaf = scalarDestruction(Call, A.Context);
         if (Leaf) {
           const bool Utility =
+              A.S.UnevaluatedFunctionalCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
@@ -21201,6 +21554,9 @@ public:
         return true; // Its typed argument subtrees are still visited by RAV.
       if (A.S.coreV2() && ApprovedErasedUtilityCalls.count(C))
         return true; // The enclosing authenticated call erases this adapter.
+      if (A.S.coreV2() && A.S.UnevaluatedFunctionalCalls.count(C))
+        return true; // Only this lexical query call owns the SDK signature
+                     // proof.
       if (A.S.coreV2())
         if (const auto *D = scalarDestruction(C, A.Context)) {
           A.type(D->getDestroyedType(), L);

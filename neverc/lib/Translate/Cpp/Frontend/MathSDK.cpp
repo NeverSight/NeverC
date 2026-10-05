@@ -2914,6 +2914,84 @@ static bool utilityCallbackDirectConversion(const ASTContext &Context,
            Context.hasSameFunctionTypeIgnoringExceptionSpec(Source, Target)));
 }
 
+bool approvedFunctionalBooleanQuery(const State &S, const SourceManager &SM,
+                                    const CallExpr *Call,
+                                    const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto Object = approvedFunctionalObjectRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Operator || !Method || !Object || Call->getNumArgs() < 2 ||
+      !Call->isPRValue() || Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
+      !Method->isConstexpr() || !Method->isInlined() ||
+      !Call->getType()->isBooleanType() ||
+      !Method->getReturnType()->isBooleanType() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !functionalObjectOrigin(S, SM, Method, Object->Record->getName()) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      Context.getRecordType(Object->Record)))
+    return false;
+  const auto Name = Object->Record->getName();
+  const bool Unary = Name == "logical_not";
+  const bool Equality = Name == "equal_to" || Name == "not_equal_to";
+  if (!Unary && !Equality && Name != "logical_and" && Name != "logical_or")
+    return false;
+  const unsigned Arity = Unary ? 1 : 2;
+  if (Method->getNumParams() != Arity || Call->getNumArgs() != Arity + 1)
+    return false;
+  const auto Value = cast<ClassTemplateSpecializationDecl>(Object->Record)
+                         ->getTemplateArgs()
+                         .get(0)
+                         .getAsType();
+  const bool Transparent = Value->isVoidType();
+  if (Transparent != (Method->getPrimaryTemplate() != nullptr))
+    return false;
+  QualType Operands[2];
+  for (unsigned I = 0; I < Arity; ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    const auto Argument = Call->getArg(I + 1)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        (!Transparent && (!Parameter->isLValueReferenceType() ||
+                          !Parameter->getPointeeType().isConstQualified() ||
+                          !Context.hasSameType(Parameter->getPointeeType(),
+                                               Value.withConst()))))
+      return false;
+    const Expr *Source = Call->getArg(I + 1);
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Source))
+        Source = Cast->getSubExpr();
+      else if (const auto *Temporary =
+                   dyn_cast<MaterializeTemporaryExpr>(Source))
+        Source = Temporary->getSubExpr();
+      else if (const auto *Parentheses = dyn_cast<ParenExpr>(Source))
+        Source = Parentheses->getSubExpr();
+      else
+        break;
+    }
+    const auto From = Source->getType();
+    const auto To = Parameter->getPointeeType();
+    const bool ExactFunction = From->isFunctionType() && To->isFunctionType() &&
+                               Context.hasSameType(From, To);
+    if (!Context.hasSameUnqualifiedType(Argument, To) ||
+        (!utilityScalarDirectConversion(Context, From, To) &&
+         !utilityCallbackDirectConversion(Context, From, To) && !ExactFunction))
+      return false;
+    Operands[I] = Argument;
+  }
+  if (Equality)
+    return utilityScalarComparisonType(Context, Operands[0], Operands[1]) ||
+           utilityCallbackComparisonType(Context, Operands[0], Operands[1]);
+  for (unsigned I = 0; I < Arity; ++I)
+    if (!utilityScalarDirectConversion(Context, Operands[I], Context.BoolTy) &&
+        !utilityCallbackDirectConversion(Context, Operands[I], Context.BoolTy))
+      return false;
+  return true;
+}
+
 static bool utilityPairDirectConversion(const ASTContext &Context,
                                         QualType From, QualType To) {
   if (From->isFunctionType() || From->isFunctionPointerType() ||

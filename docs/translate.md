@@ -325,6 +325,16 @@ temporaries. Element, replacement and output storage remain exact; empty ranges
 and caller temporary cleanup retain their timing, and callback targets are not
 invoked.
 
+Typed and transparent `std::equal_to`, `std::not_equal_to`, `std::logical_and`,
+`std::logical_or` and `std::logical_not` also support direct and `std::invoke`
+calls used only in `decltype`, `noexcept` and constant `sizeof` expressions.
+The pinned, substituted SDK signature supplies the Boolean result without
+instantiating unused adapter or operator bodies. Supported scalar and callback
+conversions retain their exact parameter and exception types. Caller aliases,
+operands, selected defaults and temporary cleanup keep their source checks;
+these queries do not evaluate them. Independent SDK function addresses and
+substituted declarations retain their existing restrictions.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

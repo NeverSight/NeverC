@@ -146144,3 +146144,294 @@ return 0;}
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryTyped) {
+  const auto Source = tmpFile("functional-boolean-query-typed-query-only.cpp");
+  const auto Output = tmpFile("functional-boolean-query-typed-query-only.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int effects;int one(int x)noexcept{++effects;return x+1;}
+F value(){++effects;return one;}
+using E=std::equal_to<const F>;using D=std::not_equal_to<F>;
+using A=std::logical_and<F>;using O=std::logical_or<F>;using T=std::logical_not<N>;
+using RE=decltype(std::invoke(E{},one,nullptr));
+using RD=decltype(std::invoke(D{},one,value()));
+using RA=decltype(std::invoke(A{},one,nullptr));
+using RO=decltype(std::invoke(O{},value(),one));
+using RT=decltype(std::invoke(T{},one));
+static_assert(__is_same(RE,bool)&&__is_same(RD,bool)&&__is_same(RA,bool)&&__is_same(RO,bool)&&__is_same(RT,bool));
+static_assert(!noexcept(std::invoke(E{},one,nullptr))&&!noexcept(std::invoke(T{},one)));
+static_assert(sizeof(std::invoke(A{},one,value()))==sizeof(bool));
+using Direct=decltype(E{}(one,nullptr));static_assert(__is_same(Direct,bool));
+static_assert(!noexcept(T{}(one)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-boolean-query-typed-query-only" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryTransparent) {
+  const auto Source =
+      tmpFile("functional-boolean-query-transparent-query-only.cpp");
+  const auto Output =
+      tmpFile("functional-boolean-query-transparent-query-only.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int effects;int one(int x)noexcept{++effects;return x+1;}int two(int x){++effects;return x+2;}
+F value()noexcept{++effects;return two;}
+using E=std::equal_to<>;using D=std::not_equal_to<>;
+using A=std::logical_and<>;using O=std::logical_or<>;using T=std::logical_not<>;
+static_assert(__is_same(decltype(std::invoke(E{},one,nullptr)),bool));
+static_assert(__is_same(decltype(std::invoke(D{},one,value())),bool));
+static_assert(__is_same(decltype(std::invoke(A{},one,nullptr)),bool));
+static_assert(__is_same(decltype(std::invoke(O{},value(),one)),bool));
+static_assert(__is_same(decltype(std::invoke(T{},one)),bool));
+static_assert(noexcept(std::invoke(E{},one,nullptr))&&noexcept(std::invoke(T{},value())));
+static_assert(sizeof(std::invoke(O{},one,value()))==sizeof(bool));
+static_assert(__is_same(decltype(D{}(one,value())),bool));
+static_assert(noexcept(T{}(one)));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "functional-boolean-query-transparent-query-only" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryScalar) {
+  const auto Source = tmpFile("functional-boolean-query-scalar-query-only.cpp");
+  const auto Output = tmpFile("functional-boolean-query-scalar-query-only.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int effects;int value()noexcept{++effects;return 3;}
+using E=std::equal_to<int>;using D=std::not_equal_to<const int>;
+using A=std::logical_and<int>;using O=std::logical_or<int>;using T=std::logical_not<const int>;
+static_assert(__is_same(decltype(std::invoke(E{},2,value())),bool));
+static_assert(__is_same(decltype(std::invoke(D{},2,3)),bool));
+static_assert(__is_same(decltype(std::invoke(A{},2,value())),bool));
+static_assert(__is_same(decltype(std::invoke(O{},0,3)),bool));
+static_assert(__is_same(decltype(std::invoke(T{},value())),bool));
+static_assert(!noexcept(std::invoke(T{},3)));
+static_assert(noexcept(std::invoke(std::logical_not<>{},3)));
+static_assert(sizeof(std::invoke(E{},value(),4))==sizeof(bool));
+static_assert(__is_same(decltype(T{}(3)),bool));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-boolean-query-scalar-query-only" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryCleanup) {
+  const auto Source =
+      tmpFile("functional-boolean-query-cleanup-query-only.cpp");
+  const auto Output = tmpFile("functional-boolean-query-cleanup-query-only.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int effects;int one(int x)noexcept{++effects;return x+1;}
+struct Token{Token(){++effects;}~Token(){++effects;}};
+F callback(Token=Token{}){++effects;return one;}
+std::equal_to<F> object(Token=Token{}){++effects;return {};}
+using E=decltype(std::invoke(object(),callback(),nullptr));
+using T=decltype(std::invoke(std::logical_not<>{},callback()));
+static_assert(__is_same(E,bool)&&__is_same(T,bool));
+static_assert(!noexcept(std::invoke(object(),callback(),nullptr)));
+static_assert(!noexcept(std::invoke(std::logical_not<>{},callback())));
+static_assert(sizeof(std::invoke(object(),callback(),nullptr))==sizeof(bool));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-boolean-query-cleanup-query-only" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryConst) {
+  const auto Source = tmpFile("functional-boolean-query-const-query-only.cpp");
+  const auto Output = tmpFile("functional-boolean-query-const-query-only.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int effects;int one(int x)noexcept{++effects;return x+1;}
+std::equal_to<const F> equality;const std::logical_not<N> predicate{};
+const F callback=one;
+using E=decltype(std::invoke(equality,callback,nullptr));
+using T=decltype(std::invoke(predicate,one));
+static_assert(__is_same(E,bool)&&__is_same(T,bool));
+static_assert(!noexcept(std::invoke(equality,callback,nullptr)));
+static_assert(!noexcept(std::invoke(predicate,one)));
+static_assert(sizeof(std::invoke(predicate,one))==sizeof(bool));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-boolean-query-const-query-only" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryExistingMetadata) {
+  const auto Source = tmpFile("functional-boolean-query-metadata.cpp");
+  const auto Output = tmpFile("functional-boolean-query-metadata.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed;int one(int x)noexcept{++pointed;return x+1;}int two(int x)noexcept{++pointed;return x+2;}
+int main(){using E=std::equal_to<const F>;using T=std::logical_not<N>;
+static_assert(std::is_empty<E>::value);static_assert(std::is_trivially_copyable<T>::value);
+static_assert(__is_same(decltype(E{}(one,one)),bool));static_assert(__is_same(decltype(std::invoke(T{},one)),bool));
+static_assert(__is_same(decltype(std::equal_to<>{}(one,nullptr)),bool));
+static_assert(!noexcept(E{}(one,one)));static_assert(!noexcept(std::invoke(T{},one)));
+return !E{}(one,one)||T{}(one)||pointed;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-boolean-query-metadata" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalBooleanQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"declval-specialization", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+template<>std::logical_not<F>&& std::declval<std::logical_not<F>>()noexcept;
+using R=decltype(std::invoke(std::logical_not<F>{},static_cast<F>(one)));int main(){return 0;}
+)cpp"},
+      {"function-address", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+using T=std::logical_not<F>;using R=decltype(&std::invoke<T,F>);int main(){return 0;}
+)cpp"},
+      {"hidden-default", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+F value(int=sizeof(long double)){return one;}using R=decltype(std::invoke(std::logical_not<>{},value()));int main(){return 0;}
+)cpp"},
+      {"hidden-noexcept", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+using H=int(*)(int)noexcept(sizeof(long double)>0);int safe(int x)noexcept{return x;}using R=decltype(std::invoke(std::logical_not<H>{},safe));int main(){return 0;}
+)cpp"},
+      {"invocability-variable-specialization", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+template<>inline const bool std::__is_invocable_v<std::logical_not<F>,F> = true;
+using R=decltype(std::invoke(std::logical_not<F>{},static_cast<F>(one)));int main(){return 0;}
+)cpp"},
+      {"invokable-specialization", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+template<> struct std::__invokable_r<void,std::logical_not<F>,F>{using _Result=bool;static constexpr bool value=true;};
+using R=decltype(std::invoke(std::logical_not<F>{},static_cast<F>(one)));int main(){return 0;}
+)cpp"},
+      {"method-specialization", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+template<> constexpr bool std::logical_not<F>::operator()(const F&)const{return false;}
+using R=decltype(std::invoke(std::logical_not<F>{},one));int main(){return 0;}
+)cpp"},
+      {"private-result-specialization", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+template<> struct std::__invoke_result<std::logical_not<F>,F>{using type=bool;};
+using R=decltype(std::invoke(std::logical_not<F>{},static_cast<F>(one)));int main(){return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+struct X{operator F()const{return one;}};using R=decltype(std::invoke(std::logical_not<F>{},X{}));int main(){return 0;}
+)cpp"},
+      {"user-predicate-lazy-body", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+template<class T>struct P{bool operator()(F)const{return sizeof(T)>0;}};using R=decltype(std::invoke(P<long double>{},one));int main(){return 0;}
+)cpp"},
+      {"variadic", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+using V=int(*)(int,...);int variadic(int,...){return 0;}using R=decltype(std::invoke(std::logical_not<V>{},variadic));int main(){return 0;}
+)cpp"},
+      {"volatile-value", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+F volatile value=one;using R=decltype(std::invoke(std::logical_not<>{},value));int main(){return 0;}
+)cpp"},
+      {"wide-signature", R"cpp(#include <functional>
+#include <type_traits>
+using F=int(*)(int);int one(int x){return x;}
+using W=int(*)(long double);int wide(long double){return 0;}using R=decltype(std::invoke(std::logical_not<W>{},wide));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &C : Cases) {
+    SCOPED_TRACE(C.Name);
+    const auto Source = tmpFile(std::string("functional-boolean-query-guard-") +
+                                C.Name + ".cpp");
+    const auto Output = tmpFile(std::string("functional-boolean-query-guard-") +
+                                C.Name + ".nc");
+    writeFile(Source, C.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    EXPECT_FALSE(fs::exists(Output));
+    EXPECT_FALSE(fs::exists(Output.string() + ".manifest.json"));
+    EXPECT_FALSE(fs::exists(Output.string() + ".map.json"));
+  }
+}

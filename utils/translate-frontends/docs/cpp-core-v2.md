@@ -3957,6 +3957,26 @@ their typed scalar or admitted pointer template argument. Their selected
 operator still returns `bool`, with the same input conversion and one-time
 argument evaluation.
 
+Typed and transparent `equal_to`, `not_equal_to`, `logical_and`, `logical_or`
+and `logical_not` also supply Boolean result and exception sources when a
+selected direct call or `std::invoke` occurs only in `decltype`, `noexcept` or
+constant expression-form `sizeof`, including queries nested in result traits
+and type-form size/alignment queries. Scalar, object-pointer and callback
+arguments retain their admitted direct conversions, cv/reference categories
+and exception specifications. These queries do not require an instantiated
+adapter or operator body. The proof follows the pinned `invoke_result_t`,
+`invoke_result`, `__invoke_result`, `enable_if`, `__invokable_r::_Result`,
+`__try_call`, `__invoke` and `declval` declarations to the actual substituted
+operator signature; public invocability metadata must agree with that target.
+No body is completed on behalf of a query. Only exact lexical query call nodes
+receive this signature proof; shared defaults and declaration or lambda bodies
+keep their own evaluation contexts. Original caller aliases, argument
+expressions, selected defaults, adjusted signatures and temporary cleanup
+retain independent source checks without execution. Independent SDK function
+addresses, replaced declarations, user-defined conversions, unsupported
+callback signatures and hidden unsupported source remain rejected. Other
+`invoke`/`apply` callable kinds retain their separate query boundaries.
+
 The exact empty specializations may also be stored in local or global objects,
 passed by value, and trivially default/copy/move constructed or copy/move
 assigned. Their authenticated C++ one-byte size and alignment map to a single
