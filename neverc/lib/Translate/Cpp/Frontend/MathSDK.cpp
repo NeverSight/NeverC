@@ -15720,6 +15720,14 @@ static bool utilityAlgorithmReference(const Expr *E, const ValueDecl *Value,
   return Reference && Reference->isLValue() && Reference->getDecl() == Value;
 }
 
+static bool
+utilityAlgorithmCallbackArgumentConversion(const ASTContext &Context,
+                                           QualType From, QualType To) {
+  return !From.isNull() && !To.isNull() && From->isFunctionPointerType() &&
+         To->isFunctionPointerType() &&
+         utilityCallbackDirectConversion(Context, From, To);
+}
+
 static const CXXOperatorCallExpr *
 utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
                               const CallExpr *Call, QualType Object,
@@ -15784,8 +15792,8 @@ utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
       break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()) &&
-        !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
-                                     Cast->getType()))
+        !utilityAlgorithmCallbackArgumentConversion(
+            Context, Cast->getSubExpr()->getType(), Cast->getType()))
       return nullptr;
     Argument = Cast->getSubExpr();
   }
@@ -16742,8 +16750,8 @@ static const CXXOperatorCallExpr *utilityAlgorithmPartitionPointPredicate(
       break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()) &&
-        !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
-                                     Cast->getType()))
+        !utilityAlgorithmCallbackArgumentConversion(
+            Context, Cast->getSubExpr()->getType(), Cast->getType()))
       return nullptr;
     Argument = Cast->getSubExpr();
   }
@@ -16851,8 +16859,8 @@ utilityAlgorithmPartitionPredicate(const FunctionDecl *Function,
         break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()) &&
-          !utilityCallbackEqualityType(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+          !utilityAlgorithmCallbackArgumentConversion(
+              Context, Cast->getSubExpr()->getType(), Cast->getType()))
         return nullptr;
       Argument = Cast->getSubExpr();
     }
@@ -17151,10 +17159,8 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
         break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()) &&
-          !(Cast->getSubExpr()->getType()->isFunctionPointerType() &&
-            Cast->getType()->isFunctionPointerType() &&
-            utilityCallbackDirectConversion(
-                Context, Cast->getSubExpr()->getType(), Cast->getType())))
+          !utilityAlgorithmCallbackArgumentConversion(
+              Context, Cast->getSubExpr()->getType(), Cast->getType()))
         return false;
       Argument = Cast->getSubExpr();
     }
@@ -19549,9 +19555,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   }
   auto PredicateConversion = [&](QualType From, QualType To) {
     return InputConversion(From, To) ||
-           (CallbackElements && (Replacement || Remove) &&
-            From->isFunctionPointerType() && To->isFunctionPointerType() &&
-            utilityCallbackDirectConversion(Context, From, To));
+           (CallbackElements &&
+            utilityAlgorithmCallbackArgumentConversion(Context, From, To));
   };
   const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
                                          : Method->getParamDecl(0)->getType();

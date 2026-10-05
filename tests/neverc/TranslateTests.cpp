@@ -70671,8 +70671,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRequireValueCallbacks) {
       {"non-bool-result",
        "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a=1,b=2;return std::max(a,b,p)==b?0:1;}"},
-      {"function-object",
-       "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
+      {"non-bool-object-result",
+       "struct P{int operator()(int a,int b)const{return a<b;}};\n"
        "#include <algorithm>\nint main(){int n=2,lo=1,hi=3;return "
        "std::clamp(n,lo,hi,P{})==n?0:1;}"},
       {"record-elements",
@@ -74093,8 +74093,8 @@ TEST_F(TranslateTest,
       {"reference-parameter",
        "void visit(const int&){}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};std::for_each(a,a+2,visit);return 0;}"},
-      {"function-object",
-       "struct F{void operator()(int)const{}};\n#include <algorithm>\n"
+      {"reference-object-parameter",
+       "struct F{void operator()(const int&)const{}};\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};std::for_each(a,a+2,F{});return 0;}"},
       {"record-transform-result",
        "struct R{int n;operator int()const{return n;}};"
@@ -75436,8 +75436,10 @@ TEST_F(TranslateTest,
       {"reference",
        "struct F { bool operator()(const Callback&) & { return true; } };",
        "input", "F{}"},
-      {"noexcept-conversion",
-       "struct F { bool operator()(Callback) & { return true; } };", "safe",
+      {"user-conversion",
+       "struct Input { operator Callback() const { return one; } };"
+       "Input converted[2];"
+       "struct F { bool operator()(Callback) & { return true; } };", "converted",
        "F{}"},
       {"bool-conversion",
        "struct F { bool operator()(bool) & { return true; } };", "input",
@@ -77514,8 +77516,11 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackFilterCopyObjectsRequireExactTypes)
   const Rejection Cases[] = {
       {"reference", "struct F { bool operator()(const Callback&) & { return true; } };",
        "input", "output", "F{}"},
-      {"input-conversion", "struct F { bool operator()(Callback) & { return true; } };",
-       "safe", "safe_output", "F{}"},
+      {"input-user-conversion",
+       "struct Input { operator Callback() const { return one; } };"
+       "Input converted[2], converted_output[2];"
+       "struct F { bool operator()(Callback) & { return true; } };",
+       "converted", "converted_output", "F{}"},
       {"output-conversion", "struct F { bool operator()(NoexceptCallback) & { return true; } };",
        "safe", "output", "F{}"},
       {"bool-output", "struct F { bool operator()(Callback) & { return true; } };",
@@ -78292,8 +78297,11 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackPartitionObjectsRequireExactTypes) 
   const Rejection Cases[] = {
       {"reference", "struct F { bool operator()(const Callback&) & { return true; } };",
        "input", "yes", "no", "F{}", false},
-      {"input-conversion", "struct F { bool operator()(Callback) & { return true; } };",
-       "safe", "safe_yes", "safe_no", "F{}", false},
+      {"input-user-conversion",
+       "struct Input { operator Callback() const { return one; } };"
+       "Input converted[2], converted_yes[2], converted_no[2];"
+       "struct F { bool operator()(Callback) & { return true; } };",
+       "converted", "converted_yes", "converted_no", "F{}", false},
       {"method-template", "struct F { template<class T> bool operator()(T) & { return true; } };",
        "input", "yes", "no", "F{}", false},
       {"non-bool-result", "struct F { int operator()(Callback) & { return 1; } };",
@@ -145585,3 +145593,172 @@ int main() {
 }
 
 } // namespace
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateNoexceptStateful) {
+  const auto Source = tmpFile("algorithm-predicate-noexcept-stateful.cpp");
+  const auto Output = tmpFile("algorithm-predicate-noexcept-stateful.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <cstddef>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed_calls;
+int one(int x)noexcept{++pointed_calls;return x+1;}
+int two(int x)noexcept{++pointed_calls;return x+2;}
+struct Predicate { int calls;int*observed;int*trace;
+ bool operator()(F fn)&{++calls;*observed=calls;*trace=*trace*10+(fn==one?1:fn==two?2:0);return fn==one;}
+ bool operator()(F)const&{*observed=-100;return false;}
+};
+int main(){N a[]{one,two,one,two},out[4]{};int seen=0,trace=0;const Predicate caller{0,&seen,&trace};
+if(std::count_if(a,a+4,caller)!=2||seen!=4||trace!=1212||caller.calls)return 1;seen=trace=0;
+if(std::find_if(a,a+4,caller)!=a||seen!=1||trace!=1)return 2;seen=trace=0;
+if(std::find_if_not(a,a+4,caller)!=a+1||seen!=2||trace!=12)return 3;seen=trace=0;
+if(!std::any_of(a,a+4,caller)||seen!=1||trace!=1)return 4;seen=trace=0;
+if(std::all_of(a,a+4,caller)||seen!=2||trace!=12)return 5;seen=trace=0;
+if(std::none_of(a,a+4,caller)||seen!=1||trace!=1)return 6;seen=trace=0;
+if(std::copy_if(a,a+4,out,caller)!=out+2||out[0]!=one||out[1]!=one||seen!=4||trace!=1212)return 7;seen=trace=0;
+if(std::remove_copy_if(a,a+4,out,caller)!=out+2||out[0]!=two||out[1]!=two||seen!=4||trace!=1212)return 8;seen=trace=0;
+N ordered[]{one,one,two,two};
+if(!std::is_partitioned(ordered,ordered+4,caller)||seen!=4||trace!=1122)return 9;seen=trace=0;
+if(std::partition_point(ordered,ordered+4,caller)!=ordered+2||seen!=2||trace!=21)return 10;seen=trace=0;
+N yes[4]{},no[4]{};auto result=std::partition_copy(a,a+4,yes,no,caller);
+if(result.first!=yes+2||result.second!=no+2||yes[0]!=one||no[0]!=two||seen!=4||trace!=1212)return 11;seen=trace=0;
+N replacement=two;std::replace_copy_if(a,a+4,out,caller,replacement);
+if(seen!=4||trace!=1212||out[0]!=two||out[1]!=two||out[2]!=two||out[3]!=two)return 12;seen=trace=0;
+N changed[]{one,two,one,two};std::replace_if(changed,changed+4,caller,replacement);
+if(seen!=4||trace!=1212||changed[0]!=two||changed[2]!=two)return 13;seen=trace=0;
+N removed[]{one,two,one,two};if(std::remove_if(removed,removed+4,caller)!=removed+2||removed[0]!=two||removed[1]!=two||seen!=4||trace!=1212)return 14;
+return pointed_calls||caller.calls;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-noexcept-stateful" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateNoexceptEmpty) {
+  const auto Source = tmpFile("algorithm-predicate-noexcept-empty.cpp");
+  const auto Output = tmpFile("algorithm-predicate-noexcept-empty.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <cstddef>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed_calls;
+int one(int x)noexcept{++pointed_calls;return x+1;}
+int two(int x)noexcept{++pointed_calls;return x+2;}
+struct Predicate { int calls;int*observed;int*trace;
+ bool operator()(F fn)&{++calls;*observed=calls;*trace=*trace*10+(fn==one?1:fn==two?2:0);return fn==one;}
+ bool operator()(F)const&{*observed=-100;return false;}
+};
+int factories,first_calls,last_calls;
+Predicate factory(int*seen,int*trace){++factories;return {0,seen,trace};}
+N*first(N*p){++first_calls;return p;}N*last(N*p){++last_calls;return p;}
+int main(){N a[1]{one},out[1]{},yes[1]{},no[1]{};int seen=0,trace=0;N replacement=two;
+(void)std::find_if(first(a),last(a),factory(&seen,&trace));
+(void)std::find_if_not(first(a),last(a),factory(&seen,&trace));
+(void)std::none_of(first(a),last(a),factory(&seen,&trace));
+(void)std::all_of(first(a),last(a),factory(&seen,&trace));
+(void)std::any_of(first(a),last(a),factory(&seen,&trace));
+(void)std::count_if(first(a),last(a),factory(&seen,&trace));
+(void)std::copy_if(first(a),last(a),out,factory(&seen,&trace));
+(void)std::remove_copy_if(first(a),last(a),out,factory(&seen,&trace));
+(void)std::is_partitioned(first(a),last(a),factory(&seen,&trace));
+(void)std::partition_point(first(a),last(a),factory(&seen,&trace));
+(void)std::partition_copy(first(a),last(a),yes,no,factory(&seen,&trace));
+(void)std::replace_if(first(a),last(a),factory(&seen,&trace),replacement);
+(void)std::replace_copy_if(first(a),last(a),out,factory(&seen,&trace),replacement);
+(void)std::remove_if(first(a),last(a),factory(&seen,&trace));
+return factories!=14||first_calls!=14||last_calls!=14||seen||trace||pointed_calls||out[0]||yes[0]||no[0]||a[0]!=one;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-noexcept-empty" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateNoexceptMutations) {
+  const auto Source = tmpFile("algorithm-predicate-noexcept-mutations.cpp");
+  const auto Output = tmpFile("algorithm-predicate-noexcept-mutations.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <cstddef>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed_calls;
+int one(int x)noexcept{++pointed_calls;return x+1;}
+int two(int x)noexcept{++pointed_calls;return x+2;}
+struct Predicate { int calls;int*observed;int*trace;
+ bool operator()(F fn)&{++calls;*observed=calls;*trace=*trace*10+(fn==one?1:fn==two?2:0);return fn==one;}
+ bool operator()(F)const&{*observed=-100;return false;}
+};
+struct Mutate{N*p;int calls;bool operator()(F fn)&{p[calls++]=fn==one?two:one;return fn==one;}};
+int main(){N a[]{one,two},out[2]{};
+if(std::copy_if(a,a+2,out,Mutate{a,0})!=out+1||out[0]!=two)return 1;
+a[0]=one;a[1]=two;out[0]=out[1]=nullptr;
+if(std::remove_copy_if(a,a+2,out,Mutate{a,0})!=out+1||out[0]!=one)return 2;
+a[0]=one;a[1]=two;N yes[2]{},no[2]{};auto r=std::partition_copy(a,a+2,yes,no,Mutate{a,0});
+if(r.first!=yes+1||r.second!=no+1||yes[0]!=two||no[0]!=one)return 3;
+return pointed_calls;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-noexcept-mutations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateNoexceptTemplates) {
+  const auto Source = tmpFile("algorithm-predicate-noexcept-templates.cpp");
+  const auto Output = tmpFile("algorithm-predicate-noexcept-templates.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <cstddef>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int pointed_calls;
+int one(int x)noexcept{++pointed_calls;return x+1;}
+int two(int x)noexcept{++pointed_calls;return x+2;}
+struct Predicate { int calls;int*observed;int*trace;
+ bool operator()(F fn)&{++calls;*observed=calls;*trace=*trace*10+(fn==one?1:fn==two?2:0);return fn==one;}
+ bool operator()(F)const&{*observed=-100;return false;}
+};
+template<class T>struct Test{int*seen;bool operator()(T fn)&{++*seen;return fn==one;}};
+int main(){const N a[]{one,two,one};N out[3]{};int seen=0;const Test<F>p{&seen};
+if(std::count_if(a,a+3,p)!=2||seen!=3)return 1;seen=0;
+if(std::copy_if(a,a+3,out,p)!=out+2||out[0]!=one||out[1]!=one||seen!=3)return 2;
+using Result=decltype(std::count_if(a,a+3,p));static_assert(sizeof(Result)==sizeof(std::ptrdiff_t));
+static_assert(!noexcept(std::copy_if(a,a+3,out,p)));return pointed_calls;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-noexcept-templates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}

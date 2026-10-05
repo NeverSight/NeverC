@@ -298,10 +298,12 @@ pointer values; callback equality accepts compatible signatures, function names
 and `nullptr`. Vector emplace accepts checked callback conversions and preserves
 aliased inputs through growth and shifts. Callback ordering, throwing optional
 access and the existing vector allocation-definition requirement retain their
-separate boundaries. The source predicate objects of `replace_if`,
-`replace_copy_if` and `remove_if` also accept checked conversion from a compatible
-`noexcept` function pointer to an ordinary function pointer parameter; element,
-replacement and output storage types remain exact.
+separate boundaries. The source predicate objects of `find_if`, `find_if_not`, `none_of`, `all_of`,
+`any_of`, `count_if`, `copy_if`, `remove_copy_if`, `is_partitioned`,
+`partition_point`, `partition_copy`, `replace_if`, `replace_copy_if` and
+`remove_if` accept checked conversion from a compatible `noexcept` function
+pointer to an ordinary function pointer parameter; element, replacement and
+output storage types remain exact.
 See the [optional](../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional)
 and [vector](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector)
 contracts.

@@ -6065,9 +6065,10 @@ signed pointer-difference carrier for its counter and result. It visits the
 whole range, while `all_of` and `any_of` preserve their decisive short circuit.
 These six query forms also accept raw ranges of exact function-pointer
 elements, including `noexcept` pointer types and const element storage, through
-a source predicate object whose selected operator takes that pointer type by
-value and returns `bool`. Pointer signatures must match exactly; reference
-parameters, pointer-type conversions and conversions to `bool` remain rejected.
+a source predicate object whose selected operator takes a compatible pointer
+by value and returns `bool`. Exact signatures and checked removal of `noexcept`
+are accepted; reference parameters, incompatible signatures and conversions to
+`bool` remain rejected.
 The same loop, helper and identity-projection proofs apply. One by-value object
 retains its state across visits, and empty ranges initialize it without calls.
 The translator passes pointer values without invoking their targets. SDK
@@ -6107,9 +6108,11 @@ public `second` projection retain separate exact signature and source checks.
 No additional predicate object or user-visible pair is created by lowering.
 Both source-object filtering copy forms also accept raw ranges of exact
 function-pointer elements, including `noexcept` types, with a Boolean operator
-taking the element by value and a writable raw output of that same pointer
-type. Const input storage is accepted. Reference parameters, input or output
-pointer-type conversions and conversion to a Boolean output remain rejected.
+taking a compatible pointer by value and a writable raw output of the exact
+element pointer type. Const input storage and checked removal of `noexcept` for
+the predicate parameter are accepted. Reference parameters, incompatible
+predicate signatures, different input/output storage types and conversion to a
+Boolean output remain rejected.
 One by-value predicate retains its state, and copies reread selected elements
 after it returns, preserving writes through an independently held input pointer.
 The returned iterator advances only for retained elements. Empty ranges
@@ -6134,13 +6137,15 @@ after the predicate returns. The returned pair preserves the two final output
 pointers and composes with supported structured bindings and result queries.
 These three partition forms also accept raw ranges of exact function-pointer
 elements, including `noexcept` types and const element storage, through a source
-predicate object whose selected Boolean operator takes that pointer by value.
-The two query forms retain their exact scan and middle-element call order and
+predicate object whose selected Boolean operator takes a compatible pointer by
+value, including checked removal of `noexcept` for that parameter. The two query
+forms retain their exact scan and middle-element call order and
 one continuing predicate state. `partition_copy` requires both writable raw
 outputs to store that same pointer type; each branch rereads its input after
 the predicate returns and advances only its selected output. The returned pair
-contains both final pointers. Reference predicate arguments, input or either
-output pointer-type conversions, and Boolean outputs remain rejected. Empty
+contains both final pointers. Reference predicate arguments, incompatible
+predicate signatures, different input/output storage types and Boolean outputs
+remain rejected. Empty
 ranges initialize the object without calls or stores; pointer targets are not
 invoked by the translator. SDK function objects retain their scalar boundary.
 `remove_if` authenticates the exact reference-parameter `find_if` specialization,
