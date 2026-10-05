@@ -147225,3 +147225,217 @@ int declared(long double)noexcept;using R=decltype(std::invoke(declared,1));int 
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryScalar) {
+  const auto Source = tmpFile("declval-query-scalar.cpp");
+  const auto Output = tmpFile("declval-query-scalar.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <type_traits>
+static_assert(__is_same(decltype(std::declval<int>()),int&&));
+static_assert(__is_same(decltype(std::declval<int&>()),int&));
+static_assert(__is_same(decltype(std::declval<const int&>()),const int&));
+static_assert(noexcept(std::declval<int>()));
+static_assert(sizeof(std::declval<int>())==sizeof(int));
+static_assert(std::is_same<decltype(std::declval<int>()),int&&>::value);
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("declval-query-scalar" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryRecords) {
+  const auto Source = tmpFile("declval-query-records.cpp");
+  const auto Output = tmpFile("declval-query-records.nc");
+  writeFile(Source, R"cpp(#include <utility>
+int effects=0;struct R{int n;R():n(3){++effects;}~R(){++effects;}int get(int k)const noexcept{return n+k;}};
+static_assert(__is_same(decltype(std::declval<R&>().get(1)),int));
+static_assert(noexcept(std::declval<const R&>().get(1)));
+static_assert(sizeof(std::declval<R>())==sizeof(R));
+int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("declval-query-records" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryArrays) {
+  const auto Source = tmpFile("declval-query-arrays.cpp");
+  const auto Output = tmpFile("declval-query-arrays.nc");
+  writeFile(Source, R"cpp(#include <utility>
+using A=int[3];using C=const int[3];
+static_assert(__is_same(decltype(std::declval<A&>()),A&));
+static_assert(__is_same(decltype(std::declval<A>()),A&&));
+static_assert(__is_same(decltype(std::declval<C&>()[1]),const int&));
+static_assert(sizeof(std::declval<A>())==sizeof(A));
+static_assert(noexcept(std::declval<A&>()[1]));
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("declval-query-arrays" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryCallbacks) {
+  const auto Source = tmpFile("declval-query-callbacks.cpp");
+  const auto Output = tmpFile("declval-query-callbacks.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+using F=int(int)noexcept;using P=F*;
+static_assert(__is_same(decltype(std::declval<F&>()),F&));
+static_assert(__is_same(decltype(std::declval<F>()),F&));
+static_assert(__is_same(decltype(std::declval<P>()),P&&));
+static_assert(__is_same(decltype(std::invoke(std::declval<F&>(),short(2))),int));
+static_assert(noexcept(std::invoke(std::declval<F&>(),2)));
+static_assert(sizeof(std::declval<P>())==sizeof(P));
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("declval-query-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryVoid) {
+  const auto Source = tmpFile("declval-query-void.cpp");
+  const auto Output = tmpFile("declval-query-void.nc");
+  writeFile(Source, R"cpp(#include <utility>
+static_assert(__is_same(decltype(std::declval<void>()),void));
+static_assert(noexcept(std::declval<void>()));
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("declval-query-void" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryDeclaredReference) {
+  const auto Source = tmpFile("declval-query-declared-reference.cpp");
+  const auto Output = tmpFile("declval-query-declared-reference.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+struct R{int n;};R& reference(R&)noexcept;
+static_assert(__is_same(decltype(std::invoke(reference,std::declval<R&>())),R&));
+static_assert(noexcept(std::invoke(reference,std::declval<R&>())));
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("declval-query-declared-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclvalQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+  };
+  const Case Cases[] = {
+      {"cast-callee", R"cpp(#include <utility>
+#include <type_traits>
+using P=int&&(*)()noexcept;using T=decltype(static_cast<P>(&std::declval<int>)());int main(){return 0;}
+)cpp"},
+      {"hidden-alias", R"cpp(#include <utility>
+#include <type_traits>
+using T=decltype((sizeof(long double),int{}));using R=decltype(std::declval<T>());int main(){return 0;}
+)cpp"},
+      {"hidden-array-bound", R"cpp(#include <utility>
+#include <type_traits>
+using A=int[(sizeof(long double),2)];using R=decltype(std::declval<A&>());int main(){return 0;}
+)cpp"},
+      {"hidden-function-noexcept", R"cpp(#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using R=decltype(std::declval<F&>());int main(){return 0;}
+)cpp"},
+      {"hidden-method-body", R"cpp(#include <utility>
+#include <type_traits>
+struct R{int get()const{long double n=0;return 1;}};using T=decltype(std::declval<R&>().get());int main(){return 0;}
+)cpp"},
+      {"hidden-method-default", R"cpp(#include <utility>
+#include <type_traits>
+struct R{int get(int n=sizeof(long double))const{return n;}};using T=decltype(std::declval<R&>().get());int main(){return 0;}
+)cpp"},
+      {"independent-address", R"cpp(#include <utility>
+#include <type_traits>
+int main(){static_assert(sizeof(&std::declval<int>)>0);return 0;}
+)cpp"},
+      {"private-specialization", R"cpp(#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int&& __declval<int>(int){static int n;return static_cast<int&&>(n);}}}using T=decltype(std::declval<int>());int main(){return 0;}
+)cpp"},
+      {"public-specialization", R"cpp(#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int&& declval<int>()noexcept{static int n;return static_cast<int&&>(n);}}}using T=decltype(std::declval<int>());int main(){return 0;}
+)cpp"},
+      {"volatile-value", R"cpp(#include <utility>
+#include <type_traits>
+using R=decltype(std::declval<volatile int>());int main(){return 0;}
+)cpp"},
+      {"wide-value", R"cpp(#include <utility>
+#include <type_traits>
+using R=decltype(std::declval<long double>());int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &C : Cases) {
+    SCOPED_TRACE(C.Name);
+    const auto Source =
+        tmpFile(std::string("declval-query-guard-") + C.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("declval-query-guard-") + C.Name + ".nc");
+    writeFile(Source, C.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

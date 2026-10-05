@@ -362,6 +362,14 @@ executing query operands. Runtime calls and stored function addresses still
 require definitions; C exports and member declarations keep their existing
 requirements.
 
+`std::declval<T>()` now supplies admitted scalar, record, array, callback and
+`void` type metadata in unevaluated queries. Reference collapse, original
+aliases and function signatures remain checked through the pinned public and
+selected internal SDK declarations. Member access, result traits, `noexcept`
+and constant `sizeof` queries execute no object construction, destruction or
+callback. Independent SDK function addresses, replaced declarations and
+unsupported written types retain their existing restrictions.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

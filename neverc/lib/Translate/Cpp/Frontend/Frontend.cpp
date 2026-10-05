@@ -5339,7 +5339,74 @@ static const CallExpr *functionalInvokeQueryTargetSource(Adapter &A,
   return Selected;
 }
 
+static QualType declvalQuerySource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!Function || !Reference || Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !Function->getIdentifier() || Function->getName() != "declval" ||
+      Call->getNumArgs() || Function->getNumParams() || !Arguments ||
+      Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Reference->hasExplicitTemplateArgs() ||
+      Reference->getNumTemplateArgs() != 1 ||
+      Reference->template_arguments()[0].getArgument().getKind() !=
+          TemplateArgument::Type ||
+      !Reference->template_arguments()[0].getTypeSourceInfo() ||
+      !utilitySDKFunctionSource(A, Function, "__utility/declval.h", false))
+    return {};
+  const auto Written =
+      Reference->template_arguments()[0].getTypeSourceInfo()->getType();
+  const auto Argument = Arguments->get(0).getAsType();
+  if (!A.Context.hasSameType(Written, Argument))
+    return {};
+  const auto SelectedResult = Written->isVoidType() || Written->isReferenceType()
+                                  ? Written
+                                  : A.Context.getRValueReferenceType(Written);
+  const auto Result = SelectedResult->isRValueReferenceType() &&
+                             SelectedResult->getPointeeType()->isFunctionType()
+                         ? A.Context.getLValueReferenceType(
+                               SelectedResult->getPointeeType())
+                         : SelectedResult;
+  const auto *Prototype = operationCalleePrototype(Call);
+  const auto *Selected =
+      functionalQueryDecltypeCall(A, Function->getReturnType());
+  const auto *Target = Selected ? Selected->getDirectCallee() : nullptr;
+  const auto *TargetArguments =
+      Target ? Target->getTemplateSpecializationArgs() : nullptr;
+  const auto *Zero =
+      Selected && Selected->getNumArgs() == 1
+          ? dyn_cast<IntegerLiteral>(Selected->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Prototype ||
+      Prototype != Function->getType()->getAs<FunctionProtoType>() ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || !Target || !Target->getIdentifier() ||
+      Target->getName() != "__declval" || Target->getNumParams() != 1 ||
+      !TargetArguments || TargetArguments->size() != 1 ||
+      TargetArguments->get(0).getKind() != TemplateArgument::Type ||
+      !A.Context.hasSameType(TargetArguments->get(0).getAsType(), Argument) ||
+      !Zero || !Zero->getValue().isZero() ||
+      !A.Context.hasSameType(Target->getParamDecl(0)->getType(),
+                             Written->isVoidType() ? A.Context.LongTy
+                                                   : A.Context.IntTy) ||
+      !A.Context.hasSameType(Target->getReturnType(), SelectedResult) ||
+      !A.Context.hasSameType(Function->getReturnType(), Result) ||
+      !A.Context.hasSameType(Call->getType(), Result.getNonReferenceType()) ||
+      Call->getValueKind() != Expr::getValueKindForType(Result) ||
+      !utilitySDKFunctionSource(A, Target, "__utility/declval.h", false))
+    return {};
+  // The selected SDK overload proves reference collapse without completing
+  // declval's deliberately unevaluated-only body. Keep the caller's spelling.
+  return Result;
+}
+
 static QualType functionalQuerySource(Adapter &A, const CallExpr *Call) {
+  if (auto Result = declvalQuerySource(A, Call); !Result.isNull())
+    return Result;
   if (isa_and_nonnull<CXXOperatorCallExpr>(Call)) {
     const auto *Reference = directMethodReference(Call);
     return Reference && A.S.owns(A.Sources, Reference->getExprLoc()) &&

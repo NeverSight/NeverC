@@ -4156,6 +4156,23 @@ Cast or indirect adapter callees, independent SDK function addresses, source
 replacements and unsupported callable/result types retain their separate
 requirements.
 
+Owned direct calls to pinned `std::declval<T>()` also supply signature-only
+metadata inside exact lexical unevaluated query operands. The actual substituted
+public return type must select the pinned internal `__declval` overload with
+its original zero argument, exact template type and reference-collapse or
+`void` result. Both declaration families retain their SDK source proofs. No
+unused SDK body is instantiated; its evaluated-use assertion stays active.
+The result keeps the caller's original written template type and aliases,
+including admitted record, array and function references. Call value category
+remains exact, including the lvalue category of function expressions. Direct
+member queries, invocation queries, result traits, `noexcept` and constant
+expression-form `sizeof` execute no construction, destruction or callback.
+Original written bounds, function exception sources, member bodies and selected
+defaults retain ordinary source validation. Signature proof belongs only to
+that lexical call, so independent SDK addresses, cast or indirect callees,
+source replacements, volatile or unsupported types retain their separate
+boundaries.
+
 Materialized `std::invoke` adapters around admitted source-owned record
 callables also support result-source queries. The exact receiver, selected
 `operator()` and argument flow keep their runtime checks, including lvalue,
