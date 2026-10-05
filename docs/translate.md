@@ -398,6 +398,18 @@ callbacks, defaults, conversions or temporary cleanup. By-value record signature
 and lazy source method templates keep their separate adapter requirements.
 Exact `move`, `forward`, `as_const` and reference-template `move_if_noexcept` casts retain the wrapper’s pinned storage and original operand sources.
 
+Pure signature queries also cover admitted `std::hash<T>` carriers for integral
+and null-pointer types, wide integers, `float`/`double`, supported enums and
+pointers. Direct calls, `std::invoke`, `reference_wrapper` calls and outer
+invoke retain the exact `std::size_t` result and declared `noexcept` signature
+before any hash call. The pinned public carrier, selected SDK method family,
+inherited public-to-base view and actual argument conversion are checked
+together. Caller aliases, operands, defaults, source definitions and temporary
+cleanup retain their own checks; runtime hashing uses its existing operation
+proof. Namespace and block imports of `std::hash` and `std::invoke` authenticate
+their pinned lookup families; each actual type and call retains its own source
+proof.
+
 Windows builds preserve the Microsoft SDK’s original internal `log10`/`pow`
 templates and isolate their compiled symbols, retaining SDK-specific calculations
 and floating-state behavior. The actual SDK and runtime differential checks

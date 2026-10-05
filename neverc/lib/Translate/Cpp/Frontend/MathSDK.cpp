@@ -2936,21 +2936,64 @@ bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
-  const auto Object = approvedFunctionalObjectRecord(
-      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Receiver = Call && Call->getNumArgs()
+                             ? Call->getArg(0)
+                                   ->IgnoreParenImpCasts()
+                                   ->getType()
+                                   ->getAsCXXRecordDecl()
+                             : nullptr;
+  const auto Object = approvedFunctionalObjectRecord(S, SM, Receiver, Context);
   if (!Operator || !Method || !Object || Call->getNumArgs() < 2 ||
       !Call->isPRValue() || Operator->getOperator() != OO_Call ||
       Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
       !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
-      !Method->isConstexpr() || !Method->isInlined() ||
+      !Method->isInlined() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
       !utilityScalar(Context, Call->getType()) ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !functionalObjectOrigin(S, SM, Method, Object->Record->getName()) ||
+      !Context.hasSameUnqualifiedType(
+          Call->getArg(0)->IgnoreParenImpCasts()->getType(),
+          Context.getRecordType(Object->Record)))
+    return false;
+  const auto Name = Object->Record->getName();
+  if (Name == "hash") {
+    const auto *Target = Method->getType()->getAs<FunctionProtoType>();
+    const auto Value = cast<ClassTemplateSpecializationDecl>(Object->Record)
+                           ->getTemplateArgs()
+                           .get(0)
+                           .getAsType();
+    const bool Inherited = Method->getParent()->getCanonicalDecl() !=
+                           Object->Record->getCanonicalDecl();
+    const auto *BaseCast =
+        dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens());
+    if (!Target || Method->getNumParams() != 1 || Call->getNumArgs() != 2 ||
+        Method->getRefQualifier() != RQ_None ||
+        Target->getExceptionSpecType() != EST_BasicNoexcept ||
+        Target->getNoexceptExpr() ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(), Value) ||
+        !Context.hasSameType(Call->getArg(1)->getType(), Value) ||
+        !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+        (Inherited &&
+         (!BaseCast ||
+          !approvedFunctionalObjectBaseCast(S, SM, BaseCast, Context) ||
+          !Context.hasSameUnqualifiedType(
+              BaseCast->getType(),
+              Context.getRecordType(Method->getParent())))))
+      return false;
+    const auto From = Call->getArg(1)->IgnoreParenImpCasts()->getType();
+    // The pinned public hash supplies its declared size_t result and noexcept
+    // signature. Inherited methods retain the exact public-to-base view; no
+    // unused hash body or private-base query becomes a source requirement.
+    return !From.isVolatileQualified() && !From.isRestrictQualified() &&
+           From.getAddressSpace() == LangAS::Default &&
+           (utilityScalarDirectConversion(Context, From, Value) ||
+            utilityCallbackDirectConversion(Context, From, Value));
+  }
+  if (!Method->isConstexpr() ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                       Context.getRecordType(Object->Record)))
     return false;
-  const auto Name = Object->Record->getName();
   const bool Logical =
       Name == "logical_and" || Name == "logical_or" || Name == "logical_not";
   const bool Equality = Name == "equal_to" || Name == "not_equal_to";

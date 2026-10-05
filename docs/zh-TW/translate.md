@@ -46,6 +46,8 @@ Core v2 接受經過驗證的空與非空 `<tuple>` 值，包括建構、賦值�
 
 已支援的 `reference_wrapper` 呼叫及外層 `std::invoke` 現在可直接根據簽章完成不求值查詢，無須先呼叫包裝器。函式、函式指標、已支援的 SDK 函式物件和具有定義的原始碼呼叫運算子保留精確的純量、參考或 `void` 結果及例外來源。固定 SDK 的內部結果 trait、`get` 宣告、包裝器儲存、呼叫端運算元和原始碼定義仍分別檢查。查詢不會執行回呼、預設引數、轉換或暫存物件清理。以值傳遞或回傳記錄及尚未具現化的方法範本仍保留各自的配接器要求。 精確匹配的 `move`、`forward`、`as_const` 及以參考為範本引數的 `move_if_noexcept` 保留包裝器的固定 SDK 儲存證明和原始運算元來源。
 
+已接納的 `std::hash<T>` 也支援直接根據簽章進行純查詢，涵蓋整數、空指標型別、寬整數、`float`/`double`、受支援的列舉與指標。直接呼叫、`std::invoke`、`reference_wrapper` 呼叫及外層 invoke 在首次雜湊呼叫前就保留精確的 `std::size_t` 結果及宣告中的 `noexcept` 簽章。固定 SDK 的公有載體、選定方法族、繼承時的公有型別至基底類別視圖及實際引數轉換會共同驗證。呼叫端的別名、運算元、預設引數、原始碼定義及暫存物件清理繼續各自檢查；執行期雜湊仍使用原有操作證明。 命名空間與區塊範圍中的 `using std::hash` 和 `using std::invoke` 會驗證固定 SDK 的查找宣告族；實際型別及呼叫仍保留各自的來源證明。
+
 Windows 建置保留 Microsoft SDK 原有的內部 `log10`/`pow` 範本，並隔離其編譯後的符號，以保留 SDK 特有的計算及浮點狀態行為。實際 SDK 與執行階段差分檢查須由實作此變更的版本通過原生 CI 驗證。 符號隔離也會還原一般 COFF 與 bigobj 靜態函式庫中 MSVC 原有的非關聯節記錄編號，使最終附加記錄逐位元組保持一致。
 [Windows ABI](../../utils/translate-frontends/docs/design.md#private-windows-math-templates).
 

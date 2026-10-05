@@ -83578,7 +83578,7 @@ namespace User{int cref(int&,int);using Reexport::cref;}
 )cpp",
        "TR0203"},
       {"other-functional-name", R"cpp(
-using std::invoke;
+using std::mem_fn;
 )cpp",
        "TR0201"},
   };
@@ -84187,38 +84187,6 @@ TEST_F(TranslateTest, CoreV2PointerHashQueriesRetainSourceBoundaries) {
   // Keep hash aliases in the cases that consume them. An unused incomplete
   // specialization must not reject a case before its intended boundary.
   const Case Cases[] = {
-      {"lazy-direct", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(H&h,int*p){static_assert(__is_same(decltype(h(p)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-invoke", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(H&h,int*p){static_assert(__is_same(decltype(std::invoke(h,p)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-wrapper", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(W&w,int*p){static_assert(__is_same(decltype(w(p)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer-wrapper", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(W&w,int*p){static_assert(__is_same(decltype(std::invoke(w,p)),S));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(std::invoke(h,p)),S));return n!=0;}
-)cpp", "TR0203"},
-      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(W&w,int*p){auto n=w(p);static_assert(__is_same(decltype(std::invoke(w,p)),S));return n!=0;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(H&h,int*p){auto n=std::invoke(h,p);static_assert(__is_same(decltype(std::invoke(h,nullptr)),S));return n!=0;}
-)cpp", "TR0203"},
-      {"different-callable-category", R"cpp(
-using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-int f(H&h,const H&c,int*p){auto n=std::invoke(h,p);static_assert(__is_same(decltype(std::invoke(c,p)),S));return n!=0;}
-)cpp", "TR0203"},
       {"hash-primary-redeclaration", R"cpp(
 using H=std::hash<int*>;using W=std::reference_wrapper<H>;
 namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(h(p)),S));return n!=0;}
@@ -84293,7 +84261,7 @@ int*arg(int n=sizeof(long double))noexcept{return nullptr;}int f(H&h,int*p){auto
 )cpp", "TR0201"},
       {"missing-receiver-definition", R"cpp(
 using H=std::hash<int*>;using W=std::reference_wrapper<H>;
-H&source(H&h)noexcept;int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(source(h)(p)),S));return n!=0;}
+H&source(H&h)noexcept;int f(H&h,int*p){auto n=h(p);static_assert(__is_same(decltype(source(h)(p)),S));return source(h)(p)!=0;}
 )cpp", "TR0203"},
       {"temporary-destructor-body", R"cpp(
 using H=std::hash<int*>;using W=std::reference_wrapper<H>;
@@ -84494,34 +84462,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2FloatingHashQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-invoke", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(H&h){static_assert(__is_same(decltype(std::invoke(h,1.0)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-wrapper", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(W&w){static_assert(__is_same(decltype(w(1.0)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer-wrapper", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1.0)),S));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(H&h){auto n=h(1.0);static_assert(__is_same(decltype(std::invoke(h,1.0)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(W&w){auto n=w(1.0);static_assert(__is_same(decltype(std::invoke(w,1.0)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(W&w){auto n=w(1.0);static_assert(__is_same(decltype(w(short(1))),S));return n!=1;}
-)cpp", "TR0203"},
-      {"different-callable-category", R"cpp(
-using H=std::hash<double>;using W=std::reference_wrapper<H>;
-int f(H&h,const H&c){auto n=std::invoke(h,1.0);static_assert(__is_same(decltype(std::invoke(c,1.0)),S));return n!=1;}
-)cpp", "TR0203"},
       {"hash-primary-redeclaration", R"cpp(
 using H=std::hash<double>;using W=std::reference_wrapper<H>;
 namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h){auto n=h(1.0);static_assert(__is_same(decltype(h(1.0)),S));return n!=1;}
@@ -84576,7 +84516,7 @@ double arg(int n=sizeof(long double))noexcept{return n;}int f(H&h){auto n=h(1.0)
 )cpp", "TR0201"},
       {"missing-receiver-definition", R"cpp(
 using H=std::hash<double>;using W=std::reference_wrapper<H>;
-H&source(H&h)noexcept;int f(H&h){auto n=h(1.0);static_assert(__is_same(decltype(source(h)(1.0)),S));return n!=1;}
+H&source(H&h)noexcept;int f(H&h){auto n=h(1.0);static_assert(__is_same(decltype(source(h)(1.0)),S));return source(h)(1.0)!=1;}
 )cpp", "TR0203"},
       {"temporary-destructor-body", R"cpp(
 using H=std::hash<double>;using W=std::reference_wrapper<H>;
@@ -84777,38 +84717,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2EnumHashQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-direct", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(H&h){static_assert(__is_same(decltype(h(Value::one)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-invoke", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(H&h){static_assert(__is_same(decltype(std::invoke(h,Value::one)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-wrapper", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(W&w){static_assert(__is_same(decltype(w(Value::one)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer-wrapper", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,Value::one)),S));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(std::invoke(h,Value::one)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(W&w){auto n=w(Value::one);static_assert(__is_same(decltype(std::invoke(w,Value::one)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(W&w){auto n=w(Value::one);Value value=Value::one;static_assert(__is_same(decltype(w(value)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"different-callable-category", R"cpp(
-using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-int f(H&h,const H&c){auto n=std::invoke(h,Value::one);static_assert(__is_same(decltype(std::invoke(c,Value::one)),S));return n!=1;}
-)cpp", "TR0203"},
       {"hash-primary-redeclaration", R"cpp(
 using H=std::hash<Value>;using W=std::reference_wrapper<H>;
 namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(h(Value::one)),S));return n!=1;}
@@ -84867,7 +84775,7 @@ Value arg(int n=sizeof(long double))noexcept{return static_cast<Value>(n);}int f
 )cpp", "TR0201"},
       {"missing-receiver-definition", R"cpp(
 using H=std::hash<Value>;using W=std::reference_wrapper<H>;
-H&source(H&h)noexcept;int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(source(h)(Value::one)),S));return n!=1;}
+H&source(H&h)noexcept;int f(H&h){auto n=h(Value::one);static_assert(__is_same(decltype(source(h)(Value::one)),S));return source(h)(Value::one)!=1;}
 )cpp", "TR0203"},
       {"temporary-destructor-body", R"cpp(
 using H=std::hash<Value>;using W=std::reference_wrapper<H>;
@@ -85070,38 +84978,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2WideHashQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-direct", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(H&h){static_assert(__is_same(decltype(h(1ll)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-invoke", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(H&h){static_assert(__is_same(decltype(std::invoke(h,1ll)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-wrapper", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(W&w){static_assert(__is_same(decltype(w(1ll)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer-wrapper", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1ll)),S));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(H&h){auto n=h(1ll);static_assert(__is_same(decltype(std::invoke(h,1ll)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(W&w){auto n=w(1ll);static_assert(__is_same(decltype(std::invoke(w,1ll)),S));return n!=1;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(W&w){auto n=w(1ll);static_assert(__is_same(decltype(w(short(1))),S));return n!=1;}
-)cpp", "TR0203"},
-      {"different-callable-category", R"cpp(
-using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-int f(H&h,const H&c){auto n=std::invoke(h,1ll);static_assert(__is_same(decltype(std::invoke(c,1ll)),S));return n!=1;}
-)cpp", "TR0203"},
       {"hash-primary-redeclaration", R"cpp(
 using H=std::hash<long long>;using W=std::reference_wrapper<H>;
 namespace std{inline namespace __1{template<class T>struct hash;}}int f(H&h){auto n=h(1ll);static_assert(__is_same(decltype(h(1ll)),S));return n!=1;}
@@ -85160,7 +85036,7 @@ long long arg(int n=sizeof(long double))noexcept{return n;}int f(H&h){auto n=h(1
 )cpp", "TR0201"},
       {"missing-receiver-definition", R"cpp(
 using H=std::hash<long long>;using W=std::reference_wrapper<H>;
-H&source(H&h)noexcept;int f(H&h){auto n=h(1ll);static_assert(__is_same(decltype(source(h)(1ll)),S));return n!=1;}
+H&source(H&h)noexcept;int f(H&h){auto n=h(1ll);static_assert(__is_same(decltype(source(h)(1ll)),S));return source(h)(1ll)!=1;}
 )cpp", "TR0203"},
       {"temporary-destructor-body", R"cpp(
 using H=std::hash<long long>;using W=std::reference_wrapper<H>;
@@ -85352,27 +85228,6 @@ int main() {
 TEST_F(TranslateTest, CoreV2DirectHashQueriesRetainSourceBoundaries) {
   struct Case { const char *Name; const char *Source; const char *Code; };
   const Case Cases[] = {
-      {"lazy-invoke", R"cpp(
-int f(H&h){static_assert(__is_same(decltype(std::invoke(h,1)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-wrapper", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(w(1)),S));return 0;}
-)cpp", "TR0203"},
-      {"lazy-outer-wrapper", R"cpp(
-int f(W&w){static_assert(__is_same(decltype(std::invoke(w,1)),S));return 0;}
-)cpp", "TR0203"},
-      {"direct-call-does-not-supply-adapter", R"cpp(
-int f(H&h){auto n=h(1);static_assert(__is_same(decltype(std::invoke(h,1)),S));return n;}
-)cpp", "TR0203"},
-      {"wrapper-call-does-not-supply-outer-adapter", R"cpp(
-int f(W&w){auto n=w(1);static_assert(__is_same(decltype(std::invoke(w,1)),S));return n;}
-)cpp", "TR0203"},
-      {"different-argument-pack", R"cpp(
-int f(W&w){auto n=w(1);static_assert(__is_same(decltype(w(short(1))),S));return n;}
-)cpp", "TR0203"},
-      {"different-callable-category", R"cpp(
-int f(H&h,const H&c){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(c,1)),S));return n;}
-)cpp", "TR0203"},
       {"unavailable-wide-character-hash", R"cpp(
 int f(){std::hash<wchar_t> h;auto n=h(wchar_t(1));static_assert(__is_same(decltype(h(wchar_t(1))),S));return n;}
 )cpp", "TR0202"},
@@ -85443,7 +85298,7 @@ struct Ticket{~Ticket()noexcept(sizeof(long double)>0){}};int arg(Ticket t=Ticke
 struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(H&h){static_assert(__is_same(decltype(h(arg())),S));return 0;}
 )cpp", "TR0203"},
       {"missing-receiver-definition", R"cpp(
-H&source(H&h)noexcept;int f(H&h){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(source(h),1)),S));return n;}
+H&source(H&h)noexcept;int f(H&h){auto n=std::invoke(h,1);static_assert(__is_same(decltype(std::invoke(source(h),1)),S));return std::invoke(source(h),1);}
 )cpp", "TR0203"},
       {"user-argument-conversion", R"cpp(
 struct A{operator int()const noexcept{return 1;}};int f(H&h){auto n=std::invoke(h,A{});static_assert(__is_same(decltype(std::invoke(h,A{})),S));return n;}
@@ -147148,6 +147003,410 @@ int declared(long double)noexcept;using R=decltype(std::invoke(declared,1));int 
   }
 }
 
+TEST_F(TranslateTest, CoreV2HashSignatureQueryIntegral) {
+  const auto Source = tmpFile("hash-signature-integral.cpp");
+  const auto Output = tmpFile("hash-signature-integral.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int main(){std::hash<int>h;auto w=std::ref(h);static_assert(__is_same(decltype(std::invoke(h,1)),std::size_t));static_assert(__is_same(decltype(w(1)),std::size_t));static_assert(noexcept(std::invoke(w,1)));return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-integral-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryFloating) {
+  const auto Source = tmpFile("hash-signature-floating.cpp");
+  const auto Output = tmpFile("hash-signature-floating.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int main(){std::hash<double>h;auto w=std::ref(h);static_assert(__is_same(decltype(std::invoke(h,1.0)),std::size_t));static_assert(__is_same(decltype(w(1.0)),std::size_t));static_assert(noexcept(std::invoke(w,1.0)));return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-floating-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryWide) {
+  const auto Source = tmpFile("hash-signature-wide.cpp");
+  const auto Output = tmpFile("hash-signature-wide.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int main(){std::hash<long long>h;auto w=std::ref(h);static_assert(__is_same(decltype(std::invoke(h,1LL)),std::size_t));static_assert(__is_same(decltype(w(1LL)),std::size_t));static_assert(noexcept(std::invoke(w,1LL)));return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-wide-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryPointer) {
+  const auto Source = tmpFile("hash-signature-pointer.cpp");
+  const auto Output = tmpFile("hash-signature-pointer.nc");
+  writeFile(Source, R"cpp(#include <functional>
+int main(){int n;std::hash<int*>h;auto w=std::ref(h);static_assert(__is_same(decltype(h(&n)),std::size_t));static_assert(__is_same(decltype(std::invoke(w,&n)),std::size_t));static_assert(noexcept(w(&n)));return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-pointer-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryEnum) {
+  const auto Source = tmpFile("hash-signature-enum.cpp");
+  const auto Output = tmpFile("hash-signature-enum.nc");
+  writeFile(Source, R"cpp(#include <functional>
+enum class E:int{one=1};int main(){std::hash<E>h;auto w=std::ref(h);static_assert(__is_same(decltype(std::invoke(h,E::one)),std::size_t));static_assert(__is_same(decltype(w(E::one)),std::size_t));static_assert(noexcept(std::invoke(w,E::one)));return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-enum-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQuerySurface) {
+  const auto Source = tmpFile("hash-signature-surface.cpp");
+  const auto Output = tmpFile("hash-signature-surface.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+enum class Small:short{one=1};
+enum class Wide:unsigned long long{one=1};
+template<class T>int query(T value){
+  using H=std::hash<T>;
+  H h;auto w=std::ref(h);const auto cw=w;auto ro=std::cref(h);
+  static_assert(__is_same(decltype(h(value)),std::size_t));
+  static_assert(__is_same(decltype(std::invoke(h,value)),std::size_t));
+  static_assert(__is_same(decltype(w(value)),std::size_t));
+  static_assert(__is_same(decltype(std::invoke(cw,value)),std::size_t));
+  static_assert(noexcept(h(value)));
+  static_assert(noexcept(std::invoke(ro,value)));
+  static_assert(sizeof(w(value))==sizeof(std::size_t));
+  return 0;
+}
+int main(){
+ int n=0;
+ return query(false)+query(char(1))+query(static_cast<signed char>(1))+query(static_cast<unsigned char>(1))+
+ query(char16_t(1))+query(char32_t(1))+query(short(1))+
+ query(static_cast<unsigned short>(1))+query(1)+query(1u)+query(1L)+query(1UL)+
+ query(1LL)+query(1ULL)+query(1.0f)+query(1.0)+query(nullptr)+query(&n)+
+ query(static_cast<void*>(&n))+query(Small::one)+query(Wide::one);
+}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-surface-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryCallback) {
+  const auto Source = tmpFile("hash-signature-callback.cpp");
+  const auto Output = tmpFile("hash-signature-callback.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+using F=int(*)(int);using N=int(*)(int)noexcept;
+int run(int n)noexcept{return n+1;}
+int main(){std::hash<F>h;auto w=std::ref(h);N p=&run;
+ static_assert(__is_same(decltype(h(p)),std::size_t));
+ static_assert(__is_same(decltype(h(run)),std::size_t));
+ static_assert(__is_same(decltype(std::invoke(h,p)),std::size_t));
+ static_assert(__is_same(decltype(w(p)),std::size_t));
+ static_assert(noexcept(std::invoke(w,p)));
+ static_assert(noexcept(h(nullptr)));
+ return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-callback-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryCategories) {
+  const auto Source = tmpFile("hash-signature-categories.cpp");
+  const auto Output = tmpFile("hash-signature-categories.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+namespace Alias{using std::hash;using std::invoke;using std::move;}
+Alias::hash<long long> make_hash()noexcept{return {};}
+int main(){using H=std::hash<long long>;using W=std::reference_wrapper<H>;H h;W w(h);
+ static_assert(__is_same(decltype(std::move(h)(short(1))),std::size_t));
+ static_assert(__is_same(decltype(std::invoke(std::as_const(h),1u)),std::size_t));
+ static_assert(__is_same(decltype(std::move(w)(1L)),std::size_t));
+ static_assert(noexcept(std::invoke(std::forward<W>(w),1LL)));
+ static_assert(noexcept(std::as_const(w)(1ULL)));
+ static_assert(noexcept(std::invoke(std::move_if_noexcept<W&>(w),short(1))));
+ static_assert(__is_same(decltype(std::declval<const H&>()(1)),std::size_t));
+ static_assert(__is_same(decltype(std::invoke(std::declval<W&&>(),1)),std::size_t));
+ static_assert(__is_same(decltype(Alias::invoke(make_hash(),1)),std::size_t));
+ static_assert(noexcept(std::hash<long long>{}(1)));
+ static_assert(noexcept(std::invoke(std::ref(h),1)));
+ return 0;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable =
+        tmpFile(std::string("hash-signature-categories-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQuerySourceEffects) {
+  const auto Source = tmpFile("hash-signature-source-effects.cpp");
+  const auto Output = tmpFile("hash-signature-source-effects.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int calls,defaults,live,destroyed;
+struct Ticket{Ticket()noexcept{++live;}~Ticket()noexcept{--live;++destroyed;}};
+using H=std::hash<long long>;using W=std::reference_wrapper<H>;
+H&receiver(H&h,int n=(++defaults,1))noexcept{++calls;return h;}
+W wrapper(H&h,Ticket t=Ticket())noexcept{++calls;return std::ref(h);}
+short argument(Ticket t=Ticket())noexcept{++calls;return 3;}
+int potentially_throwing(){++calls;return 4;}
+int main(){H h;
+ static_assert(__is_same(decltype(receiver(h)(argument())),std::size_t));
+ static_assert(__is_same(decltype(std::invoke(receiver(h),argument())),std::size_t));
+ static_assert(sizeof(wrapper(h)(argument()))==sizeof(std::size_t));
+ static_assert(noexcept(std::invoke(wrapper(h),argument())));
+ static_assert(!noexcept(h(potentially_throwing())));
+ return calls||defaults||live||destroyed;}
+)cpp");
+  const auto Translation =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.out << Translation.err;
+  for (const auto Optimization : {"-O0", "-O2"}) {
+    const auto Executable = tmpFile(
+        std::string("hash-signature-source-effects-run") + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2HashSignatureQueryRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"using-hash-primary-redeclaration", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace std{inline namespace __1{template<class T>struct hash;}}namespace Alias{using std::hash;}int f(Alias::hash<int>&h){static_assert(noexcept(h(1)));return 0;}
+)cpp",
+       "TR0201"},
+      {"using-invoke-specialization", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace std{inline namespace __1{template<>size_t invoke<hash<int>&,int>(hash<int>&h,int&&n)noexcept{return h(n);}}}namespace Alias{using std::invoke;}int f(std::hash<int>&h){static_assert(__is_same(decltype(Alias::invoke(h,1)),std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"using-private-hash-base", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace Alias{using std::__scalar_hash;}int f(){static_assert(sizeof(Alias::__scalar_hash<long long>)>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"using-unapproved-function-template", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace Alias{using std::function;}int f(){return 0;}
+)cpp",
+       "TR0201"},
+      {"argument-body", R"cpp(#include <functional>
+#include <utility>
+int arg()noexcept{long double hidden=0;return 1;}int main(){std::hash<int>h;static_assert(sizeof(std::invoke(h,arg()))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"argument-default", R"cpp(#include <functional>
+#include <utility>
+int arg(int n=sizeof(long double))noexcept{return n;}int main(){std::hash<int>h;static_assert(sizeof(std::invoke(h,arg()))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"argument-expression", R"cpp(#include <functional>
+#include <utility>
+int main(){std::hash<int>h;static_assert(sizeof(std::invoke(h,(sizeof(long double),1)))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"cast-invoke-callee", R"cpp(#include <functional>
+#include <utility>
+using H=std::hash<int>;using I=std::size_t(*)(H&,int&&)noexcept;int main(){H h;static_assert(sizeof(static_cast<I>(&std::invoke<H&,int>)(h,1))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"destructor-body", R"cpp(#include <functional>
+#include <utility>
+struct R{~R()noexcept{long double hidden=0;}};int arg(R r=R())noexcept{return 1;}int main(){std::hash<int>h;static_assert(sizeof(std::invoke(h,arg()))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"enum-base-operator-replacement", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+enum class E:int{one=1};namespace std{inline namespace __1{template<>size_t __enum_hash<E>::operator()(E)const noexcept{return 0;}}}int f(std::hash<E>&h){static_assert(noexcept(std::invoke(h,E::one)));return 0;}
+)cpp",
+       "TR0201"},
+      {"hash-partial-redeclaration", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace std{inline namespace __1{template<class T>struct hash<T*>;}}int f(std::hash<int*>&h,int*p){static_assert(__is_same(decltype(h(p)),std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"hash-primary-redeclaration", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace std{inline namespace __1{template<class T>struct hash;}}int f(std::hash<int>&h){static_assert(noexcept(h(1)));return 0;}
+)cpp",
+       "TR0201"},
+      {"hidden-hash-alias", R"cpp(#include <functional>
+#include <utility>
+using I=decltype((sizeof(long double),int{}));int main(){std::hash<I>h;static_assert(sizeof(std::invoke(h,1))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-invoke-address", R"cpp(#include <functional>
+#include <utility>
+using H=std::hash<int>;int main(){static_assert(sizeof(&std::invoke<H&,int>)>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"independent-operator-address", R"cpp(#include <functional>
+#include <utility>
+int main(){static_assert(sizeof(&std::hash<int>::operator())>0);return 0;}
+)cpp",
+       "TR0201"},
+      {"missing-temporary-destructor", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+struct Ticket{~Ticket()noexcept;};int arg(Ticket t=Ticket())noexcept{return 1;}int f(std::hash<int>&h){static_assert(noexcept(h(arg())));return 0;}
+)cpp",
+       "TR0203"},
+      {"original-enum-source", R"cpp(#include <functional>
+#include <utility>
+using I=decltype((sizeof(long double),int{}));enum class E:I{a=1};int main(){std::hash<E>h;static_assert(sizeof(std::invoke(h,E::a))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointer-operator-replacement", R"cpp(#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<>size_t hash<int*>::operator()(int*p)const noexcept{return 0;}}}int main(){int n;std::hash<int*>h;static_assert(sizeof(h(&n))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"pointer-signature", R"cpp(#include <functional>
+#include <utility>
+using F=int(long double)noexcept;int main(){F*p=nullptr;std::hash<F*>h;static_assert(sizeof(std::invoke(h,p))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"private-base-query", R"cpp(#include <functional>
+#include <utility>
+int main(){std::hash<long long>h;static_assert(sizeof(static_cast<const std::__scalar_hash<long long>&>(h)(1LL))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0203"},
+      {"receiver-default", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using H=std::hash<long long>;H&source(H&h,int n=sizeof(long double))noexcept{return h;}int f(H&h){static_assert(noexcept(source(h)(1LL)));return 0;}
+)cpp",
+       "TR0201"},
+      {"scalar-base-operator-replacement", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+namespace std{inline namespace __1{template<>size_t __scalar_hash<long long>::operator()(long long)const noexcept{return 0;}}}int f(std::hash<long long>&h){static_assert(__is_same(decltype(h(1LL)),std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"volatile-argument", R"cpp(#include <cstddef>
+#include <functional>
+#include <type_traits>
+#include <utility>
+int f(std::hash<int>&h,volatile int&n){static_assert(__is_same(decltype(h(n)),std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+      {"wide-floating", R"cpp(#include <functional>
+#include <utility>
+int main(){std::hash<long double>h;static_assert(sizeof(std::invoke(h,1.0L))==sizeof(std::size_t));return 0;}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("hash-signature-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("hash-signature-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
 TEST_F(TranslateTest, CoreV2ReferenceWrapperSignatureQueryFunction) {
   const auto Source = tmpFile("reference-wrapper-signature-query-function.cpp");
   const auto Output = tmpFile("reference-wrapper-signature-query-function.nc");

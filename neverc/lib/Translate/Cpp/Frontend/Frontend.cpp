@@ -4933,14 +4933,14 @@ functionalObjectInvokeTargetSource(Adapter &A, const CXXMethodDecl *Method,
   if (Object->Record->getName() == "hash") {
     // The exact operation descriptor proves the integral/null, wide integer,
     // floating, enum or pointer hashing contract, including any SDK delegate.
-    if (!Target || !Method->getDefinition() ||
+    if (!Target || (RequireDefinition && !Method->getDefinition()) ||
         Target->getExceptionSpecType() != EST_BasicNoexcept ||
         Target->getNoexceptExpr())
       return nullptr;
     const auto *Record =
         cast<ClassTemplateSpecializationDecl>(Object->Record);
     const auto Value = Record->getTemplateArgs().get(0).getAsType();
-    if (const auto *Enum = Value->getAs<EnumType>()) {
+    if (const auto *Enum = Value->getAs<EnumType>(); Enum && RequireDefinition) {
       // The enum operation descriptor already proves this return's cast and
       // nested hash call. Close the selected integer hash's source as well;
       // an enum must not hide a replacement of its underlying SDK delegate.
@@ -4972,7 +4972,8 @@ functionalObjectInvokeTargetSource(Adapter &A, const CXXMethodDecl *Method,
         return nullptr;
     }
     if (Inherited || Value->isPointerType())
-      return utilitySDKFunctionSource(A, Method, "__functional/hash.h")
+      return utilitySDKFunctionSource(A, Method, "__functional/hash.h",
+                                      RequireDefinition)
                  ? Target : nullptr;
     // Members of the explicit integral/null/floating specializations have no
     // function template pattern; authenticate their concrete declaration family.
@@ -5160,7 +5161,8 @@ functionalObjectQueryTargetSource(Adapter &A, const CallExpr *Call) {
     return nullptr;
   const auto *Target = functionalObjectInvokeTargetSource(
       A, dyn_cast<CXXMethodDecl>(Call->getDirectCallee()),
-      Call->getArg(0)->getType()->getAsCXXRecordDecl(), false);
+      Call->getArg(0)->IgnoreParenImpCasts()->getType()->getAsCXXRecordDecl(),
+      false);
   return Target && operationCalleePrototype(Call) == Target ? Target : nullptr;
 }
 
@@ -13193,7 +13195,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       DefinitionPath = "__memory/uses_allocator.h";
     else if (Name == "default_delete" || Name == "unique_ptr")
       DefinitionPath = "__memory/unique_ptr.h";
-    else if (Name == "pair") {
+    else if (Name == "hash") {
+      DefinitionPath = "__functional/hash.h";
+      ForwardPath = "__fwd/functional.h";
+    } else if (Name == "pair") {
       DefinitionPath = "__utility/pair.h";
       ForwardPath = "__fwd/pair.h";
     } else if (Name == "tuple") {
@@ -13215,7 +13220,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               (!Definition &&
                ((!ForwardPath.empty() && Origin->Path == ForwardPath) ||
                 (Name == "allocator" &&
-                 Origin->Path == "__memory/allocator_traits.h")))) &&
+                 Origin->Path == "__memory/allocator_traits.h") ||
+                (Name == "hash" &&
+                 (Origin->Path == "__memory/shared_ptr.h" ||
+                  Origin->Path == "__memory/unique_ptr.h"))))) &&
              approvedStandardSDKDeclaration(A.S, A.Sources, Declaration);
     };
     for (const auto *Redeclaration : Template->redecls()) {
@@ -13261,6 +13269,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__utility/move.h";
       else if (Name->getName() == "exchange")
         ExpectedPath = "__utility/exchange.h";
+      else if (Name->getName() == "invoke")
+        ExpectedPath = "__functional/invoke.h";
       else if (Name->getName() == "make_pair")
         ExpectedPath = "__utility/pair.h";
       else if (Name->getName() == "ref" || Name->getName() == "cref")
@@ -14916,8 +14926,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           // This exact callee reference/decay owns a pinned SDK signature.
           // Retain its caller's types, not private result declval/forward calls.
           // Written template arguments and actual operands are still visited.
-          for (const auto *Argument : Callee->second->arguments())
-            collectOperationTypeSource(Argument->getType(), E->getExprLoc(), true);
+          for (const auto *Argument : Callee->second->arguments()) {
+            auto Type = Argument->getType();
+            if (const auto *Cast =
+                    dyn_cast<ImplicitCastExpr>(Argument->IgnoreParens()))
+              if (auto Owner = FunctionalHashBaseCastSources.find(Cast);
+                  Owner != FunctionalHashBaseCastSources.end() &&
+                  Owner->second == Callee->second)
+                // This callee owns the exact authenticated hash base view.
+                // Its public receiver retains the original type dependencies.
+                Type = Cast->getSubExpr()->getType();
+            collectOperationTypeSource(Type, E->getExprLoc(), true);
+          }
         } else {
           collectOperationTypeSource(E->getType(), E->getExprLoc(), true);
         }

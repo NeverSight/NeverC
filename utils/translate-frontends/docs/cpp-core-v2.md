@@ -4216,6 +4216,27 @@ defaults and temporary cleanup keep their ordinary source checks and execute no
 query effects. Independent wrapper method addresses and indirect SDK calls
 retain their existing restrictions.
 
+Admitted public `std::hash<T>` carriers also supply signature-only queries for
+integral/null-pointer, wide integer, `float`/`double`, enum and pointer values.
+Owned direct calls, public `std::invoke`, `reference_wrapper` calls and outer
+invoke consume the exact selected fixed SDK method's by-value parameter,
+`std::size_t` return and basic `noexcept` specification. Explicit integral/null
+and floating specializations retain their concrete SDK declaration families;
+pointer partials and inherited wide/enum methods retain their exact template
+instantiation patterns. The carrier proof pins every public, scalar/enum and
+unary-layout declaration family. An inherited call must use the authenticated
+public-to-base cast for that exact public hash; a private base is not an
+independent query source. The actual builtin or callback argument conversion
+must match the selected parameter. This proof reads the existing signature and
+does not instantiate an unused hash body or hashing delegate. Runtime calls
+continue to require their full operation-body and selected delegate proof.
+Namespace and block `using std::hash` and `using std::invoke` imports prove only
+the pinned lookup declaration family. Each selected specialization and call
+retains its existing source proof; private bases and other SDK names gain no
+lookup permission. Original caller aliases, enum underlying sources, pointer
+prototypes, receiver and argument expressions, defaults, definitions and temporary cleanup remain
+independent validation dependencies. Queries execute none of their effects.
+
 Materialized `std::invoke` adapters around admitted source-owned record
 callables also support result-source queries. The exact receiver, selected
 `operator()` and argument flow keep their runtime checks, including lvalue,
@@ -4295,8 +4316,9 @@ requirement for the wrapper and each outer adapter. Replaced SDK declarations,
 independent member or adapter addresses, and incomplete source definitions remain
 rejected.
 
-Direct integral hashes from `bool` through `unsigned long`, plus the
-`nullptr_t` specialization, support result-source queries for direct calls,
+Materialized result-source queries outside the signature-only proof above retain
+the following hash operation requirements. Direct integral hashes from `bool`
+through `unsigned long`, plus the `nullptr_t` specialization, support direct calls,
 `std::invoke`, and direct or outer `invoke` calls through `reference_wrapper`.
 Their pinned operators return `size_t` using the authenticated integral
 conversion or fixed null hash constant. Original scalar argument conversions
@@ -4313,8 +4335,8 @@ source roots and execute no query effects.
 The pinned SDK disables wide-character support, so `std::hash<wchar_t>` retains
 its native C++ unavailability diagnostic.
 
-The `long long` and `unsigned long long` specializations also support direct,
-`std::invoke` and wrapped result-source queries after evaluated calls materialize
+The materialized result-source path for `long long` and `unsigned long long`
+hashes supports direct, `std::invoke` and wrapped queries after evaluated calls materialize
 their inherited scalar operator and each selected adapter. The public hash owns
 the exact `__scalar_hash` base and its empty unary typedef base; both base levels,
 the scalar primary/partial specialization, the public hash declaration family
@@ -4330,8 +4352,8 @@ independent source dependencies.
 Original written types, expressions, initializers, selected defaults and temporary
 cleanup remain separate source roots and execute no query-time effects.
 
-The `float` and `double` hash specializations support the same direct,
-`std::invoke` and wrapped result-source queries. Their explicit public operators
+The materialized result-source path for `float` and `double` hash specializations
+supports the same direct, `std::invoke` and wrapped queries. Their explicit public operators
 already have SDK definitions, so a direct query does not require an evaluated
 call first. Each wrapper or `invoke` specialization still requires its exact
 materialized adapter and exception-source proof. The authenticated floating hash
@@ -4347,8 +4369,8 @@ and execute no query effects. Independent method/adapter addresses and private
 base sources consumed by a call query gain no authorization from another hash
 call. `long double` hashes remain outside the admitted floating type boundary.
 
-Admitted scoped and unscoped enum hashes support direct, `std::invoke` and
-wrapped result-source queries after evaluated calls materialize the inherited
+The materialized result-source path for admitted scoped and unscoped enum hashes
+supports direct, `std::invoke` and wrapped queries after evaluated calls materialize the inherited
 enum operator, its underlying integer hash and each selected adapter. Results
 remain `size_t`, preserving the runtime conversion through the enum's signed
 or unsigned underlying integer type. The public hash, exact `__enum_hash` base,
@@ -4366,8 +4388,9 @@ adapter and exception-source proof; queries do not instantiate missing bodies.
 Independent private-base objects, private-base sources consumed by a call query,
 and method/adapter addresses gain no authorization from a public enum hash call.
 
-Admitted object-pointer, `void`-pointer and fixed-arity function-pointer hashes
-also support direct, `std::invoke` and wrapped result-source queries. Their
+The materialized result-source path for admitted object-pointer, `void`-pointer
+and fixed-arity function-pointer hashes supports direct, `std::invoke` and wrapped
+queries. Their
 pointer partial specialization, primary template, empty unary typedef base,
 selected operator and materialized adapters retain separate pinned SDK
 declaration families. The existing pointer-bit hashing descriptor supplies the
