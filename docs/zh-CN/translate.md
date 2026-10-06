@@ -4,7 +4,7 @@
 
 # 将 C++ 转译为 NeverC
 
-Core v2 现支持内置且固定版本的 `<type_traits>`，用于编译期类型别名以及整数／枚举常量。`std::remove_cv_t`、`std::is_same_v`、已支持的构造／析构 traits 和 `std::integral_constant::value` 会降为现有核心类型与字面量。驱动会验证并记录 101 个 libc++／resource 头文件的哈希，覆盖受支持的 macOS、Linux 与 Windows 目标。标准库运行时对象、调用、存储身份、平台头文件及其他 STL 头文件仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
+Core v2 现支持内置且固定版本的 `<type_traits>`，用于编译期类型别名以及整数／枚举常量。`std::remove_cv_t`、`std::is_same_v`、已支持的构造／析构 traits 和 `std::integral_constant::value` 会降为现有核心类型与字面量。驱动会验证并记录 101 个 libc++／resource 头文件的哈希，覆盖受支持的 macOS、Linux 与 Windows 目标。运行时 trait 支持仅限下文列出的、经过验证的函数指针 `integral_constant` 形式；其他 trait 对象与 trait 存储身份仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
 
 Core v2 也支持内置且固定版本的 `<cstdint>`。固定、least、fast、指针和最大宽度类型别名，以及标准上下界与常量宏，都会保留所选目标的 C++17 类型和值。驱动会记录独立使用时的 9 个头文件闭包，拒绝引号形式和 C 头文件形式，并允许 `<cstdint>` 与 `<type_traits>` 按任意顺序组合。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).
 
@@ -69,7 +69,7 @@ Core v2 支持未求值调用中经过检查的命名空间模板声明签名，
 
 Core v2 支持默认 sized delete 转发：未被源码重声明的隐式全局 sized delete/delete[] 可调用对应的源码 unsized 定义。显式 sized 定义优先，数组仍使用原表达式的 cookie 布局。此项不提供默认分配器或异常运行时；原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
-Core v2 现支持模板、别名、查询与变换中的普通函数类型及其直接左值／右值引用，包括从函数指针推导类型。原始签名、调整前数组边界与 noexcept 依赖仍会检查；函数引用局部变量、字段、参数与返回值现复用经过验证的回调载体，仍检查原始签名与源码定义；跨平台原生验证须由 CI 完成。 函数右值引用在 invoke、引用包装器、pair/tuple 构造、get 与 apply 中也保持函数左值语义；声明返回 F&& 的调用，其类型查询结果为 F&。 静态函数引用也支持常量地址、按顺序的动态启动初始化、首次使用时的一次性初始化，以及已准入的记录与 pair/tuple 字段；仍拒绝 TLS 和无效绑定。 经检查的普通函数地址和函数左值引用也可作为非类型模板实参；默认值、auto 参数和有界参数包均保留精确声明身份、签名及原始来源检查。 固定 SDK 中 integral_constant 的函数指针值现在通过经检查的函数地址参与回调调用、invoke/apply，以及 pair/tuple 构造和 make_pair/make_tuple 的值元素，仍不开放类型特征常量的存储身份。 经检查的函数指针 integral_constant 对象也支持单字节空存储、复制／移动／赋值、精确转换、零参数取值调用和零参数 invoke，并保留接收者的副作用。 这些对象也可作为 pair 值元素，支持直接构造、make_pair、复制／移动／赋值和混合引用 pair。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
+Core v2 现支持模板、别名、查询与变换中的普通函数类型及其直接左值／右值引用，包括从函数指针推导类型。原始签名、调整前数组边界与 noexcept 依赖仍会检查；函数引用局部变量、字段、参数与返回值现复用经过验证的回调载体，仍检查原始签名与源码定义；跨平台原生验证须由 CI 完成。 函数右值引用在 invoke、引用包装器、pair/tuple 构造、get 与 apply 中也保持函数左值语义；声明返回 F&& 的调用，其类型查询结果为 F&。 静态函数引用也支持常量地址、按顺序的动态启动初始化、首次使用时的一次性初始化，以及已准入的记录与 pair/tuple 字段；仍拒绝 TLS 和无效绑定。 经检查的普通函数地址和函数左值引用也可作为非类型模板实参；默认值、auto 参数和有界参数包均保留精确声明身份、签名及原始来源检查。 固定 SDK 中 integral_constant 的函数指针值现在通过经检查的函数地址参与回调调用、invoke/apply，以及 pair/tuple 构造和 make_pair/make_tuple 的值元素，仍不开放类型特征常量的存储身份。 经检查的函数指针 integral_constant 对象也支持单字节空存储、复制／移动／赋值、精确转换、零参数取值调用和零参数 invoke，并保留接收者的副作用。 这些对象也可作为 pair 值元素，支持直接构造、make_pair、复制／移动／赋值和混合引用 pair。 这些对象也支持 tuple 值元素的直接构造、`make_tuple`、复制、移动、赋值和混合引用 tuple。经过验证的空基类投影保留原生布局、元素地址和参数副作用，并避免覆盖邻接值。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
 
 Core v2 一元类型变换现检查原始输入、实际替换后的源码与结果，包括最终类型中消失的别名模板参数。固定版本的十六种变换复用现有类型元数据与运行时类型，原生验证仍仅在 CI 执行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 

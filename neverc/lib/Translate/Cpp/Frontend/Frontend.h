@@ -1223,10 +1223,30 @@ std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
     const clang::ASTContext &Context,
     std::vector<const clang::CXXOperatorCallExpr *> *SelectedAssignments =
         nullptr);
+// A logical tuple element may be an ordinary field or an authenticated empty
+// base. Keeping its value type separate from its storage supports projections
+// without inventing an SDK field for an empty-base subobject.
+struct UtilityTupleElement {
+  const clang::FieldDecl *Field;
+  const clang::CXXRecordDecl *EmptyBase = nullptr;
+  clang::QualType ValueType;
+  uint64_t OffsetBits = 0;
+
+  UtilityTupleElement(const clang::FieldDecl *Field, uint64_t OffsetBits = 0)
+      : Field(Field), ValueType(Field->getType()), OffsetBits(OffsetBits) {}
+  UtilityTupleElement(const clang::CXXRecordDecl *EmptyBase,
+                      clang::QualType ValueType, uint64_t OffsetBits)
+      : Field(nullptr), EmptyBase(EmptyBase), ValueType(ValueType),
+        OffsetBits(OffsetBits) {}
+  clang::QualType getType() const { return ValueType; }
+  clang::SourceLocation getLocation() const {
+    return Field ? Field->getLocation() : EmptyBase->getLocation();
+  }
+};
 struct UtilityTupleRecord {
   const clang::CXXRecordDecl *Record;
-  std::vector<const clang::FieldDecl *> Elements;
-  std::vector<uint64_t> Offsets;
+  std::vector<UtilityTupleElement> Elements;
+  uint64_t StoragePaddingBytes = 0;
 };
 bool approvedUtilityTupleMetadata(const State &S,
                                   const clang::SourceManager &SM,
@@ -1301,7 +1321,7 @@ approvedUtilityArrayAssignment(const State &S, const clang::SourceManager &SM,
 // Authenticated tuple-like storage shared by tuple_cat and apply. Pair and
 // tuple elements have individual fields; array elements share one fixed array.
 struct UtilityTupleLikeSource {
-  std::vector<const clang::FieldDecl *> Elements;
+  std::vector<UtilityTupleElement> Elements;
   const clang::FieldDecl *ArrayElements;
   clang::QualType ArrayElementType;
   uint64_t ArraySize;
@@ -1310,7 +1330,7 @@ struct UtilityTupleLikeSource {
     return ArrayElements ? ArraySize : Elements.size();
   }
   clang::QualType elementType(unsigned Index) const {
-    return ArrayElements ? ArrayElementType : Elements[Index]->getType();
+    return ArrayElements ? ArrayElementType : Elements[Index].getType();
   }
 };
 // apply and tuple_cat may consume owned array and tuple elements. Selected

@@ -4910,7 +4910,7 @@ static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
   // Authenticate the exact public SDK field and admitted element storage.
   // Its original element types and receiver still need independent sources.
   return Pair && Pair->Elements.size() == 2 &&
-         (Pair->Elements[0] == Field || Pair->Elements[1] == Field);
+         (Pair->Elements[0].Field == Field || Pair->Elements[1].Field == Field);
 }
 
 static bool functionalReferenceFactorySource(Adapter &A, const CallExpr *Call) {
@@ -10360,8 +10360,8 @@ bool Adapter::requireUtilityTuple(const CXXRecordDecl *Record,
   const auto *Canonical = Tuple->Record->getCanonicalDecl();
   if (!RequiredUtilityTuples.insert(Canonical).second)
     return true;
-  for (const auto *Element : Tuple->Elements)
-    if (type(Element->getType(), Location, false, Depth + 1).empty())
+  for (const auto &Element : Tuple->Elements)
+    if (type(Element.getType(), Location, false, Depth + 1).empty())
       return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Tuple->Record));
   return true;
@@ -10766,8 +10766,15 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Tuple =
                    approvedUtilityTupleRecord(S, Sources, R, Context)) {
-      for (const auto *Field : Tuple->Elements)
-        Args.push_back(zero(Field->getType(), L));
+      for (const auto &Field : Tuple->Elements)
+        if (Field.Field)
+          Args.push_back(zero(Field.getType(), L));
+      if (Tuple->StoragePaddingBytes)
+        Args.push_back(zero(Context.getConstantArrayType(
+                                Context.UnsignedCharTy,
+                                llvm::APInt(64, Tuple->StoragePaddingBytes),
+                                nullptr, ArraySizeModifier::Normal, 0),
+                            L));
     } else if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
                Array && !Array->Size) {
       Args.push_back(zero(Array->ElementType, L));
@@ -11211,13 +11218,30 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
           RejectTuple();
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
           const auto &Leaf = Impl.getStructBase(I);
+          const auto &Element = Tuple->Elements[I];
+          if (Element.EmptyBase) {
+            if (!Leaf.isStruct() || Leaf.getStructNumBases() != 1 ||
+                Leaf.getStructNumFields())
+              RejectTuple();
+            const auto &Base = Leaf.getStructBase(0);
+            if (!Base.isStruct() || Base.getStructNumBases() ||
+                Base.getStructNumFields())
+              RejectTuple();
+            continue;
+          }
           if (!Leaf.isStruct() || Leaf.getStructNumBases() ||
               Leaf.getStructNumFields() != 1)
             RejectTuple();
-          Args.push_back(constant(Leaf.getStructField(0),
-                                  Tuple->Elements[I]->getType(), L));
+          Args.push_back(
+              constant(Leaf.getStructField(0), Element.getType(), L));
         }
       }
+      if (Tuple->StoragePaddingBytes)
+        Args.push_back(zero(Context.getConstantArrayType(
+                                Context.UnsignedCharTy,
+                                llvm::APInt(64, Tuple->StoragePaddingBytes),
+                                nullptr, ArraySizeModifier::Normal, 0),
+                            L));
     } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record,
@@ -14802,7 +14826,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                    A.Context))
           for (unsigned I = 0; I < Call->getNumArgs(); ++I)
             retainSDKFunctionConstantValue(Call->getArg(I),
-                                           Tuple->Elements[I]->getType(), Call);
+                                           Tuple->Elements[I].getType(), Call);
       }
     }
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
@@ -14835,7 +14859,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (Tuple && Tuple->Elements.size() == Construction->getNumArgs())
           for (unsigned I = 0; I < Construction->getNumArgs(); ++I)
             retainSDKFunctionConstantValue(Construction->getArg(I),
-                                           Tuple->Elements[I]->getType(),
+                                           Tuple->Elements[I].getType(),
                                            Construction);
       }
     }
@@ -22994,8 +23018,8 @@ static void orderCoreV2Records(Adapter &A) {
     }
     std::vector<std::pair<QualType, SourceLocation>> DependencyTypes;
     if (UtilityTuple) {
-      for (const auto *Field : UtilityTuple->Elements)
-        DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
+      for (const auto &Field : UtilityTuple->Elements)
+        DependencyTypes.emplace_back(Field.getType(), Field.getLocation());
     } else if (UtilityArray) {
       DependencyTypes.emplace_back(
           UtilityArray->Size ? UtilityArray->Elements->getType()
@@ -23218,9 +23242,17 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       Fields.push_back(
           json::Object{{"name", "nct_allocator_storage"}, {"type", "u8"}});
     } else if (UtilityTuple) {
-      for (const auto *F : UtilityTuple->Elements)
+      for (const auto &F : UtilityTuple->Elements)
+        if (F.Field)
+          Fields.push_back(
+              json::Object{{"name", name(F.Field)},
+                           {"type", type(F.getType(), F.getLocation())}});
+      if (UtilityTuple->StoragePaddingBytes)
         Fields.push_back(json::Object{
-            {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+            {"name", "nct_tuple_empty_storage"},
+            {"type",
+             "arr:" + std::to_string(UtilityTuple->StoragePaddingBytes) +
+                 ":u8"}});
     } else if (UtilityArray && !UtilityArray->Size) {
       Fields.push_back(
           json::Object{{"name", name(UtilityArray->Elements)},
@@ -23256,8 +23288,13 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
           UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
-        for (uint64_t Offset : UtilityTuple->Offsets)
-          Offsets.push_back(Offset);
+        for (const auto &Element : UtilityTuple->Elements)
+          if (Element.Field)
+            Offsets.push_back(Element.OffsetBits);
+        if (UtilityTuple->StoragePaddingBytes)
+          Offsets.push_back(uint64_t(Layout.getSize().getQuantity() -
+                                     UtilityTuple->StoragePaddingBytes) *
+                            8);
       } else if (UtilityArray && !UtilityArray->Size) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityOptional) {

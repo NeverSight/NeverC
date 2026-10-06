@@ -8950,9 +8950,21 @@ pairs. Copy and assignment admission requires the existing trivial lifecycle
 and exact pinned layout checks. Each element retains its trait specialization
 and target identity; callback results still require the checked source body.
 The one-byte carrier does not admit unrelated trait domains or storage references
-to `value`. A tuple leaf using empty-base optimization remains outside the
-current concrete-field tuple layout; it must retain explicit rejection until
-that owning layout and its empty-object operations are supported.
+to `value`.
+
+The same exact objects now form checked `tuple` value elements through direct
+construction, `make_tuple`, copy/move/assignment and mixed-reference tuples.
+An optimized leaf must contain precisely the authenticated trait specialization
+as its single empty private base, with the exact pinned template arguments and
+native size, alignment and base offset. The descriptor separates logical
+empty-base elements from physical fields. Emitted fields and identity padding
+must independently reconstruct the native record layout; the IR verifier retains
+its natural-field layout checks. Projections use the checked byte offset and
+preserve source references, distinct repeated-element addresses and argument
+side effects. Empty-object assignment performs no field stores, so shared
+storage does not overwrite neighboring values. Tuples combining these optimized
+bases with nontrivial owned elements and tuple swap operations still require
+additional selected lifecycle proofs and remain outside this implementation.
 
 ## Unary type transforms
 

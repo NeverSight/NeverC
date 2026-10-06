@@ -27952,6 +27952,274 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleConstruction) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-construction.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-construction.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::tuple<C,int>t(C{},2);return std::get<0>(t)()(std::get<1>(t))!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-empty-base-tuple-construction" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleCopyAssignment) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-copy-assignment.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-copy-assignment.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto a=std::make_tuple(C{},2);auto b=a;auto c=std::move(b);a=c;return std::get<0>(a)()(std::get<1>(a))!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-empty-base-tuple-copy-assignment" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleEmptyConst) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-empty-const.cpp");
+  const auto Output = tmpFile("function-trait-empty-base-tuple-empty-const.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){const std::tuple<C,int>t(C{},71);const C&r=std::get<0>(t);return &r!=&std::get<0>(t)||std::get<1>(t)!=71||r()(1)!=2||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-empty-base-tuple-empty-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleEmptyDefault) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-empty-default.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-empty-default.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::tuple<C,int>t;std::get<1>(t)=71;std::get<0>(t)=C{};return std::get<1>(t)!=71||std::get<0>(t)()(1)!=2||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-empty-base-tuple-empty-default" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleEmptyIdentities) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-empty-identities.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-empty-identities.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::tuple<C,C,int>t(C{},C{},71);C&a=std::get<0>(t);C&b=std::get<1>(t);if(&a==&b||&a!=&std::get<0>(t)||&b!=&std::get<1>(t))return 1;a=b;b=C{};return std::get<2>(t)!=71||a()(2)!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-empty-base-tuple-empty-identities" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleEmptyLvalueCopy) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-empty-lvalue-copy.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-empty-lvalue-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::tuple<C,int>t(C{},71);C local(std::get<0>(t));local=std::get<0>(t);C&r=std::get<0>(t);r=local;return std::get<1>(t)!=71||local()(1)!=2||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-empty-base-tuple-empty-lvalue-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitTupleEmptyBaseTupleEmptySourceEffects) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-empty-source-effects.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-empty-source-effects.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int calls;C make(){++calls;return C{};}int main(){std::tuple<C,int>t(make(),71);std::get<0>(t)=make();return calls!=2||std::get<1>(t)!=71||std::get<0>(t)()(1)!=2||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-empty-base-tuple-empty-source-effects" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleFactory) {
+  const auto Source = tmpFile("function-trait-empty-base-tuple-factory.cpp");
+  const auto Output = tmpFile("function-trait-empty-base-tuple-factory.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto t=std::make_tuple(C{},2);return std::get<0>(t)()(std::get<1>(t))!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-empty-base-tuple-factory" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleMixedReference) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-mixed-reference.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-mixed-reference.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){int n=2;std::tuple<C,int&>t(C{},n);std::get<1>(t)=3;return std::get<0>(t)()(n)!=4||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-empty-base-tuple-mixed-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleEmptyBaseTupleMultipleTargets) {
+  const auto Source =
+      tmpFile("function-trait-empty-base-tuple-multiple-targets.cpp");
+  const auto Output =
+      tmpFile("function-trait-empty-base-tuple-multiple-targets.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int other(int n)noexcept{++effects;return n+2;}using D=std::integral_constant<F,other>;int main(){auto t=std::make_tuple(C{},D{});return std::get<0>(t)()(1)!=2||std::get<1>(t)()(1)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-empty-base-tuple-multiple-targets" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitObjectContainerPairConstruction) {
   const auto Source =
       tmpFile("function-trait-object-container-pair-construction.cpp");
@@ -28094,51 +28362,6 @@ TEST_F(TranslateTest,
     const char *Code;
   };
   const Case Cases[] = {
-      {"tuple-construction", R"cpp(#include <type_traits>
-#include <functional>
-#include <utility>
-#include <tuple>
-int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
-int main(){std::tuple<C,int>t(C{},2);return std::get<0>(t)()(std::get<1>(t))!=3||effects!=1;}
-)cpp",
-       "TR0201"},
-
-      {"tuple-copy-assignment", R"cpp(#include <type_traits>
-#include <functional>
-#include <utility>
-#include <tuple>
-int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
-int main(){auto a=std::make_tuple(C{},2);auto b=a;auto c=std::move(b);a=c;return std::get<0>(a)()(std::get<1>(a))!=3||effects!=1;}
-)cpp",
-       "TR0201"},
-
-      {"tuple-factory", R"cpp(#include <type_traits>
-#include <functional>
-#include <utility>
-#include <tuple>
-int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
-int main(){auto t=std::make_tuple(C{},2);return std::get<0>(t)()(std::get<1>(t))!=3||effects!=1;}
-)cpp",
-       "TR0201"},
-
-      {"tuple-mixed-reference", R"cpp(#include <type_traits>
-#include <functional>
-#include <utility>
-#include <tuple>
-int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
-int main(){int n=2;std::tuple<C,int&>t(C{},n);std::get<1>(t)=3;return std::get<0>(t)()(n)!=4||effects!=1;}
-)cpp",
-       "TR0201"},
-
-      {"tuple-multiple-targets", R"cpp(#include <type_traits>
-#include <functional>
-#include <utility>
-#include <tuple>
-int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
-int other(int n)noexcept{++effects;return n+2;}using D=std::integral_constant<F,other>;int main(){auto t=std::make_tuple(C{},D{});return std::get<0>(t)()(1)!=2||std::get<1>(t)()(1)!=3||effects!=2;}
-)cpp",
-       "TR0201"},
-
       {"bool-trait-element", R"cpp(#include <type_traits>
 #include <utility>
 int main(){auto p=std::make_pair(std::true_type{},1);return p.first();}
