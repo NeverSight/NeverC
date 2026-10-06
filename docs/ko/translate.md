@@ -234,6 +234,8 @@ vector emplace로 생성되는 pair 필드는 검증된 일반 함수 포인터�
 
 중첩 `vector`의 범위 삽입은 복사 가능한 내부 요소에 대해 정확한 원시 포인터, 배열의 포인터 변환, 인증된 래퍼 반복자도 지원합니다. 끝점 바인딩은 한 번만 캡처하고, 끝점 값은 외부 할당 후 내부 할당 전에 읽습니다. 빈 범위는 내부 버퍼를 할당하지 않습니다. 대상 컨테이너에 속한 원본 범위도 사용할 수 있으며 복사한 자원은 독립적으로 유지됩니다. 변환이 필요한 범위, 역방향 또는 임의의 반복자, 이동만 가능한 요소는 기존 제한을 따릅니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+중첩 `vector` 요소는 정확히 일치하는 `std::initializer_list<T>`에서도 생성할 수 있으며 직접 임시 목록, const 목록, 빈 목록을 지원합니다. 목록 포인터와 크기는 외부 할당 후 읽고 내부 할당 전에 저장합니다. 자원 요소는 기존 복사 연산을 사용하며 직접 SDK 콜백 상수는 값으로 복사합니다. 임시 기반 배열의 필요한 수명이 유지됩니다. 사용자 정의 목록 변환과 SDK 저장소 별칭은 기존 제한을 따릅니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

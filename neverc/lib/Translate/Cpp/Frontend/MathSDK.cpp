@@ -7149,6 +7149,19 @@ std::optional<UtilityVectorNestedEmplace> approvedUtilityVectorNestedEmplace(
   const auto *Function = Call->getDirectCallee();
   if (!Nested || !Function || Function->getNumParams() != Call->getNumArgs())
     return std::nullopt;
+  if (Call->getNumArgs() == FirstArgument + 1 &&
+      utilityVectorCopyableElements(S, SM, *Nested, Context)) {
+    const auto Argument = Call->getArg(FirstArgument)->getType();
+    const auto Parameter = Function->getParamDecl(FirstArgument)->getType();
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Argument->getAsCXXRecordDecl(), Context);
+    if (List && Parameter->isReferenceType() &&
+        Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Argument) &&
+        Context.hasSameType(List->ElementType, Nested->ElementType) &&
+        !Argument.isVolatileQualified() && !Argument.isRestrictQualified() &&
+        Argument.getAddressSpace() == LangAS::Default)
+      return UtilityVectorNestedEmplace::InitializerList;
+  }
   if (Call->getNumArgs() == FirstArgument + 2 &&
       utilityVectorCopyableElements(S, SM, *Nested, Context)) {
     auto RangePointer = [&](unsigned Index) -> QualType {

@@ -234,6 +234,8 @@ vector 就地建構的 pair 欄位也支援已驗證的普通函式指標和函�
 
 巢狀 `vector` 的範圍置入也支援可複製內層元素的精確原始指標、陣列退化和已驗證包裝迭代器。端點綁定只擷取一次；端點值在外層配置後、內層配置前讀取。空範圍不配置內層緩衝區。來源範圍可以來自目標容器，複製後的資源保持獨立。需轉換的範圍、反向或任意迭代器及只能移動的元素仍受既有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+巢狀 `vector` 元素也可從精確匹配的 `std::initializer_list<T>` 置入，支援直接暫存列表、常數列表和空列表。列表指標和大小在外層配置後讀取，並在內層配置前儲存。資源元素沿用既有複製操作，直接 SDK 回呼常數按值複製。暫存底層陣列保持所需生命週期；使用者定義的列表轉換和 SDK 儲存別名仍受既有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## 安裝與純量轉譯
 
 使用正常安裝的 NeverC 及其標準資源即可。C++ 前端與核准的 SDK 標頭均已內建，無需另行安裝 Clang。建置細節見[前端說明](../../utils/translate-frontends/cpp/README.md)。

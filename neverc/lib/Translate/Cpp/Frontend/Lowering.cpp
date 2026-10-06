@@ -20928,6 +20928,18 @@ class FunctionLowering {
              L);
       jump(Measured, L);
       label(Measured, L);
+    } else if (Kind == UtilityVectorNestedEmplace::InitializerList) {
+      const auto List = approvedUtilityInitializerListRecord(
+          A.S, A.Sources, Call->getArg(Offset)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      auto Value = utilityConstructorArgumentValue(
+          json::Object(Sources[0]),
+          Call->getDirectCallee()->getParamDecl(Offset)->getType(), L);
+      RangePointerType = List->Begin->getType();
+      RangeElementType = List->ElementType.withConst();
+      RangeInput =
+          snapshot(fieldStorage(json::Object(Value), List->Begin, L), L);
+      RangeCount = snapshot(fieldStorage(std::move(Value), List->Size, L), L);
     } else {
       Expr::EvalResult Evaluated;
       if (!Call->getArg(Offset)->EvaluateAsInt(Evaluated, A.Context) ||
@@ -21001,7 +21013,8 @@ class FunctionLowering {
     branch(binary("!=", json::Object(Current), json::Object(End), "bool", L),
            One, Done, L);
     label(One, L);
-    if (Kind == UtilityVectorNestedEmplace::Range) {
+    if (Kind == UtilityVectorNestedEmplace::Range ||
+        Kind == UtilityVectorNestedEmplace::InitializerList) {
       auto Fill = dereference(json::Object(*RangeInput), L);
       if (Nested->OwningElement)
         copyVectorElement(dereference(json::Object(Current), L),

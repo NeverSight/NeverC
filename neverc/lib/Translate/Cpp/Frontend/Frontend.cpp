@@ -14834,14 +14834,49 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           retainSDKFunctionConstantValue(Call->getArg(Offset + 1),
                                          Pair->Second->getType(), Call);
         }
-        if (Vector && approvedUtilityVectorNestedEmplace(
-                          A.S, A.Sources, *Vector, Call, Offset, A.Context) ==
-                          UtilityVectorNestedEmplace::CountValue) {
+        const auto NestedEmplace =
+            Vector ? approvedUtilityVectorNestedEmplace(A.S, A.Sources, *Vector,
+                                                        Call, Offset, A.Context)
+                   : std::nullopt;
+        if (NestedEmplace) {
           const auto Nested = approvedUtilityVectorRecord(
               A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
               A.Context);
-          retainSDKFunctionConstantValue(Call->getArg(Offset + 1),
-                                         Nested->ElementType, Call);
+          if (*NestedEmplace == UtilityVectorNestedEmplace::CountValue)
+            retainSDKFunctionConstantValue(Call->getArg(Offset + 1),
+                                           Nested->ElementType, Call);
+          if (*NestedEmplace == UtilityVectorNestedEmplace::InitializerList &&
+              Nested->ElementType->isFunctionPointerType()) {
+            const Expr *Argument = Call->getArg(Offset)->IgnoreParenImpCasts();
+            if (const auto *Temporary =
+                    dyn_cast<MaterializeTemporaryExpr>(Argument))
+              Argument = Temporary->getSubExpr()->IgnoreParenImpCasts();
+            if (const auto *Cast = dyn_cast<CastExpr>(Argument);
+                Cast && Cast->getCastKind() == CK_NoOp &&
+                A.Context.hasSameType(Cast->getType(),
+                                      Cast->getSubExpr()->getType()))
+              Argument = Cast->getSubExpr()->IgnoreParenImpCasts();
+            const auto *Expression =
+                dyn_cast<CXXStdInitializerListExpr>(Argument);
+            const auto List = approvedUtilityInitializerListExpression(
+                A.S, A.Sources, Expression, A.Context);
+            const auto *Initializers =
+                List ? dyn_cast<InitListExpr>(List->Backing->getSubExpr())
+                     : nullptr;
+            if (Initializers) {
+              for (const auto *Value : Initializers->inits())
+                retainSDKFunctionConstantValue(Value, Nested->ElementType,
+                                               Call);
+              // Sema retains distinct written and semantic value references in
+              // this backing array. Both belong to this exact copy consumer.
+              if (const auto *Written = Initializers->getSyntacticForm();
+                  Written &&
+                  Written->getNumInits() == Initializers->getNumInits())
+                for (const auto *Value : Written->inits())
+                  retainSDKFunctionConstantValue(Value, Nested->ElementType,
+                                                 Call);
+            }
+          }
         }
       }
       if (Operation == UtilityOperation::MakePair && Call->getNumArgs() == 2) {

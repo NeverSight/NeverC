@@ -234,6 +234,8 @@ vector 原位构造的 pair 字段也支持已校验的普通函数指针和函�
 
 嵌套 `vector` 的范围置入也支持可复制内层元素的精确原始指针、数组退化和已认证包装迭代器。端点绑定只捕获一次；端点值在外层分配后、内层分配前读取。空范围不分配内层缓冲区。源范围可以来自目标容器，复制后的资源保持独立。需转换的范围、反向或任意迭代器及只能移动的元素仍受原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+嵌套 `vector` 元素也可从精确匹配的 `std::initializer_list<T>` 置入，支持直接临时列表、常量列表和空列表。列表指针和大小在外层分配后读取，并在内层分配前保存。资源元素沿用已有复制操作，直接 SDK 回调常量按值复制。临时底层数组保持所需生命周期；用户定义的列表转换和 SDK 存储别名仍受原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

@@ -7069,6 +7069,23 @@ nested and string buffers, source copy/destruction counts, and callback carrier
 elements. Converting ranges, volatile element pointers, reverse or arbitrary
 iterators and move-only range elements remain outside this boundary.
 
+Nested-vector emplacement also admits an exact `std::initializer_list<T>`
+whose elements satisfy the recursive copyability proof. This includes direct
+temporary lists, const source lists, default empty lists and saved list views.
+The caller's list binding is captured once. Its pointer and size are read after
+outer allocation and saved before inner allocation, matching the inner
+constructor's by-value list argument. Empty lists allocate no inner buffer.
+Backing arrays retain their existing temporary or extended source lifetime;
+resource elements are copied before old outer elements move. Direct SDK callback
+constants in a checked temporary list are authenticated at this exact emplacement
+consumer and copied into the backing array as pointer values. This does not admit
+references to SDK trait storage or source aliases of that storage. Tests cover
+list mutation by source allocation, argument effects, returned references,
+in-place insertion, source copy/destruction counts, callback carriers, and
+independent nested or string resources. User-defined list conversions, source
+replacements of SDK constructors and unavailable source bodies retain their
+existing restrictions.
+
 All six vector comparisons recurse through nested vectors whose leaves are
 admitted integer or floating types, complete object pointers, or exact pinned
 strings, using lexicographic ordering for `<`, `>`, `<=`, and `>=`. Nested void

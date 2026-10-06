@@ -670,6 +670,8 @@ Nested `vector` elements support direct `emplace` and `emplace_back` constructio
 
 Nested `vector` range emplacement also accepts exact raw pointers, array decay and authenticated wrapped iterators for copyable inner elements. Endpoint bindings are captured once; endpoint values are read after outer allocation and before inner allocation. Empty ranges allocate no inner buffer. Source ranges may belong to the destination vector, and copied resources remain independent. Converting ranges, reverse or arbitrary iterators and move-only elements retain their existing restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+Nested `vector` elements can also be emplaced from an exact `std::initializer_list<T>`, including direct temporary lists, const lists and empty lists. The list pointer and size are read after outer allocation and saved before inner allocation. Resource elements use their existing copy operation, and direct SDK callback constants are copied as values. Temporary backing arrays retain their required lifetime; user-defined list conversions and SDK storage aliases retain their restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).
