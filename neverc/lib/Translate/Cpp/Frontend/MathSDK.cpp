@@ -1000,6 +1000,8 @@ static bool supportedFunctionalResult(const State &S, const SourceManager &SM,
       utilityObjectPointer(Context, Type))
     return true;
   const auto *Record = Type->getAsCXXRecordDecl();
+  if (functionTraitObjectValue(S, SM, Record, Context))
+    return true;
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   return Definition && !Definition->isUnion() &&
          !Definition->isInvalidDecl() &&

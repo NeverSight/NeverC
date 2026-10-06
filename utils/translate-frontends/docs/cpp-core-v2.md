@@ -9005,6 +9005,13 @@ Other owned arguments retain their selected source constructors, default argumen
 effects and cleanup. Other trait domains, SDK storage aliases and unsupported
 selected source bodies remain rejected.
 
+The functional result check also admits these exact authenticated trait records
+for by-value `invoke` and `apply` results. Existing record result destinations
+carry the independent empty object; selected source functions and methods remain
+subject to their ordinary body and construction checks. The result path emits no
+SDK constructor calls or SDK trait storage. Other trait domains and unsupported
+selected source bodies remain rejected.
+
 The shared functional reference-value check also admits these exact authenticated
 trait records. `invoke` and `apply` may bind lvalue, const or rvalue reference
 parameters and return references to them; reference tuples and wrapper access
