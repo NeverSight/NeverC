@@ -660,6 +660,8 @@ Core v2 supports checked all-empty base chains with ordinary/template constructo
 
 Checked function-pointer trait objects can serve as `vector` elements, including approved array, pair, optional and nested-vector elements. Existing growth, copy/move, insertion, erasure and range operations preserve independent element storage and checked source callbacks. Boolean vectors, custom allocators, unproved element comparisons and SDK `value` storage aliases retain their existing restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` supports checked function-pointer trait objects through default, copy and move construction, including constant-length arrays. The selected pinned constructor and exact SDK forwarding are verified; caller arguments retain their evaluation count, and owned allocation/deallocation definitions and cleanup remain required. Const sources, release/reset and vector ownership use the existing checked paths. Runtime array lengths, unsupported trait signatures and SDK `value` storage aliases retain their restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

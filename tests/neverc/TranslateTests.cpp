@@ -27952,6 +27952,746 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueArgumentOnce) {
+  const auto Source = tmpFile("function-trait-unique-argument-once.cpp");
+  const auto Output = tmpFile("function-trait-unique-argument-once.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+C object;int calls;C& source(){++calls;return object;}int check(){auto p=std::make_unique<C>(source());return calls!=1||p.get()==&object||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-argument-once" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueArrayZero) {
+  const auto Source = tmpFile("function-trait-unique-array-zero.cpp");
+  const auto Output = tmpFile("function-trait-unique-array-zero.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C[]>(0);return effects!=0;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-array-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueArrayNested) {
+  const auto Source = tmpFile("function-trait-unique-array-nested.cpp");
+  const auto Output = tmpFile("function-trait-unique-array-nested.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C[][2]>(2);return &p[0][0]==&p[0][1]||&p[0][0]==&p[1][0]||p[1][1]()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-array-nested" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueArray) {
+  const auto Source = tmpFile("function-trait-unique-array.cpp");
+  const auto Output = tmpFile("function-trait-unique-array.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C[]>(3);return !p||&p[0]==&p[1]||&p[1]==&p[2]||p[2]()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-array" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueConstCopy) {
+  const auto Source = tmpFile("function-trait-unique-const-copy.cpp");
+  const auto Output = tmpFile("function-trait-unique-const-copy.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){const C c{};auto p=std::make_unique<C>(c);return !p||p.get()==&c||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-const-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueConstDefault) {
+  const auto Source = tmpFile("function-trait-unique-const-default.cpp");
+  const auto Output = tmpFile("function-trait-unique-const-default.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<const C>();return !p||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-const-default" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueConstMove) {
+  const auto Source = tmpFile("function-trait-unique-const-move.cpp");
+  const auto Output = tmpFile("function-trait-unique-const-move.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){const C c{};auto p=std::make_unique<C>(std::move(c));return !p||p.get()==&c||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-const-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueCopy) {
+  const auto Source = tmpFile("function-trait-unique-copy.cpp");
+  const auto Output = tmpFile("function-trait-unique-copy.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){C c;auto p=std::make_unique<C>(c);return !p||p.get()==&c||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueDefault) {
+  const auto Source = tmpFile("function-trait-unique-default.cpp");
+  const auto Output = tmpFile("function-trait-unique-default.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C>();return !p||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-default" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueMove) {
+  const auto Source = tmpFile("function-trait-unique-move.cpp");
+  const auto Output = tmpFile("function-trait-unique-move.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){C c;auto p=std::make_unique<C>(std::move(c));return !p||p.get()==&c||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniquePrvalue) {
+  const auto Source = tmpFile("function-trait-unique-prvalue.cpp");
+  const auto Output = tmpFile("function-trait-unique-prvalue.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C>(C{});return !p||(*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-prvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueQueryResult) {
+  const auto Source = tmpFile("function-trait-unique-query-result.cpp");
+  const auto Output = tmpFile("function-trait-unique-query-result.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C>();static_assert(std::is_same<decltype(p),std::unique_ptr<C>>::value);static_assert(sizeof(std::make_unique<C>())==sizeof(p));return (*p)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-query-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueReleaseReset) {
+  const auto Source = tmpFile("function-trait-unique-release-reset.cpp");
+  const auto Output = tmpFile("function-trait-unique-release-reset.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){auto p=std::make_unique<C>();C* raw=p.release();if(p)return 1;std::unique_ptr<C> q(raw);q.reset(std::make_unique<C>().release());auto r=std::move(q);return q||!r||(*r)()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations==2?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-release-reset" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitUniqueVectorOwners) {
+  const auto Source = tmpFile("function-trait-unique-vector-owners.cpp");
+  const auto Output = tmpFile("function-trait-unique-vector-owners.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+#include <vector>
+int check(){std::vector<std::unique_ptr<C>> v;v.push_back(std::make_unique<C>());v.emplace_back(std::make_unique<C>());return v.size()!=2||v[0].get()==v[1].get()||(*v[1])()(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations==releases&&allocations>=3?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-unique-vector-owners" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitUniqueRetainsSourceAndAllocationBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"array-count-limit", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C[]>(65537);return !p;}
+)cpp"},
+      {"declaration-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept;
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"factory-specialization", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+namespace std { inline namespace __1 { template<> unique_ptr<C> make_unique<C>() { return unique_ptr<C>(new C()); } } }
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"null-trait", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,nullptr>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"runtime-array-count", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int f(Size n){auto p=std::make_unique<C[]>(n);return !p;}int main(){return 0;}
+)cpp"},
+      {"scalar-trait", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<int,3>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"sdk-value-storage", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+const F& alias=C::value;int main(){auto p=std::make_unique<C>();return alias(7)!=8;}
+)cpp"},
+      {"source-body", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{long double hidden=n;return int(hidden)+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return (*p)()(7)!=8;}
+)cpp"},
+      {"source-redeclaration", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+namespace std { inline namespace __1 { template<class T,T> struct integral_constant; } }
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"unsupported-signature", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;long double target(int n)noexcept{++effects;return n+1;}
+using F=long double(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"variadic-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n,...)noexcept{++effects;return n+1;}
+using F=int(*)(int,...)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<C>();return !p;}
+)cpp"},
+      {"volatile-element", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+void* operator new[](Size n){++allocations;return malloc(n);}
+void operator delete[](void* p)noexcept{++releases;free(p);}
+void operator delete[](void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <memory>
+#include <utility>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_unique<volatile C>();return !p;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("function-trait-unique-reject-") + Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("function-trait-unique-reject-") + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitVectorAppend) {
   const auto Source = tmpFile("function-trait-vector-append.cpp");
   const auto Output = tmpFile("function-trait-vector-append.nc");

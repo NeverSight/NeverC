@@ -8950,6 +8950,18 @@ requirements. Source callbacks still require their independent definitions
 and signature checks. Boolean vectors, custom allocators, element comparison
 without its existing proof and aliases of SDK `value` storage remain excluded.
 
+`make_unique` also constructs checked trait objects and constant-length arrays
+through their pinned implicit trivial default, copy and move constructors. The
+exact selected constructor, default zero initialization and copy/move forwarding
+from the factory parameter are authenticated independently of the caller source.
+Const copies and const rvalues preserve the selected copy constructor; each
+argument is evaluated once. Existing typed memory construction supplies separate
+empty-object storage, and the source-defined allocation/deallocation operators
+and owner cleanup remain required. Release/reset and vector-owned unique
+pointers use their existing ownership proofs. Runtime array counts, counts above
+65536, unsupported trait signatures, source SDK replacements and `value` storage
+aliases remain outside this path.
+
 Core v2 consumes nonnull function-pointer values from the pinned
 `std::integral_constant<Pointer, Function>::value` as checked callback addresses.
 The exact primary and implicit specialization, every record/value redeclaration,

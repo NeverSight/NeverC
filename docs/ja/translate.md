@@ -224,6 +224,8 @@ Core v2 は検査済みの全要素が空の基底クラス連鎖で、通常／
 
 検証済みの関数ポインター trait オブジェクトを `vector` の要素として使えます。対応する array、pair、optional、ネストした vector の要素にも含められます。既存の拡張、コピー・移動、挿入、削除、範囲操作は、独立した要素の格納領域と検証済みソースコールバックを保持します。bool vector、独自アロケーター、未承認の要素比較、SDK `value` の格納領域エイリアスには既存の制限が適用されます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` は検証済みの関数ポインター trait オブジェクトのデフォルト、コピー、移動構築と、定数長の配列をサポートします。選択された固定 SDK のコンストラクターと正確な転送経路を検証します。呼び出し側引数の評価回数を保持し、割り当て・解放のソース定義と後始末も必要です。const ソース、release/reset、vector による所有は既存の検証経路を使います。実行時配列長、未対応の trait シグネチャ、SDK `value` の格納領域エイリアスには制限が残ります。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 準備とスカラー変換
 
 通常の NeverC と標準リソースをインストールすれば利用できます。C++ フロントエンドと承認済み SDK ヘッダーは内蔵されており、Clang の別途インストールは不要です。ビルドの詳細は[フロントエンドの説明](../../utils/translate-frontends/cpp/README.md)を参照してください。

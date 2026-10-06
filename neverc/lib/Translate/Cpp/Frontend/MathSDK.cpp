@@ -1311,10 +1311,10 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
                                    Padded};
 }
 
-std::optional<FunctionalObjectConstruction>
-approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
-                                     const CXXConstructExpr *Construction,
-                                     const ASTContext &Context) {
+static std::optional<FunctionalObjectConstruction>
+functionalObjectConstruction(const State &S, const SourceManager &SM,
+                             const CXXConstructExpr *Construction,
+                             QualType ObjectType, const ASTContext &Context) {
   if (!Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
@@ -1322,7 +1322,7 @@ approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
   const auto Object = approvedFunctionalObjectRecord(
-      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, ObjectType->getAsCXXRecordDecl(), Context);
   const auto *Prototype =
       Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
                   : nullptr;
@@ -1352,6 +1352,16 @@ approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
                                       Context.getRecordType(Source->Record)))
     return std::nullopt;
   return FunctionalObjectConstruction::CopyOrMove;
+}
+
+std::optional<FunctionalObjectConstruction>
+approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
+                                     const CXXConstructExpr *Construction,
+                                     const ASTContext &Context) {
+  return Construction
+             ? functionalObjectConstruction(S, SM, Construction,
+                                            Construction->getType(), Context)
+             : std::nullopt;
 }
 
 std::optional<FunctionalReferenceRecord>
@@ -10041,6 +10051,52 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
   const auto *Prototype =
       Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
                   : nullptr;
+  if (functionTraitObjectValue(S, SM, Record, Context)) {
+    const auto *Array = Construction
+                            ? Context.getAsArrayType(Construction->getType())
+                            : nullptr;
+    if (Owner->Deleter.Array &&
+        (!Array || !isa<IncompleteArrayType>(Array) ||
+         !Context.hasSameType(Array->getElementType(), Owner->ElementType)))
+      return std::nullopt;
+    const auto Selected = Owner->Deleter.Array
+                              ? functionalObjectConstruction(
+                                    S, SM, Construction, ValueElement, Context)
+                              : approvedFunctionalObjectConstruction(
+                                    S, SM, Construction, Context);
+    if (!Selected || !Construction ||
+        !Context.hasSameUnqualifiedType(
+            Context.getBaseElementType(Construction->getType()),
+            ValueElement) ||
+        Construction->getNumArgs() != ArgumentCount)
+      return std::nullopt;
+    if (!ArgumentCount) {
+      if (Selected != FunctionalObjectConstruction::Default ||
+          !Construction->requiresZeroInitialization())
+        return std::nullopt;
+    } else {
+      if (ArgumentCount != 1 ||
+          Selected != FunctionalObjectConstruction::CopyOrMove ||
+          !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                          ValueElement) ||
+          Call->getArg(0)->getType().isVolatileQualified() ||
+          !approvedFunctionalForwardingCall(S, SM, Construction->getArg(0),
+                                            Function->getParamDecl(0)))
+        return std::nullopt;
+      const auto ElementType = Context.getRecordType(Record);
+      const auto Expected =
+          Constructor->isMoveConstructor()
+              ? Context.getRValueReferenceType(ElementType)
+              : Context.getLValueReferenceType(ElementType.withConst());
+      if (!Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                               Expected) ||
+          (Constructor->isMoveConstructor() &&
+           !Construction->getArg(0)->isXValue()))
+        return std::nullopt;
+    }
+    return UtilityMakeUniqueCall{*Owner,       Allocation,  OwnerConstruction,
+                                 Construction, Constructor, ArrayCount};
+  }
   if (!Record || Record->isUnion() || Record->isDependentContext() ||
       !S.owns(SM, Record->getLocation()) || !Construction || !Constructor ||
       Constructor->getParent()->getCanonicalDecl() !=

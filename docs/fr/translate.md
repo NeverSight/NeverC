@@ -224,6 +224,8 @@ Core v2 prend en charge les chaînes vérifiées de bases toutes vides, avec con
 
 Les objets trait de pointeurs de fonction vérifiés peuvent servir d’éléments de `vector`, y compris dans les éléments array, pair, optional et vector imbriqués pris en charge. Les opérations existantes de croissance, copie/déplacement, insertion, effacement et parcours conservent un stockage indépendant des éléments et les callbacks source vérifiés. Les vecteurs booléens, allocateurs personnalisés, comparaisons non admises et alias du stockage SDK `value` gardent leurs restrictions. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` prend en charge la construction par défaut, copie et déplacement des objets trait de pointeurs de fonction vérifiés, ainsi que les tableaux de longueur constante. Le constructeur du SDK figé sélectionné et le transfert exact sont vérifiés. Le nombre d’évaluations des arguments est conservé ; allocation, libération et nettoyage gardent leurs définitions source requises. Les sources const, release/reset et la propriété par vector utilisent les chemins vérifiés existants. Les longueurs de tableaux à l’exécution, signatures non prises en charge et alias du stockage SDK `value` restent limités. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

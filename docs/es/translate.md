@@ -224,6 +224,8 @@ Core v2 admite cadenas verificadas de clases base todas vacías, con constructor
 
 Los objetos trait de punteros de función verificados pueden ser elementos de `vector`, también dentro de elementos array, pair, optional y vector anidados admitidos. Las operaciones existentes de crecimiento, copia/movimiento, inserción, borrado y rangos conservan el almacenamiento independiente de los elementos y los callbacks del código fuente verificados. Los vectores booleanos, asignadores personalizados, comparaciones no admitidas y alias del almacenamiento SDK `value` mantienen sus restricciones. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` admite construcción predeterminada, por copia y por movimiento de objetos trait de punteros de función verificados, incluidos arrays de longitud constante. Se verifican el constructor seleccionado del SDK fijado y el reenvío exacto. Se conserva el número de evaluaciones de los argumentos; la asignación, liberación y limpieza mantienen sus definiciones de código fuente requeridas. Las fuentes const, release/reset y la propiedad mediante vector usan las rutas verificadas existentes. Las longitudes de arrays en ejecución, firmas no admitidas y alias del almacenamiento SDK `value` siguen restringidos. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

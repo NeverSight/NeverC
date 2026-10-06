@@ -224,6 +224,8 @@ Core v2는 검사된 모든 클래스가 빈 기반 클래스 체인에서 일�
 
 검증된 함수 포인터 trait 객체를 `vector` 요소로 사용할 수 있으며 지원되는 array, pair, optional, 중첩 vector 요소에도 포함할 수 있습니다. 기존 확장, 복사와 이동, 삽입, 삭제, 범위 연산은 독립적인 요소 저장소와 검증된 소스 콜백을 유지합니다. bool vector, 사용자 정의 할당자, 승인되지 않은 요소 비교, SDK `value` 저장소 별칭에는 기존 제한이 적용됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique`는 검증된 함수 포인터 trait 객체의 기본, 복사, 이동 생성과 상수 길이 배열을 지원합니다. 선택된 고정 SDK 생성자와 정확한 전달 경로를 검증합니다. 호출자 인수의 평가 횟수를 유지하며 할당과 해제의 소스 정의 및 정리가 필요합니다. const 소스, release/reset, vector 소유권은 기존 검증 경로를 사용합니다. 실행 중 배열 길이, 지원하지 않는 trait 시그니처, SDK `value` 저장소 별칭에는 제한이 유지됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

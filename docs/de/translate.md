@@ -224,6 +224,8 @@ Core v2 unterstützt geprüfte Basisklassenketten aus ausschließlich leeren Kla
 
 Geprüfte Funktionszeiger-Trait-Objekte können als `vector`-Elemente dienen, auch in unterstützten array-, pair-, optional- und verschachtelten vector-Elementen. Bestehende Wachstums-, Kopier-/Verschiebe-, Einfüge-, Lösch- und Bereichsoperationen erhalten unabhängigen Elementspeicher und geprüfte Quellcode-Callbacks. Bool-Vektoren, eigene Allokatoren, nicht zugelassene Elementvergleiche und Aliase des SDK-`value`-Speichers behalten ihre Einschränkungen. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` unterstützt Standard-, Kopier- und Verschiebekonstruktion geprüfter Funktionszeiger-Trait-Objekte sowie Arrays mit konstanter Länge. Der ausgewählte Konstruktor des festgelegten SDK und die genaue Weiterleitung werden geprüft. Die Auswertungsanzahl der Aufruferargumente bleibt erhalten; Allokation, Freigabe und Bereinigung benötigen weiterhin ihre Quellcode-Definitionen. Const-Quellen, release/reset und Eigentum durch vector verwenden bestehende geprüfte Pfade. Array-Längen zur Laufzeit, nicht unterstützte Trait-Signaturen und Aliase des SDK-`value`-Speichers bleiben eingeschränkt. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

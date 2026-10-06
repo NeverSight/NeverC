@@ -224,6 +224,8 @@ Core v2 supporta catene verificate di classi base tutte vuote, con costruttori o
 
 Gli oggetti trait di puntatori a funzione verificati possono essere elementi di `vector`, anche negli elementi array, pair, optional e vector annidati supportati. Le operazioni esistenti di crescita, copia/spostamento, inserimento, cancellazione e intervalli conservano memoria indipendente degli elementi e callback sorgente verificati. I vector booleani, gli allocatori personalizzati, i confronti non ammessi e gli alias della memoria SDK `value` mantengono le restrizioni esistenti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` supporta costruzione predefinita, copia e spostamento degli oggetti trait di puntatori a funzione verificati, inclusi array di lunghezza costante. Il costruttore selezionato dell’SDK fissato e l’inoltro esatto vengono verificati. Il numero di valutazioni degli argomenti resta invariato; allocazione, rilascio e pulizia richiedono ancora le definizioni sorgente. Sorgenti const, release/reset e proprietà tramite vector usano i percorsi verificati esistenti. Lunghezze degli array a runtime, firme non supportate e alias della memoria SDK `value` restano limitati. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

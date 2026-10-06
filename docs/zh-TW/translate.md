@@ -224,6 +224,8 @@ Core v2 支援經過檢查的全空基底類別鏈，涵蓋一般／範本建構
 
 已驗證的函式指標 trait 物件可作為 `vector` 元素，也可巢狀於已支援的 array、pair、optional 和 vector 元素中。既有擴充、複製與移動、插入、刪除和範圍操作保留獨立元素儲存及已驗證的原始碼回呼。布林 vector、自訂配置器、未獲許可的元素比較和 SDK `value` 儲存別名仍受原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`make_unique` 支援已驗證函式指標 trait 物件的預設、複製和移動建構，包括常數長度陣列。選中的固定 SDK 建構函式和精確轉送路徑須驗證；呼叫端引數保留求值次數，配置與釋放仍須有原始碼定義並正確清理。const 來源、釋放/重設和 vector 所有權使用既有驗證路徑。執行時期陣列長度、未支援的 trait 簽章和 SDK `value` 儲存別名仍受限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 安裝與純量轉譯
 
 使用正常安裝的 NeverC 及其標準資源即可。C++ 前端與核准的 SDK 標頭均已內建，無需另行安裝 Clang。建置細節見[前端說明](../../utils/translate-frontends/cpp/README.md)。
