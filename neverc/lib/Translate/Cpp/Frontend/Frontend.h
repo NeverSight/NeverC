@@ -1476,7 +1476,7 @@ const clang::CXXConstructorDecl *approvedUtilityVectorEmplaceConstructor(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, const clang::CallExpr *Call,
     unsigned FirstArgument, const clang::ASTContext &Context);
-enum class UtilityVectorNestedEmplace { Count, CountValue };
+enum class UtilityVectorNestedEmplace { Count, CountValue, Range };
 std::optional<UtilityVectorNestedEmplace> approvedUtilityVectorNestedEmplace(
     const State &S, const clang::SourceManager &SM,
     const UtilityVectorRecord &Vector, const clang::CallExpr *Call,

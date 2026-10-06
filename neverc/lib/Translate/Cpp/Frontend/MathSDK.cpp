@@ -7149,6 +7149,35 @@ std::optional<UtilityVectorNestedEmplace> approvedUtilityVectorNestedEmplace(
   const auto *Function = Call->getDirectCallee();
   if (!Nested || !Function || Function->getNumParams() != Call->getNumArgs())
     return std::nullopt;
+  if (Call->getNumArgs() == FirstArgument + 2 &&
+      utilityVectorCopyableElements(S, SM, *Nested, Context)) {
+    auto RangePointer = [&](unsigned Index) -> QualType {
+      auto Argument = Call->getArg(Index)->getType();
+      const auto Parameter = Function->getParamDecl(Index)->getType();
+      if (!Parameter->isReferenceType() ||
+          !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                          Argument) ||
+          Argument.isVolatileQualified() || Argument.isRestrictQualified() ||
+          Argument.getAddressSpace() != LangAS::Default)
+        return {};
+      if (const auto *Array = Context.getAsConstantArrayType(Argument))
+        Argument = Context.getPointerType(Array->getElementType());
+      else if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+                   S, SM, Argument->getAsCXXRecordDecl(), Context))
+        Argument = Wrapped->IteratorType;
+      if (!Context.hasSameUnqualifiedType(
+              Argument, Context.getPointerType(Nested->ElementType)) &&
+          !Context.hasSameUnqualifiedType(
+              Argument,
+              Context.getPointerType(Nested->ElementType.withConst())))
+        return {};
+      return Argument.getUnqualifiedType();
+    };
+    const auto First = RangePointer(FirstArgument);
+    const auto Last = RangePointer(FirstArgument + 1);
+    if (!First.isNull() && !Last.isNull() && Context.hasSameType(First, Last))
+      return UtilityVectorNestedEmplace::Range;
+  }
   const auto *Count = Call->getArg(FirstArgument);
   const auto CountType = Count->getType();
   const auto CountParameter = Function->getParamDecl(FirstArgument)->getType();

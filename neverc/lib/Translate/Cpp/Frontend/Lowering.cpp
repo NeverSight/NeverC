@@ -20888,12 +20888,54 @@ class FunctionLowering {
     const auto SizeType = type(A.Context.getSizeType(), L);
     const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
     const auto PointerType = type(Nested->PointerType, L);
-    Expr::EvalResult Evaluated;
-    if (!Call->getArg(Offset)->EvaluateAsInt(Evaluated, A.Context) ||
-        !Evaluated.Val.isInt())
-      reject(L, "nested vector emplacement",
-             "The checked constant count is required.");
-    const uint64_t Count = Evaluated.Val.getInt().getLimitedValue(65537);
+    uint64_t Count = 0;
+    std::optional<Expression> RangeInput, RangeCount;
+    QualType RangePointerType, RangeElementType;
+    if (Kind == UtilityVectorNestedEmplace::Range) {
+      auto RangePointer = [&](unsigned Index) {
+        auto Value = utilityConstructorArgumentValue(
+            json::Object(Sources[Index]),
+            Call->getDirectCallee()->getParamDecl(Offset + Index)->getType(),
+            L);
+        auto SourceType = Call->getArg(Offset + Index)->getType();
+        if (const auto Wrapped = approvedUtilityWrapIteratorRecord(
+                A.S, A.Sources, SourceType->getAsCXXRecordDecl(), A.Context)) {
+          SourceType = Wrapped->IteratorType;
+          Value = fieldStorage(std::move(Value), Wrapped->Current, L);
+        } else if (const auto *Array =
+                       A.Context.getAsConstantArrayType(SourceType)) {
+          SourceType = A.Context.getPointerType(Array->getElementType());
+        }
+        if (!Index) {
+          RangePointerType = SourceType.getUnqualifiedType();
+          RangeElementType = RangePointerType->getPointeeType();
+        }
+        return snapshot(std::move(Value), L);
+      };
+      RangeInput = RangePointer(0);
+      auto Last = RangePointer(1);
+      RangeCount = temporary(SizeType, L);
+      assign(*RangeCount, quantity(0, SizeType, L), L);
+      const auto Measure = labelName(), Measured = labelName();
+      branch(binary("!=", json::Object(*RangeInput), json::Object(Last), "bool",
+                    L),
+             Measure, Measured, L);
+      label(Measure, L);
+      assign(*RangeCount,
+             cast(binary("-", std::move(Last), json::Object(*RangeInput),
+                         DifferenceType, L),
+                  SizeType, L),
+             L);
+      jump(Measured, L);
+      label(Measured, L);
+    } else {
+      Expr::EvalResult Evaluated;
+      if (!Call->getArg(Offset)->EvaluateAsInt(Evaluated, A.Context) ||
+          !Evaluated.Val.isInt())
+        reject(L, "nested vector emplacement",
+               "The checked constant count is required.");
+      Count = Evaluated.Val.getInt().getLimitedValue(65537);
+    }
     std::optional<Expression> ConvertedFill;
     if (Kind == UtilityVectorNestedEmplace::CountValue &&
         !A.Context.hasSameUnqualifiedType(Call->getArg(Offset + 1)->getType(),
@@ -20916,13 +20958,24 @@ class FunctionLowering {
     for (const char *Name :
          {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
       initializeZero(Member(Name), Nested->PointerType, L);
-    if (!Count)
+    if (!Count && !RangeCount)
       return;
+    const auto EmptyRange = labelName();
+    if (RangeCount) {
+      const auto NonEmpty = labelName();
+      branch(binary("!=", json::Object(*RangeCount), quantity(0, SizeType, L),
+                    "bool", L),
+             NonEmpty, EmptyRange, L);
+      label(NonEmpty, L);
+    }
     const uint64_t Bytes =
         A.Context.getTypeSizeInChars(Nested->ElementType).getQuantity();
     const auto *New = A.allocatorHeapFunction(true, Nested->ElementType, L);
     json::Array Args;
-    Args.push_back(quantity(Count * Bytes, SizeType, L));
+    Args.push_back(RangeCount
+                       ? binary("*", json::Object(*RangeCount),
+                                quantity(Bytes, SizeType, L), SizeType, L)
+                       : quantity(Count * Bytes, SizeType, L));
     chargeCall(Args, L);
     auto Allocation = temporary(type(New->getReturnType(), L), L);
     Body.push_back(json::Object{{"op", "call"},
@@ -20931,10 +20984,12 @@ class FunctionLowering {
                                 {"target", json::Object(Allocation)},
                                 {"loc", A.loc(L)}});
     auto Begin = snapshot(cast(std::move(Allocation), PointerType, L), L);
-    auto End =
-        snapshot(binary("+", json::Object(Begin),
-                        quantity(Count, DifferenceType, L), PointerType, L),
-                 L);
+    auto End = snapshot(
+        binary("+", json::Object(Begin),
+               RangeCount ? cast(json::Object(*RangeCount), DifferenceType, L)
+                          : quantity(Count, DifferenceType, L),
+               PointerType, L),
+        L);
     assign(Member("nct_vector_begin"), json::Object(Begin), L);
     assign(Member("nct_vector_end"), json::Object(End), L);
     assign(Member("nct_vector_capacity"), json::Object(End), L);
@@ -20946,7 +21001,19 @@ class FunctionLowering {
     branch(binary("!=", json::Object(Current), json::Object(End), "bool", L),
            One, Done, L);
     label(One, L);
-    if (Kind == UtilityVectorNestedEmplace::CountValue) {
+    if (Kind == UtilityVectorNestedEmplace::Range) {
+      auto Fill = dereference(json::Object(*RangeInput), L);
+      if (Nested->OwningElement)
+        copyVectorElement(dereference(json::Object(Current), L),
+                          std::move(Fill), *Nested, L, RangeElementType);
+      else
+        assign(dereference(json::Object(Current), L), std::move(Fill), L);
+      assign(*RangeInput,
+             binary("+", json::Object(*RangeInput),
+                    quantity(1, DifferenceType, L), type(RangePointerType, L),
+                    L),
+             L);
+    } else if (Kind == UtilityVectorNestedEmplace::CountValue) {
       auto Fill =
           ConvertedFill
               ? json::Object(*ConvertedFill)
@@ -20975,6 +21042,8 @@ class FunctionLowering {
            L);
     jump(Check, L);
     label(Done, L);
+    if (RangeCount)
+      label(EmptyRange, L);
   }
 
   void constructVectorOptionalEmplace(Expression Place,

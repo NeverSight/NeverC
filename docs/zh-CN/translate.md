@@ -232,6 +232,8 @@ vector 原位构造的 pair 字段也支持已校验的普通函数指针和函�
 
 嵌套 `vector` 元素支持通过 `emplace` 和 `emplace_back` 按已校验的常量数量 `0..65536` 直接构造，并可传入类型精确匹配的填充值或已支持的标量、回调转换。内层缓冲区独立。类型精确匹配的填充值引用在分配期间保持有效；转换后的值在外层分配后、内层分配前保存。零数量仍求值填充参数，但不分配内层缓冲区。动态或有副作用的数量、用户定义的填充值转换和自定义分配器仍受原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+嵌套 `vector` 的范围置入也支持可复制内层元素的精确原始指针、数组退化和已认证包装迭代器。端点绑定只捕获一次；端点值在外层分配后、内层分配前读取。空范围不分配内层缓冲区。源范围可以来自目标容器，复制后的资源保持独立。需转换的范围、反向或任意迭代器及只能移动的元素仍受原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

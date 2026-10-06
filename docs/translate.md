@@ -668,6 +668,8 @@ Pair fields constructed by vector emplacement also accept checked ordinary funct
 
 Nested `vector` elements support direct `emplace` and `emplace_back` construction from a checked constant count in `0..65536`, optionally followed by an exact fill value or an admitted scalar or callback conversion. Inner buffers are independent. Exact fill references stay live through allocation; converted values are saved after outer allocation and before inner allocation. Zero counts evaluate the fill argument without allocating an inner buffer. Dynamic or effectful counts, user-defined fill conversions and custom allocators retain their existing restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+Nested `vector` range emplacement also accepts exact raw pointers, array decay and authenticated wrapped iterators for copyable inner elements. Endpoint bindings are captured once; endpoint values are read after outer allocation and before inner allocation. Empty ranges allocate no inner buffer. Source ranges may belong to the destination vector, and copied resources remain independent. Converting ranges, reverse or arbitrary iterators and move-only elements retain their existing restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

@@ -7053,6 +7053,22 @@ allocation mutations, and source element construction/destruction counts.
 User-defined fill conversions, volatile fill operands and custom allocators
 remain outside this boundary.
 
+Nested-vector `emplace` and `emplace_back` also admit range construction from
+exact mutable or const raw pointers, fixed-array decay, and authenticated wrapped
+iterators. Both endpoints must resolve to the same exact element-pointer type;
+inner elements must satisfy the existing recursive copyability proof. Caller
+forwarding bindings are captured once. Endpoint values are then read after outer
+allocation and before inner allocation, matching the inner constructor's
+by-value iterator parameters. Empty ranges skip inner allocation and avoid
+subtracting equal null pointers. Each resource element is copied through its
+existing authenticated copy operation before old outer elements move, so ranges
+from the destination vector remain valid during growth and in-place insertion.
+Tests cover pointer and iterator ranges, const and empty ranges, endpoint
+mutation by source allocation, evaluation counts, growth aliases, independent
+nested and string buffers, source copy/destruction counts, and callback carrier
+elements. Converting ranges, volatile element pointers, reverse or arbitrary
+iterators and move-only range elements remain outside this boundary.
+
 All six vector comparisons recurse through nested vectors whose leaves are
 admitted integer or floating types, complete object pointers, or exact pinned
 strings, using lexicographic ordering for `<`, `>`, `<=`, and `>=`. Nested void
