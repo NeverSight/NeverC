@@ -29642,6 +29642,466 @@ int target(int,...)noexcept;using F=int(*)(int,...)noexcept;using C=std::integra
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueAccess) {
+  const auto Source = tmpFile("reference-wrapper-array-value-access.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-access.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4;A a{std::ref(x),std::ref(y)};a[0].get()=7;return x==7&&a[1].get()==4?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-access" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueAssign) {
+  const auto Source = tmpFile("reference-wrapper-array-value-assign.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-assign.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4,z=9,t=10;A a{std::ref(x),std::ref(y)},b{std::ref(z),std::ref(t)};a=b;return x==3&&y==4&&&a[0].get()==&z&&&a[1].get()==&t?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-assign" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueCallbackWrappers) {
+  const auto Source =
+      tmpFile("reference-wrapper-array-value-callback-wrappers.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-array-value-callback-wrappers.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int calls;int target(int n)noexcept{++calls;return n+1;}using F=int(*)(int)noexcept;int main(){F f=target;std::array<std::reference_wrapper<F>,2> a{std::ref(f),std::ref(f)};auto b=a;return b[1].get()(7)==8&&calls==1?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-array-value-callback-wrappers" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueConstAccess) {
+  const auto Source = tmpFile("reference-wrapper-array-value-const-access.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-const-access.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4;const A a{std::ref(x),std::ref(y)};a[0].get()=7;return x==7&&a[1].get()==4?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-const-access" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueConstReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-array-value-const-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-array-value-const-referent.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){const int x=3,y=4;std::array<std::reference_wrapper<const int>,2> a{std::cref(x),std::cref(y)};return a[0].get()==3&&a[1].get()==4?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-const-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueCopy) {
+  const auto Source = tmpFile("reference-wrapper-array-value-copy.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-copy.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4,z=9;A a{std::ref(x),std::ref(y)};A b=a;b[0]=std::ref(z);return a[0].get()==3&&b[0].get()==9?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueFillAlias) {
+  const auto Source = tmpFile("reference-wrapper-array-value-fill-alias.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-fill-alias.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4;A a{std::ref(x),std::ref(y)};a.fill(a[1]);return x==3&&y==4&&&a[0].get()==&y&&&a[1].get()==&y?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-fill-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueFill) {
+  const auto Source = tmpFile("reference-wrapper-array-value-fill.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-fill.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4,z=9;A a{std::ref(x),std::ref(y)};a.fill(std::ref(z));return x==3&&y==4&&&a[0].get()==&z&&&a[1].get()==&z?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-fill" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueGet) {
+  const auto Source = tmpFile("reference-wrapper-array-value-get.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-get.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4;A a{std::ref(x),std::ref(y)};std::get<1>(a).get()=7;return y==7&&x==3?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-get" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueIndependentStorage) {
+  const auto Source =
+      tmpFile("reference-wrapper-array-value-independent-storage.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-array-value-independent-storage.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3;A a{std::ref(x),std::ref(x)};return &a[0]!=&a[1]&&&a[0].get()==&x&&&a[1].get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-array-value-independent-storage" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueMove) {
+  const auto Source = tmpFile("reference-wrapper-array-value-move.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-move.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4;A a{std::ref(x),std::ref(y)};A b=std::move(a);return &a[0].get()==&x&&&b[0].get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueNested) {
+  const auto Source = tmpFile("reference-wrapper-array-value-nested.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-nested.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4,z=9,t=10;std::array<A,2> a{A{std::ref(x),std::ref(y)},A{std::ref(z),std::ref(t)}};auto b=a;b[0][0]=std::ref(z);return &a[0][0].get()==&x&&&b[0][0].get()==&z?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-nested" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueRecordWrappers) {
+  const auto Source =
+      tmpFile("reference-wrapper-array-value-record-wrappers.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-array-value-record-wrappers.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+struct R{int n;};int main(){R x{3},y{4};std::array<std::reference_wrapper<R>,2> a{std::ref(x),std::ref(y)};a[0].get().n=7;return x.n==7&&a[1].get().n==4?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-record-wrappers" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueSwap) {
+  const auto Source = tmpFile("reference-wrapper-array-value-swap.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-swap.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4,z=9,t=10;A a{std::ref(x),std::ref(y)},b{std::ref(z),std::ref(t)};a.swap(b);return x==3&&y==4&&z==9&&t==10&&&a[0].get()==&z&&&b[0].get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-swap" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueZeroArray) {
+  const auto Source = tmpFile("reference-wrapper-array-value-zero-array.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-zero-array.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){std::array<W,0> a{};return a.empty()&&a.size()==0?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-zero-array" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueZeroEffects) {
+  const auto Source = tmpFile("reference-wrapper-array-value-zero-effects.cpp");
+  const auto Output = tmpFile("reference-wrapper-array-value-zero-effects.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int x=3,effects;int& pick(){++effects;return x;}int main(){std::array<W,0> a{};a.fill(std::ref(pick()));return effects==1&&x==3?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-array-value-zero-effects" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperArrayValuesRetainStorageAndOperationBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"comparison", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3,y=4;A a{std::ref(x),std::ref(y)},b=a;return a==b?0:1;}
+)cpp"},
+      {"long-double-referent", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){long double x=3;std::array<std::reference_wrapper<long double>,1> a{std::ref(x)};return 0;}
+)cpp"},
+      {"sdk-function-target", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+using F=int&(*)(int&)noexcept;int main(){F f=static_cast<F>(&std::forward<int&>);std::array<std::reference_wrapper<F>,1> a{std::ref(f)};return 0;}
+)cpp"},
+      {"source-argument-body", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int x=3;int& pick(){long double n=x;x=int(n);return x;}int main(){A a{std::ref(pick()),std::ref(x)};return 0;}
+)cpp"},
+      {"source-array", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+namespace std{inline namespace __1{template<> struct array<W,2>{W elems[2];W& operator[](decltype(sizeof(0)) n){return elems[n];}};}}int main(){int x=3;A a{std::ref(x),std::ref(x)};return a[0].get()!=3;}
+)cpp"},
+      {"source-wrapper-conversion", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int x=3,effects;namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{++effects;return x;}}}int main(){A a{std::ref(x),std::ref(x)};return a[0];}
+)cpp"},
+      {"user-adl-swap", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+struct R{int n;};using V=std::reference_wrapper<R>;int effects;void swap(V& a,V& b)noexcept{++effects;a.get().n=b.get().n;}int main(){R x{3},y{4};std::array<V,1> a{std::ref(x)},b{std::ref(y)};a.swap(b);return 0;}
+)cpp"},
+      {"volatile-wrapper", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using A=std::array<W,2>;
+int main(){int x=3;std::array<volatile W,1> a{std::ref(x)};return 0;}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("reference-wrapper-array-value-reject-") + Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("reference-wrapper-array-value-reject-") + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryApplyResult) {
   const auto Source =
       tmpFile("reference-wrapper-transparent-query-apply-result.cpp");

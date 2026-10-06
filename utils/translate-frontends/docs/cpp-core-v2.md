@@ -2423,10 +2423,25 @@ the generated record preserves the native size and alignment without exposing
 or operating on libc++ internals. `T` may be an admitted integral or enum
 scalar up to 64 bits, `float`, `double`, `nullptr_t`, a non-function object
 pointer, an admitted ordinary function pointer, a source-owned standard-layout
-record with checked construction and destruction, or another admitted
-`std::array`; `N` is limited to 65536. Record
+record with checked construction and destruction, a checked `reference_wrapper`
+value, or another admitted `std::array`; `N` is limited to 65536. Record
 elements may have nontrivial constructors or destructors. Nested arrays and
 record arrays retain their recursive field layout and ordinary aggregate access.
+
+Checked `reference_wrapper` values also qualify as array storage elements.
+Their exact pinned wrapper layout and original referent type remain checked;
+this storage proof does not grant a new conversion or element operation.
+Explicit aggregate initialization, const access, selected trivial copy/move and
+assignment, `get`, `fill` and authenticated member/free swap reuse the existing
+array paths. Copies and assignments preserve or replace the stored binding;
+swap exchanges bindings, and none of these operations assigns referent values.
+Wrapper elements have independent storage, including repeated bindings and
+nested arrays. `fill` captures an aliased element's binding before writes;
+zero-length fill still evaluates the argument once without element assignment.
+Source record and callback referents keep their original layout and target
+checks. Comparisons containing wrapper leaves, volatile wrapper elements,
+unsupported referents, source SDK replacements and user ADL swaps retain their
+separate restrictions.
 
 Function-pointer elements use the existing checked callback signature and
 storage representation. Aggregate initialization, trivial copy and assignment,
