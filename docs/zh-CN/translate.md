@@ -77,6 +77,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 经过验证的函数指针 trait 对象现在在 `invoke` 和 `apply` 的左值、const 与右值引用参数、引用结果、引用 tuple 绑定和包装器访问中保留引用身份。仍执行现有 cv 限定与值类别检查，其他 trait 类型和 SDK `value` 存储别名仍不受支持。 `invoke` 也支持向经检查的源码函数、调用运算符、成员调用及包装后的可调用对象按值传递这些 trait。参数具有独立空存储；所选 owned 构造、默认参数副作用及清理仍保留检查。 `invoke` 和 `apply` 也支持按值返回这些经验证的 trait 对象，并复用现有结果目标存储与源码函数体检查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+经验证的函数指针 trait 对象也可作为 `array` 元素。初始化、const 访问、复制／移动、嵌套及零长度数组、`fill` 和成员／自由函数 `swap` 保留现有存储及操作检查。不同元素保持不同地址；volatile 元素和其他 trait 类型仍不受支持。 默认对象和空数组保留未使用 `value` 初始化器的懒实例化；实际 `value` 表达式仍须通过现有常量求值检查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 一元类型变换现检查原始输入、实际替换后的源码与结果，包括最终类型中消失的别名模板参数。固定版本的十六种变换复用现有类型元数据与运行时类型，原生验证仍仅在 CI 执行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 未知长度数组（如 `int[][3]`）的类型元数据、别名和模板实参现可保留维数、为零的外层长度及已知内层边界。运行时类型和操作查询仍遵循各自限制；标准头文件及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

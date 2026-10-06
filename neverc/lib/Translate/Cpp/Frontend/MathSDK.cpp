@@ -222,10 +222,10 @@ approvedSDKIntegerConstant(const State &S, const SourceManager &SM,
              : std::nullopt;
 }
 
-const FunctionDecl *approvedSDKFunctionConstant(const State &S,
-                                                const SourceManager &SM,
-                                                const VarDecl *Variable,
-                                                const ASTContext &Context) {
+static const FunctionDecl *
+functionTraitConstantTarget(const State &S, const SourceManager &SM,
+                            const VarDecl *Variable,
+                            const ASTContext &Context) {
   const auto *Record = Variable ? dyn_cast<ClassTemplateSpecializationDecl>(
                                       Variable->getDeclContext())
                                 : nullptr;
@@ -285,6 +285,23 @@ const FunctionDecl *approvedSDKFunctionConstant(const State &S,
          Context.hasSameFunctionTypeIgnoringExceptionSpec(Function,
                                                           Target->getType()))))
     return nullptr;
+  return Target;
+}
+
+const FunctionDecl *approvedSDKFunctionConstant(const State &S,
+                                                const SourceManager &SM,
+                                                const VarDecl *Variable,
+                                                const ASTContext &Context) {
+  const auto *Target = functionTraitConstantTarget(S, SM, Variable, Context);
+  if (!Target)
+    return nullptr;
+  auto Pinned = [&](const Decl *Declaration) {
+    const auto Origin =
+        Declaration ? S.sdkFile(SM, Declaration->getLocation()) : std::nullopt;
+    return approvedStandardSDKDeclaration(S, SM, Declaration) && Origin &&
+           Origin->Root == "libcxx" &&
+           Origin->Path == "__type_traits/integral_constant.h";
+  };
   const VarDecl *Initializer = nullptr;
   if (!Variable->getAnyInitializer(Initializer) || !Pinned(Initializer) ||
       Initializer->getCanonicalDecl() != Variable->getCanonicalDecl())
@@ -767,6 +784,60 @@ static bool functionalObjectTemplateOrigin(const State &S,
                        "__functional/hash.h");
 }
 
+// Empty carriers need only the pinned trait identity. Clang may leave value's
+// initializer lazy when no trait operator or value expression is selected.
+// Authenticate that exact primary initializer without relaxing evaluated
+// values.
+static bool uninstantiatedFunctionTraitValue(const State &S,
+                                             const SourceManager &SM,
+                                             const VarDecl *Variable,
+                                             const ASTContext &Context) {
+  const auto *Target = functionTraitConstantTarget(S, SM, Variable, Context);
+  const auto *Definition = Target ? Target->getDefinition() : nullptr;
+  const VarDecl *Initializer = nullptr;
+  if (!Definition || !S.owns(SM, Definition->getLocation()) ||
+      Variable->getAnyInitializer(Initializer))
+    return false;
+  const auto *Record =
+      cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
+  const auto *Primary = Record->getSpecializedTemplate();
+  const auto *Parameters = Primary->getTemplateParameters();
+  const auto *Pattern = Variable->getInstantiatedFromStaticDataMember();
+  const auto *TypeParameter =
+      Parameters->size() == 2
+          ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0))
+          : nullptr;
+  const auto *ValueParameter =
+      Parameters->size() == 2
+          ? dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(1))
+          : nullptr;
+  const auto *Value =
+      Pattern ? dyn_cast_or_null<DeclRefExpr>(Pattern->getInit()) : nullptr;
+  const auto PatternType = Pattern ? Pattern->getType() : QualType();
+  const auto *PatternParameter =
+      !PatternType.isNull() ? PatternType->getAs<TemplateTypeParmType>()
+                            : nullptr;
+  return Pattern && TypeParameter && ValueParameter && Value &&
+         Pattern->getDeclContext() ==
+             Primary->getTemplatedDecl()->getDefinition() &&
+         Pattern->getName() == "value" && Pattern->isStaticDataMember() &&
+         Pattern->isConstexpr() && PatternType.isConstQualified() &&
+         !PatternType.isVolatileQualified() &&
+         !PatternType.isRestrictQualified() &&
+         PatternType.getAddressSpace() == LangAS::Default && PatternParameter &&
+         Context.hasSameType(PatternType.getUnqualifiedType(),
+                             QualType(TypeParameter->getTypeForDecl(), 0)) &&
+         !TypeParameter->isParameterPack() && TypeParameter->getDepth() == 0 &&
+         TypeParameter->getIndex() == 0 && !ValueParameter->isParameterPack() &&
+         ValueParameter->getDepth() == 0 && ValueParameter->getIndex() == 1 &&
+         Context.hasSameType(ValueParameter->getType(),
+                             PatternType.getUnqualifiedType()) &&
+         Value->getDecl() == ValueParameter &&
+         Context.hasSameType(Value->getType(), ValueParameter->getType()) &&
+         approvedStandardSDKDeclaration(S, SM, Pattern) &&
+         functionalObjectOrigin(S, SM, Pattern, "integral_constant");
+}
+
 static const VarDecl *functionTraitObjectValue(const State &S,
                                                const SourceManager &SM,
                                                const CXXRecordDecl *Record,
@@ -784,7 +855,8 @@ static const VarDecl *functionTraitObjectValue(const State &S,
     return nullptr;
   for (const auto *Declaration : Definition->decls())
     if (const auto *Value = dyn_cast<VarDecl>(Declaration);
-        Value && approvedSDKFunctionConstant(S, SM, Value, Context))
+        Value && (approvedSDKFunctionConstant(S, SM, Value, Context) ||
+                  uninstantiatedFunctionTraitValue(S, SM, Value, Context)))
       return Value;
   return nullptr;
 }
@@ -3222,6 +3294,9 @@ static bool utilityArrayValue(const State &S, const SourceManager &SM,
     return false;
   if (utilityScalar(Context, Type))
     return true;
+  if (functionTraitObjectValue(S, SM, Type->getAsCXXRecordDecl(), Context))
+    return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default;
   Type = Type.getUnqualifiedType();
   const auto *Record = Type->getAsCXXRecordDecl();
   if (!Record)

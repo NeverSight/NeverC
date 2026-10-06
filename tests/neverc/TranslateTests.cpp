@@ -27952,6 +27952,324 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitDefaultCarrier) {
+  const auto Source = tmpFile("function-trait-default-carrier.cpp");
+  const auto Output = tmpFile("function-trait-default-carrier.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){C c;return sizeof(c)!=1||effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-default-carrier" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayLazyConst) {
+  const auto Source = tmpFile("function-trait-array-lazy-const.cpp");
+  const auto Output = tmpFile("function-trait-array-lazy-const.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+constexpr std::array<C,2> a{};static_assert(sizeof(a)==2);int main(){return a.size()!=2||effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-lazy-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayBasic) {
+  const auto Source = tmpFile("function-trait-array-basic.cpp");
+  const auto Output = tmpFile("function-trait-array-basic.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<C,2> a{C{},C{}};return &a[0]==&a[1]||a[0]()(7)!=8||a[1]()(8)!=9||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-basic" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayConst) {
+  const auto Source = tmpFile("function-trait-array-const.cpp");
+  const auto Output = tmpFile("function-trait-array-const.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+constexpr std::array<C,2> a{C{},C{}};static_assert(sizeof(a)==2);int main(){const auto& r=a;return &r[0]==&r[1]||r[1]()(7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayCopyMove) {
+  const auto Source = tmpFile("function-trait-array-copy-move.cpp");
+  const auto Output = tmpFile("function-trait-array-copy-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<C,2> a{};auto b=a;auto c=std::move(b);a=c;b=std::move(c);return &a[0]==&b[0]||&b[0]==&c[0]||a[1]()(7)!=8||b[1]()(8)!=9||c[1]()(9)!=10||effects!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-copy-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayDefault) {
+  const auto Source = tmpFile("function-trait-array-default.cpp");
+  const auto Output = tmpFile("function-trait-array-default.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<C,3> a{};return &a[0]==&a[1]||&a[1]==&a[2]||a[2]()(7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-default" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayFillSwap) {
+  const auto Source = tmpFile("function-trait-array-fill-swap.cpp");
+  const auto Output = tmpFile("function-trait-array-fill-swap.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int makes;C make(){++makes;return C{};}int main(){std::array<C,2> a{},b{};auto p=&a[0];a.fill(make());a.swap(b);std::swap(a,b);return makes!=1||p!=&a[0]||a[1]()(7)!=8||b[0]()(8)!=9||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-fill-swap" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayNested) {
+  const auto Source = tmpFile("function-trait-array-nested.cpp");
+  const auto Output = tmpFile("function-trait-array-nested.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<std::array<C,2>,2> a{};return &a[0][0]==&a[0][1]||&a[0][0]==&a[1][0]||a[1][1]()(7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-nested" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayReference) {
+  const auto Source = tmpFile("function-trait-array-reference.cpp");
+  const auto Output = tmpFile("function-trait-array-reference.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int read(const std::array<C,2>& a){return a[1]()(7);}int main(){std::array<C,2> a{};return std::invoke(read,std::cref(a).get())!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-array-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArrayZero) {
+  const auto Source = tmpFile("function-trait-array-zero.cpp");
+  const auto Output = tmpFile("function-trait-array-zero.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<C,0> a{};return !a.empty()||a.size()!=0||effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-trait-array-zero" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitArraysRetainElementBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"array-bool-trait", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<std::true_type,1> a{};return a[0]()?0:1;}
+)cpp"},
+      {"array-null-trait", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+using N=std::integral_constant<F,nullptr>;int main(){std::array<N,1> a{};return a[0]()!=nullptr;}
+)cpp"},
+      {"array-object-pointer-trait", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int object;using P=std::integral_constant<int*,&object>;int main(){std::array<P,1> a{};return a[0]()!=&object;}
+)cpp"},
+      {"array-source-body", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int bad(int n)noexcept{long double hidden=1;return n+1;}using B=std::integral_constant<F,bad>;int main(){std::array<B,1> a{};return a[0]()(7)!=8;}
+)cpp"},
+      {"array-volatile-trait", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::array<volatile C,1> a{};return 0;}
+)cpp"},
+      {"array-zero-missing-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int absent(int)noexcept;using B=std::integral_constant<F,absent>;int main(){std::array<B,0> a{};return !a.empty();}
+)cpp"},
+      {"array-zero-source-body", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <array>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int bad(int n)noexcept{long double hidden=1;return n+1;}using B=std::integral_constant<F,bad>;int main(){std::array<B,0> a{};return !a.empty();}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("function-trait-array-reject-") + Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("function-trait-array-reject-") + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitCallResultApplyIdentity) {
   const auto Source = tmpFile("function-trait-call-result-apply-identity.cpp");
   const auto Output = tmpFile("function-trait-call-result-apply-identity.nc");

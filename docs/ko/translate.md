@@ -77,6 +77,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 함수 포인터 trait 객체는 `invoke`와 `apply`의 lvalue, const 및 rvalue 참조 매개변수, 참조 결과, 참조 tuple 바인딩과 래퍼 접근에서 참조 대상의 동일성을 유지합니다. 기존 cv 한정 및 값 범주 검사는 계속 적용되며, 다른 trait 타입과 SDK `value` 저장 공간의 별칭은 여전히 지원하지 않습니다. `invoke`는 검증된 소스 함수, 호출 연산자, 멤버 호출 및 래핑된 호출 가능 객체에 이 trait을 값으로 전달할 수 있습니다. 매개변수는 독립된 빈 저장 공간을 가지며, 선택된 소유 객체 생성, 기본 인수 부수 효과 및 정리에는 검사가 유지됩니다. `invoke`와 `apply`는 검증된 trait 객체의 값 반환도 지원하며, 기존 결과 저장 대상과 소스 함수 본문 검사를 사용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+검증된 함수 포인터 trait 객체를 `array` 요소로 사용할 수 있습니다. 초기화, const 접근, 복사／이동, 중첩 및 크기 0 배열, `fill`, 멤버／비멤버 `swap`은 기존 저장소와 연산 검사를 유지합니다. 서로 다른 요소는 서로 다른 주소를 유지하며, volatile 요소와 다른 trait 유형은 지원하지 않습니다. 기본 객체와 빈 배열에서는 사용하지 않는 `value` 초기화자의 지연 인스턴스화를 유지하며, 실제 `value` 표현식에는 기존 상수 평가 검사를 적용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 단항 형식 변환은 원래 입력, 실제 치환된 소스와 결과를 검사합니다. 최종 형식에서 사라지는 별칭 템플릿 인수도 포함됩니다. 고정 버전의 열여섯 변환은 기존 형식 메타데이터와 실행 시 형식을 사용하며 네이티브 검증은 CI에서만 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2는 검증된 `__array_rank`와 `__array_extent`도 지원하며, 고정 배열 타입에 대한 템플릿 인덱스를 포함한 음이 아닌 상수 정수 인덱스를 처리합니다. 상수로 바꾸기 전에 타입과 인덱스 소스를 검사합니다. 지원하지 않는 배열 타입과 암시적 클래스 변환 인덱스는 제외되며, 네이티브 결과는 구현 리비전의 CI로 검증해야 합니다. `int[][3]`처럼 길이를 알 수 없는 배열도 타입 메타데이터, 별칭과 템플릿 인수에서 차원 수, 바깥 길이를 나타내는 0과 알려진 안쪽 길이를 보존합니다. 런타임 타입과 연산 질의의 별도 제한은 유지되며 표준 헤더와 전체 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

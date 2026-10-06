@@ -9012,6 +9012,24 @@ subject to their ordinary body and construction checks. The result path emits no
 SDK constructor calls or SDK trait storage. Other trait domains and unsupported
 selected source bodies remain rejected.
 
+The checked trivial element domain also admits these exact function-pointer trait
+records in `array`. The qualifier check runs before removing top-level qualifiers:
+volatile, restrict and non-default address spaces remain excluded. Existing pinned
+array layout and operation proofs cover initialization, const access, copies and
+moves, nested arrays, zero extents, `fill` and member/free `swap`. Each nonzero
+element retains its own one-byte storage and distinct address. Other trait domains
+and unsupported selected source bodies remain rejected.
+
+Empty trait carriers may retain an uninstantiated SDK `value` initializer. Their
+identity proof still authenticates the exact source function argument and ordinary
+callback ABI, and requires its definition in source. The selected static member
+must originate in the pinned primary; its primary constexpr initializer must be
+exactly the second non-type parameter of the first type parameter. This carrier
+proof does not instantiate that member. Actual `value` expressions continue to
+require the existing matching evaluated APValue; no SDK variable storage is
+introduced. Default objects and constexpr or zero-extent arrays may therefore
+remain lazy without weakening evaluated constant checks.
+
 The shared functional reference-value check also admits these exact authenticated
 trait records. `invoke` and `apply` may bind lvalue, const or rvalue reference
 parameters and return references to them; reference tuples and wrapper access
