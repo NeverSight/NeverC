@@ -8995,9 +8995,15 @@ complete-object trait constructor must be the exact implicit trivial nonthrowing
 copy/move from that same element, with matching reference qualifiers, value
 category and forwarded parameter identity. The lowering creates an independent
 empty parameter carrier while owned parameters retain their selected source
-copies/moves, default arguments and cleanup. The proof is confined to this apply
-argument path; other trait domains, SDK storage aliases and unsupported selected
-source bodies remain rejected.
+copies/moves, default arguments and cleanup. The same selected trait argument
+proof now serves `invoke` for named source functions, source call operators,
+member functions and wrapped callables. The exact pinned complete-object copy/move
+must retain its forwarded parameter identity and the source reference qualifiers
+and value category. Its independent empty parameter is lowered as a trivial
+carrier copy; SDK constructors are never emitted as source-owned runtime calls.
+Other owned arguments retain their selected source constructors, default argument
+effects and cleanup. Other trait domains, SDK storage aliases and unsupported
+selected source bodies remain rejected.
 
 The shared functional reference-value check also admits these exact authenticated
 trait records. `invoke` and `apply` may bind lvalue, const or rvalue reference

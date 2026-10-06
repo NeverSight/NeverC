@@ -961,6 +961,8 @@ static bool supportedFunctionalByValue(const State &S,
       utilityObjectPointer(Context, Type))
     return true;
   const auto *Record = Type->getAsCXXRecordDecl();
+  if (functionTraitObjectValue(S, SM, Record, Context))
+    return true;
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   return Definition && !Definition->isUnion() &&
          !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
@@ -11879,6 +11881,55 @@ approvedUtilityMakeTupleSelectedCopies(
   return Copies;
 }
 
+// A pinned trait copy creates independent empty parameter storage. Prove its
+// selected SDK constructor and exact forwarding path without emitting an SDK
+// constructor as a source-owned runtime call.
+static bool functionalInvokeTraitValue(const State &S, const SourceManager &SM,
+                                       const Expr *Expression,
+                                       const ParmVarDecl *ForwardedParameter,
+                                       QualType Target,
+                                       const Expr *ForwardedSource,
+                                       const ASTContext &Context) {
+  if (Target.isNull() || Target->isReferenceType() ||
+      Target.isVolatileQualified() || Target.isRestrictQualified() ||
+      Target.getAddressSpace() != LangAS::Default || !ForwardedParameter ||
+      !ForwardedParameter->getType()->isReferenceType() ||
+      !functionTraitObjectValue(S, SM, Target->getAsCXXRecordDecl(), Context))
+    return false;
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  if (!Copy || !Context.hasSameUnqualifiedType(Copy->getType(), Target) ||
+      approvedFunctionalObjectConstruction(S, SM, Copy, Context) !=
+          FunctionalObjectConstruction::CopyOrMove)
+    return false;
+  const auto *Constructor = Copy->getConstructor();
+  const auto *Argument = Copy->getArg(0);
+  const auto Record = Context.getRecordType(Constructor->getParent());
+  const auto ExpectedParameter =
+      Constructor->isMoveConstructor()
+          ? Context.getRValueReferenceType(Record)
+          : Context.getLValueReferenceType(Record.withConst());
+  const auto ForwardedType =
+      ForwardedSource ? ForwardedSource->getType()
+                      : ForwardedParameter->getType().getNonReferenceType();
+  const bool LValue =
+      ForwardedSource ? ForwardedSource->isLValue()
+                      : ForwardedParameter->getType()->isLValueReferenceType();
+  const bool XValue =
+      ForwardedSource ? ForwardedSource->isXValue()
+                      : ForwardedParameter->getType()->isRValueReferenceType();
+  return Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                             ExpectedParameter) &&
+         Context.hasSameUnqualifiedType(Argument->getType(), ForwardedType) &&
+         !ForwardedType.isVolatileQualified() &&
+         !Argument->getType().isVolatileQualified() &&
+         (!ForwardedType.isConstQualified() ||
+          Argument->getType().isConstQualified()) &&
+         Argument->isLValue() == LValue && Argument->isXValue() == XValue &&
+         (!Constructor->isMoveConstructor() || Argument->isXValue()) &&
+         functionalInvokeParameterReference(Argument, ForwardedParameter);
+}
+
 static bool approvedFunctionalInvokeArgumentFlow(
     const State &S, const SourceManager &SM, const Expr *Expression,
     const ParmVarDecl *Parameter, QualType Target,
@@ -11888,6 +11939,9 @@ static bool approvedFunctionalInvokeArgumentFlow(
     return true;
   if (Target.isNull() || !Target->isRecordType())
     return false;
+  if (functionalInvokeTraitValue(S, SM, Expression, Parameter, Target, nullptr,
+                                 Context))
+    return true;
   Expression = functionalInvokeStrippedExpression(Expression);
   if (const auto *Temporary = dyn_cast_or_null<CXXBindTemporaryExpr>(Expression))
     Expression = functionalInvokeStrippedExpression(Temporary->getSubExpr());
@@ -11917,8 +11971,9 @@ static const CXXConstructExpr *functionalInvokeSelectedCopy(
   const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
       functionalInvokeStrippedExpression(Argument));
   if (!Construction || !ForwardedSource ||
-      !approvedFunctionalInvokeArgumentFlow(
-          S, SM, Argument, ForwardedParameter, Target, Context, true))
+      !S.owns(SM, Construction->getConstructor()->getLocation()) ||
+      !approvedFunctionalInvokeArgumentFlow(S, SM, Argument, ForwardedParameter,
+                                            Target, Context, true))
     return nullptr;
   const auto *Constructor = Construction->getConstructor();
   const auto Source = Constructor->getParamDecl(0)->getType();
@@ -11988,7 +12043,10 @@ approvedFunctionalInvokeSelectedCopies(const State &S, const SourceManager &SM,
       Copies[I] = functionalInvokeSelectedCopy(
           S, SM, Operation->getArg(I), DispatchFunction->getParamDecl(I + 1),
           Parameter, Dispatch->getArg(I + 1), Context);
-      if (!Copies[I])
+      if (!Copies[I] && !functionalInvokeTraitValue(
+                            S, SM, Operation->getArg(I),
+                            DispatchFunction->getParamDecl(I + 1), Parameter,
+                            Dispatch->getArg(I + 1), Context))
         return std::nullopt;
     }
   }
@@ -13401,18 +13459,9 @@ const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
       Apply->Dispatch->getArg(Index + 1), Context);
 }
 
-// An SDK trait parameter is a separate empty object, not an owned source copy.
-// Authenticate the selected trivial constructor and its exact forwarded element
-// before the apply lowering creates that independent parameter carrier.
 static bool approvedUtilityTupleApplyTraitValue(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     unsigned Index, QualType Parameter, const ASTContext &Context) {
-  if (Parameter.isNull() || Parameter->isReferenceType() ||
-      Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
-      Parameter.getAddressSpace() != LangAS::Default ||
-      !functionTraitObjectValue(S, SM, Parameter->getAsCXXRecordDecl(),
-                                Context))
-    return false;
   const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
   const auto *Operation =
       Apply ? dyn_cast<CallExpr>(Apply->Operation) : nullptr;
@@ -13420,35 +13469,14 @@ static bool approvedUtilityTupleApplyTraitValue(
       isa_and_nonnull<CXXOperatorCallExpr>(Operation) ? 1 : 0;
   if (!Apply || Index >= Apply->Tuple.size() || !Operation ||
       Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
+      Parameter.isNull() ||
       !Context.hasSameUnqualifiedType(
           Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter))
     return false;
-  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
-      functionalInvokeStrippedExpression(Operation->getArg(Index + Offset)));
-  if (!Copy || !Context.hasSameUnqualifiedType(Copy->getType(), Parameter) ||
-      approvedFunctionalObjectConstruction(S, SM, Copy, Context) !=
-          FunctionalObjectConstruction::CopyOrMove)
-    return false;
-  const auto *Constructor = Copy->getConstructor();
-  const auto *Argument = Copy->getArg(0);
-  const auto *Forwarded = Apply->Dispatch->getArg(Index + 1);
-  const auto Record = Context.getRecordType(Constructor->getParent());
-  const auto ExpectedParameter =
-      Constructor->isMoveConstructor()
-          ? Context.getRValueReferenceType(Record)
-          : Context.getLValueReferenceType(Record.withConst());
-  return Context.hasSameType(Constructor->getParamDecl(0)->getType(),
-                             ExpectedParameter) &&
-         Context.hasSameUnqualifiedType(Argument->getType(),
-                                        Forwarded->getType()) &&
-         !Argument->getType().isVolatileQualified() &&
-         (!Forwarded->getType().isConstQualified() ||
-          Argument->getType().isConstQualified()) &&
-         Argument->isLValue() == Forwarded->isLValue() &&
-         Argument->isXValue() == Forwarded->isXValue() &&
-         (!Constructor->isMoveConstructor() || Argument->isXValue()) &&
-         functionalInvokeParameterReference(
-             Argument, Apply->DispatchFunction->getParamDecl(Index + 1));
+  return functionalInvokeTraitValue(
+      S, SM, Operation->getArg(Index + Offset),
+      Apply->DispatchFunction->getParamDecl(Index + 1), Parameter,
+      Apply->Dispatch->getArg(Index + 1), Context);
 }
 
 std::optional<FunctionalMemberInvokeCall>

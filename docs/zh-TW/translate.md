@@ -75,7 +75,7 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 經過驗證的空函式指標 trait 元素現在也可與受支援的原始碼 owned 物件組成 tuple。直接建構、`make_tuple` 與整個 tuple 的複製／移動保留所選原始碼建構函式、預設參數副作用及解構行為。重複空元素保持不同位址。賦值與交換仍須滿足各元素既有的生命週期檢查。 這些 tuple 也可透過 `tuple_cat` 組合，並透過 `apply` 呼叫經檢查的原始碼可呼叫物件。按值傳遞的 trait 參數具有獨立空儲存；所選 owned 複製／移動及其清理仍保留既有檢查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-經過驗證的函式指標 trait 物件現在在 `invoke` 與 `apply` 的左值、const 與右值參考參數、參考結果、參考 tuple 綁定及包裝器存取中保留參考身分。仍執行既有 cv 限定與值類別檢查，其他 trait 類型及 SDK `value` 儲存別名仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+經過驗證的函式指標 trait 物件現在在 `invoke` 與 `apply` 的左值、const 與右值參考參數、參考結果、參考 tuple 綁定及包裝器存取中保留參考身分。仍執行既有 cv 限定與值類別檢查，其他 trait 類型及 SDK `value` 儲存別名仍不受支援。 `invoke` 也支援向經檢查的原始碼函式、呼叫運算子、成員呼叫及包裝後的可呼叫物件按值傳遞這些 trait。參數具有獨立空儲存；所選 owned 建構、預設參數副作用及清理仍保留檢查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 Core v2 一元型別轉換現檢查原始輸入、實際替換後的原始碼與結果，包括最終型別中消失的別名範本參數。固定版本的十六種轉換沿用既有型別中繼資料與執行期型別，原生驗證仍僅在 CI 執行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 

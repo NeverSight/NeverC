@@ -75,7 +75,7 @@ tuple 内の検証済み関数ポインター trait オブジェクトは、メ�
 
 検証済みの空の関数ポインター trait 要素は、対応するソース所有オブジェクトと同じ tuple に格納できます。直接構築、`make_tuple`、tuple 全体のコピー／ムーブでは、選択されたソースのコンストラクター、デフォルト引数の副作用、破棄を保持します。同じ型の空要素も異なるアドレスを保ちます。代入と swap には、既存の各要素のライフサイクル検証が引き続き必要です。 これらの tuple は `tuple_cat` で結合でき、`apply` から検証済みのソースの呼び出し可能オブジェクトを呼べます。値渡しの trait パラメーターは独立した空の記憶領域を持ち、所有オブジェクトの選択されたコピー／ムーブと後処理には既存の検証を維持します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-検証済みの関数ポインター trait オブジェクトは、`invoke` と `apply` の左辺値・const・右辺値の参照パラメーター、参照結果、参照 tuple の束縛、ラッパー経由のアクセスで参照先の同一性を保持します。既存の cv 修飾と値カテゴリーの検証は維持し、他の trait 型や SDK の `value` ストレージの別名は引き続き対象外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+検証済みの関数ポインター trait オブジェクトは、`invoke` と `apply` の左辺値・const・右辺値の参照パラメーター、参照結果、参照 tuple の束縛、ラッパー経由のアクセスで参照先の同一性を保持します。既存の cv 修飾と値カテゴリーの検証は維持し、他の trait 型や SDK の `value` ストレージの別名は引き続き対象外です。 `invoke` は検証済みのソース関数、呼び出し演算子、メンバー呼び出し、ラップされた呼び出し可能オブジェクトに、これらの trait を値渡しできます。パラメーターは独立した空の記憶領域を持ち、所有オブジェクトの選択された構築、デフォルト引数の副作用、後処理には検証を維持します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 Core v2 の単項型変換は、元の入力、実際に置換されたソースと結果を検査します。最終型から消えるエイリアスのテンプレート引数も対象です。固定版の十六種類は既存の型メタデータと実行時型を使い、ネイティブ検証は CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 

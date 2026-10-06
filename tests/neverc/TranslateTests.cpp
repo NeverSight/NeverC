@@ -27952,6 +27952,249 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueNamedCopy) {
+  const auto Source = tmpFile("function-trait-invoke-value-named-copy.cpp");
+  const auto Output = tmpFile("function-trait-invoke-value-named-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C c,int n){return &c!=expected?c()(n):0;}int main(){C c;expected=&c;return std::invoke(read,c,7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-named-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueNamedMove) {
+  const auto Source = tmpFile("function-trait-invoke-value-named-move.cpp");
+  const auto Output = tmpFile("function-trait-invoke-value-named-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C c,int n){return &c!=expected?c()(n):0;}int main(){C c;expected=&c;return std::invoke(read,std::move(c),7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-named-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueOwnedCopy) {
+  const auto Source =
+      tmpFile("function-trait-invoke-value-named-owned-copy.cpp");
+  const auto Output =
+      tmpFile("function-trait-invoke-value-named-owned-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int copies,moves,live,drops;struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};int read(C c,Owned o){return &c!=expected?c()(o.n):0;}int main(){{C c;expected=&c;Owned s(7);if(std::invoke(read,c,s)!=8||copies!=1||moves||live!=1||drops!=1||effects!=1)return 1;}return live||drops!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-named-owned-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueOwnedMove) {
+  const auto Source =
+      tmpFile("function-trait-invoke-value-named-owned-move.cpp");
+  const auto Output =
+      tmpFile("function-trait-invoke-value-named-owned-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int copies,moves,live,drops;struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};int read(C c,Owned o){return &c!=expected?c()(o.n):0;}int main(){{C c;expected=&c;Owned s(7);if(std::invoke(read,std::move(c),std::move(s))!=8||copies||moves!=1||live!=1||drops!=1||s.n||effects!=1)return 1;}return live||drops!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-named-owned-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueUserCopy) {
+  const auto Source = tmpFile("function-trait-invoke-value-user-copy.cpp");
+  const auto Output = tmpFile("function-trait-invoke-value-user-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+struct Reader{int operator()(C c,int n)const{return &c!=expected?c()(n):0;}};int main(){C c;expected=&c;Reader read;return std::invoke(read,c,7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-user-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueUserMove) {
+  const auto Source = tmpFile("function-trait-invoke-value-user-move.cpp");
+  const auto Output = tmpFile("function-trait-invoke-value-user-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+struct Reader{int operator()(C c,int n)const{return &c!=expected?c()(n):0;}};int main(){C c;expected=&c;Reader read;return std::invoke(read,std::move(c),7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-user-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueMemberValue) {
+  const auto Source = tmpFile("function-trait-invoke-value-member-value.cpp");
+  const auto Output = tmpFile("function-trait-invoke-value-member-value.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+struct Reader{int read(C c,int n)const{return &c!=expected?c()(n):0;}};int main(){C c;expected=&c;Reader r;return std::invoke(&Reader::read,&r,c,7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-member-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitInvokeValueWrappedValue) {
+  const auto Source = tmpFile("function-trait-invoke-value-wrapped-value.cpp");
+  const auto Output = tmpFile("function-trait-invoke-value-wrapped-value.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C c,int n){return &c!=expected?c()(n):0;}int main(){C c;expected=&c;auto r=std::ref(read);return std::invoke(r,c,7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-invoke-value-wrapped-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitInvokeValueRetainsSelectedSourceBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-trait-value-argument", R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int read(std::true_type c){return c()?1:0;}int main(){std::true_type c;return std::invoke(read,c)!=1;}
+)cpp"},
+      {"invoke-source-body", R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int read(C c,int n){long double hidden=1;return c()(n);}int main(){C c;return std::invoke(read,c,7)!=8;}
+)cpp"},
+      {"invoke-owned-default", R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int seed(long double extra=1){return 1;}struct Owned{int n;Owned(int n):n(n){}Owned(const Owned&o,int extra=seed()):n(o.n+extra){}~Owned(){}};int read(C c,Owned o){return c()(o.n);}int main(){C c;Owned s(7);return std::invoke(read,c,s)!=9;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("function-trait-invoke-value-reject-") + Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("function-trait-invoke-value-reject-") + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsApplyLValue) {
   const auto Source =
       tmpFile("function-trait-reference-arguments-apply-lvalue.cpp");

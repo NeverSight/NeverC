@@ -75,7 +75,7 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 빈 함수 포인터 trait 요소를 지원되는 소스 소유 객체와 같은 tuple에 저장할 수 있습니다. 직접 생성, `make_tuple`, tuple 전체의 복사와 이동은 선택된 소스 생성자, 기본 인수의 부수 효과 및 소멸 동작을 유지합니다. 같은 타입의 빈 요소도 서로 다른 주소를 유지합니다. 대입과 swap에는 기존의 요소별 수명 검사 조건이 계속 적용됩니다. 이 tuple은 `tuple_cat`으로 결합하고 `apply`로 검증된 소스 호출 가능 객체를 호출할 수 있습니다. 값으로 전달되는 trait 매개변수는 독립된 빈 저장 공간을 가지며, 선택된 소유 객체의 복사와 이동 및 정리에는 기존 검사가 유지됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-검증된 함수 포인터 trait 객체는 `invoke`와 `apply`의 lvalue, const 및 rvalue 참조 매개변수, 참조 결과, 참조 tuple 바인딩과 래퍼 접근에서 참조 대상의 동일성을 유지합니다. 기존 cv 한정 및 값 범주 검사는 계속 적용되며, 다른 trait 타입과 SDK `value` 저장 공간의 별칭은 여전히 지원하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+검증된 함수 포인터 trait 객체는 `invoke`와 `apply`의 lvalue, const 및 rvalue 참조 매개변수, 참조 결과, 참조 tuple 바인딩과 래퍼 접근에서 참조 대상의 동일성을 유지합니다. 기존 cv 한정 및 값 범주 검사는 계속 적용되며, 다른 trait 타입과 SDK `value` 저장 공간의 별칭은 여전히 지원하지 않습니다. `invoke`는 검증된 소스 함수, 호출 연산자, 멤버 호출 및 래핑된 호출 가능 객체에 이 trait을 값으로 전달할 수 있습니다. 매개변수는 독립된 빈 저장 공간을 가지며, 선택된 소유 객체 생성, 기본 인수 부수 효과 및 정리에는 검사가 유지됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 Core v2 단항 형식 변환은 원래 입력, 실제 치환된 소스와 결과를 검사합니다. 최종 형식에서 사라지는 별칭 템플릿 인수도 포함됩니다. 고정 버전의 열여섯 변환은 기존 형식 메타데이터와 실행 시 형식을 사용하며 네이티브 검증은 CI에서만 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
