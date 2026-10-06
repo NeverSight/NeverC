@@ -79,6 +79,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 함수 포인터 trait 객체를 `array` 요소로 사용할 수 있습니다. 초기화, const 접근, 복사／이동, 중첩 및 크기 0 배열, `fill`, 멤버／비멤버 `swap`은 기존 저장소와 연산 검사를 유지합니다. 서로 다른 요소는 서로 다른 주소를 유지하며, volatile 요소와 다른 trait 유형은 지원하지 않습니다. 기본 객체와 빈 배열에서는 사용하지 않는 `value` 초기화자의 지연 인스턴스화를 유지하며, 실제 `value` 표현식에는 기존 상수 평가 검사를 적용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+지원되는 빈 표준 함수 객체와 검증된 콜백 trait 객체는 const 및 다차원 배열을 포함한 고정 원시 배열에서도 기본 생성할 수 있습니다. 기존 요소 생성은 각 객체에 독립적인 저장소를 제공하고 배열 개수 제한을 검사합니다. 지역·정적·전역 배열, 상수 크기의 `new[]`, 중첩 `vector` 범위 원본에 같은 생성자 인증을 적용합니다. 소스 콜백 정의, 할당·해제, 지원되지 않는 trait 또는 함수 객체 타입은 기존 검사를 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 검증된 `reference_wrapper` 인수는 이제 `invoke`와 `apply`를 통해 일치하는 지원 대상 lvalue 참조 매개변수에 바인딩할 수 있습니다. 래퍼 값을 명시적으로 저장한 tuple도 포함됩니다. 고정 SDK의 정확한 변환과 전달 매개변수를 검증하며, 원래 참조 대상의 주소, 쓰기 효과, const 한정을 보존합니다. 검증된 함수 및 함수 포인터 래퍼는 호환 가능한 `noexcept` 제거를 포함해 일반 콜백의 값 매개변수에도 사용할 수 있습니다. 호출자 인수가 평가된 뒤 값을 읽어 이후 변경을 보존하며 null 포인터도 값으로 전달합니다. 임의의 소스 변환, 래퍼의 bool 변환, volatile 참조 대상은 계속 지원하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
 검증된 인수 없는 `optional::emplace()`는 허용된 비 const 스칼라, trivial 소스 소유 레코드, 검증된 함수 포인터 trait 객체와 이 요소들을 재귀적으로 포함하는 배열을 값 초기화합니다. 고정 SDK의 reset, 제자리 생성, 참조 반환 본문을 검증합니다. 반복 emplace는 내부 저장소의 동일성을 유지하며 스칼라와 포인터를 0 또는 null로 재설정합니다. nontrivial 기본 생성자, 기본 멤버 초기화자, volatile 요소는 이 경로에서 지원하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).

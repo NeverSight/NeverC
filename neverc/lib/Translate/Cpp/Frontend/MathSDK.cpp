@@ -1358,10 +1358,20 @@ std::optional<FunctionalObjectConstruction>
 approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
                                      const CXXConstructExpr *Construction,
                                      const ASTContext &Context) {
-  return Construction
-             ? functionalObjectConstruction(S, SM, Construction,
-                                            Construction->getType(), Context)
-             : std::nullopt;
+  if (!Construction)
+    return std::nullopt;
+  auto ObjectType = Construction->getType();
+  bool Array = false;
+  while (const auto *Storage = Context.getAsConstantArrayType(ObjectType)) {
+    Array = true;
+    ObjectType = Storage->getElementType();
+  }
+  const auto Kind =
+      functionalObjectConstruction(S, SM, Construction, ObjectType, Context);
+  // The existing array lowering constructs each actual element and enforces
+  // storage limits. Only an authenticated empty default constructor is shared.
+  return Array && Kind != FunctionalObjectConstruction::Default ? std::nullopt
+                                                                : Kind;
 }
 
 std::optional<FunctionalReferenceRecord>

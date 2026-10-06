@@ -9014,6 +9014,19 @@ requirements. Source callbacks still require their independent definitions
 and signature checks. Boolean vectors, custom allocators, element comparison
 without its existing proof and aliases of SDK `value` storage remain excluded.
 
+Admitted empty standard function objects and checked function-pointer trait
+objects also support implicit default construction in fixed raw arrays. The
+constructor proof resolves the innermost array element and requires the exact
+pinned implicit, trivial, nonthrowing default constructor. This shares no user
+constructor, copy/move operation or SDK implementation body. Existing typed
+array construction initializes each actual element independently and retains
+its count, storage and expansion limits. Tests cover const and multidimensional
+arrays, local/static/global storage, constant-size `new[]`, nested-vector range
+sources, and existing value initialization or source-record fields. Source
+callback definitions and source allocation/deallocation remain independently
+checked; SDK or null targets, variadic signatures, unsupported functor types,
+excessive storage and unavailable source bodies retain their restrictions.
+
 `make_unique` also constructs checked trait objects and constant-length arrays
 through their pinned implicit trivial default, copy and move constructors. The
 exact selected constructor, default zero initialization and copy/move forwarding
