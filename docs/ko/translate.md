@@ -87,6 +87,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 투명 표준 함수 객체도 직접 호출, `invoke`, `apply` 및 callable 래퍼 호출에서 검증된 산술 값, 객체 포인터와 지원되는 함수 포인터의 래퍼를 받습니다. 고정 SDK 변환은 선택된 내장 연산 전에 정확히 전달된 매개변수를 풀어야 합니다. 형 승격, 포인터 비교와 콜백 논리 연산은 기존 형 검사를 유지하며 콜백 대상을 호출하지 않습니다. 호출자 인수 평가 후 참조 대상을 읽어 이후 변경과 한 번만 평가하는 의미를 보존합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+검증된 래퍼 인수를 받는 투명 표준 함수 객체 호출은 외부 `invoke`를 포함하여 `decltype`과 `noexcept` 쿼리도 지원합니다. 선택된 내장 연산의 noexcept 식에서 정확한 SDK 변환과 전달 경로를 검증하며 사용하지 않는 연산자 본문을 인스턴스화하지 않습니다. 쿼리는 호출자 부작용을 실행하지 않으며 소스 변환, 대체와 지원되지 않는 참조 대상에는 기존 검사를 적용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

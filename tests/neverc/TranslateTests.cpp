@@ -29642,6 +29642,501 @@ int target(int,...)noexcept;using F=int(*)(int,...)noexcept;using C=std::integra
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryApplyResult) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-apply-result.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-apply-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using T=std::tuple<W,int>;using R=decltype(std::apply(std::plus<>{},std::declval<T&>()));static_assert(std::is_same_v<R,int>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-apply-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectCallback) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-callback.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-callback.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using F=int(*)(int)noexcept;using W=std::reference_wrapper<F>;using R=decltype(std::logical_not<>{}(std::declval<W>()));static_assert(std::is_same_v<R,bool>);static_assert(noexcept(std::logical_not<>{}(std::declval<W>())));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-callback" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectConst) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-const.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-const.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<const int>;using R=decltype(std::plus<>{}(std::declval<const W&>(),short(2)));static_assert(std::is_same_v<R,int>);static_assert(noexcept(std::plus<>{}(std::declval<const W&>(),short(2))));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectLvalue) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-lvalue.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-lvalue.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<short>;using R=decltype(std::plus<>{}(std::declval<W&>(),std::declval<W&>()));static_assert(std::is_same_v<R,int>);static_assert(noexcept(std::plus<>{}(std::declval<W&>(),std::declval<W&>())));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-lvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectNegate) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-negate.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-negate.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<short>;using R=decltype(std::negate<>{}(std::declval<W>()));static_assert(std::is_same_v<R,int>);static_assert(noexcept(std::negate<>{}(std::declval<W>())));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-negate" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectNoexcept) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-noexcept.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-noexcept.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+static_assert(noexcept(std::plus<>{}(std::declval<W>(),2)));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-noexcept" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectPointer) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-pointer.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-pointer.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int*>;using R=decltype(std::equal_to<>{}(std::declval<W>(),nullptr));static_assert(std::is_same_v<R,bool>);static_assert(noexcept(std::equal_to<>{}(std::declval<W>(),nullptr)));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryDirectResult) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-direct-result.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-direct-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using R=decltype(std::plus<>{}(std::declval<W>(),2));static_assert(std::is_same_v<R,int>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-direct-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryInvokeCallback) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-invoke-callback.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-invoke-callback.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using F=int(*)(int)noexcept;using W=std::reference_wrapper<F>;using R=decltype(std::invoke(std::equal_to<>{},std::declval<W>(),nullptr));static_assert(std::is_same_v<R,bool>);static_assert(noexcept(std::invoke(std::equal_to<>{},std::declval<W>(),nullptr)));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-invoke-callback" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryInvokeMixed) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-invoke-mixed.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-invoke-mixed.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<double>;using R=decltype(std::invoke(std::plus<>{},std::declval<W>(),2));static_assert(std::is_same_v<R,double>);static_assert(noexcept(std::invoke(std::plus<>{},std::declval<W>(),2)));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-invoke-mixed" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryInvokeNoexcept) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-invoke-noexcept.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-invoke-noexcept.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+static_assert(noexcept(std::invoke(std::plus<>{},std::declval<W>(),2)));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-invoke-noexcept" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryInvokeResult) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-invoke-result.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-invoke-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using R=decltype(std::invoke(std::plus<>{},std::declval<W>(),2));static_assert(std::is_same_v<R,int>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-invoke-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryQueryEffects) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-query-effects.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-query-effects.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+int n=7,effects;int& pick()noexcept{++effects;return n;}int next()noexcept{++effects;return 2;}using R=decltype(std::invoke(std::plus<>{},std::ref(pick()),next()));static_assert(std::is_same_v<R,int>);static_assert(noexcept(std::invoke(std::plus<>{},std::ref(pick()),next())));int main(){return effects;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-query-effects" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryTraitInvocable) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-trait-invocable.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-trait-invocable.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+static_assert(std::is_invocable_v<std::plus<>,W,int>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-trait-invocable" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryTraitNothrow) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-trait-nothrow.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-trait-nothrow.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+static_assert(std::is_nothrow_invocable_v<std::plus<>,W,int>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-trait-nothrow" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentQueryTraitResult) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-query-trait-result.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-query-trait-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using R=std::invoke_result_t<std::plus<>,W,int>;static_assert(std::is_same_v<R,int>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-query-trait-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2ReferenceWrapperTransparentQueriesRetainConversionAndSDKBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"long-double-referent", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<long double>;using R=decltype(std::plus<>{}(std::declval<W>(),2));int main(){return 0;}
+)cpp"},
+      {"sdk-function-target", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using F=int&(*)(int&)noexcept;F f=static_cast<F>(&std::forward<int&>);using R=decltype(std::logical_not<>{}(std::ref(f)));int main(){return 0;}
+)cpp"},
+      {"source-argument-body", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+int n=7;int& pick()noexcept{long double x=n;n=int(x);return n;}using R=decltype(std::plus<>{}(std::ref(pick()),2));int main(){return 0;}
+)cpp"},
+      {"source-wrapper-conversion", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+int n=7;int effects;namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{++effects;return n;}}}using W=std::reference_wrapper<int>;using R=decltype(std::plus<>{}(std::declval<W>(),2));int main(){return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+struct R{operator int()const noexcept{return 7;}};using T=decltype(std::plus<>{}(std::declval<R>(),2));int main(){return 0;}
+)cpp"},
+      {"user-operator", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+struct R{int n;};int operator+(std::reference_wrapper<R> r,int n)noexcept{return r.get().n+n;}using W=std::reference_wrapper<R>;using T=decltype(std::plus<>{}(std::declval<W>(),2));int main(){return 0;}
+)cpp"},
+      {"variadic-function", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using F=int(*)(int,...);using W=std::reference_wrapper<F>;using R=decltype(std::logical_not<>{}(std::declval<W>()));int main(){return 0;}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <functional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<volatile int>;using R=decltype(std::plus<>{}(std::declval<W>(),2));int main(){return 0;}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("reference-wrapper-transparent-query-reject-") +
+                Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("reference-wrapper-transparent-query-reject-") +
+                Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationApplyConst) {
   const auto Source =
       tmpFile("reference-wrapper-transparent-operation-apply-const.cpp");

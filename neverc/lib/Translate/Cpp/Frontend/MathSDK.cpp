@@ -1564,6 +1564,67 @@ approvedFunctionalReferenceAccessCallImpl(const State &S,
                                           const ASTContext &Context,
                                           bool RequireOwnedReference);
 
+static bool functionalOperationParameterReference(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const CXXMethodDecl *Method, const Expr *Expression, unsigned Index,
+    bool Transparent) {
+  if (!Method || Index >= Method->getNumParams())
+    return false;
+  const auto *SpecializedArguments = Method->getTemplateSpecializationArgs();
+  if (Transparent &&
+      (!SpecializedArguments || Index >= SpecializedArguments->size() ||
+       SpecializedArguments->get(Index).getKind() != TemplateArgument::Type))
+    return false;
+  Expression = Expression ? Expression->IgnoreParenImpCasts() : nullptr;
+  if (Transparent) {
+    if (const auto Wrapper =
+            approvedFunctionalReferenceRecord(S, SM,
+                                              Method->getParamDecl(Index)
+                                                  ->getType()
+                                                  .getNonReferenceType()
+                                                  ->getAsCXXRecordDecl(),
+                                              Context)) {
+      const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(Expression);
+      const auto Access = Conversion
+                              ? approvedFunctionalReferenceAccessCallImpl(
+                                    S, SM, Conversion, Context, false)
+                              : std::nullopt;
+      if (!Conversion ||
+          !isa_and_nonnull<CXXConversionDecl>(Conversion->getDirectCallee()) ||
+          !Access || Access->ObjectIsArrow ||
+          Access->Wrapper.Record->getCanonicalDecl() !=
+              Wrapper->Record->getCanonicalDecl())
+        return false;
+      Expression = Access->Object->IgnoreParenImpCasts();
+    }
+    const auto *Forward = dyn_cast_or_null<CallExpr>(Expression);
+    const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+    const auto *ForwardPrimary =
+        Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Reference = directFunctionReference(Forward);
+    const auto *ForwardArguments =
+        Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    const auto Specialized = SpecializedArguments->get(Index).getAsType();
+    const auto *Ref =
+        Forward && Forward->getNumArgs() == 1
+            ? dyn_cast<DeclRefExpr>(Forward->getArg(0)->IgnoreParenImpCasts())
+            : nullptr;
+    return Function && ForwardPrimary && Reference && ForwardArguments &&
+           ForwardArguments->size() == 1 &&
+           ForwardArguments->get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(ForwardArguments->get(0).getAsType(),
+                               Specialized) &&
+           Function->getIdentifier() && Function->getName() == "forward" &&
+           approvedStandardSDKDeclaration(S, SM, Function) &&
+           approvedStandardSDKDeclaration(S, SM, ForwardPrimary) &&
+           cstddefOrigin(S, SM, ForwardPrimary->getLocation(), "libcxx",
+                         "__utility/forward.h") &&
+           Ref && Ref->getDecl() == Method->getParamDecl(Index);
+  }
+  const auto *Ref = dyn_cast_or_null<DeclRefExpr>(Expression);
+  return Ref && Ref->getDecl() == Method->getParamDecl(Index);
+}
+
 static std::optional<FunctionalOperationInfo> approvedPointerHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
@@ -2379,56 +2440,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
   const auto *Returned = Return ? Return->getRetValue() : nullptr;
   const auto *Operation = Returned ? Returned->IgnoreParenImpCasts() : nullptr;
   auto ParameterReference = [&](const Expr *Expression, unsigned Index) {
-    Expression = Expression ? Expression->IgnoreParenImpCasts() : nullptr;
-    if (Transparent) {
-      if (const auto Wrapper =
-              approvedFunctionalReferenceRecord(S, SM,
-                                                Method->getParamDecl(Index)
-                                                    ->getType()
-                                                    .getNonReferenceType()
-                                                    ->getAsCXXRecordDecl(),
-                                                Context)) {
-        const auto *Conversion =
-            dyn_cast_or_null<CXXMemberCallExpr>(Expression);
-        const auto Access = Conversion
-                                ? approvedFunctionalReferenceAccessCallImpl(
-                                      S, SM, Conversion, Context, false)
-                                : std::nullopt;
-        if (!Conversion ||
-            !isa_and_nonnull<CXXConversionDecl>(
-                Conversion->getDirectCallee()) ||
-            !Access || Access->ObjectIsArrow ||
-            Access->Wrapper.Record->getCanonicalDecl() !=
-                Wrapper->Record->getCanonicalDecl())
-          return false;
-        Expression = Access->Object->IgnoreParenImpCasts();
-      }
-      const auto *Forward = dyn_cast_or_null<CallExpr>(Expression);
-      const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
-      const auto *ForwardPrimary =
-          Function ? Function->getPrimaryTemplate() : nullptr;
-      const auto *Reference = directFunctionReference(Forward);
-      const auto *ForwardArguments =
-          Function ? Function->getTemplateSpecializationArgs() : nullptr;
-      const auto Specialized = SpecializedArguments->get(Index).getAsType();
-      const auto *Ref = Forward && Forward->getNumArgs() == 1
-                            ? dyn_cast<DeclRefExpr>(
-                                  Forward->getArg(0)->IgnoreParenImpCasts())
-                            : nullptr;
-      return Function && ForwardPrimary && Reference && ForwardArguments &&
-             ForwardArguments->size() == 1 &&
-             ForwardArguments->get(0).getKind() == TemplateArgument::Type &&
-             Context.hasSameType(ForwardArguments->get(0).getAsType(),
-                                 Specialized) &&
-             Function->getIdentifier() && Function->getName() == "forward" &&
-             approvedStandardSDKDeclaration(S, SM, Function) &&
-             approvedStandardSDKDeclaration(S, SM, ForwardPrimary) &&
-             cstddefOrigin(S, SM, ForwardPrimary->getLocation(), "libcxx",
-                            "__utility/forward.h") &&
-             Ref && Ref->getDecl() == Method->getParamDecl(Index);
-    }
-    const auto *Ref = dyn_cast_or_null<DeclRefExpr>(Expression);
-    return Ref && Ref->getDecl() == Method->getParamDecl(Index);
+    return functionalOperationParameterReference(
+        S, SM, Context, Method, Expression, Index, Transparent);
   };
   QualType LeftType;
   QualType RightType;
@@ -3310,6 +3323,55 @@ approvedFunctionalReferenceArgumentValue(const State &S,
              : std::nullopt;
 }
 
+static bool functionalWrapperSignatureOperation(const State &S,
+                                                const SourceManager &SM,
+                                                const ASTContext &Context,
+                                                const CXXMethodDecl *Method,
+                                                llvm::StringRef Name) {
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  const auto *Query =
+      Prototype && Prototype->getNoexceptExpr()
+          ? dyn_cast<CXXNoexceptExpr>(
+                Prototype->getNoexceptExpr()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Operation = Query && Query->getOperand()
+                              ? Query->getOperand()->IgnoreParenImpCasts()
+                              : nullptr;
+  if (!Prototype || Prototype->getExceptionSpecType() != EST_NoexceptTrue ||
+      !Query || !Query->getValue() || !Operation ||
+      !Context.hasSameType(Operation->getType(), Method->getReturnType()))
+    return false;
+  if (const auto *Unary = dyn_cast<UnaryOperator>(Operation)) {
+    const auto Expected = Name == "negate"    ? UO_Minus
+                          : Name == "bit_not" ? UO_Not
+                                              : UO_LNot;
+    return (Name == "negate" || Name == "bit_not" || Name == "logical_not") &&
+           Method->getNumParams() == 1 && Unary->getOpcode() == Expected &&
+           functionalOperationParameterReference(S, SM, Context, Method,
+                                                 Unary->getSubExpr(), 0, true);
+  }
+  const auto *Binary = dyn_cast<BinaryOperator>(Operation);
+  static constexpr std::pair<llvm::StringLiteral, BinaryOperatorKind>
+      Operators[] = {{"plus", BO_Add},         {"minus", BO_Sub},
+                     {"multiplies", BO_Mul},   {"divides", BO_Div},
+                     {"modulus", BO_Rem},      {"bit_and", BO_And},
+                     {"bit_or", BO_Or},        {"bit_xor", BO_Xor},
+                     {"equal_to", BO_EQ},      {"not_equal_to", BO_NE},
+                     {"less", BO_LT},          {"greater", BO_GT},
+                     {"less_equal", BO_LE},    {"greater_equal", BO_GE},
+                     {"logical_and", BO_LAnd}, {"logical_or", BO_LOr}};
+  if (!Binary || Method->getNumParams() != 2)
+    return false;
+  for (const auto &[OperatorName, Opcode] : Operators)
+    if (Name == OperatorName)
+      return Binary->getOpcode() == Opcode &&
+             functionalOperationParameterReference(S, SM, Context, Method,
+                                                   Binary->getLHS(), 0, true) &&
+             functionalOperationParameterReference(S, SM, Context, Method,
+                                                   Binary->getRHS(), 1, true);
+  return false;
+}
+
 bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
                                       const ASTContext &Context) {
@@ -3426,6 +3488,18 @@ bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
     }
     const auto From = Source->getType();
     const auto To = Parameter->getPointeeType();
+    if (Transparent)
+      if (const auto Wrapper = approvedFunctionalReferenceRecord(
+              S, SM, From->getAsCXXRecordDecl(), Context)) {
+        if (From.isVolatileQualified() || From.isRestrictQualified() ||
+            From.getAddressSpace() != LangAS::Default ||
+            !Context.hasSameUnqualifiedType(From, To) ||
+            !Context.hasSameUnqualifiedType(Argument, To) ||
+            !functionalWrapperSignatureOperation(S, SM, Context, Method, Name))
+          return false;
+        Operands[I] = Wrapper->ReferentType;
+        continue;
+      }
     const bool ExactFunction = From->isFunctionType() && To->isFunctionType() &&
                                Context.hasSameType(From, To);
     if (!Context.hasSameUnqualifiedType(Argument, To) ||

@@ -4168,6 +4168,18 @@ conversions to ordinary boolean parameters. Source overloaded operators,
 replacement wrapper conversions, volatile or long-double referents and
 independently unsupported callbacks retain their diagnostics.
 
+Checked transparent operations on these wrapper operands also support direct
+`decltype` and `noexcept` queries, including outer `invoke` queries. The selected
+concrete noexcept expression must contain the named built-in operator with the
+exact SDK wrapper conversion, `std::forward` specialization and method parameter
+identity on every operand. Its result and resolved exception specification
+retain the original selected signature. The conversion proof shares the runtime
+path's parameter authentication and accepts the pinned unused getter pattern
+without instantiating an unused standard operator or conversion body. Queries
+execute no receiver or argument effects; original caller expressions, source
+function bodies, aliases and unsupported referents keep their independent checks.
+Existing invocability and result traits retain their original metadata behavior.
+
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and
 wrapper-taking overloads retain the exact wrapper type and referent
