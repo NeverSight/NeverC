@@ -27952,6 +27952,322 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsApplyLValue) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-apply-lvalue.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-apply-lvalue.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C&c,int n){return &c==expected?c()(n):0;}int main(){std::tuple<C,int>a(C{},7);expected=&std::get<0>(a);return std::apply(read,a)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-apply-lvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsApplyConst) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-apply-const.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-apply-const.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(const C&c,int n){return &c==expected?c()(n):0;}int main(){std::tuple<C,int>a(C{},7);expected=&std::get<0>(a);const auto&b=a;return std::apply(read,b)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-apply-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsApplyRValue) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-apply-rvalue.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-apply-rvalue.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C&&c,int n){return &c==expected?c()(n):0;}int main(){std::tuple<C,int>a(C{},7);expected=&std::get<0>(a);return std::apply(read,std::move(a))!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-apply-rvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsInvokeLValue) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-invoke-lvalue.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-invoke-lvalue.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C&c,int n){return &c==expected?c()(n):0;}int main(){C c;expected=&c;return std::invoke(read,c,7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-invoke-lvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsInvokeConst) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-invoke-const.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-invoke-const.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(const C&c,int n){return &c==expected?c()(n):0;}int main(){C c;expected=&c;const C&v=c;return std::invoke(read,v,7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-invoke-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsInvokeRValue) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-invoke-rvalue.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-invoke-rvalue.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C&&c,int n){return &c==expected?c()(n):0;}int main(){C c;expected=&c;return std::invoke(read,std::move(c),7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-invoke-rvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsWrapperIdentity) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-reference-wrapper.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-reference-wrapper.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int main(){C c;expected=&c;auto r=std::ref(c);auto s=std::cref(c);return &r.get()!=expected||&s.get()!=expected||r.get()()(7)!=8||s.get()()(1)!=2||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-reference-wrapper" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitReferenceArgumentsTupleBinding) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-reference-tuple.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-reference-tuple.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+int read(C&c,int n){return &c==expected?c()(n):0;}int main(){C c;expected=&c;std::tuple<C&,int>a(c,7);return &std::get<0>(a)!=expected||std::apply(read,a)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-reference-arguments-reference-tuple" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitReferenceArgumentsApplyReferenceResult) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-apply-reference-result.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-apply-reference-result.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+C&same(C&c){return c;}int main(){std::tuple<C>a;return &std::apply(same,a)!=&std::get<0>(a)||std::apply(same,a)()(7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-reference-arguments-apply-reference-result" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitReferenceArgumentsInvokeReferenceResult) {
+  const auto Source =
+      tmpFile("function-trait-reference-arguments-invoke-reference-result.cpp");
+  const auto Output =
+      tmpFile("function-trait-reference-arguments-invoke-reference-result.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;C*expected;
+C&same(C&c){return c;}int main(){C c;return &std::invoke(same,c)!=&c||std::invoke(same,c)()(7)!=8||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-reference-arguments-invoke-reference-result" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2FunctionTraitReferenceArgumentsRetainSourceAndQualifierBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-trait-reference-argument", R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int read(std::true_type&c){return c()?1:0;}int main(){std::true_type c;return std::invoke(read,c)!=1;}
+)cpp"},
+      {"sdk-value-storage-reference-argument", R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int read(const F&f){return f(7);}int main(){return std::invoke(read,C::value)!=8;}
+)cpp"},
+      {"volatile-trait-reference-argument", R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+void read(volatile C&c){(void)&c;}int main(){C c;std::invoke(read,c);}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("function-trait-reference-arguments-reject-") +
+                Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("function-trait-reference-arguments-reject-") +
+                Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeCatCopy) {
   const auto Source = tmpFile("function-trait-tuple-compose-cat-copy.cpp");
   const auto Output = tmpFile("function-trait-tuple-compose-cat-copy.nc");

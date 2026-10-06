@@ -168,26 +168,32 @@ class FunctionLowering {
                       {"loc", A.loc(L)}};
   }
   Expression fieldStorage(Expression Base, const UtilityTupleElement &Element,
-                          SourceLocation L) {
+                          SourceLocation L, bool ReadOnly = false) {
     if (Element.Field)
       return fieldStorage(std::move(Base), Element.Field, L);
     if (!Element.EmptyBase || Element.OffsetBits % 8)
       reject(L, "tuple element storage",
              "An authenticated empty base is required.");
-    const auto PointerType = "ptr:" + Base.getString("type")->str();
+    // An optimized empty base shares its tuple's storage. Preserve the
+    // source access qualifier through the byte projection, including aliases.
+    const auto Prefix =
+        ReadOnly || Element.getType().isConstQualified() ? "cptr:" : "ptr:";
+    const auto PointerType = Prefix + Base.getString("type")->str();
     Expression Pointer{{"kind", "address"},
                        {"type", PointerType},
                        {"args", json::Array{std::move(Base)}},
                        {"loc", A.loc(L)}};
-    Pointer = cast(cast(std::move(Pointer), "ptr:void", L), "ptr:u8", L);
+    Pointer = cast(cast(std::move(Pointer), std::string(Prefix) + "void", L),
+                   std::string(Prefix) + "u8", L);
     if (Element.OffsetBits)
       Pointer = binary(
           "+", std::move(Pointer),
           quantity(Element.OffsetBits / 8, type(A.Context.getSizeType(), L), L),
-          "ptr:u8", L);
-    return dereference(cast(cast(std::move(Pointer), "ptr:void", L),
-                            "ptr:" + type(Element.getType(), L), L),
-                       L);
+          std::string(Prefix) + "u8", L);
+    return dereference(
+        cast(cast(std::move(Pointer), std::string(Prefix) + "void", L),
+             Prefix + type(Element.getType(), L), L),
+        L);
   }
   void initializeTuplePadding(Expression Place, const UtilityTupleRecord &Tuple,
                               SourceLocation L) {
@@ -2060,8 +2066,9 @@ class FunctionLowering {
                                                     A.Context);
       return Tuple;
     };
-    auto TupleElement = [&](Expression Base, const UtilityTupleElement &Field) {
-      auto Element = fieldStorage(std::move(Base), Field, L);
+    auto TupleElement = [&](Expression Base, const UtilityTupleElement &Field,
+                            bool ReadOnly) {
+      auto Element = fieldStorage(std::move(Base), Field, L, ReadOnly);
       return Field.getType()->isReferenceType()
                  ? dereference(std::move(Element), L)
                  : std::move(Element);
@@ -9844,7 +9851,8 @@ class FunctionLowering {
                "The selected tuple-like storage is unavailable.");
       auto ApplyElement = [&](Expression Base, unsigned Index) {
         if (!Tuple->ArrayElements)
-          return TupleElement(std::move(Base), Tuple->Elements[Index]);
+          return TupleElement(std::move(Base), Tuple->Elements[Index],
+                              Call->getArg(1)->getType().isConstQualified());
         const auto Element = Tuple->ArrayElementType;
         const auto Pointee = Call->getArg(1)->getType().isConstQualified()
                                  ? Element.withConst()
@@ -10432,7 +10440,8 @@ class FunctionLowering {
       if (!Index)
         reject(L, "utility tuple get",
                "The selected std::tuple element is unavailable.");
-      return TupleElement(lvalue(Call->getArg(0)), Tuple->Elements[*Index]);
+      return TupleElement(lvalue(Call->getArg(0)), Tuple->Elements[*Index],
+                          Call->getArg(0)->getType().isConstQualified());
     }
     case UtilityOperation::PairGetFirst:
     case UtilityOperation::PairGetSecond: {

@@ -933,7 +933,8 @@ static bool supportedFunctionalReferenceValue(const State &S,
            supportedFunctionalReferenceValue(S, SM, Context,
                                              Array->getElementType());
   const auto *Record = Type->getAsCXXRecordDecl();
-  if (approvedUtilityArrayRecord(S, SM, Record, Context))
+  if (approvedUtilityArrayRecord(S, SM, Record, Context) ||
+      functionTraitObjectValue(S, SM, Record, Context))
     return true;
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   return (Type->isIntegralOrEnumerationType() &&

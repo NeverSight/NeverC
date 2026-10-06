@@ -8999,6 +8999,18 @@ copies/moves, default arguments and cleanup. The proof is confined to this apply
 argument path; other trait domains, SDK storage aliases and unsupported selected
 source bodies remain rejected.
 
+The shared functional reference-value check also admits these exact authenticated
+trait records. `invoke` and `apply` may bind lvalue, const or rvalue reference
+parameters and return references to them; reference tuples and wrapper access
+retain the same object identity. Existing forwarding, cv qualification, value
+category and selected source-callable checks remain unchanged. The trait is
+accepted through its exact pinned record proof, rather than general SDK record
+ownership. Empty-base projections retain const access through the tuple address
+and every byte-pointer conversion, including const aliases and const globals.
+The typed IR verifier retains its existing write-permission checks. Volatile
+receivers, unrelated trait domains and references to SDK static `value` storage
+remain rejected.
+
 ## Unary type transforms
 
 Core v2 checks the sixteen unary type transforms in the pinned frontend:
