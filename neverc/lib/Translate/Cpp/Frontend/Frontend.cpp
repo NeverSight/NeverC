@@ -6850,8 +6850,8 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
                              bool SignatureOnly = false) {
   const auto Info =
       SignatureOnly
-          ? approvedUtilityUniquePtrObservationQuery(A.S, A.Sources, Call,
-                                                     A.Context)
+          ? approvedUtilityUniquePtrSignatureQuery(A.S, A.Sources, Call,
+                                                   A.Context)
           : approvedUtilityUniquePtrCall(A.S, A.Sources, Call, A.Context);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);

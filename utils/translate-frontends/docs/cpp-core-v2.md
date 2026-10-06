@@ -3430,7 +3430,7 @@ reference or pointer selects no unused pointee constructor or owning cleanup.
 Unevaluated observations make no receiver, index, default-argument, factory,
 allocation, constructor, deleter or destruction calls. Each selected observation
 overload and specialization receives its own exact lexical proof. Signature
-metadata does not authorize reset, release, assignment, swap or evaluated
+metadata does not authorize reset, assignment, swap or evaluated
 operations. Independent member addresses and source SDK replacements remain
 rejected.
 Pure observation signatures can also complete an otherwise lazy pinned
@@ -3444,17 +3444,25 @@ its independent source and type checks. No wrapper constructor, getter,
 factory or deletion body is instantiated. This completion grants no runtime
 construction or ownership permission.
 
-The same exact-member result-source proof also admits `release()` on mutable
+The same exact pinned signature proof also admits `release()` on mutable
 scalar and array owners with matching standard or admitted custom deleters.
 The result preserves the exact raw pointer type, pointee qualification and
 bounded inner array extents; the pinned member is nonthrowing. Borrowed owners
-select no pointee construction or deleter call. Local owner initializers and
+select no pointee construction or deleter call. The selected pinned release
+signature needs no instantiated member or default deletion body. A borrowed
+owner may therefore name an element with a deleted constructor or destructor
+without selecting it; its element type, source declarations and layout still
+require their own proof.
+SDK wrapper elements retain the authenticated layout completion above. Local
+owner initializers and
 temporary/factory receivers still require their separate owning source proof,
 including selected allocation and cleanup definitions and source defaults.
 Unevaluated `release` queries neither clear the owner nor evaluate a receiver,
 allocate storage or call a deleter. The runtime call continues to clear its
-owner and transfer its pointer without deleting it. Query-only release bodies,
-independent member addresses and source SDK replacements remain rejected;
+owner and transfer its pointer without deleting it, retaining its complete
+evaluated-operation proof. Each query-only release specialization requires its
+own exact declaration proof. Independent member addresses and source SDK
+replacements remain rejected;
 other modifying members follow their separate contracts below.
 
 `decltype` and `noexcept` also admit the exact already materialized mutable

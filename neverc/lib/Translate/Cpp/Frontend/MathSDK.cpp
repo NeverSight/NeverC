@@ -9226,7 +9226,8 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
          Method->getDeclName().getNameKind() ==
              DeclarationName::CXXConversionFunctionName ||
          (Method->getIdentifier() &&
-          (Method->getName() == "get" || Method->getName() == "get_deleter")))))
+          (Method->getName() == "get" || Method->getName() == "get_deleter" ||
+           Method->getName() == "release")))))
     return std::nullopt;
   const auto Owner =
       SignatureOnly
@@ -9427,9 +9428,10 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
   return utilityUniquePtrCall(S, SM, Call, Context, false);
 }
 
-std::optional<UtilityUniquePtrCall> approvedUtilityUniquePtrObservationQuery(
-    const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+std::optional<UtilityUniquePtrCall>
+approvedUtilityUniquePtrSignatureQuery(const State &S, const SourceManager &SM,
+                                       const CallExpr *Call,
+                                       const ASTContext &Context) {
   return utilityUniquePtrCall(S, SM, Call, Context, true);
 }
 

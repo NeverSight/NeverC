@@ -69212,22 +69212,6 @@ int f(){int*p=std::make_unique<int>(1).release();std::unique_ptr<int>q(p);static
 int value(int=sizeof(long double))noexcept{return 2;}int f(){int*p=std::make_unique<int>(value(1)).release();std::unique_ptr<int>q(p);static_assert(__is_same(decltype(std::make_unique<int>(value()).release()),int*));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-scalar", R"cpp(
-int f(std::unique_ptr<int>&p){p.get();static_assert(__is_same(decltype(p.release()),int*));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-array", R"cpp(
-int f(std::unique_ptr<int[]>&p){p.get();static_assert(__is_same(decltype(p.release()),int*));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-custom", R"cpp(
-struct D{void operator()(int*)const noexcept{}};int f(int*p){std::unique_ptr<int,D>q(p);q.get();static_assert(__is_same(decltype(q.release()),int*));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-specialization", R"cpp(
-int f(std::unique_ptr<int>&p,std::unique_ptr<const int>&q){p.release();static_assert(__is_same(decltype(q.release()),const int*));return 0;}
-)cpp",
-       "TR0203"},
       {"member-specialization", R"cpp(
 namespace std{inline namespace __1{template<>int*unique_ptr<int>::release()noexcept{return nullptr;}}}int f(std::unique_ptr<int>&p){p.release();static_assert(__is_same(decltype(p.release()),int*));return 0;}
 )cpp",
@@ -167666,6 +167650,317 @@ using W=std::reference_wrapper<volatile int>;using U=std::unique_ptr<W>;int main
                                 Case.first + ".cpp");
     const auto Output = tmpFile(std::string("unique-wrapper-observation-") +
                                 Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryArrayRelease) {
+  const auto Source = tmpFile("unique-release-signature-array-release.cpp");
+  const auto Output = tmpFile("unique-release-signature-array-release.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,int*>);static_assert(noexcept(std::declval<U&>().release()));return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-array-release" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryConstElementRelease) {
+  const auto Source =
+      tmpFile("unique-release-signature-const-element-release.cpp");
+  const auto Output =
+      tmpFile("unique-release-signature-const-element-release.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,const int*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-release-signature-const-element-release" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryCustomDeleter) {
+  const auto Source = tmpFile("unique-release-signature-custom-deleter.cpp");
+  const auto Output = tmpFile("unique-release-signature-custom-deleter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,int*>);static_assert(noexcept(std::declval<U&>().release()));return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-custom-deleter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrReleaseSignatureQueryMultidimensionalRelease) {
+  const auto Source =
+      tmpFile("unique-release-signature-multidimensional-release.cpp");
+  const auto Output =
+      tmpFile("unique-release-signature-multidimensional-release.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[][2]>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,const int(*)[2]>);static_assert(noexcept(std::declval<U&>().release()));return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-release-signature-multidimensional-release" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("unique-release-signature-query-effects.cpp");
+  const auto Output = tmpFile("unique-release-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects;U* owner()noexcept{++effects;return nullptr;}int main(){using P=decltype(owner()->release());static_assert(noexcept(owner()->release()));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryQueryNoDeleteBody) {
+  const auto Source =
+      tmpFile("unique-release-signature-query-no-delete-body.cpp");
+  const auto Output =
+      tmpFile("unique-release-signature-query-no-delete-body.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;R()=delete;~R()=delete;};using U=std::unique_ptr<R>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,R*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-query-no-delete-body" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryQueryOnlyParameter) {
+  const auto Source =
+      tmpFile("unique-release-signature-query-only-parameter.cpp");
+  const auto Output =
+      tmpFile("unique-release-signature-query-only-parameter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(std::is_same_v<P,int*>);static_assert(noexcept(p.release()));return 0;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-query-only-parameter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryScalarRelease) {
+  const auto Source = tmpFile("unique-release-signature-scalar-release.cpp");
+  const auto Output = tmpFile("unique-release-signature-scalar-release.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,int*>);static_assert(noexcept(std::declval<U&>().release()));return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-scalar-release" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrReleaseSignatureQueryWrapperRelease) {
+  const auto Source = tmpFile("unique-release-signature-wrapper-release.cpp");
+  const auto Output = tmpFile("unique-release-signature-wrapper-release.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().release());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-release-signature-wrapper-release" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrReleaseSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-release-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){return sizeof(&U::release)>0?0:1;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"query-does-not-authorize-reset", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.reset()));return 0;}int main(){return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;~R()noexcept;};using U=std::unique_ptr<R>;int f(U&p){static_assert(sizeof(p.release())==sizeof(R*));p.reset(nullptr);return 0;}int main(){return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using U=std::unique_ptr<R>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner()noexcept{long double n=1;(void)n;return *static_cast<U*>(nullptr);}int main(){using P=decltype(owner().release());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-receiver-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner(int=sizeof(long double))noexcept{return *static_cast<U*>(nullptr);}int main(){using P=decltype(owner().release());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-release-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int* unique_ptr<int>::release()noexcept{return nullptr;}}}using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::declval<U&>().release()));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("unique-release-signature-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("unique-release-signature-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
