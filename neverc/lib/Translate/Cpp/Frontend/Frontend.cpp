@@ -1718,8 +1718,9 @@ static bool scalarTemplateValueMatches(const Expr *Expression,
          (Type->isNullPtrType() || Value.getInt() == Argument.getAsIntegral());
 }
 
-const Expr *scalarTemplateReplacement(const SubstNonTypeTemplateParmExpr *E,
-                                      ASTContext &Context) {
+static const Expr *
+scalarTemplateReplacement(const SubstNonTypeTemplateParmExpr *E,
+                          ASTContext &Context) {
   if (!E || E->getType().isNull() || !E->isPRValue() ||
       !scalarTemplateType(E->getType()) || E->isTypeDependent() ||
       E->isValueDependent() || E->isInstantiationDependent() ||
@@ -1749,6 +1750,111 @@ const Expr *scalarTemplateReplacement(const SubstNonTypeTemplateParmExpr *E,
   return Replacement->isCXX11ConstantExpr(Context, &Value) &&
                  scalarTemplateValue(Replacement->getType(), Value)
              ? Replacement : nullptr;
+}
+
+// Function-address template values retain a declaration identity rather than
+// becoming integers. Object/member pointers and pointer-typed null arguments
+// are deliberately outside this domain.
+static bool functionTemplateValueType(QualType Type) {
+  if (Type.isNull() || Type->isDependentType() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default ||
+      (!Type->isFunctionPointerType() && !Type->isLValueReferenceType()))
+    return false;
+  auto Function = Type->getPointeeType();
+  return !Function.hasQualifiers() &&
+         Function.getAddressSpace() == LangAS::Default &&
+         ordinaryCallbackPrototype(Function->getAs<FunctionProtoType>());
+}
+
+static bool templateValueType(QualType Type) {
+  return scalarTemplateType(Type) || functionTemplateValueType(Type);
+}
+
+static QualType templateValueArgumentType(const TemplateArgument &Argument) {
+  if (Argument.getKind() != TemplateArgument::Declaration)
+    return scalarTemplateArgumentType(Argument);
+  const auto *Function = dyn_cast_or_null<FunctionDecl>(Argument.getAsDecl());
+  auto Type = Argument.getParamTypeForDecl();
+  return Function && functionTemplateValueType(Type) ? Type : QualType();
+}
+
+static const FunctionDecl *functionTemplateConstant(const APValue &Value) {
+  if (!Value.isLValue() || Value.isNullPointer() ||
+      !Value.getLValueOffset().isZero() || Value.isLValueOnePastTheEnd() ||
+      Value.getLValueCallIndex() || Value.getLValueVersion() ||
+      (Value.hasLValuePath() && !Value.getLValuePath().empty()))
+    return nullptr;
+  return dyn_cast_or_null<FunctionDecl>(
+      Value.getLValueBase().dyn_cast<const ValueDecl *>());
+}
+
+static const FunctionDecl *functionTemplateExpression(const Expr *Expression,
+                                                      ASTContext &Context) {
+  if (!Expression || Expression->getType().isNull() ||
+      Expression->isTypeDependent() || Expression->isValueDependent() ||
+      Expression->isInstantiationDependent())
+    return nullptr;
+  if (Expression->getType()->isFunctionType() && Expression->isLValue()) {
+    // Reference arguments are glvalues. Evaluate their exact address, without
+    // inventing an lvalue-to-rvalue conversion to a nonexistent function value.
+    Expr::EvalResult Value;
+    return Expression->EvaluateAsLValue(Value, Context) &&
+                   !Value.HasSideEffects && !Value.HasUndefinedBehavior
+               ? functionTemplateConstant(Value.Val)
+               : nullptr;
+  }
+  APValue Value;
+  return Expression->getType()->isFunctionPointerType() &&
+                 Expression->isCXX11ConstantExpr(Context, &Value)
+             ? functionTemplateConstant(Value)
+             : nullptr;
+}
+
+static bool templateValueMatches(const Expr *Expression,
+                                 const TemplateArgument &Argument,
+                                 ASTContext &Context) {
+  if (Argument.getKind() != TemplateArgument::Declaration)
+    return scalarTemplateValueMatches(Expression, Argument, Context);
+  auto Type = templateValueArgumentType(Argument);
+  if (Type.isNull() || !Expression || Expression->getType().isNull())
+    return false;
+  auto Expected = Type->isReferenceType() ? Type->getPointeeType() : Type;
+  if (!Context.hasSameType(Expression->getType(), Expected))
+    return false;
+  const auto *Function = functionTemplateExpression(Expression, Context);
+  return Function && Function->getCanonicalDecl() ==
+                         Argument.getAsDecl()->getCanonicalDecl();
+}
+
+const Expr *templateValueReplacement(const SubstNonTypeTemplateParmExpr *E,
+                                     ASTContext &Context) {
+  if (const auto *Scalar = scalarTemplateReplacement(E, Context))
+    return Scalar;
+  if (!E || E->getType().isNull() || E->isTypeDependent() ||
+      E->isValueDependent() || E->isInstantiationDependent() ||
+      (E->isReferenceParameter()
+           ? !E->getType()->isFunctionType() || !E->isLValue()
+           : !functionTemplateValueType(E->getType()) || !E->isPRValue()))
+    return nullptr;
+  const auto *Primary = scalarTemplateOwner(E);
+  const auto Depth = templateSourceParameterDepth(Primary);
+  const auto *Parameters =
+      Primary ? templateSourceParameters(Primary) : nullptr;
+  if (!Depth || !Parameters || E->getIndex() >= Parameters->size())
+    return nullptr;
+  const auto *Parameter =
+      dyn_cast<NonTypeTemplateParmDecl>(Parameters->getParam(E->getIndex()));
+  if (!Parameter || Parameter->getDepth() != *Depth ||
+      Parameter->isParameterPack() != E->getPackIndex().has_value() ||
+      (E->getPackIndex() && *E->getPackIndex() >= 64))
+    return nullptr;
+  const auto *Replacement = E->getReplacement();
+  if (!Replacement ||
+      !Context.hasSameType(E->getType(), Replacement->getType()) ||
+      E->getValueKind() != Replacement->getValueKind() ||
+      !functionTemplateExpression(Replacement, Context))
+    return nullptr;
+  return Replacement;
 }
 
 static bool lazyTemplateDefault(const ParmVarDecl *P) {
@@ -11345,7 +11451,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       auto T = Value->getType();
       if (T.isVolatileQualified() || T.isRestrictQualified() ||
           (!T->isDependentType() && !T->isUndeducedAutoType() &&
-           !scalarTemplateType(T)))
+           !templateValueType(T)))
         return false;
     }
     return true;
@@ -12920,11 +13026,22 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             A.reject(L, "template argument", "A resolved supported type argument is required.");
           else
             A.checkTypeOnly(Element.getAsType(), L);
-        } else if (scalarTemplateArgumentType(Element).isNull()) {
+        } else if (templateValueArgumentType(Element).isNull()) {
           A.reject(L, "template argument",
-                   "A resolved integer, boolean, enum or nullptr_t value argument is required.");
+                   "A resolved scalar or checked ordinary function address "
+                   "argument is required.");
         } else {
-          A.type(scalarTemplateArgumentType(Element), L);
+          A.type(templateValueArgumentType(Element), L);
+          if (Element.getKind() == TemplateArgument::Declaration) {
+            const auto *Target = cast<FunctionDecl>(Element.getAsDecl());
+            if (!owned(Target) || Target->isInvalidDecl())
+              A.reject(L, "template function address",
+                       "A function address argument requires its owned source "
+                       "declaration.");
+            else
+              A.functionPointerType(A.Context.getPointerType(Target->getType()),
+                                    L);
+          }
         }
       };
       if (supportedPackDeclaration(Parameter)) {
@@ -15966,6 +16083,8 @@ public:
     switch (Argument.getArgument().getKind()) {
     case TemplateArgument::Expression: return Argument.getSourceExpression();
     case TemplateArgument::Integral: return Argument.getSourceIntegralExpression();
+    case TemplateArgument::Declaration:
+      return Argument.getSourceDeclExpression();
     case TemplateArgument::NullPtr: return Argument.getSourceNullPtrExpression();
     default: return nullptr;
     }
@@ -15973,6 +16092,8 @@ public:
   static bool hasArgumentSource(const TemplateArgumentLoc &Argument) {
     // Successful C++17 Sema events retain a typed Expr payload for NullPtr.
     // Do not dereference a missing expression through getLocation/getSourceRange.
+    if (Argument.getArgument().getKind() == TemplateArgument::Declaration)
+      return Argument.getSourceDeclExpression();
     return Argument.getArgument().getKind() != TemplateArgument::NullPtr ||
            Argument.getSourceNullPtrExpression();
   }
@@ -16023,7 +16144,8 @@ public:
              !Argument.isInstantiationDependent() &&
              A.Context.hasSameType(Argument.getAsType(), Canonical.getAsType());
     }
-    return scalarTemplateValueMatches(argumentExpression(Source), Canonical, A.Context);
+    return templateValueMatches(argumentExpression(Source), Canonical,
+                                A.Context);
   }
   bool parameterInTemplate(const NamedDecl *Template, const NamedDecl *Parameter,
                            unsigned Index) {
@@ -16240,7 +16362,8 @@ public:
     return !DefinitionFrames.empty() && DefinitionFrames.back().Owner &&
            DefinitionFrames.back().Owner->getCanonicalDecl() == Primary->getCanonicalDecl();
   }
-  void checkScalarSourceEdge(const SubstNonTypeTemplateParmExpr *E, SourceLocation L) {
+  void checkTemplateValueSourceEdge(const SubstNonTypeTemplateParmExpr *E,
+                                    SourceLocation L) {
     const auto *Primary = scalarTemplateOwner(E);
     if (!Primary || (!isa<TypeAliasTemplateDecl, ClassTemplatePartialSpecializationDecl,
                          VarTemplateDecl, VarTemplatePartialSpecializationDecl>(Primary) &&
@@ -16250,10 +16373,15 @@ public:
       return; // Existing concrete function/class bodies retain their source checks.
     const auto *Argument = concreteSourceEdge(
         E->getAssociatedDecl(), Primary, E->getIndex(), E->getPackIndex(), L);
-    if (!Argument || scalarTemplateArgumentType(*Argument).isNull() ||
-        !A.Context.hasSameType(E->getType(), scalarTemplateArgumentType(*Argument)) ||
-        !scalarTemplateValueMatches(E->getReplacement(), *Argument, A.Context))
-      A.reject(L, "template scalar source", "The replacement must equal its checked scalar argument.");
+    auto Type = Argument ? templateValueArgumentType(*Argument) : QualType();
+    if (Type.isNull() ||
+        !A.Context.hasSameType(E->getType(), Type->isReferenceType()
+                                                 ? Type->getPointeeType()
+                                                 : Type) ||
+        !templateValueMatches(E->getReplacement(), *Argument, A.Context))
+      A.reject(L, "template scalar source",
+               "The replacement must equal its checked scalar or function "
+               "address argument.");
   }
   bool emptyTypePackSource(const SubstTemplateTypeParmPackType *Type,
                            SourceLocation L) {
@@ -16303,14 +16431,40 @@ public:
       }
     }
     const auto *Auto = dyn_cast<AutoType>(Type.getTypePtr());
-    const bool Placeholder = Auto && Auto->getDeducedType().isNull() && !Auto->isConstrained();
+    // Sema retains auto&/auto* in this written source after resolving the
+    // declaration argument. Admit that placeholder only when the exact slot
+    // already proves the corresponding function-reference/pointer domain.
+    const auto *ValueParameter =
+        dyn_cast_or_null<NonTypeTemplateParmDecl>(Source.Parameter);
+    const bool EmptyValuePack = !Argument && ValueParameter &&
+                                ValueParameter->isParameterPack() &&
+                                Source.PackIndex == ~0u;
+    if (!Auto &&
+        (EmptyValuePack ||
+         (Argument &&
+          functionTemplateValueType(templateValueArgumentType(*Argument)))) &&
+        ((Type->isLValueReferenceType() &&
+          (EmptyValuePack ||
+           templateValueArgumentType(*Argument)->isLValueReferenceType())) ||
+         (Type->isPointerType() &&
+          (EmptyValuePack ||
+           templateValueArgumentType(*Argument)->isFunctionPointerType()))))
+      Auto = dyn_cast<AutoType>(Type->getPointeeType().getTypePtr());
+    const bool Placeholder =
+        Auto && Auto->getDeducedType().isNull() && !Auto->isConstrained();
     if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
-        (!Placeholder && (Type->isInstantiationDependentType() ||
-                          !scalarTemplateType(Type))) ||
-        (Argument && (scalarTemplateArgumentType(*Argument).isNull() ||
-                      (!Placeholder && !A.Context.hasSameType(Type.getUnqualifiedType(),
-                                      scalarTemplateArgumentType(*Argument).getUnqualifiedType()))))) {
-      A.reject(L, "template parameter type", "A concrete scalar parameter type must match its converted argument; plain auto remains source metadata.");
+        (!Placeholder &&
+         (Type->isInstantiationDependentType() || !templateValueType(Type))) ||
+        (Argument &&
+         (templateValueArgumentType(*Argument).isNull() ||
+          (!Placeholder &&
+           !A.Context.hasSameType(
+               Type.getUnqualifiedType(),
+               templateValueArgumentType(*Argument).getUnqualifiedType()))))) {
+      A.reject(
+          L, "template parameter type",
+          "A concrete scalar or function address parameter type must match its "
+          "converted argument; plain auto remains source metadata.");
       return true;
     }
     if (!Placeholder)
@@ -16732,8 +16886,9 @@ public:
         if (Bounded)
           for (const auto &Element : Sugared.pack_elements())
             Bounded &= Element.getKind() == TemplateArgument::Type ||
-                       !scalarTemplateArgumentType(Element).isNull() ||
-                       (DeferredDeclaration && (Frontier || Pending[I]) && Element.getKind() == TemplateArgument::Expression);
+                       !templateValueArgumentType(Element).isNull() ||
+                       (DeferredDeclaration && (Frontier || Pending[I]) &&
+                        Element.getKind() == TemplateArgument::Expression);
       }
       if (!Bounded || !Canonical.structurallyEquals(A.Context.getCanonicalTemplateArgument(Sugared))) {
         A.reject(L, "template argument sugar", "Written substitution arguments must preserve their bounded canonical values.");
@@ -16744,10 +16899,12 @@ public:
       for (unsigned I = Matched; I < Source.Canonical->size(); ++I) {
         const auto &Argument = Source.Canonical->get(I);
         if ((Argument.getKind() != TemplateArgument::Type &&
-             scalarTemplateArgumentType(Argument).isNull() &&
+             templateValueArgumentType(Argument).isNull() &&
              Argument.getKind() != TemplateArgument::Expression) ||
-            (Argument.getKind() == TemplateArgument::Type && Argument.getAsType().isNull()) ||
-            (Argument.getKind() == TemplateArgument::Expression && !Argument.getAsExpr())) {
+            (Argument.getKind() == TemplateArgument::Type &&
+             Argument.getAsType().isNull()) ||
+            (Argument.getKind() == TemplateArgument::Expression &&
+             !Argument.getAsExpr())) {
           A.reject(L, "partial expansion source", "An unknown-length tail requires its supported actual type or scalar syntax.");
           return true;
         }
@@ -18824,6 +18981,24 @@ public:
     return true;
   }
   bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &Argument) {
+    if (A.S.coreV2() &&
+        Argument.getArgument().getKind() == TemplateArgument::Declaration) {
+      auto *Written = Argument.getSourceDeclExpression();
+      if (!Written ||
+          templateValueArgumentType(Argument.getArgument()).isNull()) {
+        auto Location =
+            !ActiveTemplateUses.empty() ? ActiveTemplateUses.back()->Location
+            : CurrentFunction
+                ? CurrentFunction->getLocation()
+                : A.Sources.getLocForStartOfFile(A.Sources.getMainFileID());
+        A.reject(Location, "function template argument source",
+                 "A function address argument requires its retained source "
+                 "expression.");
+        return true;
+      }
+      // Pinned RAV skips declaration argument syntax, including folded sources.
+      return TraverseStmt(Written);
+    }
     if (A.S.coreV2() && Argument.getArgument().getKind() == TemplateArgument::NullPtr) {
       auto *Written = Argument.getSourceNullPtrExpression();
       if (!Written || scalarTemplateArgumentType(Argument.getArgument()).isNull()) {
@@ -21368,14 +21543,15 @@ public:
         checkPackSize(Query);
       if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(S)) {
         A.chargeExpansion(1, L);
-        if (!scalarTemplateReplacement(Substitution, A.Context) ||
+        if (!templateValueReplacement(Substitution, A.Context) ||
             !owned(Substitution->getAssociatedDecl()) ||
             !owned(Substitution->getParameter()) ||
             !templateSourceShape(scalarTemplateOwner(Substitution)))
           A.reject(L, "template value replacement",
-                   "A checked scalar replacement from an admitted owned template is required.");
+                   "A checked value replacement from an admitted owned "
+                   "template is required.");
         else
-          checkScalarSourceEdge(Substitution, L);
+          checkTemplateValueSourceEdge(Substitution, L);
       }
     }
     if (A.S.coreV2())

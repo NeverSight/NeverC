@@ -18174,7 +18174,7 @@ TEST_F(TranslateTest, CoreV2TemplateFunctionPointersRetainSourceAndSignatureBoun
       {"folded-address-source", "template<class T>int get(int n){return n;}static_assert((&get<decltype((sizeof(long double),1))>,true));"},
       {"noexcept-address-source", "template<class T>int get(int n){return n;}int main(){return noexcept(&get<decltype((sizeof(long double),1))>);}"},
       {"unsupported-selected-body", "template<class T>int get(int n){long double x=1.0L;return n;}int main(){auto p=&get<int>;return p(3);}"},
-      {"pointer-nontype-argument", "int get(){return 3;}template<int(*P)()>int invoke(){return P();}int main(){auto p=&invoke<get>;return p();}"},
+      {"pointer-nontype-signature", "long double get(){return 3;}template<long double(*P)()>int invoke(){return P();}int main(){auto p=&invoke<get>;return p();}"},
       {"nondefault-pointee-address-space", "typedef int __attribute__((address_space(1))) A;template<class T>int get(T*p){return 3;}int main(){auto p=&get<A>;return 0;}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -22143,7 +22143,7 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundari
       {"template-template", "template<template<class>class T,int N>int f(){return N;}", "TR0201"},
       {"pointer-parameter", "int n=3;template<int*P>int f(){return *P;}int main(){return f<&n>();}", "TR0201"},
       {"reference-parameter", "int n=3;template<int&N>int f(){return N;}int main(){return f<n>();}", "TR0201"},
-      {"function-parameter", "int g(){return 3;}template<int(*F)()>int f(){return F();}int main(){return f<g>();}", "TR0201"},
+      {"function-parameter-signature", "long double g(){return 3;}template<long double(*F)()>int f(){return F();}int main(){return f<g>();}", "TR0201"},
       {"member-pointer", "struct R{int n;};template<int R::*P>int f(){return 1;}int main(){return f<&R::n>();}", "TR0201"},
       {"auto-pointer", "int n=3;template<auto N>int f(){return 1;}int main(){return f<&n>();}", "TR0201"},
       {"dependent-pointer", "int n=3;template<class T,T N>int f(){return 1;}int main(){return f<int*,&n>();}", "TR0201"},
@@ -27949,6 +27949,425 @@ TEST_F(TranslateTest,
       auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
     }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateAutoPointer) {
+  const auto Source = tmpFile("function-address-template-auto-pointer.cpp");
+  const auto Output = tmpFile("function-address-template-auto-pointer.nc");
+  writeFile(
+      Source,
+      R"cpp(int target(int n)noexcept{return n+1;}template<auto *F>int invoke(int n){return F(n);}int main(){return invoke<target>(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-auto-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateAutoReferencePack) {
+  const auto Source =
+      tmpFile("function-address-template-auto-reference-pack.cpp");
+  const auto Output =
+      tmpFile("function-address-template-auto-reference-pack.nc");
+  writeFile(
+      Source,
+      R"cpp(int a(int n){return n+1;}int b(int n){return n+2;}template<auto&...F>int invoke(int n){int values[]={F(n)...};return values[0]+values[1];}int main(){return invoke<a,b>(2)!=7;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-auto-reference-pack" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionAddressTemplateInstanceIdentityAndSpecializations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"const-pointer-parameter",
+       R"cpp(int target(int n){return n+1;}template<int(*const F)(int)>int invoke(int n){return F(n);}int main(){return invoke<target>(2)!=3;}
+)cpp"},
+      {"copied-member",
+       R"cpp(int target(int n){return n+1;}template<class T>struct Box{template<auto F=target>int invoke(int n){return F(n);}};int main(){Box<int>b;return b.invoke<>(2)!=3;}
+)cpp"},
+      {"explicit-instantiation",
+       R"cpp(int target(int n){return n+1;}template<int(&F)(int)>int invoke(int n){return F(n);}extern template int invoke<target>(int);template int invoke<target>(int);int main(){return invoke<target>(2)!=3;}
+)cpp"},
+      {"identity-storage",
+       R"cpp(int a(int n){return n+1;}int b(int n){return n+2;}template<auto F>int invoke(int n){static int calls=0;return F(n)+10*++calls;}int main(){return invoke<a>(1)!=12||invoke<b>(1)!=13||invoke<a>(1)!=22||invoke<b>(1)!=23;}
+)cpp"},
+      {"partial-and-full",
+       R"cpp(int a(int n){return n+1;}int b(int n){return n+2;}template<auto F>struct Box{static int call(int n){return F(n);}};template<>struct Box<a>{static int call(int n){return a(n)+3;}};template<class T,auto F>struct Holder{int n=1;};template<auto F>struct Holder<int,F>{int n=3;};int main(){return Box<a>::call(2)!=6||Box<b>::call(2)!=4||Holder<int,a>{}.n!=3;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source =
+        tmpFile("function-address-template-instance-" + Name + ".cpp");
+    auto Output = tmpFile("function-address-template-instance-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      auto Executable =
+          tmpFile("function-address-template-instance-" + Name + Optimization);
+      auto Compile =
+          compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateEmptyAddressPacks) {
+  const auto Source = tmpFile("function-address-template-empty-packs.cpp");
+  const auto Output = tmpFile("function-address-template-empty-packs.nc");
+  writeFile(
+      Source,
+      R"cpp(template<auto&...F>int refs(){return sizeof...(F);}template<auto*...F>int ptrs(){return sizeof...(F);}template<int(&...F)(int)>int fixed(){return sizeof...(F);}int main(){return refs<>()!=0||ptrs<>()!=0||fixed<>()!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-empty-packs" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateLegacyZeroArity) {
+  const auto Source =
+      tmpFile("function-address-template-legacy-zero-arity.cpp");
+  const auto Output = tmpFile("function-address-template-legacy-zero-arity.nc");
+  writeFile(
+      Source,
+      R"cpp(int g(){return 3;}template<int(*F)()>int f(){return F();}int main(){return f<g>()!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-legacy-zero-arity" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateAddressPack) {
+  const auto Source = tmpFile("function-address-template-address-pack.cpp");
+  const auto Output = tmpFile("function-address-template-address-pack.nc");
+  writeFile(
+      Source,
+      R"cpp(int effects;int a(int n){++effects;return n+1;}int b(int n){++effects;return n+2;}template<int(&...F)(int)>int refs(int n){int values[]={F(n)...};return values[0]+values[1];}template<auto...F>int ptrs(int n){int values[]={F(n)...};return values[0]+values[1];}int main(){return refs<a,b>(1)!=5||ptrs<a,b>(2)!=7||effects!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-address-pack" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateAutoFunction) {
+  const auto Source = tmpFile("function-address-template-auto-function.cpp");
+  const auto Output = tmpFile("function-address-template-auto-function.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+int target(int n)noexcept{return n+1;}template<auto F>int invoke(int n){static_assert(std::is_same_v<decltype(F),int(*)(int)noexcept>);return F(n);}int main(){return invoke<target>(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-auto-function" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateAutoReference) {
+  const auto Source = tmpFile("function-address-template-auto-reference.cpp");
+  const auto Output = tmpFile("function-address-template-auto-reference.nc");
+  writeFile(
+      Source,
+      R"cpp(int target(int n)noexcept{return n+1;}template<auto &F>int invoke(int n){return F(n);}int main(){return invoke<target>(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-auto-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateClassReference) {
+  const auto Source = tmpFile("function-address-template-class-reference.cpp");
+  const auto Output = tmpFile("function-address-template-class-reference.nc");
+  writeFile(
+      Source,
+      R"cpp(int target(int n){return n+1;}template<int(&F)(int)>struct Box{static int call(int n){return F(n);}};int main(){return Box<target>::call(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-class-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateDefaultAndAlias) {
+  const auto Source =
+      tmpFile("function-address-template-default-and-alias.cpp");
+  const auto Output = tmpFile("function-address-template-default-and-alias.nc");
+  writeFile(
+      Source,
+      R"cpp(int target(int n){return n+1;}template<int(&F)(int)=target>int invoke(int n){return F(n);}template<int(*F)(int)=target>using I=int;template<auto F=target>inline auto chosen=F;int main(){I<>n=2;return invoke<>(n)!=3||chosen<>(3)!=4;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-default-and-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateFunctionPointer) {
+  const auto Source = tmpFile("function-address-template-function-pointer.cpp");
+  const auto Output = tmpFile("function-address-template-function-pointer.nc");
+  writeFile(
+      Source,
+      R"cpp(int effects;int a(int n){++effects;return n+1;}int b(int n){++effects;return n+2;}template<int(*F)(int)>int invoke(int n){return F(n);}int main(){return invoke<&a>(1)!=2||invoke<b>(1)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-function-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateFunctionReference) {
+  const auto Source =
+      tmpFile("function-address-template-function-reference.cpp");
+  const auto Output =
+      tmpFile("function-address-template-function-reference.nc");
+  writeFile(
+      Source,
+      R"cpp(int effects;int a(int n){++effects;return n+1;}int b(int n){++effects;return n+2;}template<int(&F)(int)>int invoke(int n){return F(n);}int main(){return invoke<a>(1)!=2||invoke<b>(1)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-function-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateNoexceptRemoval) {
+  const auto Source = tmpFile("function-address-template-noexcept-removal.cpp");
+  const auto Output = tmpFile("function-address-template-noexcept-removal.nc");
+  writeFile(
+      Source,
+      R"cpp(int effects;int target(int n)noexcept{++effects;return n+1;}template<int(*F)(int)>int ptr(int n){return F(n);}template<int(&F)(int)>int ref(int n){return F(n);}int main(){return ptr<target>(1)!=2||ref<target>(2)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-noexcept-removal" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplateStaticMember) {
+  const auto Source = tmpFile("function-address-template-static-member.cpp");
+  const auto Output = tmpFile("function-address-template-static-member.nc");
+  writeFile(
+      Source,
+      R"cpp(struct R{static int target(int n)noexcept{return n+1;}};template<int(*F)(int)noexcept>int invoke(int n){return F(n);}int main(){return invoke<R::target>(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-address-template-static-member" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionAddressTemplatesRetainSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"empty-hidden-pack-type",
+       R"cpp(using P=decltype((sizeof(long double),static_cast<int(*)(int)>(nullptr)));template<P...F>int count(){return sizeof...(F);}int main(){return count<>();}
+)cpp",
+       "TR0201"},
+      {"function-pack-65",
+       R"cpp(int target(int n){return n;}template<auto...F>int count(){return sizeof...(F);}int main(){return count<target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target,target>();}
+)cpp",
+       "TR0201"},
+      {"hidden-noexcept",
+       R"cpp(using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n;}template<F&fn>int call(int n){return fn(n);}int main(){return call<target>(2);}
+)cpp",
+       "TR0201"},
+      {"repeated-canonical",
+       R"cpp(int target(int n){return n;}template<auto F>struct Box{int n=3;};Box<target>a;Box<(sizeof(long double),target)>b;int main(){return a.n+b.n;}
+)cpp",
+       "TR0201"},
+      {"unused-hidden-default",
+       R"cpp(int target(int n){return n;}template<int(*F)(int)=(sizeof(long double),target)>int invoke(int n){return F(n);}int main(){return 0;}
+)cpp",
+       "TR0201"},
+
+      {"hidden-address-source",
+       R"cpp(template<class T>int target(int n){return n;}template<int(*F)(int)>int invoke(int n){return F(n);}int main(){return invoke<target<decltype((sizeof(long double),int{}))>>(2);}
+)cpp",
+       "TR0201"},
+      {"hidden-folded-alias",
+       R"cpp(int target(int n){return n;}template<int(*F)(int)>using I=int;I<(sizeof(long double),target)>value;int main(){return value;}
+)cpp",
+       "TR0201"},
+      {"hidden-default",
+       R"cpp(int target(int n){return n;}template<int(*F)(int)=(sizeof(long double),target)>int invoke(int n){return F(n);}int main(){return invoke<>(2);}
+)cpp",
+       "TR0201"},
+      {"hidden-parameter-alias",
+       R"cpp(using P=decltype((sizeof(long double),static_cast<int(*)(int)>(nullptr)));int target(int n){return n;}template<P F>int invoke(int n){return F(n);}int main(){return invoke<target>(2);}
+)cpp",
+       "TR0201"},
+      {"hidden-selected-body",
+       R"cpp(int target(int n){long double hidden=0;return n;}template<int(&F)(int)>int invoke(int n){return F(n);}int main(){return invoke<target>(2);}
+)cpp",
+       "TR0201"},
+      {"missing-definition",
+       R"cpp(int target(int);template<int(&F)(int)>int invoke(int n){return F(n);}int main(){return invoke<target>(2);}
+)cpp",
+       "TR0203"},
+      {"object-address",
+       R"cpp(int n;template<int*P>int get(){return *P;}int main(){return get<&n>();}
+)cpp",
+       "TR0201"},
+      {"object-reference",
+       R"cpp(int n;template<int&R>int get(){return R;}int main(){return get<n>();}
+)cpp",
+       "TR0201"},
+      {"pointer-null",
+       R"cpp(template<int(*F)(int)>int get(){return F==nullptr;}int main(){return get<nullptr>();}
+)cpp",
+       "TR0201"},
+      {"variadic-address",
+       R"cpp(int target(int,...){return 3;}template<int(*F)(int,...)>int invoke(){return F(1,2);}int main(){return invoke<target>();}
+)cpp",
+       "TR0201"},
+      {"wide-signature",
+       R"cpp(long double target(long double n){return n;}template<auto F>int invoke(){return F(1);}int main(){return invoke<target>();}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source = tmpFile(std::string("function-address-template-reject-") +
+                          Case.Name + ".cpp");
+    auto Output = tmpFile(std::string("function-address-template-reject-") +
+                          Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
   }
 }
 

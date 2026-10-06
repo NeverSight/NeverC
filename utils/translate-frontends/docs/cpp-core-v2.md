@@ -7513,7 +7513,7 @@ Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
 integer-derived pointers and unsupported source types cannot provide these
 constant bindings. Constant-initialized static temporaries follow the contract
 below. Nonstatic reference members follow their [binding contract](#reference-members).
-Function references and reference non-type template arguments still require further work.
+Ordinary function references follow the [runtime function-reference contract](#runtime-function-references), and function address non-type arguments follow their [template argument contract](#function-address-template-arguments). Object-reference non-type arguments remain excluded.
 Nonlocal dynamic bindings follow the [startup contract](#nonlocal-dynamic-initialization).
 Local runtime bindings and their lifetime-extended temporaries use the
 [first-use contract](#dynamic-local-static-initialization). Actual standard-library
@@ -8860,6 +8860,40 @@ source-language frontend; this representation belongs to the external
 implementing revision's CI.
 
 
+## Function address template arguments
+
+Core v2 admits nonnull ordinary source function addresses and function lvalue
+references as C++17 non-type template arguments. Explicit callback-pointer or
+function-reference parameters, deduced `auto`, `auto&` and `auto*`, selected defaults,
+and packs of at most 64 values retain the actual Clang declaration identity.
+Empty pointer/reference placeholder packs retain checked source metadata and
+introduce no addressed entity.
+Free/member function templates, class, variable and alias templates consume
+their checked concrete values without runtime template parameters. Distinct
+function targets remain distinct specializations; no address becomes an
+integer template value.
+
+Each declaration argument retains its exact converted parameter type and its
+written expression. Selected defaults and substituted parameter type sources
+are checked before erasure, including dependent aliases. Pinned Clang's
+visitor skips declaration argument expressions, so the allowlist explicitly
+traverses that retained syntax; folded addresses and aliases cannot hide an
+unsupported type, expression, default or selected function body. Replacements
+must match the canonical source slot, exact value category and function
+identity, including bounded reverse pack indices. Function glvalues retain
+function-lvalue semantics; callback pointer replacements use the existing
+typed address and indirect-call lowering.
+
+Addresses must designate an ordinary source-owned function with the admitted
+prototype and default ABI. Checked `noexcept` removal retains its source and
+converted signature. Constant values cannot carry a null address, subobject
+path, offset, one-past flag, call index or temporary version. Evaluated calls
+and addresses still require their source-owned definition. Object and member
+pointer arguments, object-reference arguments, pointer-typed null arguments,
+variadic or unsupported signatures and nondefault ABI metadata remain excluded.
+Native C23 and the translation protocol are unchanged. Cross-platform native
+execution requires the implementing revision's CI.
+
 ## Unary type transforms
 
 Core v2 checks the sixteen unary type transforms in the pinned frontend:
@@ -9157,7 +9191,7 @@ bindings and receivers may use full-expression temporaries under the contract
 below. Automatic local extension follows its exact-owner contract below;
 fresh-reference returns remain rejected, including converted values and subobjects
 in dead code. Reference fields and static lifetime extension follow their separate
-contracts. Function references, volatile types and arbitrary dangling-reference
+contracts. Function references follow their [separate carrier contract](#runtime-function-references); volatile types and arbitrary dangling-reference
 analysis are not enabled. Invalid C++ category/qualification uses retain source diagnostics.
 V1 profiles continue to reject rvalue references and methods.
 
@@ -10913,7 +10947,7 @@ selected copy/move construction and callee-owned destruction. A record result
 uses the direct-function ABI's leading caller-owned destination pointer, so a
 prvalue constructs in its final destination without an extra copy. References
 to records or fixed arrays retain binding, constness and alias behavior. Function references
-require separate lowering and remain unsupported. Function-type aliases
+follow their [callback carrier contract](#runtime-function-references). Function-type aliases
 are accepted as source spellings for these pointer signatures, without adding a
 bare function-value IR type. Nested factory callbacks may return callbacks. Record declarations are ordered
 before any callback signature that needs their complete array element types;

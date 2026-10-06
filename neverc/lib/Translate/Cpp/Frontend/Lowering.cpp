@@ -555,6 +555,15 @@ class FunctionLowering {
   }
   Expression functionValue(const Expr *E) {
     auto L = E->getExprLoc();
+    if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
+      const auto *Replacement =
+          templateValueReplacement(Substitution, A.Context);
+      if (!Replacement)
+        reject(
+            L, "template function replacement",
+            "A checked function-reference template replacement is required.");
+      return functionValue(Replacement);
+    }
     if (const auto *P = dyn_cast<ParenExpr>(E))
       return functionValue(P->getSubExpr());
     if (const auto *C = dyn_cast<ConstantExpr>(E))
@@ -20098,9 +20107,11 @@ class FunctionLowering {
     if (auto Value = staticMemberValue(E))
       return std::move(*Value);
     if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
-      const auto *Replacement = scalarTemplateReplacement(Substitution, A.Context);
+      const auto *Replacement =
+          templateValueReplacement(Substitution, A.Context);
       if (!A.S.coreV2() || !Replacement)
-        reject(L, "template value replacement", "A checked scalar template replacement is required.");
+        reject(L, "template value replacement",
+               "A checked value template replacement is required.");
       return expression(Replacement);
     }
     if (const auto *Query = dyn_cast<SizeOfPackExpr>(E)) {

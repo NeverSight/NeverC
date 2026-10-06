@@ -1706,7 +1706,7 @@ const clang::Expr *referenceListInitializer(const clang::InitListExpr *List,
                                           clang::ASTContext &Context);
 const clang::InitListExpr *emptyVoidInitializer(const clang::Expr *Expression);
 std::optional<unsigned> concretePackSize(const clang::SizeOfPackExpr *E);
-const clang::Expr *scalarTemplateReplacement(
+const clang::Expr *templateValueReplacement(
     const clang::SubstNonTypeTemplateParmExpr *Substitution,
     clang::ASTContext &Context);
 const clang::Expr *
