@@ -15417,6 +15417,138 @@ static bool utilityCompositeSwapMethod(const State &S, const SourceManager &SM,
   return false;
 }
 
+// Follow every forwarding branch of one concrete vector emplace to the
+// selected wrapper constructor. SDK adapters stay private to this proof;
+// none becomes a source-callable runtime declaration.
+struct UtilityVectorReferenceEmplaceProof {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  const UtilityVectorRecord &Vector;
+  QualType ParameterType;
+  llvm::DenseSet<const CXXMethodDecl *> Active;
+  llvm::DenseSet<const CXXMethodDecl *> Completed;
+
+  bool forwarded(const Expr *Expression, const ParmVarDecl *Parameter) const {
+    const auto *Forward = dyn_cast_or_null<CallExpr>(
+        Expression ? Expression->IgnoreParenImpCasts() : nullptr);
+    const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+    const auto *Arguments =
+        Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    return approvedFunctionalForwardingCall(S, SM, Expression, Parameter) &&
+           Arguments && Arguments->size() == 1 &&
+           Arguments->get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(Arguments->get(0).getAsType(), ParameterType) &&
+           Forward->isLValue() &&
+           Context.hasSameType(Forward->getType(),
+                               ParameterType->getPointeeType());
+  }
+
+  bool method(const CXXMethodDecl *Method, unsigned Depth) {
+    if (!Method || Depth > 16 || !Method->getNumParams() ||
+        !Context.hasSameType(
+            Method->getParamDecl(Method->getNumParams() - 1)->getType(),
+            ParameterType) ||
+        Active.contains(Method))
+      return false;
+    const auto Name =
+        Method->getIdentifier() ? Method->getName() : llvm::StringRef();
+    const auto Parent = Method->getParent()->getCanonicalDecl();
+    const bool VectorMethod =
+        Parent == Vector.Record->getCanonicalDecl() &&
+        (Name == "emplace" || Name == "emplace_back" ||
+         Name == "__construct_one_at_end" ||
+         Name == "__emplace_back_slow_path") &&
+        utilityCompositeSwapMethod(S, SM, Method, Name, "__vector/vector.h");
+    const bool SplitMethod =
+        Name == "emplace_back" &&
+        utilityCompositeSwapMethod(S, SM, Method, Name, "__split_buffer");
+    const bool AllocatorMethod =
+        Name == "construct" &&
+        (utilityCompositeSwapMethod(S, SM, Method, Name,
+                                    "__memory/allocator_traits.h") ||
+         utilityCompositeSwapMethod(S, SM, Method, Name,
+                                    "__memory/allocator.h"));
+    const bool Temporary =
+        isa<CXXConstructorDecl>(Method) &&
+        utilityCompositeSwapMethod(S, SM, Method, "", "__memory/temp_value.h");
+    if (!VectorMethod && !SplitMethod && !AllocatorMethod && !Temporary)
+      return false;
+    if (Completed.contains(Method))
+      return true;
+    Active.insert(Method);
+    unsigned Edges = 0;
+    const bool Valid =
+        walk(Method->getBody(),
+             Method->getParamDecl(Method->getNumParams() - 1), Depth, Edges) &&
+        Edges != 0;
+    Active.erase(Method);
+    if (Valid)
+      Completed.insert(Method);
+    return Valid;
+  }
+
+  bool walk(const Stmt *Statement, const ParmVarDecl *Parameter, unsigned Depth,
+            unsigned &Edges) {
+    if (!Statement)
+      return true;
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Statement)) {
+      if (Construction->getNumArgs() &&
+          forwarded(Construction->getArg(Construction->getNumArgs() - 1),
+                    Parameter)) {
+        ++Edges;
+        if (Context.hasSameUnqualifiedType(Construction->getType(),
+                                           Vector.ElementType))
+          return approvedFunctionalReferenceConstruction(S, SM, Construction,
+                                                         Context) ==
+                 FunctionalReferenceConstruction::Direct;
+        return method(Construction->getConstructor(), Depth + 1);
+      }
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Statement)) {
+      if (Call->getNumArgs() &&
+          forwarded(Call->getArg(Call->getNumArgs() - 1), Parameter)) {
+        ++Edges;
+        return method(dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()),
+                      Depth + 1);
+      }
+    }
+    for (const auto *Child : Statement->children())
+      if (!walk(Child, Parameter, Depth, Edges))
+        return false;
+    return true;
+  }
+};
+
+std::optional<FunctionalReferenceRecord> approvedUtilityVectorReferenceEmplace(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  if (!Wrapper || !Method || Call->getNumArgs() != FirstArgument + 1 ||
+      Method->getNumParams() != Call->getNumArgs() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Vector.Record->getCanonicalDecl())
+    return std::nullopt;
+  const auto *Argument = Call->getArg(FirstArgument);
+  const auto ArgumentType = Argument->getType();
+  const auto Parameter = Method->getParamDecl(FirstArgument)->getType();
+  if (!Parameter->isLValueReferenceType() || !Argument->isLValue() ||
+      ArgumentType.isVolatileQualified() ||
+      ArgumentType.isRestrictQualified() ||
+      ArgumentType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameType(Parameter->getPointeeType(), ArgumentType) ||
+      !Context.hasSameUnqualifiedType(ArgumentType, Wrapper->ReferentType) ||
+      (ArgumentType.isConstQualified() &&
+       !Wrapper->ReferentType.isConstQualified()))
+    return std::nullopt;
+  UtilityVectorReferenceEmplaceProof Proof{S,         SM, Context, Vector,
+                                           Parameter, {}, {}};
+  return Proof.method(Method, 0) ? Wrapper : std::nullopt;
+}
+
 // This context belongs to one root swap proof, never to State or an AST-wide
 // cache. Repeated type DAG edges may share completed proofs, but an active edge
 // is a cycle and cannot authorize itself. Keep the exact selected declaration;
@@ -25446,6 +25578,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
                                                     Context))
           return UtilityOperation::VectorEmplace;
+        if (approvedUtilityVectorReferenceEmplace(S, SM, *Vector, Call, 1,
+                                                  Context))
+          return UtilityOperation::VectorEmplace;
         if (approvedUtilityVectorNestedEmplace(S, SM, *Vector, Call, 1,
                                                Context))
           return UtilityOperation::VectorEmplace;
@@ -25584,6 +25719,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
                                                   Context))
+        return UtilityOperation::VectorEmplaceBack;
+      if (approvedUtilityVectorReferenceEmplace(S, SM, *Vector, Call, 0,
+                                                Context))
         return UtilityOperation::VectorEmplaceBack;
       if (approvedUtilityVectorNestedEmplace(S, SM, *Vector, Call, 0, Context))
         return UtilityOperation::VectorEmplaceBack;

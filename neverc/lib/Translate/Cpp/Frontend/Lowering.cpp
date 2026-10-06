@@ -13702,6 +13702,11 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 1, A.Context)
               : nullptr;
+      const auto ReferenceEmplace =
+          Operation == UtilityOperation::VectorEmplace
+              ? approvedUtilityVectorReferenceEmplace(A.S, A.Sources, *Vector,
+                                                      Call, 1, A.Context)
+              : std::optional<FunctionalReferenceRecord>();
       const auto NestedEmplace =
           Operation == UtilityOperation::VectorEmplace
               ? approvedUtilityVectorNestedEmplace(A.S, A.Sources, *Vector,
@@ -13807,7 +13812,11 @@ class FunctionLowering {
         }
       } else if (Operation == UtilityOperation::VectorEmplace) {
         assign(Count, quantity(1, SizeType, L), L);
-        if (StringEmplace) {
+        if (ReferenceEmplace) {
+          Value = temporary(type(Vector->ElementType, L), L);
+          constructFunctionalReferenceBinding(
+              json::Object(*Value), *ReferenceEmplace, Call->getArg(1), L);
+        } else if (StringEmplace) {
           auto String = approvedUtilityStringRecord(
               A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
               A.Context);
@@ -15852,6 +15861,11 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 0, A.Context)
               : nullptr;
+      const auto ReferenceEmplace =
+          Operation == UtilityOperation::VectorEmplaceBack
+              ? approvedUtilityVectorReferenceEmplace(A.S, A.Sources, *Vector,
+                                                      Call, 0, A.Context)
+              : std::optional<FunctionalReferenceRecord>();
       const auto NestedEmplace =
           Operation == UtilityOperation::VectorEmplaceBack
               ? approvedUtilityVectorNestedEmplace(A.S, A.Sources, *Vector,
@@ -15896,6 +15910,10 @@ class FunctionLowering {
             Captured = argument(Argument, Parameter);
           DirectArguments.push_back(snapshot(std::move(Captured), L));
         }
+      } else if (ReferenceEmplace) {
+        Value = temporary(type(Vector->ElementType, L), L);
+        constructFunctionalReferenceBinding(
+            json::Object(*Value), *ReferenceEmplace, Call->getArg(0), L);
       } else if (StringEmplace) {
         auto String = approvedUtilityStringRecord(
             A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
@@ -22673,6 +22691,32 @@ class FunctionLowering {
     return Arguments;
   }
 
+  void
+  constructFunctionalReferenceBinding(Expression Place,
+                                      const FunctionalReferenceRecord &Wrapper,
+                                      const Expr *Argument, SourceLocation L) {
+    auto Pointer = snapshot(
+        Wrapper.ReferentType->isFunctionType()
+            ? cast(functionValue(Argument), type(Wrapper.PointerType, L), L)
+            : cast(address(lvalue(Argument), Argument->getType(), L),
+                   type(Wrapper.PointerType, L), L),
+        L);
+    if (Wrapper.PaddedBase) {
+      Expression Base{{"kind", "member"},
+                      {"type", type(A.Context.getSizeType(), L)},
+                      {"name", "nct_reference_wrapper_base_storage"},
+                      {"args", json::Array{json::Object(Place)}},
+                      {"loc", A.loc(L)}};
+      assign(std::move(Base), A.zero(A.Context.getSizeType(), L), L);
+    }
+    Expression Member{{"kind", "member"},
+                      {"type", type(Wrapper.PointerType, L)},
+                      {"name", "nct_reference_wrapper_pointer"},
+                      {"args", json::Array{json::Object(Place)}},
+                      {"loc", A.loc(L)}};
+    assign(std::move(Member), std::move(Pointer), L);
+  }
+
   Expression
   functionalReferenceArgumentAddress(Expression Wrapper,
                                      const FunctionalReferenceRecord &Binding,
@@ -22971,28 +23015,8 @@ class FunctionLowering {
         assign(std::move(Place), snapshot(expression(C->getArg(0)), L), L);
         return;
       }
-      auto Pointer = snapshot(
-          Wrapper->ReferentType->isFunctionType()
-              ? cast(functionValue(C->getArg(0)),
-                     type(Wrapper->PointerType, L), L)
-              : cast(address(lvalue(C->getArg(0)),
-                             C->getArg(0)->getType(), L),
-                     type(Wrapper->PointerType, L), L),
-          L);
-      if (Wrapper->PaddedBase) {
-        Expression Base{{"kind", "member"},
-                        {"type", type(A.Context.getSizeType(), L)},
-                        {"name", "nct_reference_wrapper_base_storage"},
-                        {"args", json::Array{json::Object(Place)}},
-                        {"loc", A.loc(L)}};
-        assign(std::move(Base), A.zero(A.Context.getSizeType(), L), L);
-      }
-      Expression Member{{"kind", "member"},
-                        {"type", type(Wrapper->PointerType, L)},
-                        {"name", "nct_reference_wrapper_pointer"},
-                        {"args", json::Array{json::Object(Place)}},
-                        {"loc", A.loc(L)}};
-      assign(std::move(Member), std::move(Pointer), L);
+      constructFunctionalReferenceBinding(std::move(Place), *Wrapper,
+                                          C->getArg(0), L);
       return;
     }
     if (auto Kind = approvedFunctionalObjectConstruction(A.S, A.Sources, C,

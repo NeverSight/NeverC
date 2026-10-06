@@ -6950,9 +6950,28 @@ wrapper values before old storage is released. Wrapper destruction never owns
 or destroys the referent; source-record referents keep their original lifetime.
 Allocation, deallocation and callback source requirements remain independent.
 This storage proof grants no default wrapper constructor or arbitrary user
-conversion. Constructing a wrapper from a bare referent through emplace requires
-its own selected SDK constructor and forwarding proof. Comparisons of wrapper
-elements retain their separate operation restrictions.
+conversion. Bare-referent emplace follows the independent constructor and
+forwarding proof below. Comparisons of wrapper elements retain their separate
+operation restrictions.
+
+Wrapper vectors also admit `emplace_back(referent)` and positional
+`emplace(pos, referent)` from an exact nonvolatile lvalue referent. The concrete
+vector member and every instantiated forwarding branch through vector or split
+buffer helpers, temporary value storage, allocator traits and allocator
+construction must originate in their exact pinned SDK files and templates.
+Each adapter forwards the same reference parameter with the exact SDK
+`std::forward` specialization; every branch ends in the independently approved
+direct wrapper constructor. Cycles and unsupported adapters fail this bounded
+per-call proof. No SDK adapter or constructor is emitted as a source runtime
+function. Source replacements and arbitrary user conversions remain rejected.
+
+The direct lowering reuses wrapper address binding and existing vector value
+storage, growth and insertion. It evaluates the argument once and stores its
+address without copying its referent or invoking a user conversion. Const
+bindings, supported source functions and callbacks, arrays and source records
+retain their original checks and lifetimes. Return references and iterators
+identify the inserted wrapper; destroying the vector does not destroy its
+referents. Unsupported referent types and function targets remain rejected.
 
 Core v2 admits an exact angle include of the pinned C++17 `<vector>` header.
 With reduced transitive includes, its 300-file libc++/resource closure is
