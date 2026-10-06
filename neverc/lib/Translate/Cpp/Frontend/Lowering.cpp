@@ -10292,6 +10292,8 @@ class FunctionLowering {
         else
           Elements = {MixedReferencePair->First, MixedReferencePair->Second};
         for (const auto &Element : Elements) {
+          if (Element.EmptyBase)
+            continue;
           auto LeftValue = fieldStorage(json::Object(Left), Element, L);
           auto RightValue = fieldStorage(json::Object(Right), Element, L);
           if (Element.getType()->isReferenceType()) {
@@ -10374,6 +10376,8 @@ class FunctionLowering {
         else
           Elements = {MixedReferencePair->First, MixedReferencePair->Second};
         for (const auto &Element : Elements) {
+          if (Element.EmptyBase)
+            continue;
           auto LeftValue = fieldStorage(json::Object(Left), Element, L);
           auto RightValue = fieldStorage(json::Object(Right), Element, L);
           if (Element.getType()->isReferenceType()) {

@@ -1319,7 +1319,7 @@ approvedUtilityArrayAssignment(const State &S, const clang::SourceManager &SM,
                                const clang::ASTContext &Context,
                                const clang::CXXMethodDecl **Selected = nullptr);
 // Authenticated tuple-like storage shared by tuple_cat and apply. Pair and
-// tuple elements have individual fields; array elements share one fixed array.
+// tuple elements retain logical field/base projections; arrays share one field.
 struct UtilityTupleLikeSource {
   std::vector<UtilityTupleElement> Elements;
   const clang::FieldDecl *ArrayElements;

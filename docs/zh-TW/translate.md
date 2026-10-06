@@ -71,6 +71,8 @@ Core v2 支援預設 sized delete 轉送：未經原始碼重新宣告的隱含�
 
 Core v2 現支援範本、別名、查詢與轉換中的一般函式型別及其直接左值／右值參考，包括從函式指標推導型別。原始簽章、調整前陣列界限與 noexcept 相依來源仍會檢查；函式參考區域變數、欄位、參數與傳回值現重用經過驗證的回呼載體，仍檢查原始簽章與原始碼定義；跨平台原生驗證須由 CI 完成。 函式右值參考在 invoke、參考包裝器、pair/tuple 建構、get 與 apply 中也維持函式左值語意；宣告傳回 F&& 的呼叫，其型別查詢結果為 F&。 靜態函式參考也支援常量位址、依序的動態啟動初始化、首次使用時的一次性初始化，以及已准入的記錄與 pair/tuple 欄位；仍拒絕 TLS 與無效繫結。 經檢查的普通函式位址和函式左值參照也可作為非型別範本引數；預設值、auto 參數和有界參數包均保留精確宣告身分、簽章及原始來源檢查。 固定 SDK 中 integral_constant 的函式指標值現在透過經檢查的函式位址參與回呼呼叫、invoke/apply，以及 pair/tuple 建構和 make_pair/make_tuple 的值元素，仍不開放型別特徵常數的儲存身分。 經檢查的函式指標 integral_constant 物件也支援單位元組空儲存、複製／移動／賦值、精確轉換、零參數取值呼叫和零參數 invoke，並保留接收者的副作用。 這些物件也可作為 pair 值元素，支援直接建構、make_pair、複製／移動／賦值和混合參考 pair。 這些物件也支援 tuple 值元素的直接建構、`make_tuple`、複製、移動、賦值和混合參照 tuple。經過驗證的空基底類別投影保留原生配置、元素位址和參數副作用，並避免覆寫相鄰值。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
 
+tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std::swap`。值元素交換數值，參照元素交換其參照目標的值而不重新繫結，空元素保留自身位址且不寫入欄位。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 一元型別轉換現檢查原始輸入、實際替換後的原始碼與結果，包括最終型別中消失的別名範本參數。固定版本的十六種轉換沿用既有型別中繼資料與執行期型別，原生驗證仍僅在 CI 執行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索引為非負常數整數，也支援固定陣列型別搭配模板索引。折疊前仍檢查型別和索引原始碼；不支援的陣列型別與隱含類別轉換索引仍被拒絕。原生結果須由實作版本的 CI 驗證。 未知長度陣列（如 `int[][3]`）的型別中繼資料、別名和範本引數現可保留維度、為零的外層長度及已知內層界限。執行時期型別和操作查詢仍遵循各自限制；標準標頭及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

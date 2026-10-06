@@ -71,6 +71,8 @@ Core v2 支持默认 sized delete 转发：未被源码重声明的隐式全局 
 
 Core v2 现支持模板、别名、查询与变换中的普通函数类型及其直接左值／右值引用，包括从函数指针推导类型。原始签名、调整前数组边界与 noexcept 依赖仍会检查；函数引用局部变量、字段、参数与返回值现复用经过验证的回调载体，仍检查原始签名与源码定义；跨平台原生验证须由 CI 完成。 函数右值引用在 invoke、引用包装器、pair/tuple 构造、get 与 apply 中也保持函数左值语义；声明返回 F&& 的调用，其类型查询结果为 F&。 静态函数引用也支持常量地址、按顺序的动态启动初始化、首次使用时的一次性初始化，以及已准入的记录与 pair/tuple 字段；仍拒绝 TLS 和无效绑定。 经检查的普通函数地址和函数左值引用也可作为非类型模板实参；默认值、auto 参数和有界参数包均保留精确声明身份、签名及原始来源检查。 固定 SDK 中 integral_constant 的函数指针值现在通过经检查的函数地址参与回调调用、invoke/apply，以及 pair/tuple 构造和 make_pair/make_tuple 的值元素，仍不开放类型特征常量的存储身份。 经检查的函数指针 integral_constant 对象也支持单字节空存储、复制／移动／赋值、精确转换、零参数取值调用和零参数 invoke，并保留接收者的副作用。 这些对象也可作为 pair 值元素，支持直接构造、make_pair、复制／移动／赋值和混合引用 pair。 这些对象也支持 tuple 值元素的直接构造、`make_tuple`、复制、移动、赋值和混合引用 tuple。经过验证的空基类投影保留原生布局、元素地址和参数副作用，并避免覆盖邻接值。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
 
+tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std::swap`。值元素交换数值，引用元素交换其引用目标的值而不重新绑定，空元素保留自身地址且不写入字段。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 一元类型变换现检查原始输入、实际替换后的源码与结果，包括最终类型中消失的别名模板参数。固定版本的十六种变换复用现有类型元数据与运行时类型，原生验证仍仅在 CI 执行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 未知长度数组（如 `int[][3]`）的类型元数据、别名和模板实参现可保留维数、为零的外层长度及已知内层边界。运行时类型和操作查询仍遵循各自限制；标准头文件及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

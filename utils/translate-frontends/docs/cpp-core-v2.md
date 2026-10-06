@@ -8962,9 +8962,19 @@ must independently reconstruct the native record layout; the IR verifier retains
 its natural-field layout checks. Projections use the checked byte offset and
 preserve source references, distinct repeated-element addresses and argument
 side effects. Empty-object assignment performs no field stores, so shared
-storage does not overwrite neighboring values. Tuples combining these optimized
-bases with nontrivial owned elements and tuple swap operations still require
-additional selected lifecycle proofs and remain outside this implementation.
+storage does not overwrite neighboring values.
+
+These tuples also support member `swap` and `std::swap`. The proof follows the
+exact pinned tuple member, implementation, leaf, getter and selected element swap.
+An optimized getter must retain its written lvalue-reference `static_cast` and
+the single private nonvirtual conversion to the authenticated trait base. The
+selected generic element swap must retain its trivial copy/move operations and
+exact `std::move` adapters. Value elements exchange values; reference elements
+exchange referent values without changing their bindings. Empty elements retain
+their addresses without field stores, including repeated empty types, self-swap
+and aliased referents. Both operands are evaluated once. Tuples combining these
+optimized bases with nontrivial owned elements still require additional selected
+lifecycle proofs and remain outside this implementation.
 
 ## Unary type transforms
 

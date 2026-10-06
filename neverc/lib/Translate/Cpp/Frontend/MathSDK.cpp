@@ -15504,13 +15504,13 @@ static bool utilityCompositeSwapThis(const Expr *Expression,
 static bool utilityTupleSwapGet(const State &S, const SourceManager &SM,
                                 const Expr *Expression,
                                 const ParmVarDecl *Parameter,
-                                const FieldDecl *Element,
+                                const UtilityTupleElement &Element,
+                                const CXXRecordDecl *Leaf,
                                 const ASTContext &Context) {
   const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
       functionalInvokeStrippedExpression(Expression));
   const auto *Method = Call ? Call->getMethodDecl() : nullptr;
-  const auto *Leaf = cast<CXXRecordDecl>(Element->getParent());
-  QualType Type = Element->getType();
+  QualType Type = Element.getType();
   if (Type->isReferenceType())
     Type = Type->getPointeeType();
   if (!Call || Call->getNumArgs() || !Method || Method->isStatic() ||
@@ -15525,20 +15525,50 @@ static bool utilityTupleSwapGet(const State &S, const SourceManager &SM,
     return false;
   const auto *Return = dyn_cast_or_null<ReturnStmt>(
       utilityCompositeSwapOnlyStatement(Method->getBody()));
+  if (Element.EmptyBase) {
+    // The pinned optimized getter explicitly returns *this through its one
+    // private base. Prove both the written reference and real base conversion.
+    const auto *Explicit =
+        Return && Return->getRetValue()
+            ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParens())
+            : nullptr;
+    if (!Explicit || !Explicit->isLValue() ||
+        !Context.hasSameType(Explicit->getType(), Type) ||
+        !Context.hasSameType(Explicit->getTypeAsWritten(),
+                             Context.getLValueReferenceType(Type)))
+      return false;
+    const CastExpr *Cast = Explicit;
+    if (Explicit->getCastKind() == CK_NoOp)
+      Cast = dyn_cast<ImplicitCastExpr>(Explicit->getSubExpr()->IgnoreParens());
+    const bool BaseConversion =
+        Cast && (Cast->getCastKind() == CK_DerivedToBase ||
+                 Cast->getCastKind() == CK_UncheckedDerivedToBase);
+    const auto *Base = BaseConversion && Cast->path_size() == 1
+                           ? *Cast->path_begin()
+                           : nullptr;
+    const auto *Record = Base ? Base->getType()->getAsCXXRecordDecl() : nullptr;
+    return BaseConversion && Cast->isLValue() &&
+           Context.hasSameType(Cast->getType(), Type) && Base &&
+           !Base->isVirtual() && Base->getAccessSpecifier() == AS_private &&
+           Record &&
+           Record->getCanonicalDecl() ==
+               Element.EmptyBase->getCanonicalDecl() &&
+           utilityCompositeSwapThis(Cast->getSubExpr(), Leaf);
+  }
   const auto *Access =
       Return ? dyn_cast_or_null<MemberExpr>(
                    functionalInvokeStrippedExpression(Return->getRetValue()))
              : nullptr;
-  return Access && Access->getMemberDecl() == Element && Access->isArrow() &&
-         utilityCompositeSwapThis(Access->getBase(), Leaf);
+  return Access && Access->getMemberDecl() == Element.Field &&
+         Access->isArrow() && utilityCompositeSwapThis(Access->getBase(), Leaf);
 }
 
 static bool utilityTupleLeafSwap(const State &S, const SourceManager &SM,
                                  const CXXMethodDecl *Method,
-                                 const FieldDecl *Element,
+                                 const UtilityTupleElement &Element,
+                                 const CXXRecordDecl *Leaf,
                                  const ASTContext &Context, unsigned Depth,
                                  UtilitySwapProofContext *Proof) {
-  const auto *Leaf = cast<CXXRecordDecl>(Element->getParent());
   const auto LeafType = Context.getRecordType(Leaf);
   if (Depth > 64 ||
       !utilityCompositeSwapMethod(S, SM, Method, "swap", "tuple") ||
@@ -15576,11 +15606,13 @@ static bool utilityTupleLeafSwap(const State &S, const SourceManager &SM,
       utilityCompositeSwapOnlyStatement(Function->getBody()));
   return Selected && Selected->getNumArgs() == 2 &&
          utilityTupleSwapGet(S, SM, Selected->getArg(0),
-                             Function->getParamDecl(0), Element, Context) &&
+                             Function->getParamDecl(0), Element, Leaf,
+                             Context) &&
          utilityTupleSwapGet(S, SM, Selected->getArg(1),
-                             Function->getParamDecl(1), Element, Context) &&
+                             Function->getParamDecl(1), Element, Leaf,
+                             Context) &&
          approvedUtilityPairElementSwap(S, SM, Selected->getDirectCallee(),
-                                        Element->getType(), Context, Depth + 1,
+                                        Element.getType(), Context, Depth + 1,
                                         Proof);
 }
 
@@ -15660,9 +15692,15 @@ static bool utilityTupleImplSwap(const State &S, const SourceManager &SM,
     return false;
   for (unsigned I = 0; I < Tuple.Elements.size(); ++I) {
     const auto &Element = Tuple.Elements[I];
-    if (!Element.Field)
+    if (Impl->getNumBases() != Tuple.Elements.size())
       return false;
-    const auto *Leaf = cast<CXXRecordDecl>(Element.Field->getParent());
+    const auto *Leaf =
+        (Impl->bases_begin() + I)->getType()->getAsCXXRecordDecl();
+    Leaf = Leaf ? Leaf->getDefinition() : nullptr;
+    if (!Leaf ||
+        (Element.Field && Leaf->getCanonicalDecl() !=
+                              Element.Field->getParent()->getCanonicalDecl()))
+      return false;
     const auto *Selected = dyn_cast_or_null<CXXMemberCallExpr>(
         functionalInvokeStrippedExpression(Call->getArg(I)));
     if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
@@ -15672,7 +15710,7 @@ static bool utilityTupleImplSwap(const State &S, const SourceManager &SM,
                                   Leaf, Context) ||
         !utilityTupleSwapPeerLeaf(Selected->getArg(0), Method->getParamDecl(0),
                                   Leaf, Context) ||
-        !utilityTupleLeafSwap(S, SM, Selected->getMethodDecl(), Element.Field,
+        !utilityTupleLeafSwap(S, SM, Selected->getMethodDecl(), Element, Leaf,
                               Context, Depth, Proof))
       return false;
   }
