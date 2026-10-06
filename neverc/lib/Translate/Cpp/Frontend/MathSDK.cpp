@@ -13400,6 +13400,56 @@ const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
       Apply->Dispatch->getArg(Index + 1), Context);
 }
 
+// An SDK trait parameter is a separate empty object, not an owned source copy.
+// Authenticate the selected trivial constructor and its exact forwarded element
+// before the apply lowering creates that independent parameter carrier.
+static bool approvedUtilityTupleApplyTraitValue(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    unsigned Index, QualType Parameter, const ASTContext &Context) {
+  if (Parameter.isNull() || Parameter->isReferenceType() ||
+      Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
+      Parameter.getAddressSpace() != LangAS::Default ||
+      !functionTraitObjectValue(S, SM, Parameter->getAsCXXRecordDecl(),
+                                Context))
+    return false;
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  const auto *Operation =
+      Apply ? dyn_cast<CallExpr>(Apply->Operation) : nullptr;
+  const unsigned Offset =
+      isa_and_nonnull<CXXOperatorCallExpr>(Operation) ? 1 : 0;
+  if (!Apply || Index >= Apply->Tuple.size() || !Operation ||
+      Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
+      !Context.hasSameUnqualifiedType(
+          Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter))
+    return false;
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(
+      functionalInvokeStrippedExpression(Operation->getArg(Index + Offset)));
+  if (!Copy || !Context.hasSameUnqualifiedType(Copy->getType(), Parameter) ||
+      approvedFunctionalObjectConstruction(S, SM, Copy, Context) !=
+          FunctionalObjectConstruction::CopyOrMove)
+    return false;
+  const auto *Constructor = Copy->getConstructor();
+  const auto *Argument = Copy->getArg(0);
+  const auto *Forwarded = Apply->Dispatch->getArg(Index + 1);
+  const auto Record = Context.getRecordType(Constructor->getParent());
+  const auto ExpectedParameter =
+      Constructor->isMoveConstructor()
+          ? Context.getRValueReferenceType(Record)
+          : Context.getLValueReferenceType(Record.withConst());
+  return Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                             ExpectedParameter) &&
+         Context.hasSameUnqualifiedType(Argument->getType(),
+                                        Forwarded->getType()) &&
+         !Argument->getType().isVolatileQualified() &&
+         (!Forwarded->getType().isConstQualified() ||
+          Argument->getType().isConstQualified()) &&
+         Argument->isLValue() == Forwarded->isLValue() &&
+         Argument->isXValue() == Forwarded->isXValue() &&
+         (!Constructor->isMoveConstructor() || Argument->isXValue()) &&
+         functionalInvokeParameterReference(
+             Argument, Apply->DispatchFunction->getParamDecl(Index + 1));
+}
+
 std::optional<FunctionalMemberInvokeCall>
 approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                   const CallExpr *Call,
@@ -13461,6 +13511,8 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
     const auto Element = StoredElement->isReferenceType()
                              ? StoredElement->getPointeeType()
                              : StoredElement;
+    const bool TraitValue =
+        approvedUtilityTupleApplyTraitValue(S, SM, Call, I, Parameter, Context);
     bool Supported = false;
     if (Parameter->isReferenceType()) {
       const auto ParameterReferent = Parameter->getPointeeType();
@@ -13484,16 +13536,16 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                    ParameterReferent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
-      Supported =
-          (supportedFunctionalByValue(S, SM, Context, Parameter) ||
-           approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
-                                                 Context)) &&
-          functionalMemberValueConversion(Context, Element, Parameter);
+      Supported = (TraitValue ||
+                   supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                   approvedUtilityTupleApplySelectedCopy(S, SM, Call, I,
+                                                         Parameter, Context)) &&
+                  functionalMemberValueConversion(Context, Element, Parameter);
     }
-    if (!Supported ||
-        !approvedFunctionalInvokeArgumentFlow(
-            S, SM, Operation->getArg(I + 1),
-            DispatchFunction->getParamDecl(I + 1), Parameter, Context, true))
+    if (!Supported || (!TraitValue && !approvedFunctionalInvokeArgumentFlow(
+                                          S, SM, Operation->getArg(I + 1),
+                                          DispatchFunction->getParamDecl(I + 1),
+                                          Parameter, Context, true)))
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{
@@ -31008,7 +31060,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           utilityCallbackDirectConversion(Context, Element, Parameter);
       const bool Record =
           Element->isRecordType() && Parameter->isRecordType() &&
-          ((supportedFunctionalByValue(S, SM, Context, Parameter) &&
+          (approvedUtilityTupleApplyTraitValue(S, SM, Call, I, Parameter,
+                                               Context) ||
+           (supportedFunctionalByValue(S, SM, Context, Parameter) &&
             utilityTupleDirectConversion(S, SM, Context, Element, Parameter)) ||
            approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
                                                  Context));

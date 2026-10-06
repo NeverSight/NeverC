@@ -27952,6 +27952,264 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeCatCopy) {
+  const auto Source = tmpFile("function-trait-tuple-compose-cat-copy.cpp");
+  const auto Output = tmpFile("function-trait-tuple-compose-cat-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);auto b=std::tuple_cat(a);if(copies!=2||moves||live!=3||std::get<1>(b).n!=7||std::get<0>(b)()(1)!=2||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-cat-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeCatMove) {
+  const auto Source = tmpFile("function-trait-tuple-compose-cat-move.cpp");
+  const auto Output = tmpFile("function-trait-tuple-compose-cat-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);auto b=std::tuple_cat(std::move(a));if(copies!=1||moves!=1||live!=3||std::get<1>(a).n||std::get<1>(b).n!=7||std::get<0>(b)()(1)!=2||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-cat-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeCatRepeatedEmpty) {
+  const auto Source = tmpFile("function-trait-tuple-compose-cat-repeated.cpp");
+  const auto Output = tmpFile("function-trait-tuple-compose-cat-repeated.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);std::tuple<C>e;auto b=std::tuple_cat(e,a);if(copies!=2||moves||live!=3||&std::get<0>(b)==&std::get<1>(b)||std::get<2>(b).n!=7||std::get<1>(b)()(1)!=2||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-cat-repeated" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeApplyCopy) {
+  const auto Source = tmpFile("function-trait-tuple-compose-apply-copy.cpp");
+  const auto Output = tmpFile("function-trait-tuple-compose-apply-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int read(C c,Owned o){return c()(o.n);}int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);if(std::apply(read,a)!=8||copies!=2||moves||live!=2||drops!=1||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-apply-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeApplyMove) {
+  const auto Source = tmpFile("function-trait-tuple-compose-apply-move.cpp");
+  const auto Output = tmpFile("function-trait-tuple-compose-apply-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int read(C c,Owned o){return c()(o.n);}int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);if(std::apply(read,std::move(a))!=8||copies!=1||moves!=1||live!=2||drops!=1||std::get<1>(a).n||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-apply-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeApplyUserCopy) {
+  const auto Source =
+      tmpFile("function-trait-tuple-compose-apply-user-copy.cpp");
+  const auto Output =
+      tmpFile("function-trait-tuple-compose-apply-user-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+struct Reader{int operator()(C c,Owned o)const{return c()(o.n);}};int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);Reader reader;if(std::apply(reader,a)!=8||copies!=2||moves!=0||live!=2||drops!=1||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-apply-user-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeApplyUserMove) {
+  const auto Source =
+      tmpFile("function-trait-tuple-compose-apply-user-move.cpp");
+  const auto Output =
+      tmpFile("function-trait-tuple-compose-apply-user-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+struct Reader{int operator()(C c,Owned o)const{return c()(o.n);}};int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);Reader reader;if(std::apply(reader,std::move(a))!=8||copies!=1||moves!=1||live!=2||drops!=1||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-apply-user-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleComposeOwnedReferenceBinding) {
+  const auto Source =
+      tmpFile("function-trait-tuple-compose-owned-reference.cpp");
+  const auto Output =
+      tmpFile("function-trait-tuple-compose-owned-reference.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned&>a(C{},s);auto b=a;auto c=std::tuple_cat(b);std::get<1>(c).n=9;if(copies||moves||live!=1||&std::get<1>(a)!=&s||&std::get<1>(b)!=&s||&std::get<1>(c)!=&s||std::get<0>(c)()(1)!=2||effects!=1)return 1;}return live||drops!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-compose-owned-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitTupleComposeRetainsSelectedSourceBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"apply-source-body", R"cpp(#include <type_traits>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using C=std::integral_constant<int(*)(int)noexcept,target>;
+struct Owned{int n;Owned(int n):n(n){}Owned(const Owned&o):n(o.n){}~Owned(){}};int read(C c,Owned o){long double hidden=1;return c()(o.n);}int main(){Owned s(7);std::tuple<C,Owned>a(C{},s);return std::apply(read,a)!=8;}
+)cpp"},
+      {"apply-owned-default", R"cpp(#include <type_traits>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using C=std::integral_constant<int(*)(int)noexcept,target>;
+int seed(long double extra=1){return 1;}struct Owned{int n;Owned(int n):n(n){}Owned(const Owned&o,int extra=seed()):n(o.n+extra){}~Owned(){}};int read(C c,Owned o){return c()(o.n);}int main(){Owned s(7);std::tuple<C,Owned>a(C{},s);return std::apply(read,a)!=10;}
+)cpp"},
+      {"apply-owned-source-body", R"cpp(#include <type_traits>
+#include <tuple>
+int target(int n)noexcept{return n+1;}using C=std::integral_constant<int(*)(int)noexcept,target>;
+struct Owned{int n;Owned(int n):n(n){}Owned(const Owned&o):n(o.n){long double hidden=1;}~Owned(){}};int read(C c,Owned o){return c()(o.n);}int main(){Owned s(7);std::tuple<C,Owned>a(C{},s);return std::apply(read,a)!=8;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("function-trait-tuple-compose-reject-") + Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("function-trait-tuple-compose-reject-") + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedDirectElements) {
   const auto Source = tmpFile("function-trait-tuple-owned-direct-elements.cpp");
   const auto Output = tmpFile("function-trait-tuple-owned-direct-elements.nc");

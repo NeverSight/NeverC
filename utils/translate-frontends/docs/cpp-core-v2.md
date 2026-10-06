@@ -8987,6 +8987,18 @@ constructor and its checked default arguments, and are destroyed through the
 existing owned-object cleanup path. Repeated empty elements retain distinct
 addresses without adding fields that alter the owned element's native layout.
 
+These tuples also retain the existing selected `tuple_cat` copies/moves and
+reference bindings. `apply` to a named source function or supported source call
+operator may pass the exact trait by value alongside owned parameters. Its
+pinned tuple/helper/invoke/get dispatch must remain authenticated. The selected
+complete-object trait constructor must be the exact implicit trivial nonthrowing
+copy/move from that same element, with matching reference qualifiers, value
+category and forwarded parameter identity. The lowering creates an independent
+empty parameter carrier while owned parameters retain their selected source
+copies/moves, default arguments and cleanup. The proof is confined to this apply
+argument path; other trait domains, SDK storage aliases and unsupported selected
+source bodies remain rejected.
+
 ## Unary type transforms
 
 Core v2 checks the sixteen unary type transforms in the pinned frontend:
