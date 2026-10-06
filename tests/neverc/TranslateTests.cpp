@@ -29642,6 +29642,637 @@ int target(int,...)noexcept;using F=int(*)(int,...)noexcept;using C=std::integra
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueCallbackWrappers) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-callback-wrappers.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-vector-value-callback-wrappers.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int calls;int target(int n)noexcept{++calls;return n+1;}using F=int(*)(int)noexcept;
+int check(){F f=target;std::vector<std::reference_wrapper<F>> v;v.push_back(std::ref(f));return v[0].get()(7)==8&&calls==1?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-vector-value-callback-wrappers" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueConstReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-const-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-vector-value-const-referent.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){const int x=3,y=4;std::vector<std::reference_wrapper<const int>> v{std::cref(x),std::cref(y)};auto b=v;return b[0].get()==3&&b[1].get()==4?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-const-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueCopyAssign) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-copy-assign.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-copy-assign.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4,z=9;std::vector<W> a{std::ref(x),std::ref(y)},b{std::ref(z)};b=a;b[0]=std::ref(z);return &a[0].get()==&x&&&b[0].get()==&z&&x==3?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-copy-assign" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueEmplaceAlias) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-emplace-alias.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-vector-value-emplace-alias.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;std::vector<W> v;v.reserve(1);v.push_back(std::ref(x));v.emplace_back(v[0]);return v.size()==2&&&v[0].get()==&x&&&v[1].get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-emplace-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueEmplaceBack) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-emplace-back.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-emplace-back.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;std::vector<W> v;v.emplace_back(std::ref(x));return &v[0].get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-emplace-back" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueEmplacePosition) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-emplace-position.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-vector-value-emplace-position.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;std::vector<W> v;v.emplace_back(std::ref(x));v.emplace(v.begin(),std::ref(y));return v.size()==2&&&v[0].get()==&y&&&v[1].get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-vector-value-emplace-position" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueErase) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-erase.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-erase.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;std::vector<W> v{std::ref(x),std::ref(y)};v.erase(v.begin());return v.size()==1&&&v[0].get()==&y&&x==3&&y==4?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-erase" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueFillAlias) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-fill-alias.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-fill-alias.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;std::vector<W> v;v.reserve(3);v.push_back(std::ref(x));v.assign(3,v[0]);return v.size()==3&&&v[0].get()==&x&&&v[2].get()==&x&&x==3?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-fill-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueFillCopy) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-fill-copy.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-fill-copy.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;std::vector<W> v(2,std::ref(x));return v.size()==2&&&v[0].get()==&x&&&v[1].get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-fill-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueGrowthAlias) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-growth-alias.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-growth-alias.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;std::vector<W> v;v.reserve(1);v.push_back(std::ref(x));v.push_back(v[0]);return v.size()==2&&&v[0].get()==&x&&&v[1].get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-growth-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueInitializerList) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-initializer-list.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-vector-value-initializer-list.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;std::vector<W> v{std::ref(x),std::ref(y)};return &v[0].get()==&x&&&v[1].get()==&y?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-vector-value-initializer-list" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueInsertAlias) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-insert-alias.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-insert-alias.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;std::vector<W> v{std::ref(x),std::ref(y)};v.insert(v.begin(),v.back());return v.size()==3&&&v[0].get()==&y&&&v[1].get()==&x&&&v[2].get()==&y?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-insert-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValuePushBack) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-push-back.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-push-back.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;std::vector<W> v;v.push_back(std::ref(x));v.push_back(std::ref(y));v[0].get()=7;return x==7&&v[1].get()==4?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-push-back" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueRangeCopy) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-range-copy.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-range-copy.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;W a[2]={std::ref(x),std::ref(y)};std::vector<W> v(a,a+2);return &v[0].get()==&x&&&v[1].get()==&y?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-range-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueRecordWrappers) {
+  const auto Source =
+      tmpFile("reference-wrapper-vector-value-record-wrappers.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-vector-value-record-wrappers.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int destroys;struct R{int n;~R(){++destroys;}};
+int check(){R x{3},y{4};std::vector<std::reference_wrapper<R>> v{std::ref(x),std::ref(y)};v[0].get().n=7;return x.n==7&&v[1].get().n==4?0:1;}
+int main(){int r=check();return r?r:(allocations==releases&&destroys==2?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-vector-value-record-wrappers" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorValueSwap) {
+  const auto Source = tmpFile("reference-wrapper-vector-value-swap.cpp");
+  const auto Output = tmpFile("reference-wrapper-vector-value-swap.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3,y=4;std::vector<W> a{std::ref(x)},b{std::ref(y)};a.swap(b);return &a[0].get()==&y&&&b[0].get()==&x&&x==3&&y==4?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-vector-value-swap" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperVectorValuesRetainStorageAndConversionBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"comparison", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3;std::vector<W> a{std::ref(x)},b=a;return a==b?0:1;}
+)cpp"},
+      {"long-double-referent", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){long double x=3;std::vector<std::reference_wrapper<long double>> v{std::ref(x)};return 0;}
+)cpp"},
+      {"sdk-function-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){using F=int&(*)(int&)noexcept;F f=static_cast<F>(&std::forward<int&>);std::vector<std::reference_wrapper<F>> v{std::ref(f)};return 0;}
+)cpp"},
+      {"source-argument-body", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int x=3;int& pick(){long double n=x;x=int(n);return x;}
+int main(){std::vector<W> v;v.push_back(std::ref(pick()));return 0;}
+)cpp"},
+      {"source-wrapper-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int x=3,effects;namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{++effects;return x;}}}
+int main(){std::vector<W> v{std::ref(x)};return v[0];}
+)cpp"},
+      {"user-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){struct R{int n;operator W(){return std::ref(n);}};R r{3};std::vector<W> v;v.emplace_back(r);return 0;}
+)cpp"},
+      {"variadic-callback", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){using F=int(*)(int,...);F f=nullptr;std::vector<std::reference_wrapper<F>> v{std::ref(f)};return 0;}
+)cpp"},
+      {"volatile-referent", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <vector>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){volatile int x=3;std::vector<std::reference_wrapper<volatile int>> v{std::ref(x)};return 0;}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("reference-wrapper-vector-value-reject-") + Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("reference-wrapper-vector-value-reject-") + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperArrayValueAccess) {
   const auto Source = tmpFile("reference-wrapper-array-value-access.cpp");
   const auto Output = tmpFile("reference-wrapper-array-value-access.nc");

@@ -6847,6 +6847,15 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       !Element.isRestrictQualified() &&
       Element.getAddressSpace() == LangAS::Default &&
       functionTraitObjectValue(S, SM, ElementRecord, Context);
+  const bool ReferenceWrapperElement =
+      !Element.isRestrictQualified() &&
+      Element.getAddressSpace() == LangAS::Default &&
+      approvedFunctionalReferenceRecord(S, SM, ElementRecord, Context) &&
+      ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord->hasTrivialMoveConstructor() &&
+      ElementRecord->hasTrivialCopyAssignment() &&
+      ElementRecord->hasTrivialMoveAssignment() &&
+      ElementRecord->hasTrivialDestructor();
   const bool ValuePairElement =
       ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
       ElementRecord->hasTrivialMoveConstructor() &&
@@ -6950,9 +6959,9 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
         Element->isObjectPointerType() || Element->isFunctionPointerType() ||
-        TrivialSourceRecord || FunctionTraitElement || ValuePairElement ||
-        ValueArrayElement || ValueOptionalElement || OwningElement ||
-        SourceOwnedElement) ||
+        TrivialSourceRecord || FunctionTraitElement ||
+        ReferenceWrapperElement || ValuePairElement || ValueArrayElement ||
+        ValueOptionalElement || OwningElement || SourceOwnedElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);

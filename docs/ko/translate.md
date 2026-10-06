@@ -91,6 +91,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 `reference_wrapper` 값도 `array` 요소로 사용할 수 있습니다. 명시적 초기화, const 접근, 복사/이동, 대입, `fill`과 검증된 swap은 참조 대상에 대입하지 않고 래퍼 바인딩을 유지하거나 교환합니다. 중첩 및 길이가 0인 배열은 기존 레이아웃 검사를 사용하며 요소에서 채울 때 쓰기 전에 바인딩을 저장합니다. 빈 배열의 fill도 인수를 한 번 평가합니다. 원래 참조 대상 형과 소스 함수 대상을 검사하며 래퍼 요소를 포함하는 비교와 사용자 ADL swap은 기존 제한을 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
+`vector`도 검증된 `reference_wrapper` 값 요소를 허용하며 고정 SDK의 자명한 복사, 이동, 대입 및 소멸 속성을 검증합니다. 생성, 복사/이동, 대입, 값 emplace, 삽입, fill, 삭제, 확장 및 swap은 래퍼 바인딩과 기존 할당 검사를 유지합니다. 확장 시 별칭 요소의 값을 보존하며 래퍼 소멸은 참조 대상을 소멸시키지 않습니다. const 참조 대상, 검증된 콜백과 소스 소유 레코드는 기존 검사를 유지합니다. 사용자 변환과 래퍼 요소 비교에는 별도 경계를 적용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

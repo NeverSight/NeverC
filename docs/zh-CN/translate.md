@@ -91,6 +91,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 经检查的 `reference_wrapper` 值也可作为 `array` 元素。显式初始化、const 访问、复制／移动、赋值、`fill` 和经校验的交换保留或交换包装器绑定，不对引用目标赋值。嵌套及零长度数组沿用现有布局检查；从数组元素填充时先捕获其绑定，空数组填充仍将实参求值一次。原引用目标类型和源码函数目标仍须检查；含包装器叶节点的比较和用户 ADL swap 保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
+`vector` 也接纳经检查的 `reference_wrapper` 值元素，并认证固定 SDK 的平凡复制、移动、赋值及析构属性。构造、复制／移动、赋值、值 emplace、插入、填充、擦除、扩容和交换保留包装器绑定及现有分配检查。扩容时保留别名元素的值；包装器析构不会析构引用目标。const 引用目标、经检查的回调及源码自有记录引用目标仍保留各自检查。用户转换及包装器元素比较继续保留独立边界。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 经验证的函数指针 trait 包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的 trait 按值形参，包括 const 引用目标和右值包装器。固定 SDK 的 trait 拷贝和包装器转换仍须通过认证。每个形参使用独立的一字节存储；可调用对象及实参的副作用只发生一次，原源码函数目标仍须检查。其他 trait 域和 SDK `value` 存储别名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 经验证的源码自有标准布局记录包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的按值形参。选中的源码拷贝构造、默认参数及依赖仍须通过检查。形参使用独立存储，在拷贝前观察后续实参的修改；默认参数副作用和形参清理保留调用中的生命周期。右值包装器仍提供左值引用目标。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

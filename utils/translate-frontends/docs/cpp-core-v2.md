@@ -6938,6 +6938,22 @@ Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`
 
+Checked `reference_wrapper` values also qualify as vector elements after their
+exact pinned layout, trivial copy/move construction, trivial assignment and
+trivial destruction are authenticated. Original referent types and source
+callback targets retain their existing checks. Default empty vectors,
+initializer-list, fill/range and copy/move construction, assignment, wrapper-value
+`emplace`, push, insertion, fill, erasure, growth and swap reuse existing vector
+storage and lifecycle paths. Element copies preserve bindings; assignments and
+shifts replace bindings without assigning the referents. Growth retains aliased
+wrapper values before old storage is released. Wrapper destruction never owns
+or destroys the referent; source-record referents keep their original lifetime.
+Allocation, deallocation and callback source requirements remain independent.
+This storage proof grants no default wrapper constructor or arbitrary user
+conversion. Constructing a wrapper from a bare referent through emplace requires
+its own selected SDK constructor and forwarding proof. Comparisons of wrapper
+elements retain their separate operation restrictions.
+
 Core v2 admits an exact angle include of the pinned C++17 `<vector>` header.
 With reduced transitive includes, its 300-file libc++/resource closure is
 identical and platform-free on all eight core targets. The public header and

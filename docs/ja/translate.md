@@ -91,6 +91,8 @@ tuple 内の検証済み関数ポインター trait オブジェクトは、メ�
 
 検証済みの `reference_wrapper` 値も `array` 要素にできます。明示的初期化、const アクセス、コピー／移動、代入、`fill` と検証済み swap は、参照先へ代入せずにラッパーの束縛を保持または交換します。入れ子および要素数ゼロの配列は既存のレイアウト検査を使い、配列要素からの fill は書き込み前に束縛を取得します。空配列の fill も引数を一度評価します。元の参照先の型とソース定義の関数を検査し、ラッパー要素を含む比較とユーザー ADL swap には既存の制限を適用します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
+`vector` も検証済みの `reference_wrapper` 値要素を受け入れ、固定 SDK の自明なコピー、移動、代入とデストラクターを認証します。構築、コピー／移動、代入、値の emplace、挿入、fill、消去、拡張と swap はラッパーの束縛と既存の割り当て検査を保持します。拡張時に別名要素の値を保持し、ラッパーの破棄は参照先を破棄しません。const 参照先、検証済みコールバックとソース所有レコードには既存の検査を適用します。ユーザー定義変換とラッパー要素の比較には別の制限を適用します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 検証済みの関数ポインター trait のラッパーは、const な参照先と右辺値ラッパーを含め、`invoke`、`apply` と直接ラッパー呼び出しで正確な trait 型の値渡しパラメーターにも対応します。固定 SDK の trait コピーとラッパー変換を引き続き検証します。各パラメーターは独立した 1 バイトのストレージを持ち、呼び出し可能オブジェクトと引数の副作用は一度だけ発生します。元のソース関数の検証、他の trait ドメインと SDK `value` ストレージの別名に関する制限も維持します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 検証済みのソース所有の標準レイアウトレコードのラッパーは、`invoke`、`apply` と直接ラッパー呼び出しで、正確な型の値渡しパラメーターにも対応します。選択されたソースのコピーコンストラクター、そのデフォルト引数と依存関係を引き続き検証します。パラメーターは独立したストレージを持ち、後続引数の変更をコピー前に読み取ります。デフォルト引数の副作用とパラメーターの破棄は呼び出し内の寿命を保持し、右辺値ラッパーも左辺値の参照先を渡します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
