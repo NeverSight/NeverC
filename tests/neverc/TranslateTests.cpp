@@ -171170,3 +171170,379 @@ namespace std{inline namespace __1{template<>bool operator!=<int,default_delete<
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryArrayWrapper) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-array-wrapper.cpp");
+  const auto Output = tmpFile("default-delete-call-signature-array-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<std::reference_wrapper<int>[]>;using P=std::reference_wrapper<int>*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-array-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryArray) {
+  const auto Source = tmpFile("default-delete-call-signature-array.cpp");
+  const auto Output = tmpFile("default-delete-call-signature-array.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int[]>;using P=int*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-array" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryConstReceiver) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-const-receiver.cpp");
+  const auto Output =
+      tmpFile("default-delete-call-signature-const-receiver.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<const int>;int main(){using R=decltype(std::declval<const D&>().operator()(nullptr));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<const D&>().operator()(nullptr)));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-const-receiver" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryDeletedLifetime) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-deleted-lifetime.cpp");
+  const auto Output =
+      tmpFile("default-delete-call-signature-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+struct R{int n;R()=delete;~R()=delete;};using D=std::default_delete<R>;using P=R*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "default-delete-call-signature-deleted-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryExplicitArrayCall) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-explicit-array-call.cpp");
+  const auto Output =
+      tmpFile("default-delete-call-signature-explicit-array-call.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int[]>;int main(){using R=decltype(std::declval<const D&&>().operator()<int>(std::declval<int*>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<const D&&>().operator()<int>(std::declval<int*>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "default-delete-call-signature-explicit-array-call" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryMultidimensional) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-multidimensional.cpp");
+  const auto Output =
+      tmpFile("default-delete-call-signature-multidimensional.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=const int[2];using D=std::default_delete<E[]>;using P=E*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "default-delete-call-signature-multidimensional" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryQualified) {
+  const auto Source = tmpFile("default-delete-call-signature-qualified.cpp");
+  const auto Output = tmpFile("default-delete-call-signature-qualified.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<const int>;using P=const int*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-qualified" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryQueryEffects) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-query-effects.cpp");
+  const auto Output = tmpFile("default-delete-call-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int>;int effects=0;D&select()noexcept{++effects;return *static_cast<D*>(nullptr);}int*pointer()noexcept{++effects;return nullptr;}int main(){using R=decltype(select()(pointer()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(select()(pointer())));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2DefaultDeleteCallSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("default-delete-call-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("default-delete-call-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int>;int inspect(D&d,int*p){using R=decltype(d(p));static_assert(std::is_same_v<R,void>);static_assert(noexcept(d(p)));return 0;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "default-delete-call-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryScalar) {
+  const auto Source = tmpFile("default-delete-call-signature-scalar.cpp");
+  const auto Output = tmpFile("default-delete-call-signature-scalar.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int>;using P=int*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-scalar" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultDeleteCallSignatureQueryWrapper) {
+  const auto Source = tmpFile("default-delete-call-signature-wrapper.cpp");
+  const auto Output = tmpFile("default-delete-call-signature-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<std::reference_wrapper<int>>;using P=std::reference_wrapper<int>*;int main(){using R=decltype(std::declval<D&>()(std::declval<P>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<D&>()(std::declval<P>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("default-delete-call-signature-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2DefaultDeleteCallSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-member-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int>;using F=void(D::*)(int*)const noexcept;int main(){using R=decltype(std::declval<D&>()(std::declval<int*>()));static_assert(sizeof(static_cast<F>(&D::operator()))>0);return 0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<long double>;int main(){using R=decltype(std::declval<D&>()(std::declval<long double*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct S{int n;~S()noexcept{}};using D=std::default_delete<S>;int inspect(D&d,S*p){using R=decltype(d(p));static_assert(std::is_same_v<R,void>);d(p);return 0;}int main(){return 0;}
+)cpp"},
+      {"source-array-bound", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=int[sizeof(long double)];using D=std::default_delete<E[]>;int main(){using R=decltype(std::declval<D&>()(std::declval<E*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-array-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>template<>void default_delete<int[]>::operator()<int>(int*)const noexcept{}}}using D=std::default_delete<int[]>;int main(){using R=decltype(std::declval<D&>()(std::declval<int*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-deleter-alias", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+int object;template<int*>using D=std::default_delete<int>;int main(){using R=decltype(std::declval<D<&object>&>()(std::declval<int*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct S{long double n;};using D=std::default_delete<S>;int main(){using R=decltype(std::declval<D&>()(std::declval<S*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-pointer-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int>;int*pointer(int=sizeof(long double))noexcept{return nullptr;}int main(){using R=decltype(std::declval<D&>()(pointer()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using D=std::default_delete<int>;D&select(){long double n=0;(void)n;return *static_cast<D*>(nullptr);}int main(){using R=decltype(select()(std::declval<int*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-scalar-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>void default_delete<int>::operator()(int*)const noexcept{}}}using D=std::default_delete<int>;int main(){using R=decltype(std::declval<D&>()(std::declval<int*>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("default-delete-call-signature-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("default-delete-call-signature-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

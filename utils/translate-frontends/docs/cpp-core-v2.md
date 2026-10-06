@@ -3229,6 +3229,25 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure scalar and unbounded-array `default_delete` call-result queries authenticate
+the exact pinned inline const call operator, its declaration chain, checked
+empty one-byte deleter class and original pointer parameter. The array form
+retains its exact element template argument; explicit member calls and const
+or xvalue receivers keep the same signature proof. Results remain `void`
+prvalues and preserve the pinned nonthrowing metadata without instantiated
+delete expressions, pointee destruction or source deallocation definitions.
+Checked qualified, source-record, bounded-inner-array and SDK wrapper elements
+keep their ordinary layout source. Lazy wrapper completion authenticates only
+its SDK class layout, sharing the existing memory query boundary.
+
+Original receiver and pointer expressions, aliases, template types, source
+functions, exception specifications and selected defaults remain independently
+checked. The query executes no operand, reads no pointer and selects no
+construction, deletion or cleanup. Deleted unused pointee lifetimes do not
+prevent borrowed metadata; evaluated deletion still requires its complete
+SDK body, selected deallocation and original lifetime source. Source deleter
+or member replacements and independent member addresses remain rejected.
+
 Pure single-object `make_unique<T>` result queries also accept the exact
 pinned SDK signature when its concrete body has not been instantiated.
 The primary template, selected declaration, all redeclarations, exact `T`,

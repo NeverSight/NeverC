@@ -3068,20 +3068,24 @@ static bool utilitySDKFunctionSource(Adapter &A, const FunctionDecl *Function,
   return true;
 }
 
-static bool utilityUniquePtrElementQueryLayout(
-    Adapter &A, const UtilityUniquePtrRecord &Owner, SourceLocation Location) {
-  const auto *Element = Owner.ElementType->getAsCXXRecordDecl();
+static bool utilityMemoryElementQueryLayout(Adapter &A, QualType ElementType,
+                                            SourceLocation Location) {
+  const auto *Element = ElementType->getAsCXXRecordDecl();
   if (Element && !Element->getDefinition() &&
       approvedFunctionalReferenceMetadata(A.S, A.Sources, Element)) {
     // The result carrier contains a pointer to this exact SDK wrapper. Complete
     // only its authenticated class layout, never its factory or member bodies.
     A.chargeExpansion(1, Location);
-    if (!A.CompleteSDKRecord ||
-        !A.CompleteSDKRecord(Owner.ElementType, Location) ||
+    if (!A.CompleteSDKRecord || !A.CompleteSDKRecord(ElementType, Location) ||
         !approvedFunctionalReferenceRecord(A.S, A.Sources, Element, A.Context))
       return false;
   }
   return true;
+}
+
+static bool utilityUniquePtrElementQueryLayout(
+    Adapter &A, const UtilityUniquePtrRecord &Owner, SourceLocation Location) {
+  return utilityMemoryElementQueryLayout(A, Owner.ElementType, Location);
 }
 
 static QualType utilityMakeUniqueQuerySource(Adapter &A, const CallExpr *Call) {
@@ -7392,6 +7396,64 @@ static bool utilityUniquePtrSDKRecordSource(Adapter &A,
     if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
       return false;
   return true;
+}
+
+static QualType utilityDefaultDeleteQuerySource(Adapter &A,
+                                                const CallExpr *Call) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const Expr *Object = nullptr;
+  unsigned PointerIndex = 0;
+  if (Operator) {
+    if (Operator->getOperator() != OO_Call || Operator->getNumArgs() != 2)
+      return {};
+    Object = Operator->getArg(0);
+    PointerIndex = 1;
+  } else if (Member) {
+    Object = Member->getImplicitObjectArgument();
+  }
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
+  const auto Deleter = approvedUtilityDefaultDeleteRecord(
+      A.S, A.Sources, Method ? Method->getParent() : nullptr, A.Context);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!A.S.coreV2() || !Call || !Method || !Object || !Reference || !Deleter ||
+      !Prototype || Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || Method->isStatic() ||
+      !Method->isConst() || Method->getRefQualifier() != RQ_None ||
+      Method->isVariadic() || Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
+      !Call->getType()->isVoidType() || !Call->isPRValue() ||
+      Call->getNumArgs() != PointerIndex + 1 || !Method->isInlined() ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !A.Context.hasSameUnqualifiedType(
+          Object->getType(), A.Context.getRecordType(Deleter->Record)) ||
+      !utilityUniquePtrSDKRecordSource(A, Deleter->Record, "default_delete",
+                                       "__memory/unique_ptr.h") ||
+      !utilitySDKFunctionSource(A, Method, "__memory/unique_ptr.h", false))
+    return {};
+  const auto Pointer = A.Context.getPointerType(Deleter->ElementType);
+  if (!A.Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer) ||
+      !A.Context.hasSameType(Call->getArg(PointerIndex)->getType(), Pointer))
+    return {};
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (Deleter->Array) {
+    if (!Method->getPrimaryTemplate() || !Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(Arguments->get(0).getAsType(),
+                               Deleter->ElementType))
+      return {};
+  } else if (Method->getPrimaryTemplate() || Arguments) {
+    return {};
+  }
+  // The checked empty deleter and public signature carry this void/nothrow
+  // query. No deletion body, pointee lifetime or deallocation is selected.
+  if (!utilityMemoryElementQueryLayout(A, Deleter->ElementType,
+                                       Call->getExprLoc()))
+    return {};
+  return A.Context.getCanonicalType(Method->getReturnType());
 }
 
 static const CXXOperatorCallExpr *
@@ -14503,6 +14565,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result =
                      utilityUniquePtrNullComparisonQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityDefaultDeleteQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =
