@@ -10873,6 +10873,32 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
     throw Failure{};
   };
   auto ResultType = type(T, L);
+  if (S.coreV2() && ReferenceBinding && T->isFunctionPointerType()) {
+    const auto *Target =
+        V.isLValue() ? dyn_cast_or_null<FunctionDecl>(
+                           V.getLValueBase().dyn_cast<const ValueDecl *>())
+                     : nullptr;
+    const auto *TargetPrototype =
+        Target ? Target->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *ReferentPrototype =
+        T->getPointeeType()->getAs<FunctionProtoType>();
+    const bool MatchingSignature =
+        TargetPrototype && ReferentPrototype &&
+        (Context.hasSameType(Target->getType(), T->getPointeeType()) ||
+         (TargetPrototype->isNothrow() && !ReferentPrototype->isNothrow() &&
+          Context.hasSameFunctionTypeIgnoringExceptionSpec(
+              Target->getType(), T->getPointeeType())));
+    if (ResultType.empty() || !Target || !MatchingSignature ||
+        V.isNullPointer() || !V.getLValueOffset().isZero() ||
+        V.isLValueOnePastTheEnd() || V.getLValueCallIndex() ||
+        V.getLValueVersion() ||
+        (V.hasLValuePath() && !V.getLValuePath().empty()))
+      Reject("A static function reference requires an exact ordinary function "
+             "address without a subobject path or offset.");
+    // Reuse the checked callback address, including its owned definition and
+    // emitted ABI. Object-address paths and lifetime checks remain separate.
+    return constant(V, T, L);
+  }
   if (ResultType.empty() || !S.coreV2() || !T->isPointerType() || T->isFunctionPointerType() ||
       !V.isLValue() || V.getLValueCallIndex())
     Reject("A constant pointer must identify null or permanent source-owned object storage.");
@@ -11049,10 +11075,46 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       reject(L, "constant record", "A folded record must retain every actual base and field value.");
       throw Failure{};
     }
-    if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
+    auto Tuple = approvedUtilityTupleRecord(S, Sources, Record, Context);
+    if (!Tuple)
+      Tuple = approvedUtilityReferenceTupleRecord(S, Sources, Record, Context);
+    if (!Tuple)
+      Tuple =
+          approvedUtilityMixedReferenceTupleRecord(S, Sources, Record, Context);
+    if (Tuple) {
+      // The pinned descriptor proves the exact __base_/__tuple_impl/leaf
+      // hierarchy and the flattened field identities, offsets and types.
+      // Consume that APValue shape directly; these SDK bases never qualify as
+      // ordinary source-owned empty bases.
+      chargeExpansion(Tuple->Elements.size() + 1, L);
+      auto RejectTuple = [&] {
+        reject(L, "constant tuple",
+               "A folded tuple must retain its exact pinned SDK base and leaf "
+               "values.");
+        throw Failure{};
+      };
+      if (Tuple->Elements.empty()) {
+        Args.push_back(zero(Context.UnsignedCharTy, L));
+      } else {
+        if (V.getStructNumFields() != 1 || V.getStructNumBases())
+          RejectTuple();
+        const auto &Impl = V.getStructField(0);
+        if (!Impl.isStruct() || Impl.getStructNumFields() ||
+            Impl.getStructNumBases() != Tuple->Elements.size())
+          RejectTuple();
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          const auto &Leaf = Impl.getStructBase(I);
+          if (!Leaf.isStruct() || Leaf.getStructNumBases() ||
+              Leaf.getStructNumFields() != 1)
+            RejectTuple();
+          Args.push_back(constant(Leaf.getStructField(0),
+                                  Tuple->Elements[I]->getType(), L));
+        }
+      }
+    } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
-    } else if (auto Unique =
-            approvedUtilityUniquePtrRecord(S, Sources, Record, Context)) {
+    } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record,
+                                                            Context)) {
       Args.push_back(constant(V.getStructField(0), Unique->PointerType, L));
     } else if (approvedUtilityDefaultDeleteRecord(S, Sources, Record,
                                                   Context) ||
@@ -20548,7 +20610,9 @@ public:
     if (Depth > 64)
       return false;
     if (T->isReferenceType())
-      return T->getPointeeType()->isObjectType();
+      return T->getPointeeType()->isObjectType() ||
+             ordinaryCallbackPrototype(
+                 T->getPointeeType()->getAs<FunctionProtoType>());
     if (staticScalarType(T))
       return true;
     if (const auto *Array = A.Context.getAsConstantArrayType(T))
@@ -20731,10 +20795,13 @@ public:
       return true;
     auto T = Definition->getType();
     if (!Definition->hasGlobalStorage() || !T->isReferenceType() ||
-        !T->getPointeeType()->isObjectType() ||
+        (!T->getPointeeType()->isObjectType() &&
+         !ordinaryCallbackPrototype(
+             T->getPointeeType()->getAs<FunctionProtoType>())) ||
         Definition->getTLSKind() != VarDecl::TLS_None) {
       A.reject(Definition->getLocation(), "static reference storage",
-               "A static reference requires an admitted object type without TLS.");
+               "A static reference requires an admitted object or ordinary "
+               "function type without TLS.");
       return false;
     }
     const VarDecl *InitializingDecl = nullptr;

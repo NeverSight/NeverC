@@ -8816,6 +8816,23 @@ function-reference parameters and field access produce callable values.
 A reference to a function-pointer object remains an object pointer to callback
 storage, with its original aliasing and dereference behavior.
 
+Static function-reference bindings use the same callback carrier. Constant
+initialization requires a nonnull ordinary source function with the exact
+prototype or checked `noexcept` removal, no APValue subobject path, offset,
+call index or temporary version, and its source-owned definition. This path
+uses a checked function address and never an object-address operation.
+Global and static-member bindings retain startup order; dynamic static-local
+bindings initialize once on first use. Admitted static record, pair and tuple
+fields retain these function bindings, including dynamic selected call results.
+Object static-reference lifetime and subobject checks remain independent; TLS,
+null bindings, reinterpretation, hidden sources and missing definitions remain
+rejected.
+Folded tuple constants use the authenticated SDK descriptor and require its
+exact top field, implementation bases and one-field leaf APValue shape before
+extracting the flattened elements. Scalar, reference, nested and empty tuples
+retain their emitted representation; no private SDK base gains general
+source-owned empty-base admission.
+
 The existing pinned reference-wrapper, invocation, pair and tuple descriptors
 can consume admitted function-reference parameters and results. Their exact
 SDK declaration, selected operation and forwarding proofs remain required;

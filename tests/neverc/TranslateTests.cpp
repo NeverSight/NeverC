@@ -10331,7 +10331,7 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
       {"mixed-access", "class R{int&r;public:int n;R(int&v):r(v),n(3){}};", "TR0201"},
       {"virtual", "struct R{int&r;virtual int f(){return r;}};", "TR0201"},
       {"base", "struct B{int n;};struct R:B{int&r;};", "TR0201"},
-      {"function-reference", "struct R{int(&f)();};", "TR0201"},
+      {"function-reference-signature", "struct R{long double(&f)();};", "TR0201"},
       {"volatile-referent", "struct R{volatile int&r;};", "TR0201"},
       {"member-pointer", "struct R{int n;};struct H{int R::*&r;};", "TR0201"},
       {"meminitializer-temporary", "struct R{const int&r;R():r(3){}};", "TR0202"},
@@ -15141,7 +15141,7 @@ TEST_F(TranslateTest, CoreV2StaticReferencesRetainBindingAndLifetimeRequirements
       {"hidden-initializer", "int n;int&r=(static_cast<void>(1.0L),n);", "TR0201"},
       {"hidden-template", "template<class T>using I=int;int n;template<class T>I<decltype(T{}+1.0L)>&r=n;int f(){return r<int>;}", "TR0201"},
       {"reference-nontype", "int n;template<int&R>int f(){return R;}int g(){return f<n>();}", "TR0201"},
-      {"function-reference", "int f(){return 3;}int(&r)()=f;", "TR0201"},
+      {"function-reference-signature", "long double f(){return 3;}long double(&r)()=f;", "TR0201"},
       {"global-missing-target", "extern int n;int&r=n;", "TR0203"},
       {"global-missing-reference", "extern int&r;int f(){return r;}", "TR0203"},
       {"member-missing-reference", "struct R{static int&r;};", "TR0203"},
@@ -18161,10 +18161,10 @@ TEST_F(TranslateTest, CoreV2TemplateFunctionPointersRetainSourceAndSignatureBoun
       {"parenthesized-template-hidden-argument", "template<class T>int get(int n){return n;}int main(){return ((get<decltype((sizeof(long double),1))>))(3);}"},
       {"parenthesized-template-second-source", "template<int N>int get(int n){return n+N;}int main(){return (get<8>)(3)+((get<sizeof(long double)>))(5);}"},
       {"object-pointer-unary-plus", "int main(){int n=1;int*p=&n;return *+p;}"},
-      {"record-value-argument", "struct R{int n;};template<class T>int get(T r){return r.n;}int main(){auto p=&get<R>;return p(R{3});}"},
-      {"record-value-result", "struct R{int n;};template<class T>T get(){return T{3};}int main(){auto p=&get<R>;return p().n;}"},
-      {"function-reference", "template<class T>T get(T n){return n;}int main(){int(&p)(int)=get<int>;return p(3);}"},
-      {"nonstatic-member", "struct R{template<class T>T get(T n){return n;}};int main(){auto p=&R::get<int>;R r;return (r.*p)(3);}"},
+      {"record-value-argument-signature", "struct R{long double n;};template<class T>int get(T r){return r.n;}int main(){auto p=&get<R>;return p(R{3});}"},
+      {"record-value-result-signature", "struct R{long double n;};template<class T>T get(){return T{3};}int main(){auto p=&get<R>;return p().n;}"},
+      {"function-reference-signature", "template<class T>T get(T n){return n;}int main(){long double(&p)(long double)=get<long double>;return 0;}"},
+      {"nonstatic-member-signature", "struct R{template<class T>T get(T n){return n;}};int main(){auto p=&R::get<long double>;R r;return (r.*p)(3);}"},
       {"variadic", "template<class T>int get(T n,...){return 3;}int main(){auto p=&get<int>;return p(1,2);}"},
       {"hidden-explicit-type", "template<class T>int get(int n){return n;}int main(){auto p=&get<decltype((sizeof(long double),1))>;return p(3);}"},
       {"hidden-explicit-value", "template<int N>int get(int n){return n;}int main(){auto p=&get<(sizeof(long double),1)>;return p(3);}"},
@@ -27913,6 +27913,361 @@ using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return 
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2TemplateFunctionPointersPreserveAdmittedRecordAndMemberCalls) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"nonstatic-member",
+       R"cpp(struct R{template<class T>T get(T n){return n;}};int main(){auto p=&R::get<int>;R r;return (r.*p)(3)!=3;}
+)cpp"},
+      {"record-value-argument",
+       R"cpp(struct R{int n;};template<class T>int get(T r){return r.n;}int main(){auto p=&get<R>;return p(R{3})!=3;}
+)cpp"},
+      {"record-value-result",
+       R"cpp(struct R{int n;};template<class T>T get(){return T{3};}int main(){auto p=&get<R>;return p().n!=3;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile("template-function-pointers-admitted-" + Name + ".cpp");
+    const auto Output =
+        tmpFile("template-function-pointers-admitted-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile("template-function-pointers-admitted-" + Name + Optimization);
+      auto Compile =
+          compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceLegacyFunctionTemplate) {
+  const auto Source =
+      tmpFile("function-reference-legacy-function-template.cpp");
+  const auto Output = tmpFile("function-reference-legacy-function-template.nc");
+  writeFile(
+      Source,
+      R"cpp(template<class T>T get(T n){return n;}int main(){int(&p)(int)=get<int>;return p(3)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-legacy-function-template" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceLegacyGlobalZeroArity) {
+  const auto Source =
+      tmpFile("function-reference-legacy-global-zero-arity.cpp");
+  const auto Output = tmpFile("function-reference-legacy-global-zero-arity.nc");
+  writeFile(Source,
+            R"cpp(int get(){return 3;}int(&r)()=get;int main(){return r()!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-legacy-global-zero-arity" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceLegacyRecordZeroArity) {
+  const auto Source =
+      tmpFile("function-reference-legacy-record-zero-arity.cpp");
+  const auto Output = tmpFile("function-reference-legacy-record-zero-arity.nc");
+  writeFile(
+      Source,
+      R"cpp(int get(){return 3;}struct R{int(&f)();};int main(){R r{get};return r.f()!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-legacy-record-zero-arity" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceTupleConstantShapes) {
+  const auto Source = tmpFile("function-reference-tuple-constant-shapes.cpp");
+  const auto Output = tmpFile("function-reference-tuple-constant-shapes.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+std::tuple<>empty;std::tuple<int,long>values(2,3);std::tuple<std::tuple<int,int>,int>nested(std::tuple<int,int>(4,5),6);int main(){return std::get<0>(values)!=2||std::get<1>(values)!=3||std::get<0>(std::get<0>(nested))!=4||std::get<1>(std::get<0>(nested))!=5||std::get<1>(nested)!=6;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-tuple-constant-shapes" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceConstantStatic) {
+  const auto Source = tmpFile("function-reference-static-constant-static.cpp");
+  const auto Output = tmpFile("function-reference-static-constant-static.nc");
+  writeFile(Source, R"cpp(#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{return n+1;}constexpr F&&global=static_cast<F&&>(target);struct Box{inline static F&&f=std::move(target);};int main(){return &global!=&target||&Box::f!=&target||global(1)!=2||Box::f(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-static-constant-static" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceDynamicStatic) {
+  const auto Source = tmpFile("function-reference-static-dynamic-static.cpp");
+  const auto Output = tmpFile("function-reference-static-dynamic-static.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int first(int n)noexcept{return n+1;}int second(int n)noexcept{return n+2;}F&&select(int which)noexcept{++effects;return which?second:first;}F&&global=select(0);F&local(int which)noexcept{static F&&chosen=select(which);return chosen;}int main(){auto w=std::ref(global);if(effects!=1||w(1)!=2)return 1;if(local(1)(1)!=3||effects!=2)return 2;return local(0)(2)!=4||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-static-dynamic-static" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceGlobalStatic) {
+  const auto Source = tmpFile("function-reference-static-global-static.cpp");
+  const auto Output = tmpFile("function-reference-static-global-static.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}F&global=target;struct Box{static F&f;};F&Box::f=target;F&local()noexcept{static F&f=target;return f;}int main(){return global(1)!=2||Box::f(2)!=3||local()(3)!=4||effects!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-static-global-static" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceDynamicRecord) {
+  const auto Source =
+      tmpFile("function-reference-static-static-dynamic-record.cpp");
+  const auto Output =
+      tmpFile("function-reference-static-static-dynamic-record.nc");
+  writeFile(
+      Source,
+      R"cpp(using F=int(int)noexcept;int effects;int target(int n)noexcept{return n+1;}F&&select()noexcept{++effects;return target;}struct Box{F&&f;};Box global{select()};int main(){if(effects!=1||global.f(1)!=2)return 1;static Box local{select()};return local.f(2)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-reference-static-static-dynamic-record" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceNoexceptRemoval) {
+  const auto Source =
+      tmpFile("function-reference-static-static-noexcept-removal.cpp");
+  const auto Output =
+      tmpFile("function-reference-static-static-noexcept-removal.nc");
+  writeFile(Source, R"cpp(#include <utility>
+using F=int(int);using N=int(int)noexcept;int target(int n)noexcept{return n+1;}F&&global=static_cast<F&&>(target);struct Box{inline static F&f=static_cast<F&>(target);};int main(){static_assert(!noexcept(global(1)));static_assert(!noexcept(Box::f(2)));return global(1)!=2||Box::f(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-reference-static-static-noexcept-removal" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferencePairTuple) {
+  const auto Source =
+      tmpFile("function-reference-static-static-pair-tuple.cpp");
+  const auto Output = tmpFile("function-reference-static-static-pair-tuple.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}int n=2;std::pair<F&&,int&>p(target,n);std::tuple<F&&,int&>t(target,n);int main(){return p.first(p.second)!=3||std::get<0>(t)(n)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-static-static-pair-tuple" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceRecord) {
+  const auto Source = tmpFile("function-reference-static-static-record.cpp");
+  const auto Output = tmpFile("function-reference-static-static-record.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int effects;int target(int n)noexcept{++effects;return n+1;}struct Box{F&&f;};Box global{target};F&local()noexcept{static Box b{target};return b.f;}int main(){auto w=std::ref(global.f);return w(1)!=2||local()(2)!=3||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-static-static-record" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceTemplate) {
+  const auto Source = tmpFile("function-reference-static-static-template.cpp");
+  const auto Output = tmpFile("function-reference-static-static-template.nc");
+  writeFile(Source, R"cpp(#include <functional>
+using F=int(int)noexcept;int target(int n)noexcept{return n+1;}template<class T>struct Box{inline static T&&f=target;};template<class T>inline T&chosen=target;int main(){auto w=std::ref(Box<F>::f);return w(1)!=2||chosen<F>(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-reference-static-static-template" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticFunctionReferenceRetainsSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"static-hidden-alias",
+       R"cpp(using I=decltype((sizeof(long double),int{}));using F=int(I);int target(I n){return n;}F&f=target;int main(){return f(1);}
+)cpp",
+       "TR0201"},
+      {"static-hidden-body",
+       R"cpp(using F=int(int);int target(int n){long double hidden=0;return n;}F&f=target;int main(){return f(1);}
+)cpp",
+       "TR0201"},
+      {"static-hidden-noexcept",
+       R"cpp(using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n;}F&&f=target;int main(){return f(1);}
+)cpp",
+       "TR0201"},
+      {"static-missing-definition",
+       R"cpp(using F=int(int);int target(int n);F&f=target;int main(){return f(1);}
+)cpp",
+       "TR0203"},
+      {"static-null-reference",
+       R"cpp(using F=int(int);F&f=*static_cast<F*>(nullptr);int main(){return 0;}
+)cpp",
+       "TR0201"},
+      {"static-reinterpret",
+       R"cpp(using F=int(int);using G=long(long);long target(long n){return n;}F&f=reinterpret_cast<F&>(target);int main(){return f(1);}
+)cpp",
+       "TR0201"},
+      {"static-tls",
+       R"cpp(using F=int(int);int target(int n){return n;}thread_local F&f=target;int main(){return f(1);}
+)cpp",
+       "TR0201"},
+      {"static-variadic",
+       R"cpp(using F=int(int,...);int target(int n,...){return n;}F&f=target;int main(){return f(1,2);}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source =
+        tmpFile(std::string("function-static-reject-") + Case.Name + ".cpp");
+    auto Output =
+        tmpFile(std::string("function-static-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
   }
 }
 
