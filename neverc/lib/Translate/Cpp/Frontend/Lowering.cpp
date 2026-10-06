@@ -3363,6 +3363,16 @@ class FunctionLowering {
       // portable IR keeps the same storage designator; the selected outer
       // constructor/binding still observes Clang's checked result category.
       return lvalue(Call->getArg(0));
+    case UtilityOperation::FunctionTraitValue: {
+      const auto Trait =
+          approvedFunctionTraitValueCall(A.S, A.Sources, Call, A.Context);
+      if (!Trait)
+        reject(L, "function trait value",
+               "The exact pinned value method and source target are required.");
+      discardFunctionalObject(Trait->Object);
+      return cast(A.functionAddress(Trait->Target, L), type(Call->getType(), L),
+                  L);
+    }
     case UtilityOperation::FunctionalInvoke: {
       auto CallableType = Call->getArg(0)->getType();
       const auto *Prototype =

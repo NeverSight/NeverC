@@ -10666,7 +10666,8 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
            "Only pinned one-byte arithmetic, bitwise, comparison, logical, "
            "integral, floating-point, enum, object-pointer and null-pointer "
            "hash function "
-           "objects are admitted.",
+           "objects and checked function-pointer integral_constant objects "
+           "are admitted.",
            "TR0203");
     return false;
   }
@@ -14716,6 +14717,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           "A trait value reference requires its exact consuming operation.");
   }
   void collectOperationSource(const Stmt *S) {
+    if (const auto *Call = dyn_cast<CallExpr>(S))
+      if (const auto Trait =
+              approvedFunctionTraitValueCall(A.S, A.Sources, Call, A.Context))
+        A.functionAddressTarget(Trait->Target, Call->getExprLoc());
     if (auto Found = MemberPointerCarrierSources.find(S);
         Found != MemberPointerCarrierSources.end())
       // Exact erased reference casts/copies retain the selected source member.

@@ -733,6 +733,9 @@ scalarHashBase(const State &S, const SourceManager &SM,
 static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
                                    const NamedDecl *Declaration,
                                    llvm::StringRef Name) {
+  if (Name == "integral_constant")
+    return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                         "__type_traits/integral_constant.h");
   if (Name != "hash")
     return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                          "__functional/operations.h");
@@ -764,10 +767,33 @@ static bool functionalObjectTemplateOrigin(const State &S,
                        "__functional/hash.h");
 }
 
+static const VarDecl *functionTraitObjectValue(const State &S,
+                                               const SourceManager &SM,
+                                               const CXXRecordDecl *Record,
+                                               const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  if (!Definition || Definition->isUnion() || Definition->getNumBases() ||
+      Definition->isDependentContext() || !Definition->isEmpty() ||
+      !Definition->isStandardLayout() || !Definition->isTriviallyCopyable() ||
+      !Definition->hasTrivialDestructor() || !Definition->field_empty() ||
+      Context.getTypeSize(Context.getRecordType(Definition)) !=
+          Context.getCharWidth() ||
+      Context.getTypeAlign(Context.getRecordType(Definition)) !=
+          Context.getTypeAlign(Context.UnsignedCharTy))
+    return nullptr;
+  for (const auto *Declaration : Definition->decls())
+    if (const auto *Value = dyn_cast<VarDecl>(Declaration);
+        Value && approvedSDKFunctionConstant(S, SM, Value, Context))
+      return Value;
+  return nullptr;
+}
+
 std::optional<FunctionalObjectRecord>
 approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context) {
+  if (functionTraitObjectValue(S, SM, Record, Context))
+    return FunctionalObjectRecord{Record->getDefinition()};
   const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Record ? Record->getDefinition() : nullptr);
   const auto *Template = Definition ? Definition->getSpecializedTemplate()
@@ -12474,6 +12500,106 @@ static bool functionalObjectArgumentConversion(
            utilityCallbackDirectConversion(Context, From, To)));
 }
 
+static const FunctionDecl *functionTraitValueMethod(const State &S,
+                                                    const SourceManager &SM,
+                                                    const CXXMethodDecl *Method,
+                                                    const ASTContext &Context) {
+  const auto *Value =
+      Method ? functionTraitObjectValue(S, SM, Method->getParent(), Context)
+             : nullptr;
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Body =
+      Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Reference =
+      Return && Return->getRetValue()
+          ? dyn_cast<DeclRefExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Value || !Prototype || !Prototype->isNothrow() || !Reference ||
+      Reference->getDecl()->getCanonicalDecl() != Value->getCanonicalDecl() ||
+      Method->getNumParams() || Method->isVariadic() || Method->isStatic() ||
+      !Method->isConst() || Method->isVolatile() || !Method->isConstexpr() ||
+      Method->getRefQualifier() != RQ_None ||
+      (!isa<CXXConversionDecl>(Method) &&
+       Method->getOverloadedOperator() != OO_Call) ||
+      !Context.hasSameUnqualifiedType(Method->getReturnType(),
+                                      Value->getType()))
+    return nullptr;
+  for (const auto *Declaration : Method->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !functionalObjectOrigin(S, SM, Declaration, "integral_constant"))
+      return nullptr;
+  return approvedSDKFunctionConstant(S, SM, Value, Context);
+}
+
+std::optional<FunctionTraitValueCall>
+approvedFunctionTraitValueCall(const State &S, const SourceManager &SM,
+                               const CallExpr *Call,
+                               const ASTContext &Context) {
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Call->isPRValue() ||
+      !Call->getType()->isFunctionPointerType())
+    return std::nullopt;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  const auto *Object =
+      isa<CXXMemberCallExpr>(Call)
+          ? cast<CXXMemberCallExpr>(Call)->getImplicitObjectArgument()
+      : isa<CXXOperatorCallExpr>(Call) && Call->getNumArgs() == 1 &&
+              cast<CXXOperatorCallExpr>(Call)->getOperator() == OO_Call
+          ? Call->getArg(0)
+          : nullptr;
+  if (Method && Object) {
+    const auto *Target = functionTraitValueMethod(S, SM, Method, Context);
+    const auto *Reference = directMethodReference(Call);
+    // An implicit conversion's member-name location can name the SDK value
+    // type. Its exact source call and receiver still retain user provenance.
+    const bool SourceReference =
+        Reference &&
+        (S.owns(SM, Reference->getExprLoc()) ||
+         (isa<CXXConversionDecl>(Method) && S.owns(SM, Call->getExprLoc()) &&
+          S.owns(SM, Object->getExprLoc())));
+    if (Target && SourceReference && !Object->getType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(
+            Object->getType(), Context.getRecordType(Method->getParent())) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        Call->getNumArgs() == (isa<CXXOperatorCallExpr>(Call) ? 1u : 0u))
+      return FunctionTraitValueCall{Target, Object};
+    return std::nullopt;
+  }
+  if (Call->getNumArgs() != 1 ||
+      !functionTraitObjectValue(
+          S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context))
+    return std::nullopt;
+  const auto *Dispatch = approvedFunctionalInvokeDispatch(S, SM, Call, Context);
+  const auto *Function = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *Body =
+      Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Operation =
+      Return && Return->getRetValue()
+          ? dyn_cast_or_null<CXXOperatorCallExpr>(
+                functionalInvokeStrippedExpression(Return->getRetValue()))
+          : nullptr;
+  Method = dyn_cast_or_null<CXXMethodDecl>(
+      Operation ? Operation->getDirectCallee() : nullptr);
+  const auto *Target = functionTraitValueMethod(S, SM, Method, Context);
+  if (!Target || !Operation || Operation->getOperator() != OO_Call ||
+      Operation->getNumArgs() != 1 || Function->getNumParams() != 1 ||
+      !functionalInvokeParameterReference(Operation->getArg(0),
+                                          Function->getParamDecl(0)) ||
+      !Context.hasSameUnqualifiedType(
+          Call->getArg(0)->getType(),
+          Context.getRecordType(Method->getParent())) ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  return FunctionTraitValueCall{Target, Call->getArg(0)};
+}
+
 std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -22520,6 +22646,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (approvedFunctionTraitValueCall(S, SM, Call, Context))
+    return UtilityOperation::FunctionTraitValue;
   if (approvedUtilityArraySwapQuery(S, SM, Call, Context))
     return isa<CXXMethodDecl>(Call->getDirectCallee())
                ? UtilityOperation::ArrayMemberSwap : UtilityOperation::ArraySwap;

@@ -245,6 +245,14 @@ const clang::FunctionDecl *
 approvedSDKFunctionConstant(const State &S, const clang::SourceManager &SM,
                             const clang::VarDecl *Variable,
                             const clang::ASTContext &Context);
+struct FunctionTraitValueCall {
+  const clang::FunctionDecl *Target;
+  const clang::Expr *Object;
+};
+std::optional<FunctionTraitValueCall>
+approvedFunctionTraitValueCall(const State &S, const clang::SourceManager &SM,
+                               const clang::CallExpr *Call,
+                               const clang::ASTContext &Context);
 bool approvedNumericLimitsConstant(const State &S,
                                    const clang::SourceManager &SM,
                                    const clang::CallExpr *Call,
@@ -687,6 +695,7 @@ enum class UtilityOperation {
   Forward,
   MoveIfNoexcept,
   AsConst,
+  FunctionTraitValue,
   FunctionalInvoke,
   FunctionalInvokeObject,
   FunctionalInvokeUserObject,

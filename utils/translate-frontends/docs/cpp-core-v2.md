@@ -45,10 +45,10 @@ int main() {
 }
 ```
 
-Function-pointer trait values follow their [checked address contract](#function-pointer-trait-constants).
-Constructing a standard-library object,
-calling a standard-library function or taking the address/reference identity of
-a trait constant is rejected. Quoted `"type_traits"`, unapproved standard
+Function-pointer trait values and their checked empty objects follow the
+[checked address contract](#function-pointer-trait-constants).
+Other trait object construction or trait method calls, and taking the
+address/reference identity of a trait constant, remain rejected. Quoted `"type_traits"`, unapproved standard
 headers, platform headers and user shadow headers remain outside this boundary.
 The same closure is checked on the supported macOS, Linux and Windows x86-32,
 x86-64 and AArch64 targets. Broader standard-library and STL support remains in
@@ -8926,6 +8926,23 @@ resolved value without its storage identity. Null pointer arguments,
 unsupported signatures, SDK replacements and unrelated foreign constants do
 not gain admission. Native C23 and the protocol are unchanged. Cross-platform
 native execution requires the implementing revision's CI.
+
+Function-pointer `integral_constant` objects reuse the existing one-byte
+empty function-object carrier when the exact pinned implicit specialization
+has no bases or fields, is empty, standard-layout and trivially copyable, and
+has the required size, alignment and trivial destruction. Default construction,
+copy/move and assignment retain their authenticated lifecycle checks. Local,
+static and source-returned instances may use their exact conversion or
+zero-argument `operator()`; `invoke` authenticates the pinned forwarding
+dispatch and selected zero-argument method. The constexpr const method must
+return that exact checked static `value`, with matching callback result type,
+no arguments, no volatile receiver and a nonthrowing prototype. An implicit
+conversion may locate its member name in the SDK value type; its source call
+and receiver still have to be owned, while the exact method and body remain
+pinned. Receiver effects are evaluated before producing the source function
+address. No SDK method is emitted as a runtime call. Selected source definitions
+and bodies remain required for evaluated addresses; bool/object-pointer/null
+trait objects and unsupported or hidden source constructs remain excluded.
 
 ## Unary type transforms
 
