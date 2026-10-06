@@ -127,6 +127,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 `default_delete` 호출 결과의 순수 질의는 삭제 본문 없이 고정 SDK의 `void`와 `noexcept` 시그니처를 인증합니다. 단일 객체, 한정 요소, 배열, 다차원 배열, 검증된 래퍼 요소는 빈 삭제기의 1바이트 레이아웃과 원래 수신자, 포인터, 템플릿 소스를 보존합니다. 포인터를 읽거나 수명 및 해제를 선택하지 않고 피연산자 부작용도 실행하지 않습니다. 실제 삭제는 완전한 본문과 수명 증명을 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+할당기의 `allocate`, `deallocate`, `address`, `max_size` 순수 질의는 본문 없이 정확한 고정 SDK 시그니처를 인증합니다. 1바이트 할당기와 스칼라, 소스 레코드, SDK 래퍼 요소 레이아웃은 검사합니다. 할당은 포인터 결과와 예외 발생 가능한 시그니처를, 해제, 두 주소 오버로드, 크기 한계는 정확한 결과와 예외 없는 메타데이터를 보존합니다. 원래 수신자, 포인터, 개수, 힌트, 값의 소스는 검사하되 실행하지 않습니다. 실행 시 할당 한계와 완전한 연산 증명은 독립적입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

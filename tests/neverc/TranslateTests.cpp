@@ -171546,3 +171546,351 @@ namespace std{inline namespace __1{template<>void default_delete<int>::operator(
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryAddress) {
+  const auto Source = tmpFile("allocator-call-signature-address.cpp");
+  const auto Output = tmpFile("allocator-call-signature-address.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int main(){using R=decltype(std::declval<const A&>().address(std::declval<int&>()));using S=decltype(std::declval<const A&>().address(std::declval<const int&>()));static_assert(std::is_same_v<R,int*>);static_assert(std::is_same_v<S,const int*>);static_assert(noexcept(std::declval<const A&>().address(std::declval<int&>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-address" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryAllocateHint) {
+  const auto Source = tmpFile("allocator-call-signature-allocate-hint.cpp");
+  const auto Output = tmpFile("allocator-call-signature-allocate-hint.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int main(){using R=decltype(std::declval<A&>().allocate(3,nullptr));static_assert(std::is_same_v<R,int*>);static_assert(!noexcept(std::declval<A&>().allocate(3,nullptr)));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-allocate-hint" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryAllocate) {
+  const auto Source = tmpFile("allocator-call-signature-allocate.cpp");
+  const auto Output = tmpFile("allocator-call-signature-allocate.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int main(){using R=decltype(std::declval<A&>().allocate(3));static_assert(std::is_same_v<R,int*>);static_assert(!noexcept(std::declval<A&>().allocate(3)));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-allocate" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryDeallocate) {
+  const auto Source = tmpFile("allocator-call-signature-deallocate.cpp");
+  const auto Output = tmpFile("allocator-call-signature-deallocate.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int main(){using R=decltype(std::declval<A&>().deallocate(nullptr,3));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<A&>().deallocate(nullptr,3)));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-deallocate" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryDeletedLifetime) {
+  const auto Source = tmpFile("allocator-call-signature-deleted-lifetime.cpp");
+  const auto Output = tmpFile("allocator-call-signature-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct E{int n;E()=delete;~E()=delete;};using A=std::allocator<E>;int main(){using R=decltype(std::declval<A&>().allocate(3));using S=decltype(std::declval<A&>().deallocate(std::declval<E*>(),3));static_assert(std::is_same_v<R,E*>);static_assert(std::is_same_v<S,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-deleted-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryDynamicCount) {
+  const auto Source = tmpFile("allocator-call-signature-dynamic-count.cpp");
+  const auto Output = tmpFile("allocator-call-signature-dynamic-count.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;using N=decltype(sizeof(0));int effects=0;N count()noexcept{++effects;return static_cast<N>(-1);}int main(){using R=decltype(std::declval<A&>().allocate(count()));static_assert(std::is_same_v<R,int*>);return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-dynamic-count" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryMaxSize) {
+  const auto Source = tmpFile("allocator-call-signature-max-size.cpp");
+  const auto Output = tmpFile("allocator-call-signature-max-size.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int main(){using R=decltype(std::declval<const A&>().max_size());static_assert(std::is_same_v<R,decltype(sizeof(0))>);static_assert(noexcept(std::declval<const A&>().max_size()));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-max-size" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("allocator-call-signature-query-effects.cpp");
+  const auto Output = tmpFile("allocator-call-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int effects=0;A&select()noexcept{++effects;return *static_cast<A*>(nullptr);}int*pointer()noexcept{++effects;return nullptr;}int main(){using R=decltype(select().deallocate(pointer(),3));static_assert(std::is_same_v<R,void>);static_assert(noexcept(select().deallocate(pointer(),3)));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("allocator-call-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("allocator-call-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int inspect(A&a,int&p){using R=decltype(a.address(p));using S=decltype(a.allocate(3));static_assert(std::is_same_v<R,int*>);static_assert(std::is_same_v<S,int*>);return 0;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "allocator-call-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocatorCallSignatureQueryWrapperElement) {
+  const auto Source = tmpFile("allocator-call-signature-wrapper-element.cpp");
+  const auto Output = tmpFile("allocator-call-signature-wrapper-element.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;using A=std::allocator<E>;int main(){using R=decltype(std::declval<A&>().allocate(3));using S=decltype(std::declval<A&>().deallocate(std::declval<E*>(),3));static_assert(std::is_same_v<R,E*>);static_assert(std::is_same_v<S,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("allocator-call-signature-wrapper-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AllocatorCallSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"source-allocator-forward-declaration", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std { inline namespace __1 { template<class T> class allocator; } }
+using A = std::allocator<int>;
+static_assert(std::is_same<decltype(std::declval<A &>().allocate(1)), int *>::value, "signature");
+int main() { return 0; }
+)cpp"},
+      {"independent-member-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;using N=decltype(sizeof(0));using F=int*(A::*)(N);int main(){using R=decltype(std::declval<A&>().allocate(3));static_assert(sizeof(static_cast<F>(&A::allocate))>0);return 0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<long double>;int main(){using R=decltype(std::declval<A&>().allocate(3));static_assert(std::is_same_v<R,long double*>);return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-allocate", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int inspect(A&a){using R=decltype(a.allocate(3));static_assert(std::is_same_v<R,int*>);return a.allocate(3)==nullptr;}int main(){return 0;}
+)cpp"},
+      {"source-address-operand", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;int value=0;int main(){using R=decltype(std::declval<const A&>().address((sizeof(long double),value)));static_assert(std::is_same_v<R,int*>);return 0;}
+)cpp"},
+      {"source-allocate-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int*allocator<int>::allocate(size_t){return nullptr;}}}using A=std::allocator<int>;int main(){using R=decltype(std::declval<A&>().allocate(3));static_assert(std::is_same_v<R,int*>);return 0;}
+)cpp"},
+      {"source-allocator-alias", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+int object;template<int*>using A=std::allocator<int>;int main(){using R=decltype(std::declval<A<&object>&>().max_size());static_assert(std::is_same_v<R,decltype(sizeof(0))>);return 0;}
+)cpp"},
+      {"source-count-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;decltype(sizeof(0))count(int=sizeof(long double))noexcept{return 3;}int main(){using R=decltype(std::declval<A&>().allocate(count()));static_assert(std::is_same_v<R,int*>);return 0;}
+)cpp"},
+      {"source-deallocate-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>void allocator<int>::deallocate(int*,size_t)noexcept{}}}using A=std::allocator<int>;int main(){using R=decltype(std::declval<A&>().deallocate(nullptr,3));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct E{long double n;};using A=std::allocator<E>;int main(){using R=decltype(std::declval<A&>().allocate(3));static_assert(std::is_same_v<R,E*>);return 0;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using A=std::allocator<int>;A&select(){long double n=0;(void)n;return *static_cast<A*>(nullptr);}int main(){using R=decltype(select().max_size());static_assert(std::is_same_v<R,decltype(sizeof(0))>);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("allocator-call-signature-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("allocator-call-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

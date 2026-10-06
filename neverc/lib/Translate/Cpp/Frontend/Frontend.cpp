@@ -3073,8 +3073,8 @@ static bool utilityMemoryElementQueryLayout(Adapter &A, QualType ElementType,
   const auto *Element = ElementType->getAsCXXRecordDecl();
   if (Element && !Element->getDefinition() &&
       approvedFunctionalReferenceMetadata(A.S, A.Sources, Element)) {
-    // The result carrier contains a pointer to this exact SDK wrapper. Complete
-    // only its authenticated class layout, never its factory or member bodies.
+    // Complete only this exact SDK wrapper element layout, never its factory
+    // or member bodies.
     A.chargeExpansion(1, Location);
     if (!A.CompleteSDKRecord || !A.CompleteSDKRecord(ElementType, Location) ||
         !approvedFunctionalReferenceRecord(A.S, A.Sources, Element, A.Context))
@@ -7371,10 +7371,9 @@ utilityUniquePtrEqualitySource(Adapter &A, const FunctionDecl *Function,
                                       Right);
 }
 
-static bool utilityUniquePtrSDKRecordSource(Adapter &A,
-                                            const CXXRecordDecl *Record,
-                                            llvm::StringRef Name,
-                                            llvm::StringRef Path) {
+static bool utilityUniquePtrSDKRecordSource(
+    Adapter &A, const CXXRecordDecl *Record, llvm::StringRef Name,
+    llvm::StringRef Path, llvm::ArrayRef<llvm::StringRef> ForwardPaths = {}) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(
           Record ? Record->getDefinition() : nullptr);
@@ -7383,8 +7382,16 @@ static bool utilityUniquePtrSDKRecordSource(Adapter &A,
   auto Pinned = [&](const Decl *Declaration) {
     const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
     A.chargeExpansion(1, Declaration->getLocation());
-    return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
-           Origin && Origin->Root == "libcxx" && Origin->Path == Path;
+    if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) ||
+        !Origin || Origin->Root != "libcxx")
+      return false;
+    if (Origin->Path == Path)
+      return true;
+    const auto *Forward = dyn_cast<CXXRecordDecl>(Declaration);
+    if (const auto *ForwardTemplate = dyn_cast<ClassTemplateDecl>(Declaration))
+      Forward = ForwardTemplate->getTemplatedDecl();
+    return Forward && !Forward->isCompleteDefinition() &&
+           llvm::is_contained(ForwardPaths, Origin->Path);
   };
   if (!Specialization || Specialization->getName() != Name || !Template ||
       Specialization->getSpecializationKind() != TSK_ImplicitInstantiation)
@@ -7454,6 +7461,100 @@ static QualType utilityDefaultDeleteQuerySource(Adapter &A,
                                        Call->getExprLoc()))
     return {};
   return A.Context.getCanonicalType(Method->getReturnType());
+}
+
+static QualType utilityAllocatorQuerySource(Adapter &A, const CallExpr *Call) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      A.S, A.Sources, Method ? Method->getParent() : nullptr, A.Context);
+  if (!A.S.coreV2() || !Method || !Method->getIdentifier() || !Object ||
+      !Reference || !Prototype || !Allocator || Method->isStatic() ||
+      Method->isVariadic() || Method->getPrimaryTemplate() ||
+      Method->getTemplateSpecializationArgs() ||
+      Method->getRefQualifier() != RQ_None || !Method->isInlined() ||
+      !Call->isPRValue() || Call->getNumArgs() != Method->getNumParams() ||
+      Prototype->getNoexceptExpr() ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !A.Context.hasSameUnqualifiedType(
+          Object->getType(), A.Context.getRecordType(Allocator->Record)) ||
+      !utilityUniquePtrSDKRecordSource(
+          A, Allocator->Record, "allocator", "__memory/allocator.h",
+          {"__fwd/memory.h", "__memory/allocator_traits.h"}) ||
+      !utilitySDKFunctionSource(A, Method, "__memory/allocator.h", false))
+    return {};
+  const auto Name = Method->getName();
+  const auto Pointer = A.Context.getPointerType(Allocator->ElementType);
+  const auto ConstPointer =
+      A.Context.getPointerType(A.Context.getConstType(Allocator->ElementType));
+  const auto Size = A.Context.getSizeType();
+  auto Parameter = [&](unsigned Index, QualType Expected) {
+    return Index < Call->getNumArgs() &&
+           A.Context.hasSameType(Method->getParamDecl(Index)->getType(),
+                                 Expected) &&
+           A.Context.hasSameType(Call->getArg(Index)->getType(), Expected);
+  };
+  QualType Result;
+  ExceptionSpecificationType Exception;
+  bool Const = false;
+  if (Name == "allocate") {
+    if ((Call->getNumArgs() != 1 && Call->getNumArgs() != 2) ||
+        !Parameter(0, Size) ||
+        (Call->getNumArgs() == 2 &&
+         !Parameter(1, A.Context.getPointerType(
+                           A.Context.getConstType(A.Context.VoidTy)))))
+      return {};
+    Result = Pointer;
+    Exception = EST_None;
+  } else if (Name == "deallocate") {
+    if (Call->getNumArgs() != 2 || !Parameter(0, Pointer) ||
+        !Parameter(1, Size))
+      return {};
+    Result = A.Context.VoidTy;
+    Exception = EST_BasicNoexcept;
+  } else if (Name == "max_size") {
+    if (Call->getNumArgs())
+      return {};
+    Result = Size;
+    Exception = EST_BasicNoexcept;
+    Const = true;
+  } else if (Name == "address") {
+    if (Call->getNumArgs() != 1)
+      return {};
+    const auto ReferenceType = Method->getParamDecl(0)->getType();
+    if (!ReferenceType->isLValueReferenceType() ||
+        !A.Context.hasSameType(Call->getArg(0)->getType(),
+                               ReferenceType->getPointeeType()))
+      return {};
+    if (A.Context.hasSameType(ReferenceType->getPointeeType(),
+                              Allocator->ElementType))
+      Result = Pointer;
+    else if (A.Context.hasSameType(
+                 ReferenceType->getPointeeType(),
+                 A.Context.getConstType(Allocator->ElementType)))
+      Result = ConstPointer;
+    else
+      return {};
+    Exception = EST_BasicNoexcept;
+    Const = true;
+  } else {
+    return {};
+  }
+  if (Method->isConst() != Const ||
+      Prototype->getExceptionSpecType() != Exception ||
+      !A.Context.hasSameType(Method->getReturnType(), Result) ||
+      !A.Context.hasSameType(Call->getType(), Result) ||
+      !utilityMemoryElementQueryLayout(A, Allocator->ElementType,
+                                       Call->getExprLoc()) ||
+      A.type(Pointer, Call->getExprLoc(), false).empty())
+    return {};
+  // Each exact signature is local to this query. Operand sources and all
+  // evaluated allocation, address and deallocation proofs stay independent.
+  return A.Context.getCanonicalType(Result);
 }
 
 static const CXXOperatorCallExpr *
@@ -14568,6 +14669,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityDefaultDeleteQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityAllocatorQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =

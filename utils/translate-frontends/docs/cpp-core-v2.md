@@ -3229,6 +3229,26 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure pinned allocator `allocate`, `deallocate`, `address` and `max_size`
+queries authenticate exact public constness, parameter and return types,
+resolved exception metadata, function declaration chains and one-byte allocator
+layouts. The ordinary and explicit-hint allocation overloads return the exact
+element pointer and remain potentially throwing. Deallocation retains `void`
+and nonthrowing metadata; mutable and const address overloads retain their exact
+pointer constness and nonthrowing metadata. `max_size` retains the SDK size type
+and nonthrowing metadata. Method bodies are not required by these queries.
+
+Element pointer layouts and original template arguments remain checked, including
+source records and authenticated SDK wrapper completion. Original receiver,
+pointer, count, hint and address operand sources, signatures, exceptions and
+selected defaults remain independent. Dynamic and large count metadata selects
+no allocation, bounds calculation or storage. Queries invoke no operands,
+allocation, address read, deallocation, construction or cleanup. Evaluated
+operations keep their complete method, allocation-limit and lifetime proofs.
+Source allocator or method replacements and independent member addresses
+remain rejected; construct, destroy and allocator-traits operations keep their
+separate existing boundaries.
+
 Pure scalar and unbounded-array `default_delete` call-result queries authenticate
 the exact pinned inline const call operator, its declaration chain, checked
 empty one-byte deleter class and original pointer parameter. The array form
