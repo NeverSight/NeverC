@@ -1379,6 +1379,15 @@ class FunctionLowering {
     llvm_unreachable("unknown functional operation");
   }
 
+  QualType functionalOperationParameterValueType(const CXXMethodDecl *Method,
+                                                 unsigned Index) {
+    auto Type = Method->getParamDecl(Index)->getType().getNonReferenceType();
+    if (const auto Wrapper = approvedFunctionalReferenceRecord(
+            A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context))
+      Type = Wrapper->ReferentType;
+    return Type->isFunctionType() ? A.Context.getPointerType(Type) : Type;
+  }
+
   Expression functionalOperation(const CallExpr *Call,
                                  const FunctionalOperationInfo &Info) {
     auto L = Call->getExprLoc();
@@ -1392,16 +1401,14 @@ class FunctionLowering {
       auto Left = snapshot(expression(Call->getArg(1)), L);
       return functionalOperationValues(L, std::move(Left), std::nullopt, Info);
     }
+    std::vector<Expression> Sources;
+    for (unsigned I = 0; I < Method->getNumParams(); ++I)
+      Sources.push_back(captureUtilityConstructorArgument(
+          Call->getArg(I + 1), Method->getParamDecl(I)->getType()));
     auto Argument = [&](unsigned Index) {
-      if (Method->getParamDecl(Index)
-              ->getType()
-              .getNonReferenceType()
-              ->isFunctionType())
-        return snapshot(expression(Call->getArg(Index + 1)), L);
-      auto Address = snapshot(
-          bind(Call->getArg(Index + 1), Method->getParamDecl(Index)->getType()),
-          L);
-      return dereference(std::move(Address), L);
+      return utilityInvocationArgument(
+          std::move(Sources[Index]), Method->getParamDecl(Index)->getType(),
+          functionalOperationParameterValueType(Method, Index), nullptr, L);
     };
     auto Left = Argument(0);
     std::optional<Expression> Right;
@@ -1470,23 +1477,17 @@ class FunctionLowering {
     discardFunctionalObject(Call->getArg(0));
     auto Sources = captureUtilityInvocationArguments(
         Call, 1, Call->getNumArgs() - 1);
-    auto ParameterValueType = [&](unsigned Index) {
-      auto Type =
-          Approved.Method->getParamDecl(Index)->getType().getNonReferenceType();
-      if (Type->isFunctionType())
-        Type = A.Context.getPointerType(Type);
-      return Type;
-    };
     auto Left = utilityInvocationArgument(
         std::move(Sources[0]),
         Call->getDirectCallee()->getParamDecl(1)->getType(),
-        ParameterValueType(0), nullptr, L);
+        functionalOperationParameterValueType(Approved.Method, 0), nullptr, L);
     std::optional<Expression> Right;
     if (!Unary)
       Right = utilityInvocationArgument(
           std::move(Sources[1]),
           Call->getDirectCallee()->getParamDecl(2)->getType(),
-          ParameterValueType(1), nullptr, L);
+          functionalOperationParameterValueType(Approved.Method, 1), nullptr,
+          L);
     return functionalOperationValues(L, std::move(Left), std::move(Right),
                                      Info);
   }
@@ -3491,8 +3492,7 @@ class FunctionLowering {
             Call->getDirectCallee()
                 ->getParamDecl(1 - OperatorOffset)
                 ->getType(),
-            Info->Method->getParamDecl(0)->getType().getNonReferenceType(),
-            nullptr, L);
+            functionalOperationParameterValueType(Info->Method, 0), nullptr, L);
         std::optional<Expression> Right;
         if (!Unary)
           Right = utilityInvocationArgument(
@@ -3500,8 +3500,8 @@ class FunctionLowering {
               Call->getDirectCallee()
                   ->getParamDecl(2 - OperatorOffset)
                   ->getType(),
-              Info->Method->getParamDecl(1)->getType().getNonReferenceType(),
-              nullptr, L);
+              functionalOperationParameterValueType(Info->Method, 1), nullptr,
+              L);
         return functionalOperationValues(L, std::move(Left),
                                          std::move(Right), *Info->Operation);
       }
@@ -10033,16 +10033,14 @@ class FunctionLowering {
                    "The referenced function object arity differs from the tuple.");
           auto Left =
               ApplyValueArgument(ApplyElement(json::Object(TupleValue), 0), 0,
-                                 ReferenceCallable->Method->getParamDecl(0)
-                                     ->getType()
-                                     .getNonReferenceType());
+                                 functionalOperationParameterValueType(
+                                     ReferenceCallable->Method, 0));
           std::optional<Expression> Right;
           if (!Unary)
             Right =
                 ApplyValueArgument(ApplyElement(std::move(TupleValue), 1), 1,
-                                   ReferenceCallable->Method->getParamDecl(1)
-                                       ->getType()
-                                       .getNonReferenceType());
+                                   functionalOperationParameterValueType(
+                                       ReferenceCallable->Method, 1));
           return functionalOperationValues(
               L, std::move(Left), std::move(Right),
               *ReferenceCallable->Operation);
@@ -10146,17 +10144,14 @@ class FunctionLowering {
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
-        auto Left =
-            ApplyValueArgument(ApplyElement(json::Object(TupleValue), 0), 0,
-                               ObjectOperation->Method->getParamDecl(0)
-                                   ->getType()
-                                   .getNonReferenceType());
+        auto Left = ApplyValueArgument(
+            ApplyElement(json::Object(TupleValue), 0), 0,
+            functionalOperationParameterValueType(ObjectOperation->Method, 0));
         std::optional<Expression> Right;
         if (!Unary)
           Right = ApplyValueArgument(ApplyElement(std::move(TupleValue), 1), 1,
-                                     ObjectOperation->Method->getParamDecl(1)
-                                         ->getType()
-                                         .getNonReferenceType());
+                                     functionalOperationParameterValueType(
+                                         ObjectOperation->Method, 1));
         return functionalOperationValues(L, std::move(Left), std::move(Right),
                                          ObjectOperation->Operation);
       }

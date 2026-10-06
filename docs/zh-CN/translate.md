@@ -85,6 +85,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 带类型的标准函数对象也可通过 `invoke`、`apply` 及直接或经 invoke 调用的可调用对象包装器接收已校验的标量包装器实参。算术、比较和逻辑运算使用选中的形参转换，包括浮点、窄化及算术值到 bool 的转换。SDK 包装器的精确转换及转发流程仍须通过认证。在调用方实参求值完成后读取引用目标，保留后续修改及单次求值语义。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+透明标准函数对象也可在直接调用、`invoke`、`apply` 及可调用对象包装器调用中接收经检查的算术值、对象指针和已接纳函数指针的包装器。固定 SDK 转换须在选中的内建运算前解包精确转发的形参。类型提升、指针比较及回调逻辑运算沿用现有类型检查，不调用回调目标。调用方实参求值完成后才读取引用目标，保留后续修改及单次求值语义。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 经验证的函数指针 trait 包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的 trait 按值形参，包括 const 引用目标和右值包装器。固定 SDK 的 trait 拷贝和包装器转换仍须通过认证。每个形参使用独立的一字节存储；可调用对象及实参的副作用只发生一次，原源码函数目标仍须检查。其他 trait 域和 SDK `value` 存储别名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 经验证的源码自有标准布局记录包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的按值形参。选中的源码拷贝构造、默认参数及依赖仍须通过检查。形参使用独立存储，在拷贝前观察后续实参的修改；默认参数副作用和形参清理保留调用中的生命周期。右值包装器仍提供左值引用目标。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

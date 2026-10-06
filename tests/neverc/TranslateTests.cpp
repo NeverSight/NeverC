@@ -29642,6 +29642,507 @@ int target(int,...)noexcept;using F=int(*)(int,...)noexcept;using C=std::integra
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationApplyConst) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-apply-const.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-apply-const.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){const int n=7;const std::tuple<std::reference_wrapper<const int>,int> a(std::cref(n),2);return std::apply(std::plus<>{},a)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-apply-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperTransparentOperationApplyFunctionEqual) {
+  const auto Source = tmpFile(
+      "reference-wrapper-transparent-operation-apply-function-equal.cpp");
+  const auto Output = tmpFile(
+      "reference-wrapper-transparent-operation-apply-function-equal.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int calls;int target(int n)noexcept{++calls;return n;}using F=int(*)(int)noexcept;int main(){F f=target;std::tuple<std::reference_wrapper<F>,F> a(std::ref(f),target);return !std::apply(std::equal_to<>{},a)||calls!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-transparent-operation-apply-function-equal" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationApplyPlus) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-apply-plus.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-apply-plus.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;std::tuple<std::reference_wrapper<int>,int> a(std::ref(n),2);return std::apply(std::plus<>{},a)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-apply-plus" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperTransparentOperationApplyWrappedObject) {
+  const auto Source = tmpFile(
+      "reference-wrapper-transparent-operation-apply-wrapped-object.cpp");
+  const auto Output = tmpFile(
+      "reference-wrapper-transparent-operation-apply-wrapped-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;std::plus<> plus;auto f=std::ref(plus);std::tuple<std::reference_wrapper<int>,int> a(std::ref(n),2);return std::apply(f,a)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-transparent-operation-apply-wrapped-object" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationArgumentOnce) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-argument-once.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-argument-once.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int n=7;int effects;int& pick(){++effects;return n;}int main(){return std::invoke(std::plus<>{},std::ref(pick()),std::ref(pick()))!=14||effects!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-argument-once" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationDirectLate) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-direct-late.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-direct-late.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int n=3;int change(){n=7;return 2;}int main(){return std::plus<>{}(std::ref(n),change())!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-direct-late" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationDirectPlus) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-direct-plus.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-direct-plus.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;return std::plus<>{}(std::ref(n),2)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-direct-plus" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperTransparentOperationDirectWrappedObject) {
+  const auto Source = tmpFile(
+      "reference-wrapper-transparent-operation-direct-wrapped-object.cpp");
+  const auto Output = tmpFile(
+      "reference-wrapper-transparent-operation-direct-wrapped-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;std::plus<> plus;auto f=std::ref(plus);return f(std::ref(n),2)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-direct-wrapped-object" +
+        Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationInvokeConst) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-invoke-const.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-invoke-const.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){const int n=7;return std::invoke(std::plus<>{},std::cref(n),2)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-invoke-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationInvokeLate) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-invoke-late.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-invoke-late.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int n=3;int change(){n=7;return 2;}int main(){return std::invoke(std::plus<>{},std::ref(n),change())!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-invoke-late" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperTransparentOperationInvokeLogicalFunction) {
+  const auto Source = tmpFile(
+      "reference-wrapper-transparent-operation-invoke-logical-function.cpp");
+  const auto Output = tmpFile(
+      "reference-wrapper-transparent-operation-invoke-logical-function.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int calls;int target(int n)noexcept{++calls;return n;}using F=int(*)(int)noexcept;int main(){F f=nullptr;return !std::invoke(std::logical_not<>{},std::ref(f))||calls!=0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-invoke-logical-function" +
+        Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationInvokeMixed) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-invoke-mixed.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-invoke-mixed.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;return std::invoke(std::plus<>{},std::ref(n),2.5)!=9.5;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-invoke-mixed" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationInvokeNegate) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-invoke-negate.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-invoke-negate.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;return std::invoke(std::negate<>{},std::ref(n))!=-7;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-invoke-negate" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationInvokePlus) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-invoke-plus.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-invoke-plus.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;return std::invoke(std::plus<>{},std::ref(n),2)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-invoke-plus" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperTransparentOperationObjectPointerLess) {
+  const auto Source = tmpFile(
+      "reference-wrapper-transparent-operation-object-pointer-less.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-object-pointer-less.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int a[2]={1,2};int* p=a;return !std::invoke(std::less<>{},std::ref(p),a+1);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-transparent-operation-object-pointer-less" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationPlainControl) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-plain-control.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-plain-control.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;return std::invoke(std::plus<>{},n,2)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-transparent-operation-plain-control" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperTransparentOperationWrappedObject) {
+  const auto Source =
+      tmpFile("reference-wrapper-transparent-operation-wrapped-object.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-transparent-operation-wrapped-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int main(){int n=7;std::plus<> plus;auto f=std::ref(plus);return std::invoke(f,std::ref(n),2)!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-transparent-operation-wrapped-object" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2ReferenceWrapperTransparentOperationsRetainConversionAndSDKBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"long-double-referent", R"cpp(#include <functional>
+#include <tuple>
+int main(){long double n=7;return std::invoke(std::plus<>{},std::ref(n),2)!=9;}
+)cpp"},
+      {"sdk-function-target", R"cpp(#include <functional>
+#include <tuple>
+using F=int&(*)(int&)noexcept;int main(){F f=static_cast<F>(&std::forward<int&>);return std::invoke(std::logical_not<>{},std::ref(f));}
+)cpp"},
+      {"source-argument-body", R"cpp(#include <functional>
+#include <tuple>
+int n=7;int& pick(){long double x=n;n=int(x);return n;}int main(){return std::invoke(std::plus<>{},std::ref(pick()),2)!=9;}
+)cpp"},
+      {"source-wrapper-conversion", R"cpp(#include <functional>
+#include <tuple>
+int n=7;int effects;namespace std{inline namespace __1{template<> reference_wrapper<int>::operator int&()const noexcept{++effects;return n;}}}int main(){return std::invoke(std::plus<>{},std::ref(n),2)!=9;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <tuple>
+struct R{operator int()const{return 7;}};int main(){R r;return std::invoke(std::plus<>{},r,2)!=9;}
+)cpp"},
+      {"user-operator", R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};int operator+(std::reference_wrapper<R> r,int n){return r.get().n+n;}int main(){R r{7};return std::invoke(std::plus<>{},std::ref(r),2)!=9;}
+)cpp"},
+      {"variadic-function", R"cpp(#include <functional>
+#include <tuple>
+int target(int,...);using F=int(*)(int,...);int main(){F f=target;return std::invoke(std::logical_not<>{},std::ref(f));}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <functional>
+#include <tuple>
+int main(){volatile int n=7;return std::invoke(std::plus<>{},std::ref(n),2)!=9;}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("reference-wrapper-transparent-operation-reject-") +
+                Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("reference-wrapper-transparent-operation-reject-") +
+                Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperTransparentOperationApplyFunctionWrappedObject) {
+  const auto Source = tmpFile("reference-wrapper-transparent-operation-apply-"
+                              "function-wrapped-object.cpp");
+  const auto Output = tmpFile("reference-wrapper-transparent-operation-apply-"
+                              "function-wrapped-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int calls;int target(int n)noexcept{++calls;return n;}using F=int(*)(int)noexcept;
+int main(){F f=target;std::equal_to<> equal;auto callable=std::ref(equal);std::tuple<std::reference_wrapper<F>,F> args(std::ref(f),target);return std::apply(callable,args)&&calls==0?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("reference-wrapper-transparent-operation-"
+                                    "apply-function-wrapped-object" +
+                                    Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperStandardOperationApplyConst) {
   const auto Source = tmpFile("reference-wrapper-operation-apply-const.cpp");
   const auto Output = tmpFile("reference-wrapper-operation-apply-const.nc");

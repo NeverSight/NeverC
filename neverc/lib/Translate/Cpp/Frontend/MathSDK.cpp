@@ -1557,6 +1557,13 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const ASTContext &Context, bool RequireOwnedReference,
     const CXXMethodDecl *SelectedMethod = nullptr);
 
+static std::optional<FunctionalReferenceAccessCall>
+approvedFunctionalReferenceAccessCallImpl(const State &S,
+                                          const SourceManager &SM,
+                                          const CallExpr *Call,
+                                          const ASTContext &Context,
+                                          bool RequireOwnedReference);
+
 static std::optional<FunctionalOperationInfo> approvedPointerHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
@@ -2181,6 +2188,10 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
   for (const auto *Parameter : Method->parameters()) {
     auto ParameterType =
         Parameter->getType().getNonReferenceType().getUnqualifiedType();
+    if (Transparent)
+      if (const auto Wrapper = approvedFunctionalReferenceRecord(
+              S, SM, ParameterType->getAsCXXRecordDecl(), Context))
+        ParameterType = Wrapper->ReferentType.getUnqualifiedType();
     if (ParameterType->isFunctionType())
       ParameterType = Context.getPointerType(ParameterType);
     CallbackOperands |= supportedFunctionalCallbackOperation(
@@ -2326,13 +2337,25 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
           Deduced.isNull() || Deduced->isLValueReferenceType()
               ? Deduced
               : Context.getRValueReferenceType(Deduced);
+      const auto Wrapper =
+          Deduced.isNull()
+              ? std::nullopt
+              : approvedFunctionalReferenceRecord(
+                    S, SM, Deduced.getNonReferenceType()->getAsCXXRecordDecl(),
+                    Context);
       if (!TypeParameter || TypeParameter->isParameterPack() ||
-          Deduced.isNull() || !SupportedScalar(Deduced) ||
+          Deduced.isNull() ||
+          (!SupportedScalar(Deduced) &&
+           !(Wrapper && !Deduced.getNonReferenceType().isVolatileQualified() &&
+             !Deduced.getNonReferenceType().isRestrictQualified() &&
+             Deduced.getNonReferenceType().getAddressSpace() ==
+                 LangAS::Default &&
+             SupportedScalar(Wrapper->ReferentType))) ||
           !PatternParameter->isRValueReferenceType() ||
           !Context.hasSameType(InstantiatedParameter, ExpectedParameter) ||
-          (Call && !Context.hasSameUnqualifiedType(
-                       Call->getArg(I + 1)->getType(),
-                       Deduced.getNonReferenceType())))
+          (Call &&
+           !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(),
+                                           Deduced.getNonReferenceType())))
         return std::nullopt;
     }
   } else {
@@ -2358,6 +2381,28 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
   auto ParameterReference = [&](const Expr *Expression, unsigned Index) {
     Expression = Expression ? Expression->IgnoreParenImpCasts() : nullptr;
     if (Transparent) {
+      if (const auto Wrapper =
+              approvedFunctionalReferenceRecord(S, SM,
+                                                Method->getParamDecl(Index)
+                                                    ->getType()
+                                                    .getNonReferenceType()
+                                                    ->getAsCXXRecordDecl(),
+                                                Context)) {
+        const auto *Conversion =
+            dyn_cast_or_null<CXXMemberCallExpr>(Expression);
+        const auto Access = Conversion
+                                ? approvedFunctionalReferenceAccessCallImpl(
+                                      S, SM, Conversion, Context, false)
+                                : std::nullopt;
+        if (!Conversion ||
+            !isa_and_nonnull<CXXConversionDecl>(
+                Conversion->getDirectCallee()) ||
+            !Access || Access->ObjectIsArrow ||
+            Access->Wrapper.Record->getCanonicalDecl() !=
+                Wrapper->Record->getCanonicalDecl())
+          return false;
+        Expression = Access->Object->IgnoreParenImpCasts();
+      }
       const auto *Forward = dyn_cast_or_null<CallExpr>(Expression);
       const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
       const auto *ForwardPrimary =
@@ -13176,6 +13221,18 @@ static bool functionalObjectWrapperArgumentConversion(
     const State &S, const SourceManager &SM, const ASTContext &Context,
     QualType From, QualType To, const Expr *SelectedArgument,
     const ParmVarDecl *ForwardedParameter) {
+  if (!From.isNull() && !To.isNull() &&
+      Context.hasSameUnqualifiedType(From, To) && !From.isVolatileQualified() &&
+      !From.isRestrictQualified() &&
+      From.getAddressSpace() == LangAS::Default && !To.isVolatileQualified() &&
+      !To.isRestrictQualified() && To.getAddressSpace() == LangAS::Default &&
+      approvedFunctionalReferenceRecord(S, SM, From->getAsCXXRecordDecl(),
+                                        Context) &&
+      (functionalInvokeParameterReference(SelectedArgument,
+                                          ForwardedParameter) ||
+       approvedFunctionalForwardingCall(S, SM, SelectedArgument,
+                                        ForwardedParameter)))
+    return true;
   return approvedFunctionalReferenceArgumentValue(S, SM, Context, To, From) &&
          approvedFunctionalInvokeReferenceWrapperFlow(
              S, SM, SelectedArgument, ForwardedParameter, To, Context);
@@ -14089,8 +14146,8 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
     return std::nullopt;
   for (unsigned I = 0; I < Arity; ++I)
     if (const auto Stored = Apply->Tuple.elementType(I);
-        !utilityScalarDirectConversion(
-            Context,
+        !functionalObjectArgumentConversion(
+            Context, *Operation,
             Stored->isReferenceType() ? Stored->getPointeeType() : Stored,
             OperationCall->getArg(I + 1)->getType()) &&
         !functionalObjectWrapperArgumentConversion(
@@ -14645,12 +14702,21 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
                              : StoredElement;
     bool Supported = false;
     if (StandardObject) {
-      Supported = utilityScalarDirectConversion(Context, Element,
-                                                Target.getNonReferenceType()) ||
-                  (approvedFunctionalReferenceArgumentValue(
-                       S, SM, Context, Target.getNonReferenceType(), Element) &&
-                   Context.hasSameUnqualifiedType(
-                       Element, Operation->getArg(I + 1)->getType()));
+      const auto InputWrapper = approvedFunctionalReferenceRecord(
+          S, SM, Element->getAsCXXRecordDecl(), Context);
+      Supported =
+          functionalObjectArgumentConversion(Context, *Reference->Operation,
+                                             Element,
+                                             Target.getNonReferenceType()) ||
+          ((approvedFunctionalReferenceArgumentValue(
+                S, SM, Context, Target.getNonReferenceType(), Element) ||
+            (InputWrapper && !Element.isVolatileQualified() &&
+             !Element.isRestrictQualified() &&
+             Element.getAddressSpace() == LangAS::Default &&
+             Context.hasSameUnqualifiedType(Element,
+                                            Target.getNonReferenceType()))) &&
+           Context.hasSameUnqualifiedType(Element,
+                                          Operation->getArg(I + 1)->getType()));
     } else if (Target->isReferenceType()) {
       const auto Referent = Target->getPointeeType();
       const bool ElementIsLValue =

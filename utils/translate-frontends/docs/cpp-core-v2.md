@@ -4152,6 +4152,22 @@ wrapper values use the same proof. Arbitrary source conversions, volatile or
 long-double referents, wrapper-to-boolean function-pointer conversions and
 replacement SDK operators or wrapper conversions retain their diagnostics.
 
+Transparent standard function objects also accept checked arithmetic,
+object-pointer and admitted function-pointer wrapper operands through direct
+calls, `invoke`, `apply` and direct or invoked callable wrappers. The concrete
+member-template argument remains the exact wrapper type. Its pinned SDK
+conversion must unwrap the same authenticated `std::forward` call and method
+parameter before the single selected built-in operation. Outer invocation and
+apply adapters retain exact wrapper types and forwarded parameter identities.
+Lowering captures all caller bindings before loading referents, including for
+direct standard-object calls. Const referents, heterogeneous promotions,
+admitted object-pointer comparisons and callback equality or logical operations
+retain their existing type and source checks. Callback targets are not invoked.
+This operation-specific callback proof does not admit function-wrapper
+conversions to ordinary boolean parameters. Source overloaded operators,
+replacement wrapper conversions, volatile or long-double referents and
+independently unsupported callbacks retain their diagnostics.
+
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and
 wrapper-taking overloads retain the exact wrapper type and referent
