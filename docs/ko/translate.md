@@ -230,6 +230,8 @@ Core v2는 검사된 모든 클래스가 빈 기반 클래스 체인에서 일�
 
 vector emplace로 생성되는 pair 필드는 검증된 일반 함수 포인터와 함수 참조, 호환되는 `noexcept` 제거, `nullptr`도 받습니다. 직접 변환은 콜백 시그니처, 소스 정의, 독립적인 pair 저장소를 유지합니다. 모든 호출자 인수의 전달 바인딩을 캡처한 뒤 필드 값을 읽으므로 뒤쪽 인수가 참조된 값을 갱신해도 너무 이른 스냅샷이 사용되지 않습니다. 암시적 사용자 또는 trait 변환, volatile 포인터, SDK 함수 주소에는 기존 제한이 적용됩니다. 용량을 늘릴 때는 검증된 소스 할당이 끝난 뒤 기존 요소를 이동하기 전에 필드 값을 읽습니다. 여유 용량이 있으면 할당 없이 생성합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+중첩 `vector` 요소는 검증된 상수 개수 `0..65536`과 선택적인 정확한 타입의 채움 값으로 `emplace` 및 `emplace_back`에서 직접 생성할 수 있습니다. 내부 버퍼는 독립적이며 전달 바인딩은 외부 할당을 거쳐도 별칭을 유지합니다. 내부 요소는 기존 기본 생성 또는 복사 생성을 사용하고 개수가 0이면 내부 버퍼를 할당하지 않습니다. 동적이거나 부작용이 있는 개수, 암시적 채움 값 변환, 사용자 지정 할당자는 기존 제한을 따릅니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

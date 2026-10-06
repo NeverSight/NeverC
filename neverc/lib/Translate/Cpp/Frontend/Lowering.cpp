@@ -13693,6 +13693,11 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 1, A.Context)
               : nullptr;
+      const auto NestedEmplace =
+          Operation == UtilityOperation::VectorEmplace
+              ? approvedUtilityVectorNestedEmplace(A.S, A.Sources, *Vector,
+                                                   Call, 1, A.Context)
+              : std::optional<UtilityVectorNestedEmplace>();
       const auto OptionalEmplace =
           Operation == UtilityOperation::VectorEmplace
               ? approvedUtilityVectorOptionalEmplace(A.S, A.Sources, *Vector,
@@ -13714,6 +13719,7 @@ class FunctionLowering {
                     A.Context)
               : std::optional<UtilityPairRecord>();
       std::vector<Expression> PairSources;
+      std::vector<Expression> NestedSources;
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
@@ -13816,6 +13822,10 @@ class FunctionLowering {
               json::Object(*Value), Vector->ElementType, *Unique,
               Call->getArg(1),
               Call->getNumArgs() == 3 ? Call->getArg(2) : nullptr, L);
+        } else if (NestedEmplace) {
+          NestedSources = captureUtilityInvocationArguments(
+              Call, 1, Call->getNumArgs() - 1);
+          Value = temporary(type(Vector->ElementType, L), L);
         } else if (PairEmplace) {
           PairSources = captureUtilityInvocationArguments(Call, 1, 2);
           Value = temporary(type(Vector->ElementType, L), L);
@@ -14041,6 +14051,9 @@ class FunctionLowering {
           binary("<=", json::Object(Needed), json::Object(Capacity), "bool", L),
           InPlace, Grow, L);
       label(InPlace, L);
+      if (NestedEmplace)
+        constructVectorNestedEmplace(json::Object(*Value), *Vector, Call, 1,
+                                     *NestedEmplace, NestedSources, L);
       if (PairEmplace)
         constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 1,
                                    PairSources, L);
@@ -14415,6 +14428,9 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      if (NestedEmplace)
+        constructVectorNestedEmplace(json::Object(*Value), *Vector, Call, 1,
+                                     *NestedEmplace, NestedSources, L);
       if (PairEmplace)
         constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 1,
                                    PairSources, L);
@@ -15827,6 +15843,11 @@ class FunctionLowering {
               ? approvedUtilityVectorEmplaceConstructor(A.S, A.Sources, *Vector,
                                                         Call, 0, A.Context)
               : nullptr;
+      const auto NestedEmplace =
+          Operation == UtilityOperation::VectorEmplaceBack
+              ? approvedUtilityVectorNestedEmplace(A.S, A.Sources, *Vector,
+                                                   Call, 0, A.Context)
+              : std::optional<UtilityVectorNestedEmplace>();
       const auto OptionalEmplace =
           Operation == UtilityOperation::VectorEmplaceBack
               ? approvedUtilityVectorOptionalEmplace(A.S, A.Sources, *Vector,
@@ -15848,6 +15869,7 @@ class FunctionLowering {
                     A.Context)
               : std::optional<UtilityPairRecord>();
       std::vector<Expression> PairSources;
+      std::vector<Expression> NestedSources;
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
@@ -15887,6 +15909,10 @@ class FunctionLowering {
         constructVectorUniquePtrPointer(
             json::Object(*Value), Vector->ElementType, *Unique, Call->getArg(0),
             Call->getNumArgs() == 2 ? Call->getArg(1) : nullptr, L);
+      } else if (NestedEmplace) {
+        NestedSources =
+            captureUtilityInvocationArguments(Call, 0, Call->getNumArgs());
+        Value = temporary(type(Vector->ElementType, L), L);
       } else if (PairEmplace) {
         PairSources = captureUtilityInvocationArguments(Call, 0, 2);
         Value = temporary(type(Vector->ElementType, L), L);
@@ -15946,6 +15972,9 @@ class FunctionLowering {
       branch(binary("!=", json::Object(End), json::Object(Capacity), "bool", L),
              Append, Grow, L);
       label(Append, L);
+      if (NestedEmplace)
+        constructVectorNestedEmplace(json::Object(*Value), *Vector, Call, 0,
+                                     *NestedEmplace, NestedSources, L);
       if (PairEmplace)
         constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 0,
                                    PairSources, L);
@@ -16007,6 +16036,9 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      if (NestedEmplace)
+        constructVectorNestedEmplace(json::Object(*Value), *Vector, Call, 0,
+                                     *NestedEmplace, NestedSources, L);
       if (PairEmplace)
         constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 0,
                                    PairSources, L);
@@ -20830,6 +20862,92 @@ class FunctionLowering {
     label(Finish, L);
     assign(dereference(std::move(TargetCurrent), L),
            quantity(0, type(A.Context.CharTy, L), L), L);
+  }
+
+  void constructVectorNestedEmplace(Expression Place,
+                                    const UtilityVectorRecord &Vector,
+                                    const CallExpr *Call, unsigned Offset,
+                                    UtilityVectorNestedEmplace Kind,
+                                    const std::vector<Expression> &Sources,
+                                    SourceLocation L) {
+    const auto Nested = approvedUtilityVectorRecord(
+        A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
+    if (!Nested)
+      reject(L, "nested vector emplacement",
+             "The checked nested layout is required.");
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(Nested->PointerType, L);
+    Expr::EvalResult Evaluated;
+    if (!Call->getArg(Offset)->EvaluateAsInt(Evaluated, A.Context) ||
+        !Evaluated.Val.isInt())
+      reject(L, "nested vector emplacement",
+             "The checked constant count is required.");
+    const uint64_t Count = Evaluated.Val.getInt().getLimitedValue(65537);
+    auto Member = [&](const char *Name) {
+      return Expression{{"kind", "member"},
+                        {"type", PointerType},
+                        {"name", Name},
+                        {"args", json::Array{json::Object(Place)}},
+                        {"loc", A.loc(L)}};
+    };
+    for (const char *Name :
+         {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
+      initializeZero(Member(Name), Nested->PointerType, L);
+    if (!Count)
+      return;
+    const uint64_t Bytes =
+        A.Context.getTypeSizeInChars(Nested->ElementType).getQuantity();
+    const auto *New = A.allocatorHeapFunction(true, Nested->ElementType, L);
+    json::Array Args;
+    Args.push_back(quantity(Count * Bytes, SizeType, L));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(New->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(New)},
+                                {"args", std::move(Args)},
+                                {"target", json::Object(Allocation)},
+                                {"loc", A.loc(L)}});
+    auto Begin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+    auto End =
+        snapshot(binary("+", json::Object(Begin),
+                        quantity(Count, DifferenceType, L), PointerType, L),
+                 L);
+    assign(Member("nct_vector_begin"), json::Object(Begin), L);
+    assign(Member("nct_vector_end"), json::Object(End), L);
+    assign(Member("nct_vector_capacity"), json::Object(End), L);
+    auto Current = temporary(PointerType, L);
+    assign(Current, std::move(Begin), L);
+    const auto Check = labelName(), One = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", json::Object(Current), json::Object(End), "bool", L),
+           One, Done, L);
+    label(One, L);
+    if (Kind == UtilityVectorNestedEmplace::CountValue) {
+      auto Fill = utilityConstructorArgumentValue(
+          json::Object(Sources[1]),
+          Call->getDirectCallee()->getParamDecl(Offset + 1)->getType(), L);
+      if (Nested->OwningElement)
+        copyVectorElement(dereference(json::Object(Current), L),
+                          std::move(Fill), *Nested, L,
+                          Call->getArg(Offset + 1)->getType());
+      else
+        assign(dereference(json::Object(Current), L), std::move(Fill), L);
+    } else if (Nested->MoveElementConstructor) {
+      constructMemoryDefault(dereference(json::Object(Current), L),
+                             Nested->ElementType,
+                             Nested->DefaultElementConstructor, true, L);
+    } else {
+      initializeZero(dereference(json::Object(Current), L), Nested->ElementType,
+                     L);
+    }
+    assign(Current,
+           binary("+", json::Object(Current), quantity(1, DifferenceType, L),
+                  PointerType, L),
+           L);
+    jump(Check, L);
+    label(Done, L);
   }
 
   void constructVectorOptionalEmplace(Expression Place,

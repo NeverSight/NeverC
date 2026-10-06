@@ -7022,6 +7022,21 @@ iterator range construction, assignment, and insertion also deep-copy nested
 elements from mutable or const source ranges. Checked initializer-list
 construction, assignment and insertion copy each nested element into
 independent storage, including values referenced from the destination vector.
+Nested-vector elements also support direct `emplace` and `emplace_back`
+construction from a checked constant count in `0..65536`, with an optional exact
+fill value. The count is an integer with no source effects; dynamic, negative
+and excessive counts retain their existing restrictions. Each inner buffer is
+independent. Caller forwarding bindings are captured once, before outer
+allocation, and the inner construction occurs before old outer elements move.
+Fill references remain live through inner allocation and each element uses its
+existing scalar copy or authenticated resource copy constructor. Zero counts
+allocate no inner buffer but still evaluate the supplied fill argument. Returned
+references and positional iterators identify the actual stored inner vector.
+Tests cover growth aliases, in-place insertion, three levels of independent
+buffers, argument effects, source allocation mutations, and source element
+construction/destruction counts. Implicit fill conversions and custom allocators
+remain outside this boundary.
+
 All six vector comparisons recurse through nested vectors whose leaves are
 admitted integer or floating types, complete object pointers, or exact pinned
 strings, using lexicographic ordering for `<`, `>`, `<=`, and `>=`. Nested void

@@ -7119,6 +7119,52 @@ static bool utilityVectorPairEmplaceArgument(const State &S,
                                   Context);
 }
 
+std::optional<UtilityVectorNestedEmplace> approvedUtilityVectorNestedEmplace(
+    const State &S, const SourceManager &SM, const UtilityVectorRecord &Vector,
+    const CallExpr *Call, unsigned FirstArgument, const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() <= FirstArgument ||
+      Call->getNumArgs() > FirstArgument + 2)
+    return std::nullopt;
+  const auto Nested = approvedUtilityVectorRecord(
+      S, SM, Vector.ElementType->getAsCXXRecordDecl(), Context);
+  const auto *Function = Call->getDirectCallee();
+  if (!Nested || !Function || Function->getNumParams() != Call->getNumArgs())
+    return std::nullopt;
+  const auto *Count = Call->getArg(FirstArgument);
+  const auto CountType = Count->getType();
+  const auto CountParameter = Function->getParamDecl(FirstArgument)->getType();
+  Expr::EvalResult Evaluated;
+  if (!CountParameter->isReferenceType() ||
+      !Context.hasSameUnqualifiedType(CountParameter->getPointeeType(),
+                                      CountType) ||
+      !CountType->isIntegerType() || CountType.isVolatileQualified() ||
+      CountType.isRestrictQualified() ||
+      CountType.getAddressSpace() != LangAS::Default ||
+      Count->HasSideEffects(Context) ||
+      !Count->EvaluateAsInt(Evaluated, Context) || !Evaluated.Val.isInt() ||
+      Evaluated.Val.getInt().isNegative() ||
+      Evaluated.Val.getInt().getLimitedValue(65537) > 65536)
+    return std::nullopt;
+  if (Call->getNumArgs() == FirstArgument + 1) {
+    if (Nested->MoveElementConstructor && !Nested->DefaultElementConstructor)
+      return std::nullopt;
+    return UtilityVectorNestedEmplace::Count;
+  }
+  const auto *Fill = Call->getArg(FirstArgument + 1);
+  const auto FillType = Fill->getType();
+  const auto FillParameter =
+      Function->getParamDecl(FirstArgument + 1)->getType();
+  if (!utilityVectorCopyableElements(S, SM, *Nested, Context) ||
+      !FillParameter->isReferenceType() ||
+      !Context.hasSameUnqualifiedType(FillParameter->getPointeeType(),
+                                      FillType) ||
+      !Context.hasSameUnqualifiedType(FillType, Nested->ElementType) ||
+      FillType.isVolatileQualified() || FillType.isRestrictQualified() ||
+      FillType.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  return UtilityVectorNestedEmplace::CountValue;
+}
+
 std::optional<UtilityVectorOptionalEmplace>
 approvedUtilityVectorOptionalEmplace(const State &S, const SourceManager &SM,
                                      const UtilityVectorRecord &Vector,
@@ -25071,6 +25117,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
                                                     Context))
           return UtilityOperation::VectorEmplace;
+        if (approvedUtilityVectorNestedEmplace(S, SM, *Vector, Call, 1,
+                                               Context))
+          return UtilityOperation::VectorEmplace;
         if (approvedUtilityVectorOptionalEmplace(S, SM, *Vector, Call, 1,
                                                  Context))
           return UtilityOperation::VectorEmplace;
@@ -25206,6 +25255,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,
                                                   Context))
+        return UtilityOperation::VectorEmplaceBack;
+      if (approvedUtilityVectorNestedEmplace(S, SM, *Vector, Call, 0, Context))
         return UtilityOperation::VectorEmplaceBack;
       if (approvedUtilityVectorOptionalEmplace(S, SM, *Vector, Call, 0,
                                                Context))
