@@ -7100,6 +7100,23 @@ static bool utilityVectorCallbackEmplaceArgument(const ASTContext &Context,
          utilityCallbackDirectConversion(Context, Argument->getType(), Element);
 }
 
+static bool utilityVectorPairEmplaceArgument(const State &S,
+                                             const SourceManager &SM,
+                                             const ASTContext &Context,
+                                             QualType Argument,
+                                             QualType Element) {
+  if (utilityScalarDirectConversion(Context, Argument, Element))
+    return true;
+  return !Argument.isNull() && !Element.isNull() &&
+         !Argument.isVolatileQualified() && !Argument.isRestrictQualified() &&
+         Argument.getAddressSpace() == LangAS::Default &&
+         !Element.isVolatileQualified() && !Element.isRestrictQualified() &&
+         Element.getAddressSpace() == LangAS::Default &&
+         Context.hasSameUnqualifiedType(Argument, Element) &&
+         functionTraitObjectValue(S, SM, Element->getAsCXXRecordDecl(),
+                                  Context);
+}
+
 std::optional<UtilityVectorOptionalEmplace>
 approvedUtilityVectorOptionalEmplace(const State &S, const SourceManager &SM,
                                      const UtilityVectorRecord &Vector,
@@ -25041,10 +25058,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           const auto Pair = approvedUtilityPairRecord(
               S, SM, Element->getAsCXXRecordDecl(), Context);
           if (Pair &&
-              utilityScalarDirectConversion(Context, Call->getArg(1)->getType(),
-                                            Pair->First->getType()) &&
-              utilityScalarDirectConversion(Context, Call->getArg(2)->getType(),
-                                            Pair->Second->getType()))
+              utilityVectorPairEmplaceArgument(S, SM, Context,
+                                               Call->getArg(1)->getType(),
+                                               Pair->First->getType()) &&
+              utilityVectorPairEmplaceArgument(S, SM, Context,
+                                               Call->getArg(2)->getType(),
+                                               Pair->Second->getType()))
             return UtilityOperation::VectorEmplace;
         }
         if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 1,
@@ -25175,10 +25194,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         const auto Pair = approvedUtilityPairRecord(
             S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context);
         if (Pair &&
-            utilityScalarDirectConversion(Context, Call->getArg(0)->getType(),
-                                          Pair->First->getType()) &&
-            utilityScalarDirectConversion(Context, Call->getArg(1)->getType(),
-                                          Pair->Second->getType()))
+            utilityVectorPairEmplaceArgument(S, SM, Context,
+                                             Call->getArg(0)->getType(),
+                                             Pair->First->getType()) &&
+            utilityVectorPairEmplaceArgument(S, SM, Context,
+                                             Call->getArg(1)->getType(),
+                                             Pair->Second->getType()))
           return UtilityOperation::VectorEmplaceBack;
       }
       if (approvedUtilityVectorEmplaceConstructor(S, SM, *Vector, Call, 0,

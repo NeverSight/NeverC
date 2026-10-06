@@ -226,6 +226,8 @@ Core v2 は検査済みの全要素が空の基底クラス連鎖で、通常／
 
 `make_unique` は検証済みの関数ポインター trait オブジェクトのデフォルト、コピー、移動構築と、定数長の配列をサポートします。選択された固定 SDK のコンストラクターと正確な転送経路を検証します。呼び出し側引数の評価回数を保持し、割り当て・解放のソース定義と後始末も必要です。const ソース、release/reset、vector による所有は既存の検証経路を使います。実行時配列長、未対応の trait シグネチャ、SDK `value` の格納領域エイリアスには制限が残ります。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace` と `emplace_back` は、対応する pair 要素の片方または両方のフィールドに、型が完全一致する検証済み trait 値を受け取れます。const、左辺値、右辺値、検証済みソース関数の結果は独立した pair の格納領域を使います。既存のスカラー変換、引数評価、拡張時のエイリアス、返される要素参照を保持します。暗黙のユーザー変換、無関係な SDK オブジェクト、trait からコールバックへの変換には引き続き独立した検証が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 準備とスカラー変換
 
 通常の NeverC と標準リソースをインストールすれば利用できます。C++ フロントエンドと承認済み SDK ヘッダーは内蔵されており、Clang の別途インストールは不要です。ビルドの詳細は[フロントエンドの説明](../../utils/translate-frontends/cpp/README.md)を参照してください。

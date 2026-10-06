@@ -226,6 +226,8 @@ Core v2 支持经过检查的全空基类链，涵盖普通／模板构造、复
 
 `make_unique` 支持已校验函数指针 trait 对象的默认、复制和移动构造，包括常量长度数组。选中的固定 SDK 构造函数和精确转发路径须校验；调用方实参保留求值次数，分配与释放仍须有源码定义并正确清理。const 源、释放/重置和 vector 所有权使用已有校验路径。运行时数组长度、未支持的 trait 签名和 SDK `value` 存储别名仍受限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace` 和 `emplace_back` 可将精确匹配、已校验的 trait 值用于已支持 pair 元素的一项或两项。const、左值、右值及已校验源码函数结果保留独立 pair 存储；现有标量转换、实参求值、扩容别名和返回的元素引用保持正确。隐式用户转换、无关 SDK 对象和 trait 到回调的转换仍须通过原有独立校验。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

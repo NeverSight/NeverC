@@ -226,6 +226,8 @@ Gli oggetti trait di puntatori a funzione verificati possono essere elementi di 
 
 `make_unique` supporta costruzione predefinita, copia e spostamento degli oggetti trait di puntatori a funzione verificati, inclusi array di lunghezza costante. Il costruttore selezionato dell’SDK fissato e l’inoltro esatto vengono verificati. Il numero di valutazioni degli argomenti resta invariato; allocazione, rilascio e pulizia richiedono ancora le definizioni sorgente. Sorgenti const, release/reset e proprietà tramite vector usano i percorsi verificati esistenti. Lunghezze degli array a runtime, firme non supportate e alias della memoria SDK `value` restano limitati. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace` ed `emplace_back` accettano valori trait verificati del tipo esatto per uno o entrambi i campi di un elemento pair ammesso. Sorgenti const, lvalue, rvalue e risultati di funzioni sorgente verificate usano memoria pair indipendente. Restano preservati conversioni scalari, valutazione degli argomenti, alias durante la crescita e riferimenti agli elementi restituiti. Conversioni utente implicite, oggetti SDK non correlati e conversioni da trait a callback richiedono ancora prove indipendenti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

@@ -662,6 +662,8 @@ Checked function-pointer trait objects can serve as `vector` elements, including
 
 `make_unique` supports checked function-pointer trait objects through default, copy and move construction, including constant-length arrays. The selected pinned constructor and exact SDK forwarding are verified; caller arguments retain their evaluation count, and owned allocation/deallocation definitions and cleanup remain required. Const sources, release/reset and vector ownership use the existing checked paths. Runtime array lengths, unsupported trait signatures and SDK `value` storage aliases retain their restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace` and `emplace_back` accept exact checked trait values for either or both fields of an admitted pair element. Const, lvalue, rvalue and checked source-function results use independent pair storage; existing scalar conversions, argument evaluation, growth aliases and returned element references are preserved. Implicit user conversions, unrelated SDK objects and trait-to-callback conversions still require their existing independent proofs. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

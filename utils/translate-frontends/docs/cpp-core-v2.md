@@ -8962,6 +8962,17 @@ pointers use their existing ownership proofs. Runtime array counts, counts above
 65536, unsupported trait signatures, source SDK replacements and `value` storage
 aliases remain outside this path.
 
+For admitted pair elements, `vector::emplace` and `emplace_back` also accept
+exact checked trait values for either or both fields, alongside the existing
+scalar field conversions. Const sources, lvalues, rvalues and checked source
+record results retain separate pair and element storage. The trait field proof
+requires the same unqualified type and rejects volatile, restrict and nondefault
+address-space forms; it does not grant implicit user conversions or unrelated
+SDK objects. Existing pair capture occurs before element growth or shifting,
+so references to existing fields remain valid inputs and returned references
+identify the actual stored element. Trait-to-callback conversions still need
+their existing independent argument and operation proofs.
+
 Core v2 consumes nonnull function-pointer values from the pinned
 `std::integral_constant<Pointer, Function>::value` as checked callback addresses.
 The exact primary and implicit specialization, every record/value redeclaration,

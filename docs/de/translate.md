@@ -226,6 +226,8 @@ Geprüfte Funktionszeiger-Trait-Objekte können als `vector`-Elemente dienen, au
 
 `make_unique` unterstützt Standard-, Kopier- und Verschiebekonstruktion geprüfter Funktionszeiger-Trait-Objekte sowie Arrays mit konstanter Länge. Der ausgewählte Konstruktor des festgelegten SDK und die genaue Weiterleitung werden geprüft. Die Auswertungsanzahl der Aufruferargumente bleibt erhalten; Allokation, Freigabe und Bereinigung benötigen weiterhin ihre Quellcode-Definitionen. Const-Quellen, release/reset und Eigentum durch vector verwenden bestehende geprüfte Pfade. Array-Längen zur Laufzeit, nicht unterstützte Trait-Signaturen und Aliase des SDK-`value`-Speichers bleiben eingeschränkt. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace` und `emplace_back` akzeptieren exakt passende geprüfte Trait-Werte für ein oder beide Felder eines zugelassenen pair-Elements. Const-Quellen, Lvalues, Rvalues und geprüfte Quellfunktionsergebnisse erhalten unabhängigen pair-Speicher. Bestehende skalare Konvertierungen, Argumentauswertung, Aliase beim Wachstum und zurückgegebene Elementreferenzen bleiben erhalten. Implizite Benutzerkonvertierungen, andere SDK-Objekte und Trait-zu-Callback-Konvertierungen benötigen weiterhin ihre unabhängigen Nachweise. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

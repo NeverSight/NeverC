@@ -226,6 +226,8 @@ Core v2는 검사된 모든 클래스가 빈 기반 클래스 체인에서 일�
 
 `make_unique`는 검증된 함수 포인터 trait 객체의 기본, 복사, 이동 생성과 상수 길이 배열을 지원합니다. 선택된 고정 SDK 생성자와 정확한 전달 경로를 검증합니다. 호출자 인수의 평가 횟수를 유지하며 할당과 해제의 소스 정의 및 정리가 필요합니다. const 소스, release/reset, vector 소유권은 기존 검증 경로를 사용합니다. 실행 중 배열 길이, 지원하지 않는 trait 시그니처, SDK `value` 저장소 별칭에는 제한이 유지됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace`와 `emplace_back`은 지원되는 pair 요소의 한 필드 또는 두 필드에 타입이 정확히 일치하는 검증된 trait 값을 받습니다. const, lvalue, rvalue, 검증된 소스 함수 결과는 독립적인 pair 저장소를 사용합니다. 기존 스칼라 변환, 인수 평가, 확장 시 별칭, 반환된 요소 참조를 유지합니다. 암시적 사용자 변환, 관련 없는 SDK 객체, trait에서 콜백으로의 변환에는 기존 독립 검증이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

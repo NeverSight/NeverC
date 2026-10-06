@@ -226,6 +226,8 @@ Les objets trait de pointeurs de fonction vérifiés peuvent servir d’élémen
 
 `make_unique` prend en charge la construction par défaut, copie et déplacement des objets trait de pointeurs de fonction vérifiés, ainsi que les tableaux de longueur constante. Le constructeur du SDK figé sélectionné et le transfert exact sont vérifiés. Le nombre d’évaluations des arguments est conservé ; allocation, libération et nettoyage gardent leurs définitions source requises. Les sources const, release/reset et la propriété par vector utilisent les chemins vérifiés existants. Les longueurs de tableaux à l’exécution, signatures non prises en charge et alias du stockage SDK `value` restent limités. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+`vector::emplace` et `emplace_back` acceptent des valeurs trait vérifiées de type exact pour un ou deux champs d’un élément pair admis. Les sources const, lvalues, rvalues et résultats de fonctions source vérifiées utilisent un stockage pair indépendant. Les conversions scalaires, évaluations d’arguments, alias lors de la croissance et références d’éléments retournées sont préservés. Les conversions utilisateur implicites, objets SDK sans rapport et conversions de trait vers callback gardent leurs preuves indépendantes requises. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).
