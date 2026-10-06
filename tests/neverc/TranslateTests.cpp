@@ -29642,6 +29642,490 @@ int target(int,...)noexcept;using F=int(*)(int,...)noexcept;using C=std::integra
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperMakeUniqueArgumentBeforeAllocation) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-argument-before-allocation.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-argument-before-allocation.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;extern int phase;void* operator new(Size n){++allocations;phase=phase==1?2:99;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int x=3,phase;int& pick(){if(phase!=0)return x;phase=1;return x;}int check(){auto p=std::make_unique<W>(pick());return phase==2&&&p->get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-argument-before-allocation" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueArrayReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-array-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-array-referent.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int a[2]={3,4};auto p=std::make_unique<std::reference_wrapper<int[2]>>(a);p->get()[1]=7;return a[1]==7&&&p->get()==&a?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-array-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueCallbackReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-callback-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-callback-referent.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int calls;int target(int x)noexcept{++calls;return x+1;}int check(){using F=int(*)(int)noexcept;F f=target;auto p=std::make_unique<std::reference_wrapper<F>>(f);return p->get()(7)==8&&calls==1?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-make-unique-callback-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueConstBindMutable) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-const-bind-mutable.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-const-bind-mutable.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;auto p=std::make_unique<std::reference_wrapper<const int>>(x);x=7;return p->get()==7?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-make-unique-const-bind-mutable" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueConstReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-const-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-const-referent.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){const int x=3;auto p=std::make_unique<std::reference_wrapper<const int>>(x);return &p->get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-const-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueCopyAfterAllocation) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-copy-after-allocation.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-copy-after-allocation.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void allocation_hook();void* operator new(Size n){++allocations;allocation_hook();return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int x=3,y=4;W w(x);void allocation_hook(){w=std::ref(y);}int check(){auto p=std::make_unique<W>(w);return &p->get()==&y&&x==3&&y==4?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-make-unique-copy-after-allocation" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueCopyConstWrapper) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-copy-const-wrapper.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-copy-const-wrapper.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;const W w(x);auto p=std::make_unique<W>(w);p->get()=7;return x==7&&&p->get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-make-unique-copy-const-wrapper" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueCopyLvalue) {
+  const auto Source = tmpFile("reference-wrapper-make-unique-copy-lvalue.cpp");
+  const auto Output = tmpFile("reference-wrapper-make-unique-copy-lvalue.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;W w(x);auto p=std::make_unique<W>(w);return &p->get()==&x&&&*p!=&w?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-copy-lvalue" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueFunctionReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-function-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-function-referent.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int calls;int target(int x)noexcept{++calls;return x+1;}int check(){using F=int(int)noexcept;auto p=std::make_unique<std::reference_wrapper<F>>(target);return p->get()(7)==8&&calls==1?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-make-unique-function-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueManualOwnerControl) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-manual-owner-control.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-manual-owner-control.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;std::unique_ptr<W> p(new W(x));return &p->get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-make-unique-manual-owner-control" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueMoveWrapper) {
+  const auto Source = tmpFile("reference-wrapper-make-unique-move-wrapper.cpp");
+  const auto Output = tmpFile("reference-wrapper-make-unique-move-wrapper.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int check(){int x=3;W w(x);auto p=std::make_unique<W>(std::move(w));return &p->get()==&x&&&w.get()==&x?0:1;}
+int main(){int r=check();return r?r:(allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-move-wrapper" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueRecordReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-record-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-make-unique-record-referent.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int destroys;struct R{int n;~R(){++destroys;}};int check(){R r{3};{auto p=std::make_unique<std::reference_wrapper<R>>(r);p->get().n=7;p.reset();if(destroys)return 1;}return r.n==7&&destroys==0?0:2;}
+int main(){int r=check();return r?r:(allocations==releases&&destroys==1?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-record-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueUniqueDirect) {
+  const auto Source =
+      tmpFile("reference-wrapper-make-unique-unique-direct.cpp");
+  const auto Output = tmpFile("reference-wrapper-make-unique-unique-direct.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+int main(){int x=3;{auto p=std::make_unique<std::reference_wrapper<int>>(x);if(&p->get()!=&x)return 1;}return allocations==releases?0:2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-unique-direct" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperMakeUniqueUniqueValue) {
+  const auto Source = tmpFile("reference-wrapper-make-unique-unique-value.cpp");
+  const auto Output = tmpFile("reference-wrapper-make-unique-unique-value.nc");
+  writeFile(
+      Source,
+      R"cpp(using Size=decltype(sizeof(0));extern "C" void* malloc(Size);extern "C" void free(void*);int allocations,releases;void* operator new(Size n){++allocations;return malloc(n);}void operator delete(void* p)noexcept{++releases;free(p);}void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <functional>
+#include <memory>
+int main(){int x=3;{auto p=std::make_unique<std::reference_wrapper<int>>(std::ref(x));if(&p->get()!=&x)return 1;}return allocations==releases?0:2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-make-unique-unique-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperMakeUniqueRetainsFactoryAndConstructorBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"long-double-referent", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+int main(){long double x=3;auto v=std::make_unique<std::reference_wrapper<long double>>(x);return 0;}
+)cpp"},
+      {"sdk-function-target", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+int main(){using F=int&(*)(int&)noexcept;F f=static_cast<F>(&std::forward<int&>);auto v=std::make_unique<std::reference_wrapper<F>>(f);return 0;}
+)cpp"},
+      {"source-argument-body", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+int& pick(int& x){long double y=1;return y?x:x;}int main(){int x=3;auto v=std::make_unique<std::reference_wrapper<int>>(pick(x));return 0;}
+)cpp"},
+      {"source-copy-argument-body", R"cpp(#include <functional>
+#include <memory>
+using W=std::reference_wrapper<int>;
+W& pick(W& w){long double x=1;return x?w:w;}
+int main(){int x=3;W w(x);auto p=std::make_unique<W>(pick(w));return 0;}
+)cpp"},
+      {"source-factory-replacement", R"cpp(#include <functional>
+#include <memory>
+using W=std::reference_wrapper<int>;
+namespace std {inline namespace __1 {template<> unique_ptr<W> make_unique<W,int&>(int& x){return unique_ptr<W>(new W(x));}}}
+int main(){int x=3;auto p=std::make_unique<W>(x);return 0;}
+)cpp"},
+      {"source-forward-replacement", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+namespace std { inline namespace __1 { template<> int& forward<int&>(int& x) noexcept {return x;} } }
+int main(){int x=3;auto v=std::make_unique<std::reference_wrapper<int>>(x);return 0;}
+)cpp"},
+      {"source-wrapper-constructor", R"cpp(#include <memory>
+#include <functional>
+namespace std { inline namespace __1 { template<> template<> reference_wrapper<int>::reference_wrapper(int& x) noexcept { __f_=&x; } } }
+int main(){int x=3;auto v=std::make_unique<std::reference_wrapper<int>>(x);return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+struct R{int n;operator int&(){return n;}};int main(){R r{3};auto v=std::make_unique<std::reference_wrapper<int>>(r);return 0;}
+)cpp"},
+      {"variadic-function", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+int target(int x,...){return x;}int main(){using F=int(int,...);auto v=std::make_unique<std::reference_wrapper<F>>(target);return 0;}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <memory>
+#include <functional>
+#include <utility>
+int main(){volatile int x=3;auto v=std::make_unique<std::reference_wrapper<volatile int>>(x);return 0;}
+)cpp"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("reference-wrapper-make-unique-reject-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("reference-wrapper-make-unique-reject-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperOptionalDirectEmplaceArgumentOnce) {
   const auto Source =
       tmpFile("reference-wrapper-optional-direct-emplace-argument-once.cpp");

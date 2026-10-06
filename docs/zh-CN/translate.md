@@ -97,6 +97,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 经检查的包装器 optional 也支持从精确类型的左值引用目标执行 `emplace(referent)`。选中的 optional reset、存储地址、转发、placement 构造、直接包装器构造和 engaged 标志均须共同认证。空 optional 和已占用 optional 都绑定原地址，实参只求值一次，并返回所存包装器的引用。const、函数、回调、数组和源码记录引用目标保留各自检查与生命周期；用户转换和源码替换 SDK 操作仍被拒绝。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
+经检查的 `make_unique<reference_wrapper<T>>` 也可从精确类型的左值引用目标构造，或复制／移动精确类型的包装器值。选中的 SDK 工厂、分配、转发、包装器构造和所有者构造仍须认证。实参在分配前只求值一次；包装器复制在分配后读取源对象，保留分配回调的影响。所有者销毁包装器存储，不销毁引用目标。const 绑定及受支持的引用目标保留各自检查；任意用户转换、源码替换 SDK 和默认包装器构造仍受限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 经验证的函数指针 trait 包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的 trait 按值形参，包括 const 引用目标和右值包装器。固定 SDK 的 trait 拷贝和包装器转换仍须通过认证。每个形参使用独立的一字节存储；可调用对象及实参的副作用只发生一次，原源码函数目标仍须检查。其他 trait 域和 SDK `value` 存储别名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 经验证的源码自有标准布局记录包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的按值形参。选中的源码拷贝构造、默认参数及依赖仍须通过检查。形参使用独立存储，在拷贝前观察后续实参的修改；默认参数副作用和形参清理保留调用中的生命周期。右值包装器仍提供左值引用目标。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

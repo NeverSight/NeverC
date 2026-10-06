@@ -3229,6 +3229,26 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Checked single-object `make_unique<reference_wrapper<T>>` also accepts an
+exact nonvolatile lvalue referent or an exact wrapper value for copy/move.
+Existing concrete factory template arguments, allocation operator, extent,
+owner construction and deleter remain authenticated. Its selected wrapper
+construction must independently prove the pinned direct reference constructor
+or implicit trivial wrapper copy/move. Direct construction retains the exact
+SDK forwarding reference and referent type/constness; value construction retains
+the original exact wrapper type and selected forwarding expression. SDK source
+replacements, unsupported referents and arbitrary user conversions remain
+rejected. This path grants no default wrapper construction or wrapper array
+factory.
+
+Caller argument effects and reference bindings are captured once before the
+allocation call. Direct construction stores the captured referent address;
+copy/move reads the bound source wrapper after allocation, matching changes
+made by a source allocation callback. The result has independent wrapper
+storage and retains the original referent lifetime. Const bindings, source
+functions and callbacks, arrays and source-record referents keep their checks.
+Owner destruction releases wrapper storage without destroying the referent.
+
 Core v2 admits the exact angled `<memory>` entry from the pinned embedded VFS.
 Its 267-file libc++/resource dependency closure is identical on all eight
 supported targets and contains no platform headers. The public C++17 header and

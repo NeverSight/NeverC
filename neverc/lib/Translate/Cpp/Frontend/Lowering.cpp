@@ -3691,6 +3691,18 @@ class FunctionLowering {
       const auto *Function = A.allocationFunction(
           Info->Allocation->getOperatorNew(), true, L, Array);
       A.uniquePtrDeleteFunction(Info->Owner, L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources, Info->Owner.ElementType->getAsCXXRecordDecl(),
+          A.Context);
+      const auto WrapperConstruction =
+          Wrapper ? approvedFunctionalReferenceConstruction(
+                        A.S, A.Sources, Info->Construction, A.Context)
+                  : std::optional<FunctionalReferenceConstruction>();
+      std::optional<Expression> WrapperArgument;
+      if (WrapperConstruction)
+        WrapperArgument = captureUtilityConstructorArgument(
+            Call->getArg(0),
+            Call->getDirectCallee()->getParamDecl(0)->getType());
 
       auto Pointer = [&]() -> Expression {
         if (Array) {
@@ -3718,9 +3730,24 @@ class FunctionLowering {
                           Info->Owner.ElementType.getUnqualifiedType()),
                       L),
                  L);
-        ConstructAt(dereference(std::move(MutablePointer), L),
-                    Info->Owner.ElementType, Info->Constructor,
-                    Info->Construction, 0, "make_unique construction");
+        auto Place = dereference(std::move(MutablePointer), L);
+        if (WrapperConstruction == FunctionalReferenceConstruction::Direct)
+          constructFunctionalReferencePointer(
+              std::move(Place), *Wrapper,
+              cast(std::move(*WrapperArgument), type(Wrapper->PointerType, L),
+                   L),
+              L);
+        else if (WrapperConstruction ==
+                 FunctionalReferenceConstruction::CopyOrMove)
+          assign(std::move(Place),
+                 utilityConstructorArgumentValue(
+                     std::move(*WrapperArgument),
+                     Call->getDirectCallee()->getParamDecl(0)->getType(), L),
+                 L);
+        else
+          ConstructAt(std::move(Place), Info->Owner.ElementType,
+                      Info->Constructor, Info->Construction, 0,
+                      "make_unique construction");
         return Result;
       }();
 
@@ -22707,6 +22734,14 @@ class FunctionLowering {
             : cast(address(lvalue(Argument), Argument->getType(), L),
                    type(Wrapper.PointerType, L), L),
         L);
+    constructFunctionalReferencePointer(std::move(Place), Wrapper,
+                                        std::move(Pointer), L);
+  }
+
+  void
+  constructFunctionalReferencePointer(Expression Place,
+                                      const FunctionalReferenceRecord &Wrapper,
+                                      Expression Pointer, SourceLocation L) {
     if (Wrapper.PaddedBase) {
       Expression Base{{"kind", "member"},
                       {"type", type(A.Context.getSizeType(), L)},

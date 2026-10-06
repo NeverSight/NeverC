@@ -3859,6 +3859,11 @@ static bool approvedFunctionalForwardingCall(const State &S,
                                              const SourceManager &SM,
                                              const Expr *Expression,
                                              const ParmVarDecl *Parameter);
+static bool functionalReferenceForwardedParameter(const State &S,
+                                                  const SourceManager &SM,
+                                                  const ASTContext &Context,
+                                                  const Expr *Expression,
+                                                  const ParmVarDecl *Parameter);
 
 static std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
@@ -10340,6 +10345,43 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
   const auto *Prototype =
       Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
                   : nullptr;
+  if (const auto Wrapper =
+          approvedFunctionalReferenceRecord(S, SM, Record, Context)) {
+    const auto Selected =
+        approvedFunctionalReferenceConstruction(S, SM, Construction, Context);
+    if (Owner->Deleter.Array || !Selected || ArgumentCount != 1 ||
+        !Construction || Construction->getNumArgs() != 1 ||
+        !Context.hasSameUnqualifiedType(Construction->getType(),
+                                        Owner->ElementType))
+      return std::nullopt;
+    const auto *Actual = Call->getArg(0);
+    const auto ActualType = Actual->getType();
+    const auto *Parameter = Function->getParamDecl(0);
+    if (ActualType.isVolatileQualified() || ActualType.isRestrictQualified() ||
+        ActualType.getAddressSpace() != LangAS::Default)
+      return std::nullopt;
+    if (*Selected == FunctionalReferenceConstruction::Direct) {
+      if (!Actual->isLValue() ||
+          !Parameter->getType()->isLValueReferenceType() ||
+          !Context.hasSameType(Parameter->getType()->getPointeeType(),
+                               ActualType) ||
+          !Context.hasSameUnqualifiedType(ActualType, Wrapper->ReferentType) ||
+          (ActualType.isConstQualified() &&
+           !Wrapper->ReferentType.isConstQualified()) ||
+          !functionalReferenceForwardedParameter(
+              S, SM, Context, Construction->getArg(0), Parameter))
+        return std::nullopt;
+    } else if (!Context.hasSameUnqualifiedType(ActualType,
+                                               Owner->ElementType) ||
+               !approvedFunctionalForwardingCall(S, SM, Construction->getArg(0),
+                                                 Parameter) ||
+               (Constructor->isMoveConstructor() &&
+                !Construction->getArg(0)->isXValue())) {
+      return std::nullopt;
+    }
+    return UtilityMakeUniqueCall{*Owner,       Allocation,  OwnerConstruction,
+                                 Construction, Constructor, ArrayCount};
+  }
   if (functionTraitObjectValue(S, SM, Record, Context)) {
     const auto *Array = Construction
                             ? Context.getAsArrayType(Construction->getType())
