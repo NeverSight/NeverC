@@ -208,6 +208,8 @@ struct State {
   // instantiated declaration or a shared default argument expression.
   std::map<const clang::CallExpr *, clang::QualType> UnevaluatedFunctionalCalls;
   std::map<const clang::CallExpr *, clang::QualType> UnevaluatedMemoryCalls;
+  std::map<const clang::CXXDefaultArgExpr *, const clang::CallExpr *>
+      UnevaluatedMemoryDefaults;
   mutable std::map<std::string, std::string> PathCache;
   std::vector<std::string> Arguments;
   json::Array Diagnostics;
@@ -1733,6 +1735,11 @@ const clang::CXXConstructorDecl *approvedUtilityMemoryDefaultConstructor(
 const clang::CXXConstructorDecl *approvedUtilityMemorySourceConstructor(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     UtilityOperation Operation, const clang::ASTContext &Context);
+bool approvedUtilityUniquePtrDefaultArgumentSignature(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDefaultArgExpr *Default,
+    const clang::FunctionDecl *Function, unsigned Index,
+    clang::ASTContext &Context);
 bool approvedUtilityDefaultArgument(const State &S,
                                     const clang::SourceManager &SM,
                                     const clang::CXXDefaultArgExpr *Default,

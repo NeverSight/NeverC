@@ -69500,26 +69500,6 @@ struct D{D()noexcept(sizeof(long double)>0)=default;void operator()(int*)const n
 int value(int=sizeof(long double))noexcept{return 2;}int f(){auto p=std::make_unique<int>(value(1));p.reset(nullptr);static_assert(__is_same(decltype(std::make_unique<int>(value()).reset()),void));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-scalar", R"cpp(
-int f(std::unique_ptr<int>&p){p.get();static_assert(__is_same(decltype(p.reset(nullptr)),void));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-array", R"cpp(
-int f(std::unique_ptr<int[]>&p){p.get();static_assert(noexcept(p.reset()));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-array-overload", R"cpp(
-int f(std::unique_ptr<int[]>&p,int*raw){p.reset(nullptr);static_assert(__is_same(decltype(p.reset(raw)),void));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-custom", R"cpp(
-struct D{void operator()(int*)const noexcept{}};int f(std::unique_ptr<int,D>&p){p.get();static_assert(__is_same(decltype(p.reset()),void));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-specialization", R"cpp(
-int f(std::unique_ptr<int>&p,std::unique_ptr<const int>&q){p.reset(nullptr);static_assert(__is_same(decltype(q.reset()),void));return 0;}
-)cpp",
-       "TR0203"},
       {"scalar-member-specialization", R"cpp(
 namespace std{inline namespace __1{template<>void unique_ptr<int>::reset(int*)noexcept{}}}int f(std::unique_ptr<int>&p){p.reset(nullptr);static_assert(noexcept(p.reset()));return 0;}
 )cpp",
@@ -167194,11 +167174,11 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::get)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-reset", R"cpp(
+      {"query-does-not-authorize-swap", R"cpp(
 #include <memory>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.reset()));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.swap(p)));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -167912,12 +167892,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::release)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-reset", R"cpp(
+      {"query-does-not-authorize-swap", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.reset()));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.swap(p)));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -167961,6 +167941,309 @@ namespace std{inline namespace __1{template<>int* unique_ptr<int>::release()noex
         tmpFile(std::string("unique-release-signature-") + Case.first + ".cpp");
     const auto Output =
         tmpFile(std::string("unique-release-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryArrayDefaultReset) {
+  const auto Source = tmpFile("unique-reset-signature-array-default-reset.cpp");
+  const auto Output = tmpFile("unique-reset-signature-array-default-reset.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int main(){using R=decltype(std::declval<U&>().reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<U&>().reset()));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-array-default-reset" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryArrayReset) {
+  const auto Source = tmpFile("unique-reset-signature-array-reset.cpp");
+  const auto Output = tmpFile("unique-reset-signature-array-reset.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<U&>().reset(nullptr)));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-array-reset" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryConstElementReset) {
+  const auto Source = tmpFile("unique-reset-signature-const-element-reset.cpp");
+  const auto Output = tmpFile("unique-reset-signature-const-element-reset.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-const-element-reset" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryCustomDeleter) {
+  const auto Source = tmpFile("unique-reset-signature-custom-deleter.cpp");
+  const auto Output = tmpFile("unique-reset-signature-custom-deleter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;int main(){using R=decltype(std::declval<U&>().reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<U&>().reset()));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-custom-deleter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryMultidimensionalReset) {
+  const auto Source =
+      tmpFile("unique-reset-signature-multidimensional-reset.cpp");
+  const auto Output =
+      tmpFile("unique-reset-signature-multidimensional-reset.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[][2]>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-multidimensional-reset" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("unique-reset-signature-query-effects.cpp");
+  const auto Output = tmpFile("unique-reset-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects;U* owner()noexcept{++effects;return nullptr;}int* value()noexcept{++effects;return nullptr;}int main(){using R=decltype(owner()->reset(value()));static_assert(noexcept(owner()->reset(value())));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryQueryNoDeleteBody) {
+  const auto Source =
+      tmpFile("unique-reset-signature-query-no-delete-body.cpp");
+  const auto Output = tmpFile("unique-reset-signature-query-no-delete-body.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;R()=delete;~R()=delete;};using U=std::unique_ptr<R>;int main(){using V=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<V,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-query-no-delete-body" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryScalarReset) {
+  const auto Source = tmpFile("unique-reset-signature-scalar-reset.cpp");
+  const auto Output = tmpFile("unique-reset-signature-scalar-reset.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>().reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<U&>().reset()));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-scalar-reset" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrResetSignatureQueryWrapperReset) {
+  const auto Source = tmpFile("unique-reset-signature-wrapper-reset.cpp");
+  const auto Output = tmpFile("unique-reset-signature-wrapper-reset.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-reset-signature-wrapper-reset" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrResetSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-reset-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){return sizeof(&U::reset)>0?0:1;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
+)cpp"},
+      {"query-does-not-authorize-swap", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept(p.swap(p)));return 0;}int main(){return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct X{long double n;};using U=std::unique_ptr<X>;int main(){using R=decltype(std::declval<U&>().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner()noexcept{long double n=1;(void)n;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-receiver-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner(int=sizeof(long double))noexcept{return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner().reset(nullptr));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-reset-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>void unique_ptr<int>::reset(int*)noexcept{}}}using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::declval<U&>().reset()));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("unique-reset-signature-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("unique-reset-signature-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});

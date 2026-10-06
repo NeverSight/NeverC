@@ -9227,7 +9227,7 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
              DeclarationName::CXXConversionFunctionName ||
          (Method->getIdentifier() &&
           (Method->getName() == "get" || Method->getName() == "get_deleter" ||
-           Method->getName() == "release")))))
+           Method->getName() == "release" || Method->getName() == "reset")))))
     return std::nullopt;
   const auto Owner =
       SignatureOnly
@@ -11089,6 +11089,57 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
   return true;
 }
 
+static bool utilityUniquePtrDefaultArgument(const State &S,
+                                            const SourceManager &SM,
+                                            const CXXDefaultArgExpr *Default,
+                                            const FunctionDecl *Function,
+                                            unsigned Index, ASTContext &Context,
+                                            bool SignatureOnly) {
+  if (!S.coreV2())
+    return false;
+  const auto *Parameter = Default ? Default->getParam() : nullptr;
+  const auto *Owner =
+      Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  const auto Unique =
+      SignatureOnly
+          ? approvedUtilityUniquePtrLayout(
+                S, SM, Method ? Method->getParent() : nullptr, Context)
+          : approvedUtilityUniquePtrRecord(
+                S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Default && Parameter && Owner && Unique && Prototype &&
+      Prototype->isNothrow() &&
+      Owner->getCanonicalDecl() == Function->getCanonicalDecl() && Index == 0 &&
+      Function->getNumParams() == 1 && Parameter == Function->getParamDecl(0) &&
+      Parameter->getFunctionScopeIndex() == 0 && !Function->isVariadic() &&
+      Function->isInlined() && (SignatureOnly || Function->hasBody()) &&
+      Function->getIdentifier() && Function->getName() == "reset" &&
+      approvedStandardSDKDeclaration(S, SM, Function) &&
+      cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h") &&
+      S.owns(SM, Default->getExprLoc()) && Init &&
+      ((!Unique->Deleter.Array &&
+        Context.hasSameType(Parameter->getType(), Unique->PointerType) &&
+        Context.hasSameType(Init->getType(), Unique->PointerType) &&
+        isa<CXXScalarValueInitExpr>(Init->IgnoreParenImpCasts())) ||
+       (Unique->Deleter.Array && Parameter->getType()->isNullPtrType() &&
+        Context.hasSameType(Init->getType(), Parameter->getType()) &&
+        Init->isNullPointerConstant(Context,
+                                    Expr::NPC_ValueDependentIsNotNull))))
+    return true;
+  return false;
+}
+
+bool approvedUtilityUniquePtrDefaultArgumentSignature(
+    const State &S, const SourceManager &SM, const CXXDefaultArgExpr *Default,
+    const FunctionDecl *Function, unsigned Index, ASTContext &Context) {
+  return utilityUniquePtrDefaultArgument(S, SM, Default, Function, Index,
+                                         Context, true);
+}
+
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function,
@@ -11500,28 +11551,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
           return true;
       }
     }
-    const auto Unique =
-        approvedUtilityUniquePtrRecord(S, SM, Method->getParent(), Context);
-    if (Default && Parameter && Owner && Unique && Prototype &&
-        Prototype->isNothrow() &&
-        Owner->getCanonicalDecl() == Function->getCanonicalDecl() &&
-        Index == 0 && Function->getNumParams() == 1 &&
-        Parameter == Function->getParamDecl(0) &&
-        Parameter->getFunctionScopeIndex() == 0 && !Function->isVariadic() &&
-        Function->isInlined() && Function->hasBody() &&
-        Function->getIdentifier() && Function->getName() == "reset" &&
-        approvedStandardSDKDeclaration(S, SM, Function) &&
-        cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
-                      "__memory/unique_ptr.h") &&
-        S.owns(SM, Default->getExprLoc()) && Init &&
-        ((!Unique->Deleter.Array &&
-          Context.hasSameType(Parameter->getType(), Unique->PointerType) &&
-          Context.hasSameType(Init->getType(), Unique->PointerType) &&
-          isa<CXXScalarValueInitExpr>(Init->IgnoreParenImpCasts())) ||
-         (Unique->Deleter.Array && Parameter->getType()->isNullPtrType() &&
-          Context.hasSameType(Init->getType(), Parameter->getType()) &&
-          Init->isNullPointerConstant(
-              Context, Expr::NPC_ValueDependentIsNotNull))))
+    if (utilityUniquePtrDefaultArgument(S, SM, Default, Function, Index,
+                                        Context, false))
       return true;
   }
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;

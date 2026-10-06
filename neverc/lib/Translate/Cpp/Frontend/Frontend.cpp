@@ -6886,11 +6886,14 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
         const auto Origin =
             Initializer ? A.S.sdkFile(A.Sources, Initializer->getExprLoc())
                         : std::nullopt;
-        if (!approvedUtilityDefaultArgument(A.S, A.Sources, Default, Method, I,
-                                            A.Context) ||
-            Default->hasRewrittenInit() || !Parameter || !Initializer ||
-            Initializer != Parameter->getDefaultArg() || !Origin ||
-            Origin->Root != "libcxx" ||
+        const bool Approved =
+            SignatureOnly ? approvedUtilityUniquePtrDefaultArgumentSignature(
+                                A.S, A.Sources, Default, Method, I, A.Context)
+                          : approvedUtilityDefaultArgument(
+                                A.S, A.Sources, Default, Method, I, A.Context);
+        if (!Approved || Default->hasRewrittenInit() || !Parameter ||
+            !Initializer || Initializer != Parameter->getDefaultArg() ||
+            !Origin || Origin->Root != "libcxx" ||
             Origin->Path != "__memory/unique_ptr.h" ||
             !approvedStandardSDKDeclaration(A.S, A.Sources, Parameter))
           return std::nullopt;
@@ -13879,6 +13882,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Default = dyn_cast<CXXDefaultArgExpr>(E->IgnoreParens());
     if (!Default)
       return;
+    const auto Query = A.S.UnevaluatedMemoryDefaults.find(Default);
+    if (Query != A.S.UnevaluatedMemoryDefaults.end() && F &&
+        A.S.UnevaluatedMemoryCalls.count(Query->second) &&
+        Query->second->getDirectCallee()->getCanonicalDecl() ==
+            F->getCanonicalDecl() &&
+        Default->getParam()->getFunctionScopeIndex() == Index)
+      return;
     if (approvedUtilityDefaultArgument(A.S, A.Sources, Default, F, Index,
                                        A.Context))
       return;
@@ -14298,10 +14308,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         else if (const auto Result = utilityMakeUniqueQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
-        else if (utilityUniquePtrMemberSource(A, Call, true))
+        else if (const auto Info =
+                     utilityUniquePtrMemberSource(A, Call, true)) {
           A.S.UnevaluatedMemoryCalls.emplace(
               Call, A.Context.getCanonicalType(
                         Call->getDirectCallee()->getReturnType()));
+          if (Info->Operation == UtilityUniquePtrOperation::Reset)
+            for (const auto *Argument : Call->arguments())
+              if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
+                A.S.UnevaluatedMemoryDefaults.emplace(Default, Call);
+        }
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
           Pending.push_back(Operand);
@@ -20500,9 +20516,16 @@ public:
     if (!WalkUpFromCXXDefaultArgExpr(Default))
       return false;
     const auto *Init = selectedDefaultArgument(Default, A.Context);
-    const bool UtilityDefault = approvedUtilityDefaultArgument(
-        A.S, A.Sources, Default, Function, P ? P->getFunctionScopeIndex() : 0,
-        A.Context);
+    const auto Query = A.S.UnevaluatedMemoryDefaults.find(Default);
+    const bool SignatureDefault =
+        Query != A.S.UnevaluatedMemoryDefaults.end() && Function &&
+        A.S.UnevaluatedMemoryCalls.count(Query->second) &&
+        Query->second->getDirectCallee()->getCanonicalDecl() ==
+            Function->getCanonicalDecl();
+    const bool UtilityDefault =
+        SignatureDefault || approvedUtilityDefaultArgument(
+                                A.S, A.Sources, Default, Function,
+                                P ? P->getFunctionScopeIndex() : 0, A.Context);
     if (UtilityDefault) {
       A.chargeExpansion(1, L);
       A.type(Init->getType(), L);

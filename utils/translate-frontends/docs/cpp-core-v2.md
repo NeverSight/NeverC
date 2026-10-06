@@ -3430,7 +3430,7 @@ reference or pointer selects no unused pointee constructor or owning cleanup.
 Unevaluated observations make no receiver, index, default-argument, factory,
 allocation, constructor, deleter or destruction calls. Each selected observation
 overload and specialization receives its own exact lexical proof. Signature
-metadata does not authorize reset, assignment, swap or evaluated
+metadata does not authorize assignment, swap or evaluated
 operations. Independent member addresses and source SDK replacements remain
 rejected.
 Pure observation signatures can also complete an otherwise lazy pinned
@@ -3465,10 +3465,10 @@ own exact declaration proof. Independent member addresses and source SDK
 replacements remain rejected;
 other modifying members follow their separate contracts below.
 
-`decltype` and `noexcept` also admit the exact already materialized mutable
-`reset` members, retaining their `void` result and nonthrowing signature.
+`decltype` and `noexcept` also admit the exact pinned mutable
+`reset` signatures, retaining their `void` result and nonthrowing signature.
 Scalar owners accept the checked raw-pointer or null replacement and the pinned
-`pointer()` default; array owners accept the separately materialized compatible
+`pointer()` default; array owners accept the separately authenticated compatible
 pointer overload and the `nullptr` overload, including its pinned default.
 Object and exact raw-pointer receivers share the runtime boundary. The SDK
 default must belong to the selected parameter, keep its original initializer
@@ -3477,7 +3477,7 @@ replacements, aliases, original signatures, source defaults and replacement
 allocation/construction still require their ordinary source proof. Comma
 expressions containing these calls may supply a non-void operand to `sizeof`
 or `alignof`; the queries do not make the call.
-A reset selects deletion dependencies: default deleters must
+An evaluated reset selects deletion dependencies: default deleters must
 retain their exact SDK call operator, source-defined selected class/global
 deallocation and pointee destruction; custom deleters must retain every original
 callback declaration and its completed source definition. A custom callback
@@ -3485,9 +3485,13 @@ selects no unused pointee constructor or destructor. Borrowed owners select no
 owner construction or cleanup; local initializers and owning temporaries/factories
 keep their separate lifetime source. Unevaluated reset neither changes the
 pointer nor evaluates a receiver, replacement, default or allocation, and makes
-no deleter or destruction call. Missing query-only bodies, different array
-overloads/specializations, independent member addresses and source SDK
-replacements remain rejected.
+no deleter or destruction call. A pure reset signature needs no instantiated
+member or default deletion body. Its exact selected SDK `pointer()` or `nullptr`
+default retains the parameter identity, original initializer and source checks.
+That proof belongs to the concrete query call and its default-argument use
+node; the shared initializer gives no permission to another evaluated use.
+Caller defaults and operands keep their independent source and lifetime proof.
+Independent member addresses and source SDK replacements remain rejected.
 
 The same query boundary admits already materialized member `swap` and the exact
 pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` overload. Both retain a
