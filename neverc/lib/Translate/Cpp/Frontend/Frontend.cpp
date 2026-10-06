@@ -7115,6 +7115,67 @@ static QualType utilityUniquePtrComparisonQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Function->getReturnType());
 }
 
+static QualType
+utilityUniquePtrNullComparisonQuerySource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Kind = Function ? Function->getOverloadedOperator() : OO_None;
+  const bool Equality = Kind == OO_EqualEqual || Kind == OO_ExclaimEqual;
+  if (!A.S.coreV2() || !Function || isa<CXXMethodDecl>(Function) ||
+      (!Equality && Kind != OO_Less && Kind != OO_Greater &&
+       Kind != OO_LessEqual && Kind != OO_GreaterEqual) ||
+      !Function->getPrimaryTemplate() || !Function->isInlined() || !Reference ||
+      Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) || !Prototype ||
+      Prototype->getExceptionSpecType() !=
+          (Equality ? EST_BasicNoexcept : EST_None) ||
+      Prototype->getNoexceptExpr() || Call->getNumArgs() != 2 ||
+      Function->getNumParams() != 2 ||
+      !A.Context.hasSameType(Function->getReturnType(), A.Context.BoolTy) ||
+      !A.Context.hasSameType(Call->getType(), A.Context.BoolTy) ||
+      !Call->isPRValue() || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !utilitySDKFunctionSource(A, Function, "__memory/unique_ptr.h", false))
+    return {};
+  const bool LeftNull = Call->getArg(0)->getType()->isNullPtrType();
+  const bool RightNull = Call->getArg(1)->getType()->isNullPtrType();
+  if (LeftNull == RightNull)
+    return {};
+  const unsigned OwnerIndex = LeftNull ? 1 : 0;
+  const auto Owner = utilityUniquePtrSource(
+      A, Call->getArg(OwnerIndex)->getType()->getAsCXXRecordDecl(), false);
+  if (!Owner)
+    return {};
+  const auto *Specialization =
+      dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
+  const auto OwnerReference = A.Context.getLValueReferenceType(
+      A.Context.getConstType(A.Context.getRecordType(Owner->Record)));
+  if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
+      !A.Context.hasSameType(
+          Arguments->get(0).getAsType(),
+          Specialization->getTemplateArgs().get(0).getAsType()) ||
+      !A.Context.hasSameType(Arguments->get(1).getAsType(),
+                             A.Context.getRecordType(Owner->Deleter.Record)) ||
+      !A.Context.hasSameType(Function->getParamDecl(OwnerIndex)->getType(),
+                             OwnerReference) ||
+      !A.Context.hasSameType(
+          Call->getArg(OwnerIndex)->getType(),
+          A.Context.getConstType(A.Context.getRecordType(Owner->Record))) ||
+      !A.Context.hasSameType(Function->getParamDecl(1 - OwnerIndex)->getType(),
+                             A.Context.NullPtrTy) ||
+      !utilityUniquePtrElementQueryLayout(A, *Owner, Call->getExprLoc()))
+    return {};
+  // These queries consume only their exact public signatures. Original owner
+  // and null operands retain independent source checks and lifetime selection.
+  return A.Context.getCanonicalType(Function->getReturnType());
+}
+
 static bool utilityUniquePtrSwapSource(Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
@@ -14438,6 +14499,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result =
                      utilityUniquePtrComparisonQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result =
+                     utilityUniquePtrNullComparisonQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =

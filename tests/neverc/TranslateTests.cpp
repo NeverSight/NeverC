@@ -70652,34 +70652,6 @@ struct D{void operator()(int*)noexcept(sizeof(long double)>0){}};using P=std::un
 int object;template<int*>using T=int;struct D{void operator()(T<&object>*)const noexcept;};void D::operator()(int*)const noexcept{}using P=std::unique_ptr<int,D>;int f(){P local;nullptr!=local;static_assert(__is_same(decltype(nullptr!=P{}),bool));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-equal", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){static_cast<bool>(p);static_assert(__is_same(decltype(p==nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-reverse-equal", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p==nullptr;static_assert(__is_same(decltype(nullptr==p),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-not-equal", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p==nullptr;static_assert(__is_same(decltype(p!=nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-reverse-not-equal", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p!=nullptr;static_assert(__is_same(decltype(nullptr!=p),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-array", R"cpp(
-using P=std::unique_ptr<int[]>;int f(P&p){static_cast<bool>(p);static_assert(__is_same(decltype(p==nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-custom", R"cpp(
-struct D{void operator()(int*)const noexcept{}};using P=std::unique_ptr<int,D>;int f(P&p){static_cast<bool>(p);static_assert(__is_same(decltype(nullptr!=p),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-specialization", R"cpp(
-int f(std::unique_ptr<int>&p,std::unique_ptr<const int>&q){p==nullptr;static_assert(__is_same(decltype(q==nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"comparison-specialization", R"cpp(
 namespace std{inline namespace __1{template<>bool operator==<int,default_delete<int>>(const unique_ptr<int>&,nullptr_t)noexcept{return true;}}}using P=std::unique_ptr<int>;int f(P&p){p==nullptr;static_assert(__is_same(decltype(p==nullptr),bool));return 0;}
 )cpp",
@@ -71571,64 +71543,32 @@ int value(int=sizeof(long double))noexcept{return 2;}int f(){auto local=std::mak
 int object;template<int*>using T=int;struct D{void operator()(T<&object>*)const noexcept;};void D::operator()(int*)const noexcept{}using P=std::unique_ptr<int,D>;int f(){P local;nullptr>=local;static_assert(__is_same(decltype(nullptr>=P{}),bool));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-less-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p==nullptr;static_assert(__is_same(decltype(p<nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"specialization-less-owner-null", R"cpp(
 namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>>(const unique_ptr<int>&,nullptr_t){return true;}}}using P=std::unique_ptr<int>;int f(P&p){p<nullptr;static_assert(__is_same(decltype(p<nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p==nullptr;static_assert(__is_same(decltype(nullptr<p),bool));return 0;}
 )cpp",
        "TR0201"},
       {"specialization-less-null-owner", R"cpp(
 namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>>(nullptr_t,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p){nullptr<p;static_assert(__is_same(decltype(nullptr<p),bool));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-greater-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){nullptr<p;static_assert(__is_same(decltype(p>nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"specialization-greater-owner-null", R"cpp(
 namespace std{inline namespace __1{template<>bool operator> <int,default_delete<int>>(const unique_ptr<int>&,nullptr_t){return true;}}}using P=std::unique_ptr<int>;int f(P&p){p>nullptr;static_assert(__is_same(decltype(p>nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p<nullptr;static_assert(__is_same(decltype(nullptr>p),bool));return 0;}
 )cpp",
        "TR0201"},
       {"specialization-greater-null-owner", R"cpp(
 namespace std{inline namespace __1{template<>bool operator> <int,default_delete<int>>(nullptr_t,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p){nullptr>p;static_assert(__is_same(decltype(nullptr>p),bool));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-less-equal-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){nullptr<p;static_assert(__is_same(decltype(p<=nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"specialization-less-equal-owner-null", R"cpp(
 namespace std{inline namespace __1{template<>bool operator<= <int,default_delete<int>>(const unique_ptr<int>&,nullptr_t){return true;}}}using P=std::unique_ptr<int>;int f(P&p){p<=nullptr;static_assert(__is_same(decltype(p<=nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-equal-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p<nullptr;static_assert(__is_same(decltype(nullptr<=p),bool));return 0;}
 )cpp",
        "TR0201"},
       {"specialization-less-equal-null-owner", R"cpp(
 namespace std{inline namespace __1{template<>bool operator<= <int,default_delete<int>>(nullptr_t,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p){nullptr<=p;static_assert(__is_same(decltype(nullptr<=p),bool));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-greater-equal-owner-null", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){nullptr<p;static_assert(__is_same(decltype(p>=nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"specialization-greater-equal-owner-null", R"cpp(
 namespace std{inline namespace __1{template<>bool operator>= <int,default_delete<int>>(const unique_ptr<int>&,nullptr_t){return true;}}}using P=std::unique_ptr<int>;int f(P&p){p>=nullptr;static_assert(__is_same(decltype(p>=nullptr),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-equal-null-owner", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p<nullptr;static_assert(__is_same(decltype(nullptr>=p),bool));return 0;}
 )cpp",
        "TR0201"},
       {"specialization-greater-equal-null-owner", R"cpp(
@@ -167074,11 +167014,11 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::get)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -167792,12 +167732,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::release)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168102,12 +168042,12 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"source-element-layout", R"cpp(
 #include <memory>
@@ -168421,12 +168361,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::swap)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168826,12 +168766,12 @@ using U=std::unique_ptr<int>;using F=void(*)(U&,U&)noexcept;int main(){return si
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::swap(std::declval<U&>(),std::declval<U&>())));return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(__is_same(decltype((sizeof(long double),p)<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -169224,12 +169164,12 @@ using U=std::unique_ptr<int>;using N=decltype(nullptr);using F=U&(U::*)(N)noexce
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=nullptr));using R=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=nullptr));using R=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -169688,12 +169628,12 @@ using U=std::unique_ptr<int>;using F=U&(U::*)(U&&)noexcept;int main(){return siz
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::declval<U&>()=std::declval<U&&>()));return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));using R=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));using R=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -170159,19 +170099,19 @@ using U=std::unique_ptr<int>;using D=std::default_delete<int>;using F=bool(*)(co
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>()==std::declval<U&>());static_assert(__is_same(R,bool));return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-comparison", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype((sizeof(long double),p)==nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -170637,11 +170577,11 @@ using U=std::unique_ptr<int>;using D=std::default_delete<int>;using F=bool(*)(co
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(__is_same(R,bool));return 0;}
 )cpp"},
-      {"query-does-not-authorize-null-ordering", R"cpp(
+      {"query-retains-original-owner-source", R"cpp(
 #include <memory>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);using S=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);using S=decltype((sizeof(long double),p)<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -170698,6 +170638,528 @@ int object;template<int*>using U=std::unique_ptr<int>;int main(){using R=decltyp
                                 Case.first + ".cpp");
     const auto Output =
         tmpFile(std::string("unique-ordering-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryArrayNullComparison) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-array-null-comparison.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-array-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-array-null-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryArrayWrapperNullComparison) {
+  const auto Source = tmpFile(
+      "unique-null-comparison-signature-array-wrapper-null-comparison.cpp");
+  const auto Output = tmpFile(
+      "unique-null-comparison-signature-array-wrapper-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<std::reference_wrapper<int>[]>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-comparison-signature-array-wrapper-null-comparison" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryConstXvalueOwner) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-const-xvalue-owner.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-const-xvalue-owner.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<const U&&>()==nullptr);static_assert(std::is_same_v<R,bool>);static_assert(noexcept(nullptr!=std::declval<const U&&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-comparison-signature-const-xvalue-owner" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryCustomNullComparison) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-custom-null-comparison.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-custom-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-custom-null-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrNullComparisonSignatureQueryMultidimensionalNullComparison) {
+  const auto Source = tmpFile(
+      "unique-null-comparison-signature-multidimensional-null-comparison.cpp");
+  const auto Output = tmpFile(
+      "unique-null-comparison-signature-multidimensional-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[][2]>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-comparison-signature-multidimensional-null-comparison" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryNullReferenceOperand) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-null-reference-operand.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-null-reference-operand.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using N=decltype(nullptr);int main(){using R=decltype(std::declval<U&>()==std::declval<const N&>());using S=decltype(std::declval<N&&>()!=std::declval<U&>());static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);static_assert(noexcept(std::declval<U&>()==std::declval<const N&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-null-reference-operand" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryNullXvalueOperand) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-null-xvalue-operand.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-null-xvalue-operand.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using N=decltype(nullptr);int main(){N zero=nullptr;using R=decltype(std::declval<U&>()==static_cast<N&&>(zero));using S=decltype(static_cast<N&&>(zero)<std::declval<U&>());static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);static_assert(noexcept(std::declval<U&>()==static_cast<N&&>(zero)));static_assert(!noexcept(static_cast<N&&>(zero)<std::declval<U&>()));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-comparison-signature-null-xvalue-operand" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryQualifiedNullComparison) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-qualified-null-comparison.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-qualified-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-qualified-null-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryQueryDeletedLifetime) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-query-deleted-lifetime.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-query-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;R()=delete;~R()=delete;};using U=std::unique_ptr<R>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-query-deleted-lifetime" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrNullComparisonSignatureQueryQueryEffects) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-query-effects.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects=0;U&owner()noexcept{++effects;return *static_cast<U*>(nullptr);}decltype(nullptr)zero()noexcept{++effects;return nullptr;}int main(){using R=decltype(owner()==zero());using S=decltype(zero()!=owner());static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);static_assert(noexcept(owner()==zero()));using T=decltype(owner()<zero());using V=decltype(zero()>=owner());static_assert(std::is_same_v<T,bool>);static_assert(std::is_same_v<V,bool>);static_assert(!noexcept(owner()<zero()));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-comparison-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(const U&p,decltype(nullptr)&zero){using R=decltype(p==zero);using S=decltype(zero<p);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-query-only-parameters" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryRawOwnerPointers) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-raw-owner-pointers.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-raw-owner-pointers.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){U*p=nullptr;using R=decltype(*p==nullptr);using S=decltype(nullptr>=*p);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-comparison-signature-raw-owner-pointers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryScalarNullComparison) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-scalar-null-comparison.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-scalar-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));using RL=decltype(nullptr<std::declval<U&>());using RG=decltype(std::declval<U&>()>nullptr);using RLE=decltype(nullptr<=std::declval<U&>());using RGE=decltype(std::declval<U&>()>=nullptr);static_assert(std::is_same_v<RL,bool>);static_assert(std::is_same_v<RG,bool>);static_assert(std::is_same_v<RLE,bool>);static_assert(std::is_same_v<RGE,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-scalar-null-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullComparisonSignatureQueryWrapperNullComparison) {
+  const auto Source =
+      tmpFile("unique-null-comparison-signature-wrapper-null-comparison.cpp");
+  const auto Output =
+      tmpFile("unique-null-comparison-signature-wrapper-null-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<std::reference_wrapper<int>>;int main(){using A=decltype(std::declval<U&>()==nullptr);using B=decltype(nullptr==std::declval<U&>());using C=decltype(std::declval<U&>()!=nullptr);using E=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<A,bool>);static_assert(std::is_same_v<B,bool>);static_assert(std::is_same_v<C,bool>);static_assert(std::is_same_v<E,bool>);static_assert(noexcept(std::declval<U&>()==nullptr));static_assert(noexcept(nullptr!=std::declval<U&>()));using L=decltype(std::declval<U&>()<nullptr);using G=decltype(nullptr>std::declval<U&>());using LE=decltype(std::declval<U&>()<=nullptr);using GE=decltype(nullptr>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<LE,bool>);static_assert(std::is_same_v<GE,bool>);static_assert(!noexcept(std::declval<U&>()<nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-comparison-signature-wrapper-null-comparison" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrNullComparisonSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-equality-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using F=bool(*)(const U&,decltype(nullptr))noexcept;int main(){using R=decltype(std::declval<U&>()==nullptr);static_assert(std::is_same_v<R,bool>);static_assert(sizeof(static_cast<F>(&std::operator==<int,std::default_delete<int>>))>0);return 0;}
+)cpp"},
+      {"independent-ordering-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using F=bool(*)(decltype(nullptr),const U&);int main(){using R=decltype(nullptr<std::declval<U&>());static_assert(std::is_same_v<R,bool>);static_assert(sizeof(static_cast<F>(&std::operator< <int,std::default_delete<int>>))>0);return 0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>()==nullptr);static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p){using R=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}
+)cpp"},
+      {"source-boolean-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>unique_ptr<int>::operator bool()const noexcept{return true;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>()==nullptr);static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using U=std::unique_ptr<R>;int main(){using Q=decltype(nullptr<std::declval<U&>());static_assert(std::is_same_v<Q,bool>);return 0;}
+)cpp"},
+      {"source-equality-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>bool operator==<int,default_delete<int>>(const unique_ptr<int>&,nullptr_t)noexcept{return true;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>()==nullptr);static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-getter-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(nullptr<std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-null-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;decltype(nullptr)zero(int=sizeof(long double))noexcept{return nullptr;}int main(){using R=decltype(std::declval<U&>()==zero());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-null-noexcept", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;decltype(nullptr)zero()noexcept(sizeof(long double)>0){return nullptr;}int main(){static_assert(noexcept(zero()==std::declval<U&>()));return 0;}
+)cpp"},
+      {"source-ordering-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>>(const unique_ptr<int>&,nullptr_t){return true;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>()<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-owner-alias", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+int object;template<int*>using U=std::unique_ptr<int>;int main(){using R=decltype(nullptr>=std::declval<U<&object>&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-owner-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U&owner(){long double n=0;(void)n;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner()!=nullptr);static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+      {"source-reverse-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>bool operator!=<int,default_delete<int>>(nullptr_t,const unique_ptr<int>&)noexcept{return true;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(nullptr!=std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("unique-null-comparison-signature-") + Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("unique-null-comparison-signature-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
