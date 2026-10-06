@@ -8972,9 +8972,20 @@ selected generic element swap must retain its trivial copy/move operations and
 exact `std::move` adapters. Value elements exchange values; reference elements
 exchange referent values without changing their bindings. Empty elements retain
 their addresses without field stores, including repeated empty types, self-swap
-and aliased referents. Both operands are evaluated once. Tuples combining these
-optimized bases with nontrivial owned elements still require additional selected
-lifecycle proofs and remain outside this implementation.
+and aliased referents. Both operands are evaluated once. Assignment and swap
+continue to require their existing supported element lifecycle checks.
+
+Tuples combining these optimized bases with supported nontrivial source-owned
+objects now retain the existing direct construction, `make_tuple`, and selected
+whole-tuple copy/move lifecycle paths. The generated tuple-to-implementation-to-leaf
+chain must retain its exact pinned declarations and parameter projections. An
+optimized leaf copy must initialize precisely the authenticated empty private
+base through its selected implicit trivial nonthrowing copy/move constructor,
+with the expected reference qualifiers and value category. Only that stateless
+base operation is omitted. Owned elements still invoke the selected source
+constructor and its checked default arguments, and are destroyed through the
+existing owned-object cleanup path. Repeated empty elements retain distinct
+addresses without adding fields that alter the owned element's native layout.
 
 ## Unary type transforms
 

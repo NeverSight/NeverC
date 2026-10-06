@@ -4526,7 +4526,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
     if (EmptyBase) {
       const auto *Definition =
           ElementRecord ? ElementRecord->getDefinition() : nullptr;
-      if (OwnedElement || !Definition ||
+      if (!Definition ||
           !functionTraitObjectValue(S, SM, Definition, Context) ||
           !LeafSpecialization->isEmpty() ||
           !LeafSpecialization->isStandardLayout() ||
@@ -4783,15 +4783,14 @@ approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
   unsigned Index = 0;
   for (const auto *Initializer : ImplConstructor->inits()) {
     const auto &Field = Tuple.Elements[Index];
-    if (!Field.Field)
-      return std::nullopt;
-    const auto *Leaf = dyn_cast<CXXRecordDecl>(Field.Field->getParent());
-    if (!Leaf)
-      return std::nullopt;
     const auto *BaseType = Initializer->isBaseInitializer()
                                ? Initializer->getBaseClass()
                                : nullptr;
     const auto *Base = BaseType ? BaseType->getAsCXXRecordDecl() : nullptr;
+    const auto *Leaf = Base ? Base->getDefinition() : nullptr;
+    if (!Leaf || (Field.Field && Field.Field->getParent()->getCanonicalDecl() !=
+                                     Leaf->getCanonicalDecl()))
+      return std::nullopt;
     const auto *LeafCall =
         Initializer->getInit()
             ? dyn_cast<CXXConstructExpr>(
@@ -4827,6 +4826,88 @@ approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
       return std::nullopt;
 
     const auto *LeafInitializer = *LeafConstructor->init_begin();
+    if (Field.EmptyBase) {
+      // The generated optimized leaf copies its one stateless private base.
+      // Prove that selected SDK constructor and parameter path before omitting
+      // its empty operation while retaining every owned element's real copy.
+      const auto *BaseInitializer =
+          LeafInitializer && LeafInitializer->isBaseInitializer()
+              ? LeafInitializer->getBaseClass()
+              : nullptr;
+      const auto *BaseRecord =
+          BaseInitializer ? BaseInitializer->getAsCXXRecordDecl() : nullptr;
+      const auto *Copy =
+          LeafInitializer && LeafInitializer->getInit()
+              ? dyn_cast<CXXConstructExpr>(
+                    LeafInitializer->getInit()->IgnoreParenImpCasts())
+              : nullptr;
+      const auto *Constructor = Copy ? Copy->getConstructor() : nullptr;
+      const auto *Prototype =
+          Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                      : nullptr;
+      if (!BaseRecord ||
+          BaseRecord->getCanonicalDecl() !=
+              Field.EmptyBase->getCanonicalDecl() ||
+          !Copy ||
+          Copy->getConstructionKind() != CXXConstructionKind::NonVirtualBase ||
+          Copy->getNumArgs() != 1 || !Constructor ||
+          Constructor->getNumParams() != 1 || Constructor->isVariadic() ||
+          !Constructor->isImplicit() || !Constructor->isTrivial() ||
+          !Constructor->isDefaulted() ||
+          !Constructor->isCopyOrMoveConstructor() || !Prototype ||
+          !Prototype->isNothrow() ||
+          Constructor->getParent()->getCanonicalDecl() !=
+              Field.EmptyBase->getCanonicalDecl() ||
+          !Context.hasSameType(Copy->getType(),
+                               Context.getRecordType(Field.EmptyBase)) ||
+          !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+          !functionalObjectOrigin(S, SM, Constructor, "integral_constant"))
+        return std::nullopt;
+      const auto ParameterType = Constructor->getParamDecl(0)->getType();
+      const auto RecordType = Context.getRecordType(Field.EmptyBase);
+      const auto ExpectedParameter =
+          Constructor->isMoveConstructor()
+              ? Context.getRValueReferenceType(RecordType)
+              : Context.getLValueReferenceType(RecordType.withConst());
+      if (!Context.hasSameType(ParameterType, ExpectedParameter))
+        return std::nullopt;
+      const Expr *Argument = Copy->getArg(0)->IgnoreParens();
+      if (const auto *Qualification = dyn_cast<ImplicitCastExpr>(Argument);
+          Qualification && Qualification->getCastKind() == CK_NoOp) {
+        if (!Context.hasSameUnqualifiedType(Qualification->getType(),
+                                            RecordType) ||
+            Qualification->getType().isVolatileQualified() ||
+            Qualification->getValueKind() !=
+                Qualification->getSubExpr()->getValueKind())
+          return std::nullopt;
+        Argument = Qualification->getSubExpr()->IgnoreParens();
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+      const auto *Base =
+          Cast && Cast->getCastKind() == CK_UncheckedDerivedToBase &&
+                  Cast->path_size() == 1
+              ? *Cast->path_begin()
+              : nullptr;
+      const auto *SelectedBase =
+          Base ? Base->getType()->getAsCXXRecordDecl() : nullptr;
+      const auto LeafSource = LeafConstructor->getParamDecl(0)->getType();
+      const auto ExpectedSource =
+          LeafSource->getPointeeType().isConstQualified()
+              ? RecordType.withConst()
+              : RecordType;
+      if (!Cast || !Base || Base->isVirtual() ||
+          Base->getAccessSpecifier() != AS_private || !SelectedBase ||
+          SelectedBase->getCanonicalDecl() !=
+              Field.EmptyBase->getCanonicalDecl() ||
+          !Context.hasSameType(Cast->getType(), ExpectedSource) ||
+          Cast->isXValue() != LeafSource->isRValueReferenceType() ||
+          (Constructor->isMoveConstructor() && !Cast->isXValue()) ||
+          !utilityTupleGeneratedSource(
+              Cast->getSubExpr(), LeafConstructor->getParamDecl(0), Context))
+        return std::nullopt;
+      ++Index;
+      continue;
+    }
     if (!LeafInitializer || !LeafInitializer->isMemberInitializer() ||
         LeafInitializer->getMember() != Field.Field ||
         !LeafInitializer->getInit())

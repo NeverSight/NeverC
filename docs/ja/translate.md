@@ -73,6 +73,8 @@ Core v2 はテンプレート、エイリアス、クエリ、変換内の通常
 
 tuple 内の検証済み関数ポインター trait オブジェクトは、メンバー `swap` と `std::swap` にも対応します。値要素は値を交換し、参照要素は参照先を変更せずに参照先の値を交換します。空要素はフィールドへの書き込みを行わず、アドレスを保持します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+検証済みの空の関数ポインター trait 要素は、対応するソース所有オブジェクトと同じ tuple に格納できます。直接構築、`make_tuple`、tuple 全体のコピー／ムーブでは、選択されたソースのコンストラクター、デフォルト引数の副作用、破棄を保持します。同じ型の空要素も異なるアドレスを保ちます。代入と swap には、既存の各要素のライフサイクル検証が引き続き必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 の単項型変換は、元の入力、実際に置換されたソースと結果を検査します。最終型から消えるエイリアスのテンプレート引数も対象です。固定版の十六種類は既存の型メタデータと実行時型を使い、ネイティブ検証は CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 `int[][3]` などの長さ不明の配列も、型だけのメタデータ、別名、テンプレート引数で次元数、不明な外側の長さを示すゼロ、既知の内側の長さを保持します。実行時の型と操作クエリには各契約の制限が残り、標準ヘッダーと完全な C++／STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

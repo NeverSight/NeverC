@@ -27952,6 +27952,170 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedDirectElements) {
+  const auto Source = tmpFile("function-trait-tuple-owned-direct-elements.cpp");
+  const auto Output = tmpFile("function-trait-tuple-owned-direct-elements.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>t(C{},s);if(copies!=1||moves||live!=2||std::get<1>(t).n!=7||std::get<0>(t)()(1)!=2||effects!=1)return 1;}return live||drops!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-owned-direct-elements" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedMakeTuple) {
+  const auto Source = tmpFile("function-trait-tuple-owned-make-tuple.cpp");
+  const auto Output = tmpFile("function-trait-tuple-owned-make-tuple.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);auto t=std::make_tuple(C{},s);if(copies!=1||moves||live!=2||std::get<1>(t).n!=7||std::get<0>(t)()(1)!=2||effects!=1)return 1;}return live||drops!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-owned-make-tuple" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedWholeCopy) {
+  const auto Source = tmpFile("function-trait-tuple-owned-whole-copy.cpp");
+  const auto Output = tmpFile("function-trait-tuple-owned-whole-copy.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);auto b=a;if(copies!=2||moves||live!=3||std::get<1>(b).n!=7||std::get<0>(b)()(1)!=2||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-owned-whole-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedWholeMove) {
+  const auto Source = tmpFile("function-trait-tuple-owned-whole-move.cpp");
+  const auto Output = tmpFile("function-trait-tuple-owned-whole-move.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);auto b=std::move(a);if(copies!=1||moves!=1||live!=3||std::get<1>(a).n||std::get<1>(b).n!=7||std::get<0>(b)()(1)!=2||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-owned-whole-move" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedRepeatedEmptyIdentity) {
+  const auto Source = tmpFile("function-trait-tuple-owned-repeated-empty.cpp");
+  const auto Output = tmpFile("function-trait-tuple-owned-repeated-empty.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int copies,moves,live,drops;
+struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o):n(o.n){++copies;++live;}Owned(Owned&&o):n(o.n){o.n=0;++moves;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,C,Owned>a(C{},C{},s);auto b=a;if(copies!=2||moves||live!=3||&std::get<0>(b)==&std::get<1>(b)||std::get<1>(b)()(1)!=2||std::get<2>(b).n!=7||effects!=1)return 1;}return live||drops!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-tuple-owned-repeated-empty" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitTupleOwnedSelectedDefaultEffects) {
+  const auto Source =
+      tmpFile("function-trait-tuple-owned-selected-default-effects.cpp");
+  const auto Output =
+      tmpFile("function-trait-tuple-owned-selected-default-effects.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int defaults,copies,live,drops;int seed(){++defaults;return defaults;}struct Owned{int n;Owned(int n):n(n){++live;}Owned(const Owned&o,int extra=seed()):n(o.n+extra){++copies;++live;}~Owned(){--live;++drops;}};
+int main(){{Owned s(7);std::tuple<C,Owned>a(C{},s);auto b=a;if(defaults!=2||copies!=2||live!=3||std::get<1>(a).n!=8||std::get<1>(b).n!=10||std::get<0>(b)()(1)!=2||effects!=1)return 1;}return live||drops!=3;}
+
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-tuple-owned-selected-default-effects" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitTupleSwapAllEmpty) {
   const auto Source = tmpFile("function-trait-tuple-swap-all-empty.cpp");
   const auto Output = tmpFile("function-trait-tuple-swap-all-empty.nc");

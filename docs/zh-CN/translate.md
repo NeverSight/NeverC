@@ -73,6 +73,8 @@ Core v2 现支持模板、别名、查询与变换中的普通函数类型及其
 
 tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std::swap`。值元素交换数值，引用元素交换其引用目标的值而不重新绑定，空元素保留自身地址且不写入字段。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+经过验证的空函数指针 trait 元素现在也可与受支持的源码 owned 对象组成 tuple。直接构造、`make_tuple` 和整个 tuple 的复制／移动保留所选源码构造函数、默认参数副作用及析构行为。重复空元素保持不同地址。赋值和交换仍须满足各元素现有的生命周期检查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 一元类型变换现检查原始输入、实际替换后的源码与结果，包括最终类型中消失的别名模板参数。固定版本的十六种变换复用现有类型元数据与运行时类型，原生验证仍仅在 CI 执行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 未知长度数组（如 `int[][3]`）的类型元数据、别名和模板实参现可保留维数、为零的外层长度及已知内层边界。运行时类型和操作查询仍遵循各自限制；标准头文件及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
