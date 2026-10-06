@@ -6990,6 +6990,63 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
   return Info;
 }
 
+static QualType utilityUniquePtrSwapQuerySource(Adapter &A,
+                                                const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!A.S.coreV2() || !Function || isa<CXXMethodDecl>(Function) ||
+      !Function->getIdentifier() || Function->getName() != "swap" ||
+      !Function->getPrimaryTemplate() || !Function->isInlined() || !Reference ||
+      Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || Call->getNumArgs() != 2 ||
+      Function->getNumParams() != 2 ||
+      !Function->getReturnType()->isVoidType() ||
+      !Call->getType()->isVoidType() || !Call->isPRValue() || !Arguments ||
+      Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !A.Context.hasSameType(Arguments->get(2).getIntegralType(),
+                             A.Context.IntTy) ||
+      !utilitySDKFunctionSource(A, Function, "__memory/unique_ptr.h", false))
+    return {};
+  const auto Owner = utilityUniquePtrSource(
+      A, Call->getArg(0)->getType()->getAsCXXRecordDecl(), false);
+  if (!Owner)
+    return {};
+  const auto *Specialization =
+      dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record);
+  if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
+      !A.Context.hasSameType(
+          Arguments->get(0).getAsType(),
+          Specialization->getTemplateArgs().get(0).getAsType()) ||
+      !A.Context.hasSameType(Arguments->get(1).getAsType(),
+                             A.Context.getRecordType(Owner->Deleter.Record)))
+    return {};
+  const auto OwnerType = A.Context.getRecordType(Owner->Record);
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Argument = Call->getArg(I);
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    if (!Parameter->isLValueReferenceType() ||
+        !A.Context.hasSameType(Parameter->getPointeeType(), OwnerType) ||
+        !Argument->isLValue() || Argument->getType().isConstQualified() ||
+        !A.Context.hasSameType(Argument->getType(), OwnerType))
+      return {};
+  }
+  // Authenticate only this unevaluated public signature. Runtime swap keeps
+  // its separate wrapper/member-body and selected lifetime proofs.
+  if (!utilityUniquePtrElementQueryLayout(A, *Owner, Call->getExprLoc()))
+    return {};
+  return A.Context.getCanonicalType(Function->getReturnType());
+}
+
 static bool utilityUniquePtrSwapSource(Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
@@ -14306,6 +14363,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             !Result.isNull())
           A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
         else if (const auto Result = utilityMakeUniqueQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityUniquePtrSwapQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =

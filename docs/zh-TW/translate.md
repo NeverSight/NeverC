@@ -111,7 +111,9 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 純 `unique_ptr::reset()` 查詢現可驗證固定 SDK 簽章，不需實例化 reset 或預設刪除器主體。支援的單一物件、陣列與自訂刪除器擁有者保留 `void` 結果及已解析例外中繼資料。精確的 SDK 零指標或 `nullptr` 預設引數按具體查詢使用點證明。接收者、替換指標與預設引數不執行；實際 reset 與清理仍需獨立執行期證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
-純成員 `unique_ptr::swap()` 查詢現可驗證固定 SDK 的精確簽章，不需實例化成員或預設刪除器主體。支援的可變擁有者左值保留 `void` 結果與不拋出中繼資料，涵蓋單一物件、陣列、包裝器與自訂刪除器。兩側運算元不執行，也不交換指標。原始碼與生命週期檢查獨立保留；自由 swap 與實際所有權操作仍需原有完整證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+純成員 `unique_ptr::swap()` 查詢現可驗證固定 SDK 的精確簽章，不需實例化成員或預設刪除器主體。支援的可變擁有者左值保留 `void` 結果與不拋出中繼資料，涵蓋單一物件、陣列、包裝器與自訂刪除器。兩側運算元不執行，也不交換指標。原始碼與生命週期檢查獨立保留；實際所有權操作仍需原有完整證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
+純自由函式 `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` 查詢現可驗證固定 SDK 的精確多載，不需實例化包裝函式、成員或預設刪除器主體。兩個同型別、已檢查的可變擁有者左值保留 `void` 結果與不拋出中繼資料，涵蓋單一物件、陣列、包裝器與自訂刪除器。推導及顯式範本引數仍保留原始碼檢查。運算元不執行，也不交換指標；實際操作與獨立函式取址仍需完整證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 經驗證的函式指標 trait 包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的 trait 傳值參數，包括 const 參考目標和右值包裝器。固定 SDK 的 trait 複製與包裝器轉換仍須通過認證。每個參數使用獨立的一位元組儲存；可呼叫物件及引數的副作用只發生一次，原始碼函式目標仍須檢查。其他 trait 域和 SDK `value` 儲存別名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 

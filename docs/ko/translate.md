@@ -111,7 +111,9 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 순수 `unique_ptr::reset()` 질의는 reset이나 기본 삭제기 본문 없이 고정 SDK 시그니처를 인증합니다. 지원되는 단일 객체, 배열, 사용자 삭제기 소유자의 `void` 결과와 해석된 예외 메타데이터를 보존합니다. SDK의 정확한 영 포인터 또는 `nullptr` 기본 인수는 각 질의 사용 지점에서 증명합니다. 수신 객체, 교체 포인터, 기본 인수는 실행하지 않으며 실제 reset과 정리에는 별도의 런타임 증명이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
-순수 멤버 `unique_ptr::swap()` 질의는 멤버나 기본 삭제기 본문 없이 고정 SDK의 정확한 시그니처를 인증합니다. 지원되는 가변 소유자 lvalue는 단일 객체, 배열, 래퍼, 사용자 삭제기에서 `void`와 비예외 메타데이터를 보존합니다. 두 피연산자는 실행하지 않으며 포인터를 교환하지 않습니다. 소스와 수명 검사는 독립적으로 유지하고 자유 함수 swap과 실제 소유권 연산에는 기존의 완전한 증명이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+순수 멤버 `unique_ptr::swap()` 질의는 멤버나 기본 삭제기 본문 없이 고정 SDK의 정확한 시그니처를 인증합니다. 지원되는 가변 소유자 lvalue는 단일 객체, 배열, 래퍼, 사용자 삭제기에서 `void`와 비예외 메타데이터를 보존합니다. 두 피연산자는 실행하지 않으며 포인터를 교환하지 않습니다. 소스와 수명 검사는 독립적으로 유지하고 실제 소유권 연산에는 기존의 완전한 증명이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
+자유 함수 `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)`의 순수 질의는 래퍼, 멤버, 기본 삭제기 본문을 인스턴스화하지 않고 고정 SDK의 정확한 오버로드를 인증합니다. 같은 검증된 소유자 타입의 가변 lvalue 두 개는 단일 객체, 배열, 래퍼, 사용자 삭제기에서 `void`와 비예외 메타데이터를 보존합니다. 추론 및 명시적 템플릿 인자의 원래 소스 검사를 유지합니다. 피연산자를 실행하거나 포인터를 교환하지 않으며 실제 연산과 독립 함수 주소에는 완전한 증명이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 

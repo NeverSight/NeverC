@@ -3494,8 +3494,9 @@ Caller defaults and operands keep their independent source and lifetime proof.
 Independent member addresses and source SDK replacements remain rejected.
 
 The same query boundary admits exact pinned member `swap` signatures,
-including members whose bodies have not been instantiated, and the already
-materialized pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` overload. Both retain a
+including members whose bodies have not been instantiated, and the exact
+pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` signature without
+requiring instantiated wrapper, member or default deletion bodies. Both retain a
 `void` result and nonthrowing signature for mutable scalar or array owners with
 the same concrete owner and deleter type, including admitted custom deleters,
 qualified pointees and bounded inner array extents. Member receivers may be
@@ -3505,11 +3506,11 @@ original signatures, selected source defaults and explicit template arguments
 still require their original source. Argument-dependent lookup retains the
 selected specialized overload.
 The free wrapper, its instantiation pattern, primary and all redeclarations
-must remain in the pinned SDK. Its actual single member call must reference
-the wrapper's two exact parameters and select the same owner's pinned member
-definition and exception specification. This consumes the existing bodies;
-it does not instantiate SDK code or traverse the private member call as project
-source. Borrowed swaps select no owner or pointee construction, deleter call
+must remain in the pinned SDK. Evaluated free swap additionally requires its
+actual single member call to reference the wrapper's two exact parameters and
+select the same owner's pinned member definition and exception specification.
+That runtime proof consumes existing bodies; it does not instantiate SDK code
+or traverse the private member call as project source. Borrowed swaps select no owner or pointee construction, deleter call
 or destruction. Local owner initializers, temporary member receivers and
 factory/argument temporaries retain their separate owning lifetime source.
 Unevaluated swap neither exchanges pointers nor evaluates either operand or a
@@ -3520,11 +3521,15 @@ and resolved exception metadata; no member or default deletion body is needed.
 SDK wrapper elements keep their authenticated layout completion and referent
 checks. A borrowed element may have a deleted constructor or destructor without
 selecting either. Evaluated operations keep their independent complete proofs.
-Free queries without their materialized wrapper/member bodies, source SDK
-replacements and independent addresses remain rejected; the generic
+Pure free queries require the authenticated SDK function declaration chain,
+its exact owner/deleter template arguments and integral enable-if argument,
+two mutable same-owner lvalues, resolved void/nonthrowing metadata and checked
+pointee layouts. Written explicit template arguments and both operand sources
+remain independently checked. Operands are not evaluated and pointers are not
+exchanged. Source SDK replacements and independent addresses remain rejected;
+the generic
 `std::swap<Owner>` overload has no new permission. Signature-only free-swap
-`noexcept` queries keep their existing exception-source boundary and need no
-unused body.
+queries retain each caller source without selecting an unused body.
 
 Result-source queries also admit the already materialized pinned
 `unique_ptr::operator=(nullptr_t)` for mutable scalar and array owners, including
