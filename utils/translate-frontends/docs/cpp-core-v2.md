@@ -2813,6 +2813,20 @@ top-level `const` element remains constructible and readable. Scalar operations
 retain the directly representable conversion boundary, including the standard
 conversion from `nullptr_t` to an object pointer.
 
+Zero-argument `emplace()` also value-initializes admitted non-const scalars,
+source-owned trivial standard-layout records, checked function-pointer trait
+objects and recursively admitted arrays of these elements. The exact pinned
+method body must reset this object's engagement, call its storage-base
+`__construct()` without arguments and return its checked `__get()` reference.
+The proof follows `addressof`, `__construct_at` and reserved placement new to
+an actual zero-value initializer or a selected trivial default constructor
+requiring zero initialization. Lowering initializes the existing value storage,
+sets engagement and returns that same contained object. The receiver is evaluated
+once, and repeating emplacement preserves its address. Nontrivial default
+constructors, default member initializers, const or volatile elements and
+unsupported trait domains remain excluded from this path. Unused trait values
+remain lazy; actual callback targets and source bodies retain their own checks.
+
 All six C++17 comparison forms recurse through authenticated array, pair and
 tuple values and preserve their lexicographic leaf order. Composite operands
 must have corresponding authenticated shapes; each corresponding scalar leaf

@@ -16253,18 +16253,36 @@ static bool utilityOptionalSwapPlacement(const State &S,
                        Return->getRetValue(), Definition->getParamDecl(1));
 }
 
-static bool utilityOptionalSwapConstructAt(const State &S,
-                                           const SourceManager &SM,
-                                           const FunctionDecl *Function,
-                                           QualType Type,
-                                           const ASTContext &Context) {
+static bool utilityOptionalDefaultValue(const State &S, const SourceManager &SM,
+                                        const ASTContext &Context,
+                                        QualType Type) {
+  if (Type.isNull() || Type.isConstQualified() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+    return false;
+  if (utilityMemoryTrivialValue(S, SM, Context, Type) ||
+      (Type->isFunctionPointerType() &&
+       utilityArrayStorableValue(S, SM, Context, Type)))
+    return true;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (functionTraitObjectValue(S, SM, Record, Context))
+    return true;
+  const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
+  return Array &&
+         utilityOptionalDefaultValue(S, SM, Context, Array->ElementType);
+}
+
+static bool utilityOptionalConstructAt(const State &S, const SourceManager &SM,
+                                       const FunctionDecl *Function,
+                                       QualType Type, const ASTContext &Context,
+                                       bool Default = false) {
   if (!utilitySwapSDKFunction(S, SM, Function, "__construct_at",
                               "__memory/construct_at.h") ||
-      Function->getNumParams() != 2 ||
+      Function->getNumParams() != (Default ? 1u : 2u) ||
       !Context.hasSameType(Function->getParamDecl(0)->getType(),
                            Context.getPointerType(Type)) ||
-      !Context.hasSameType(Function->getParamDecl(1)->getType(),
-                           Context.getRValueReferenceType(Type)) ||
+      (!Default &&
+       !Context.hasSameType(Function->getParamDecl(1)->getType(),
+                            Context.getRValueReferenceType(Type))) ||
       !Context.hasSameType(Function->getReturnType(),
                            Context.getPointerType(Type)))
     return false;
@@ -16294,6 +16312,25 @@ static bool utilityOptionalSwapConstructAt(const State &S,
                                           Function->getParamDecl(0)))
     return false;
   const Expr *Initializer = New->getInitializer();
+  if (Default) {
+    if (!utilityOptionalDefaultValue(S, SM, Context, Type))
+      return false;
+    if (!Type->isRecordType())
+      return isa_and_nonnull<ImplicitValueInitExpr>(Initializer) &&
+             Context.hasSameType(Initializer->getType(), Type);
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Initializer);
+    const auto *Constructor =
+        Construction ? Construction->getConstructor() : nullptr;
+    return Construction && Constructor &&
+           Construction->getConstructionKind() ==
+               CXXConstructionKind::Complete &&
+           Construction->requiresZeroInitialization() &&
+           !Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
+           Constructor->isDefaulted() && Constructor->isTrivial() &&
+           Constructor->getParent()->getCanonicalDecl() ==
+               Type->getAsCXXRecordDecl()->getCanonicalDecl() &&
+           Context.hasSameType(Construction->getType(), Type);
+  }
   if (Type->isRecordType()) {
     const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Initializer);
     const auto *Constructor =
@@ -16311,19 +16348,20 @@ static bool utilityOptionalSwapConstructAt(const State &S,
                                     Function->getParamDecl(1), Type, Context);
 }
 
-static bool utilityOptionalSwapConstruct(const State &S,
-                                         const SourceManager &SM,
-                                         const CXXMethodDecl *Method,
-                                         const UtilityOptionalRecord &Optional,
-                                         const ASTContext &Context) {
+static bool utilityOptionalConstruct(const State &S, const SourceManager &SM,
+                                     const CXXMethodDecl *Method,
+                                     const UtilityOptionalRecord &Optional,
+                                     const ASTContext &Context,
+                                     bool Default = false) {
   const auto Type = Optional.ElementType;
   if (!utilityCompositeSwapMethod(S, SM, Method, "__construct", "optional") ||
       Method->isStatic() || Method->isConst() || Method->isVolatile() ||
       Method->getParent()->getCanonicalDecl() !=
           Optional.StorageBase->getCanonicalDecl() ||
-      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
-      !Context.hasSameType(Method->getParamDecl(0)->getType(),
-                           Context.getRValueReferenceType(Type)))
+      Method->getNumParams() != (Default ? 0u : 1u) ||
+      !Method->getReturnType()->isVoidType() ||
+      (!Default && !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                        Context.getRValueReferenceType(Type))))
     return false;
   const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
   if (!Body || Body->size() != 3)
@@ -16332,11 +16370,12 @@ static bool utilityOptionalSwapConstruct(const State &S,
   const auto *Noop = dyn_cast<Expr>(*Statement++);
   const auto *Call = dyn_cast<CallExpr>(*Statement++);
   if (!Noop || !utilityOptionalSwapNoop(Noop) || !Call ||
-      Call->getNumArgs() != 2 ||
-      !utilityOptionalSwapConstructAt(S, SM, Call->getDirectCallee(), Type,
-                                      Context) ||
-      !utilityOptionalSwapForward(S, SM, Call->getArg(1),
-                                  Method->getParamDecl(0), Type, Context) ||
+      Call->getNumArgs() != (Default ? 1u : 2u) ||
+      !utilityOptionalConstructAt(S, SM, Call->getDirectCallee(), Type, Context,
+                                  Default) ||
+      (!Default &&
+       !utilityOptionalSwapForward(S, SM, Call->getArg(1),
+                                   Method->getParamDecl(0), Type, Context)) ||
       !utilityOptionalSwapEngage(*Statement, true, Optional.StorageBase,
                                  Optional))
     return false;
@@ -16355,6 +16394,39 @@ static bool utilityOptionalSwapConstruct(const State &S,
                                   Optional.StorageBase, Optional);
 }
 
+static bool utilityOptionalDefaultEmplace(const State &S,
+                                          const SourceManager &SM,
+                                          const CXXMethodDecl *Method,
+                                          const UtilityOptionalRecord &Optional,
+                                          const ASTContext &Context) {
+  const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
+  const auto *Body =
+      Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+  if (!Method || !Primary || !Body || Body->size() != 3 ||
+      Method->getNumParams() || Method->isConst() || Method->isVolatile() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Optional.Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") ||
+      !Context.hasSameType(
+          Method->getReturnType(),
+          Context.getLValueReferenceType(Optional.ElementType)))
+    return false;
+  auto Statement = Body->body_begin();
+  if (!utilityOptionalSwapReset(S, SM, *Statement++, Method, false, Optional))
+    return false;
+  const auto *Construct = dyn_cast<CXXMemberCallExpr>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  return Construct && !Construct->getNumArgs() &&
+         utilityOptionalSwapReceiver(Construct->getImplicitObjectArgument(),
+                                     Method, false) &&
+         utilityOptionalConstruct(S, SM, Construct->getMethodDecl(), Optional,
+                                  Context, true) &&
+         Return &&
+         utilityOptionalSwapRead(S, SM, Return->getRetValue(), Method, false,
+                                 Optional, false, Context);
+}
+
 static bool utilityOptionalSwapTransfer(const State &S, const SourceManager &SM,
                                         const Stmt *Statement,
                                         const CXXMethodDecl *Outer, bool ToPeer,
@@ -16364,8 +16436,8 @@ static bool utilityOptionalSwapTransfer(const State &S, const SourceManager &SM,
   if (!Call || Call->getNumArgs() != 1 ||
       !utilityOptionalSwapReceiver(Call->getImplicitObjectArgument(), Outer,
                                    ToPeer) ||
-      !utilityOptionalSwapConstruct(S, SM, Call->getMethodDecl(), Optional,
-                                    Context))
+      !utilityOptionalConstruct(S, SM, Call->getMethodDecl(), Optional,
+                                Context))
     return false;
   const auto *Move = dyn_cast_or_null<CallExpr>(
       functionalInvokeStrippedExpression(Call->getArg(0)));
@@ -23492,6 +23564,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         (Method->getReturnType()->isLValueReferenceType() ? Call->isLValue()
                                                           : Call->isXValue()))
       return UtilityOperation::OptionalDereference;
+    if (!Operator && Name == "emplace" && !Method->getNumParams() &&
+        !Call->getNumArgs() && !Method->isConst() && Call->isLValue() &&
+        Parent == Optional->Record->getCanonicalDecl() &&
+        Context.hasSameType(Call->getType(), Optional->ElementType) &&
+        utilityOptionalDefaultEmplace(S, SM, Method, *Optional, Context))
+      return UtilityOperation::OptionalEmplaceDefault;
     if (!Operator && Name == "emplace" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && !Method->isConst() &&
         Parent == Optional->Record->getCanonicalDecl() &&

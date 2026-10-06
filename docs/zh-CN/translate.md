@@ -81,6 +81,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 经验证的 `reference_wrapper` 实参现在可通过 `invoke` 和 `apply` 绑定匹配且受支持的左值引用形参，包括显式存储包装器值的 tuple。固定 SDK 的精确转换及转发形参均须通过认证。调用保留原引用目标的地址、写入效果和 const 限定。包装器向按值形参的转换、任意源码转换及 volatile 引用目标仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+经检查的零参数 `optional::emplace()` 现在可对已接纳的非 const 标量、平凡源码自有记录、经验证的函数指针 trait 对象及由这些元素递归组成的数组进行值初始化。固定 SDK 的 reset、原位构造和引用返回函数体均须通过认证。重复 emplace 保留内部存储身份，标量和指针值重置为零或空指针。非平凡默认构造函数、默认成员初始化器及 volatile 元素仍不在此路径的支持范围内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
+
 Core v2 一元类型变换现检查原始输入、实际替换后的源码与结果，包括最终类型中消失的别名模板参数。固定版本的十六种变换复用现有类型元数据与运行时类型，原生验证仍仅在 CI 执行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 未知长度数组（如 `int[][3]`）的类型元数据、别名和模板实参现可保留维数、为零的外层长度及已知内层边界。运行时类型和操作查询仍遵循各自限制；标准头文件及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

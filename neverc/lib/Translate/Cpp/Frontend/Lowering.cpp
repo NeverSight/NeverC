@@ -11165,6 +11165,7 @@ class FunctionLowering {
     case UtilityOperation::OptionalArrow:
     case UtilityOperation::OptionalReset:
     case UtilityOperation::OptionalEmplace:
+    case UtilityOperation::OptionalEmplaceDefault:
     case UtilityOperation::OptionalValueOr:
     case UtilityOperation::OptionalMemberSwap:
     case UtilityOperation::OptionalSwap: {
@@ -11253,6 +11254,12 @@ class FunctionLowering {
       if (Operation == UtilityOperation::OptionalReset) {
         assign(std::move(Engaged), boolean(false, L), L);
         return {};
+      }
+      if (Operation == UtilityOperation::OptionalEmplaceDefault) {
+        initializeZero(std::move(Value), Optional->Value->getType(), L);
+        assign(std::move(Engaged), boolean(true, L), L);
+        return fieldStorage(dereference(std::move(ObjectAddress), L),
+                            Optional->Value, L);
       }
       if (Operation == UtilityOperation::OptionalEmplace) {
         auto Argument = snapshot(expression(Call->getArg(0)), L);

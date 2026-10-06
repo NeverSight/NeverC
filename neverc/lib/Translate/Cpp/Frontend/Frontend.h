@@ -1126,6 +1126,7 @@ enum class UtilityOperation {
   OptionalArrow,
   OptionalReset,
   OptionalEmplace,
+  OptionalEmplaceDefault,
   OptionalValueOr,
   OptionalMemberSwap,
   OptionalSwap,

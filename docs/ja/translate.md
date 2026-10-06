@@ -81,6 +81,8 @@ tuple 内の検証済み関数ポインター trait オブジェクトは、メ�
 
 検証済みの `reference_wrapper` 引数は、`invoke` と `apply` を通じて、対応するサポート対象の左辺値参照パラメーターに束縛できます。ラッパー値を明示的に格納した tuple も対象です。固定 SDK の正確な変換と転送パラメーターを検証し、元の参照先のアドレス、書き込みの効果、const 修飾を保持します。値渡しパラメーターへのラッパー変換、任意のソース定義変換、volatile な参照先は引き続き対象外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+検証済みの引数なし `optional::emplace()` は、受け入れ済みの非 const スカラー、自明なソース所有レコード、検証済みの関数ポインター trait オブジェクト、およびこれらを再帰的に含む配列を値初期化します。固定 SDK の reset、配置構築、参照を返す本体を検証します。再 emplace は内部ストレージの同一性を保ち、スカラーとポインターをゼロまたは null に戻します。非自明なデフォルトコンストラクター、デフォルトメンバー初期化子、volatile 要素はこの経路の対象外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
+
 Core v2 の単項型変換は、元の入力、実際に置換されたソースと結果を検査します。最終型から消えるエイリアスのテンプレート引数も対象です。固定版の十六種類は既存の型メタデータと実行時型を使い、ネイティブ検証は CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 `int[][3]` などの長さ不明の配列も、型だけのメタデータ、別名、テンプレート引数で次元数、不明な外側の長さを示すゼロ、既知の内側の長さを保持します。実行時の型と操作クエリには各契約の制限が残り、標準ヘッダーと完全な C++／STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
