@@ -7105,7 +7105,9 @@ static bool utilityVectorPairEmplaceArgument(const State &S,
                                              const ASTContext &Context,
                                              QualType Argument,
                                              QualType Element) {
-  if (utilityScalarDirectConversion(Context, Argument, Element))
+  if (utilityScalarDirectConversion(Context, Argument, Element) ||
+      (!Element.isNull() && Element->isFunctionPointerType() &&
+       utilityCallbackDirectConversion(Context, Argument, Element)))
     return true;
   return !Argument.isNull() && !Element.isNull() &&
          !Argument.isVolatileQualified() && !Argument.isRestrictQualified() &&

@@ -14813,6 +14813,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Operation == UtilityOperation::TupleApply)
         retainSDKFunctionConstantValue(Call->getArg(0),
                                        Call->getArg(0)->getType(), Call);
+      if (Operation == UtilityOperation::VectorEmplace ||
+          Operation == UtilityOperation::VectorEmplaceBack) {
+        const unsigned Offset = Operation == UtilityOperation::VectorEmplace;
+        const auto *Method =
+            dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        const auto Vector =
+            Method ? approvedUtilityVectorRecord(A.S, A.Sources,
+                                                 Method->getParent(), A.Context)
+                   : std::nullopt;
+        const auto Pair =
+            Vector && Call->getNumArgs() == Offset + 2
+                ? approvedUtilityPairRecord(
+                      A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+                      A.Context)
+                : std::nullopt;
+        if (Pair) {
+          retainSDKFunctionConstantValue(Call->getArg(Offset),
+                                         Pair->First->getType(), Call);
+          retainSDKFunctionConstantValue(Call->getArg(Offset + 1),
+                                         Pair->Second->getType(), Call);
+        }
+      }
       if (Operation == UtilityOperation::MakePair && Call->getNumArgs() == 2) {
         auto Pair = approvedUtilityPairRecord(
             A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

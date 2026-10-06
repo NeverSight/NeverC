@@ -13713,6 +13713,7 @@ class FunctionLowering {
                     A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
                     A.Context)
               : std::optional<UtilityPairRecord>();
+      std::vector<Expression> PairSources;
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 1; I != Call->getNumArgs(); ++I) {
@@ -13816,19 +13817,8 @@ class FunctionLowering {
               Call->getArg(1),
               Call->getNumArgs() == 3 ? Call->getArg(2) : nullptr, L);
         } else if (PairEmplace) {
-          auto First = snapshot(cast(expression(Call->getArg(1)),
-                                     type(PairEmplace->First->getType(), L), L),
-                                L);
-          auto Second =
-              snapshot(cast(expression(Call->getArg(2)),
-                            type(PairEmplace->Second->getType(), L), L),
-                       L);
+          PairSources = captureUtilityInvocationArguments(Call, 1, 2);
           Value = temporary(type(Vector->ElementType, L), L);
-          initializeZero(json::Object(*Value), Vector->ElementType, L);
-          assign(fieldStorage(json::Object(*Value), PairEmplace->First, L),
-                 std::move(First), L);
-          assign(fieldStorage(json::Object(*Value), PairEmplace->Second, L),
-                 std::move(Second), L);
         } else if (Call->getNumArgs() == 2 && !DirectConstructor) {
           if (Vector->OwningElement) {
             const auto *Argument = Call->getArg(1);
@@ -14051,6 +14041,9 @@ class FunctionLowering {
           binary("<=", json::Object(Needed), json::Object(Capacity), "bool", L),
           InPlace, Grow, L);
       label(InPlace, L);
+      if (PairEmplace)
+        constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 1,
+                                   PairSources, L);
       if (Vector->MoveElementConstructor) {
         if (!Vector->ShiftElementAssignment ||
             (Operation == UtilityOperation::VectorInsert && !SourceAddress) ||
@@ -14422,6 +14415,9 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      if (PairEmplace)
+        constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 1,
+                                   PairSources, L);
       auto NewCurrent = temporary(PointerType, L);
       if (Vector->MoveElementConstructor) {
         auto InsertSlot = snapshot(binary("+", json::Object(NewBegin),
@@ -15851,6 +15847,7 @@ class FunctionLowering {
                     A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
                     A.Context)
               : std::optional<UtilityPairRecord>();
+      std::vector<Expression> PairSources;
       std::vector<Expression> DirectArguments;
       if (DirectConstructor) {
         for (unsigned I = 0; I != Call->getNumArgs(); ++I) {
@@ -15891,18 +15888,8 @@ class FunctionLowering {
             json::Object(*Value), Vector->ElementType, *Unique, Call->getArg(0),
             Call->getNumArgs() == 2 ? Call->getArg(1) : nullptr, L);
       } else if (PairEmplace) {
-        auto First = snapshot(cast(expression(Call->getArg(0)),
-                                   type(PairEmplace->First->getType(), L), L),
-                              L);
-        auto Second = snapshot(cast(expression(Call->getArg(1)),
-                                    type(PairEmplace->Second->getType(), L), L),
-                               L);
+        PairSources = captureUtilityInvocationArguments(Call, 0, 2);
         Value = temporary(type(Vector->ElementType, L), L);
-        initializeZero(json::Object(*Value), Vector->ElementType, L);
-        assign(fieldStorage(json::Object(*Value), PairEmplace->First, L),
-               std::move(First), L);
-        assign(fieldStorage(json::Object(*Value), PairEmplace->Second, L),
-               std::move(Second), L);
       } else if (Call->getNumArgs()) {
         if (Vector->MoveElementConstructor) {
           const auto *Argument = Call->getArg(0);
@@ -15959,6 +15946,9 @@ class FunctionLowering {
       branch(binary("!=", json::Object(End), json::Object(Capacity), "bool", L),
              Append, Grow, L);
       label(Append, L);
+      if (PairEmplace)
+        constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 0,
+                                   PairSources, L);
       if (DirectConstructor)
         ConstructDirect(dereference(json::Object(End), L));
       else if (SourceAddress)
@@ -16017,6 +16007,9 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      if (PairEmplace)
+        constructVectorPairEmplace(json::Object(*Value), *PairEmplace, Call, 0,
+                                   PairSources, L);
       auto OldCurrent = temporary(PointerType, L);
       assign(OldCurrent, json::Object(Begin), L);
       auto NewCurrent = temporary(PointerType, L);
@@ -22499,6 +22492,33 @@ class FunctionLowering {
                    type(A.Context.getPointerType(Array->getElementType()), L),
                    L);
     return Value;
+  }
+  void constructVectorPairEmplace(Expression Target,
+                                  const UtilityPairRecord &Pair,
+                                  const CallExpr *Call, unsigned Offset,
+                                  const std::vector<Expression> &Sources,
+                                  SourceLocation L) {
+    const auto *Function = Call->getDirectCallee();
+    auto First =
+        snapshot(cast(utilityConstructorArgumentValue(
+                          json::Object(Sources[0]),
+                          Function->getParamDecl(Offset)->getType(), L),
+                      type(Pair.First->getType(), L), L),
+                 L);
+    auto Second =
+        snapshot(cast(utilityConstructorArgumentValue(
+                          json::Object(Sources[1]),
+                          Function->getParamDecl(Offset + 1)->getType(), L),
+                      type(Pair.Second->getType(), L), L),
+                 L);
+    // Load forwarding values after allocation and before relocating source
+    // aliases.
+    initializeZero(json::Object(Target), A.Context.getRecordType(Pair.Record),
+                   L);
+    assign(fieldStorage(json::Object(Target), Pair.First, L), std::move(First),
+           L);
+    assign(fieldStorage(std::move(Target), Pair.Second, L), std::move(Second),
+           L);
   }
   void chargeCall(const json::Array &Args, SourceLocation L) {
     std::size_t Nodes = 1;

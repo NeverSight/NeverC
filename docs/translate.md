@@ -664,6 +664,8 @@ Checked function-pointer trait objects can serve as `vector` elements, including
 
 `vector::emplace` and `emplace_back` accept exact checked trait values for either or both fields of an admitted pair element. Const, lvalue, rvalue and checked source-function results use independent pair storage; existing scalar conversions, argument evaluation, growth aliases and returned element references are preserved. Implicit user conversions, unrelated SDK objects and trait-to-callback conversions still require their existing independent proofs. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+Pair fields constructed by vector emplacement also accept checked ordinary function pointers and function references, compatible `noexcept` removal and `nullptr`. Direct lowering preserves callback signatures, source definitions and independent pair storage. Forwarding bindings are captured for all caller arguments before pair field values are read, so later arguments can update referenced values without an early snapshot. Implicit user or trait conversions, volatile pointers and SDK function addresses retain their independent restrictions. On growth, field values are read after the checked source allocation and before existing elements are relocated; in-place construction needs no allocation. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

@@ -228,6 +228,8 @@ Core v2 支持经过检查的全空基类链，涵盖普通／模板构造、复
 
 `vector::emplace` 和 `emplace_back` 可将精确匹配、已校验的 trait 值用于已支持 pair 元素的一项或两项。const、左值、右值及已校验源码函数结果保留独立 pair 存储；现有标量转换、实参求值、扩容别名和返回的元素引用保持正确。隐式用户转换、无关 SDK 对象和 trait 到回调的转换仍须通过原有独立校验。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+vector 原位构造的 pair 字段也支持已校验的普通函数指针和函数引用、兼容的 `noexcept` 去除及 `nullptr`。直接降低保留回调签名、源码定义和独立 pair 存储。先捕获所有调用方实参的转发绑定，再读取 pair 字段值，因此后续实参修改引用值时不会被过早快照。隐式用户或 trait 转换、volatile 指针和 SDK 函数地址仍受各自限制。 扩容时在已校验的源码分配完成后、已有元素搬迁前读取字段值；有剩余容量时直接构造，无须分配。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

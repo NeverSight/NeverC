@@ -228,6 +228,8 @@ Core v2는 검사된 모든 클래스가 빈 기반 클래스 체인에서 일�
 
 `vector::emplace`와 `emplace_back`은 지원되는 pair 요소의 한 필드 또는 두 필드에 타입이 정확히 일치하는 검증된 trait 값을 받습니다. const, lvalue, rvalue, 검증된 소스 함수 결과는 독립적인 pair 저장소를 사용합니다. 기존 스칼라 변환, 인수 평가, 확장 시 별칭, 반환된 요소 참조를 유지합니다. 암시적 사용자 변환, 관련 없는 SDK 객체, trait에서 콜백으로의 변환에는 기존 독립 검증이 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+vector emplace로 생성되는 pair 필드는 검증된 일반 함수 포인터와 함수 참조, 호환되는 `noexcept` 제거, `nullptr`도 받습니다. 직접 변환은 콜백 시그니처, 소스 정의, 독립적인 pair 저장소를 유지합니다. 모든 호출자 인수의 전달 바인딩을 캡처한 뒤 필드 값을 읽으므로 뒤쪽 인수가 참조된 값을 갱신해도 너무 이른 스냅샷이 사용되지 않습니다. 암시적 사용자 또는 trait 변환, volatile 포인터, SDK 함수 주소에는 기존 제한이 적용됩니다. 용량을 늘릴 때는 검증된 소스 할당이 끝난 뒤 기존 요소를 이동하기 전에 필드 값을 읽습니다. 여유 용량이 있으면 할당 없이 생성합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

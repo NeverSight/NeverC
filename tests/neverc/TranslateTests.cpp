@@ -27952,6 +27952,822 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceAllocationBack) {
+  const auto Cpp = tmpFile("vector-pair-emplace-allocation-callback-back.cpp");
+  const auto NC = tmpFile("vector-pair-emplace-allocation-callback-back.nc");
+  writeFile(Cpp, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+int target(int n)noexcept{return n+1;}
+int other(int n)noexcept{return n+2;}
+using F=int(*)(int)noexcept;F selected=target;
+void* operator new(Size n){++allocations;selected=other;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <utility>
+#include <vector>
+int check(){std::vector<std::pair<F,int>> v;v.emplace_back(selected,9);v.reserve(4);selected=target;int before=allocations;v.emplace_back(selected,8);return v[0].first(7)!=9||v[0].second!=9||v[1].first(7)!=8||v[1].second!=8||allocations!=before;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result = translate(Cpp, {"--profile", "cpp-core-v2", "-o", NC.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile(std::string("vector-pair-allocation-") + Optimization);
+    auto Compile =
+        compileGenerated(NC, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceAllocationPosition) {
+  const auto Cpp =
+      tmpFile("vector-pair-emplace-allocation-callback-position.cpp");
+  const auto NC =
+      tmpFile("vector-pair-emplace-allocation-callback-position.nc");
+  writeFile(Cpp, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+int target(int n)noexcept{return n+1;}
+int other(int n)noexcept{return n+2;}
+using F=int(*)(int)noexcept;F selected=target;
+void* operator new(Size n){++allocations;selected=other;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <utility>
+#include <vector>
+int check(){std::vector<std::pair<F,int>> v;v.emplace(v.begin(),selected,9);v.reserve(4);selected=target;int before=allocations;v.emplace(v.begin(),selected,8);return v[1].first(7)!=9||v[1].second!=9||v[0].first(7)!=8||v[0].second!=8||allocations!=before;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result = translate(Cpp, {"--profile", "cpp-core-v2", "-o", NC.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile(std::string("vector-pair-allocation-") + Optimization);
+    auto Compile =
+        compileGenerated(NC, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairEmplaceScalarAllocationBack) {
+  const auto Cpp = tmpFile("vector-pair-emplace-allocation-scalar-back.cpp");
+  const auto NC = tmpFile("vector-pair-emplace-allocation-scalar-back.nc");
+  writeFile(Cpp, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+int selected=3;
+void* operator new(Size n){++allocations;selected=7;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <utility>
+#include <vector>
+int check(){std::vector<std::pair<int,int>> v;v.emplace_back(selected,9);v.reserve(4);selected=3;int before=allocations;v.emplace_back(selected,8);return v[0].first!=7||v[0].second!=9||v[1].first!=3||v[1].second!=8||allocations!=before;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result = translate(Cpp, {"--profile", "cpp-core-v2", "-o", NC.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile(std::string("vector-pair-allocation-") + Optimization);
+    auto Compile =
+        compileGenerated(NC, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairEmplaceScalarAllocationPosition) {
+  const auto Cpp =
+      tmpFile("vector-pair-emplace-allocation-scalar-position.cpp");
+  const auto NC = tmpFile("vector-pair-emplace-allocation-scalar-position.nc");
+  writeFile(Cpp, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+int selected=3;
+void* operator new(Size n){++allocations;selected=7;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <utility>
+#include <vector>
+int check(){std::vector<std::pair<int,int>> v;v.emplace(v.begin(),selected,9);v.reserve(4);selected=3;int before=allocations;v.emplace(v.begin(),selected,8);return v[1].first!=7||v[1].second!=9||v[0].first!=3||v[0].second!=8||allocations!=before;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result = translate(Cpp, {"--profile", "cpp-core-v2", "-o", NC.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile(std::string("vector-pair-allocation-") + Optimization);
+    auto Compile =
+        compileGenerated(NC, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairEmplaceScalarLateReference) {
+  const auto Source = tmpFile("vector-pair-emplace-scalar-late-reference.cpp");
+  const auto Output = tmpFile("vector-pair-emplace-scalar-late-reference.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int selected=3;int change(){selected=7;return 9;}int check(){std::vector<std::pair<int,int>> v;v.emplace_back(selected,change());selected=3;v.emplace(v.begin(),selected,change());return v.size()!=2||v[0].first!=7||v[0].second!=9||v[1].first!=7||v[1].second!=9;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-emplace-scalar-late-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceArgumentOnce) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-argument-once.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-argument-once.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int calls,value_calls;F choose(){++calls;return target;}int value(){++value_calls;return 7;}int check(){std::vector<std::pair<F,int>> v;v.emplace_back(choose(),value());v.emplace(v.begin(),choose(),value());return calls!=2||value_calls!=2||v[1].first(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-argument-once" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceBoth) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-both.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-both.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int other(int n)noexcept{++effects;return n+2;}int check(){std::vector<std::pair<F,F>> v;v.emplace_back(target,other);v.emplace(v.begin(),other,target);return v.size()!=2||v[0].first(7)!=9||v[0].second(7)!=8||effects!=2;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-both" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceConstPointer) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-const-pointer.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-const-pointer.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){const F p=target;std::vector<std::pair<int,F>> v;v.emplace_back(7,p);v.emplace(v.begin(),8,p);return v[0].first!=8||v[1].second(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-const-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceFunction) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-function.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-function.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return v[0].first(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-function" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceGrowthAlias) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-growth-alias.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-growth-alias.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::pair<F,int>> v;v.reserve(1);v.emplace_back(target,7);v.emplace_back(v[0].first,v[0].second);v.emplace(v.begin(),v[1].first,v[1].second);return v.size()!=3||v[0].second!=7||v[2].first(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-growth-alias" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceLateReference) {
+  const auto Source =
+      tmpFile("vector-pair-callback-emplace-late-reference.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-late-reference.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int other(int n)noexcept{++effects;return n+2;}F selected=target;int change(){selected=other;return 7;}int check(){std::vector<std::pair<F,int>> v;v.emplace_back(selected,change());selected=target;v.emplace(v.begin(),selected,change());return v.size()!=2||v[0].first(7)!=9||v[1].first(7)!=9||effects!=2;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-late-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceMixedTrait) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-mixed-trait.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-mixed-trait.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::pair<C,F>> v;v.emplace_back(C{},target);v.emplace(v.begin(),C{},F(target));return v.size()!=2||v[0].first()(7)!=8||v[1].second(7)!=8||effects!=2;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-mixed-trait" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceNoexceptRemoval) {
+  const auto Source =
+      tmpFile("vector-pair-callback-emplace-noexcept-removal.cpp");
+  const auto Output =
+      tmpFile("vector-pair-callback-emplace-noexcept-removal.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+using G=int(*)(int);int check(){std::vector<std::pair<G,int>> v;v.emplace_back(target,7);return v[0].first(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-noexcept-removal" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceNull) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-null.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-null.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::pair<F,int>> v;v.emplace_back(nullptr,7);v.emplace(v.begin(),nullptr,8);return v.size()!=2||v[0].first!=nullptr||v[1].first!=nullptr||v[0].second!=8;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-null" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplacePointer) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-pointer.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-pointer.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::pair<F,int>> v;v.emplace_back(F(target),7);v.emplace(v.begin(),F(target),8);return v.size()!=2||v[0].second!=8||v[1].first(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceSdkConstant) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-sdk-constant.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-sdk-constant.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::pair<F,int>> v;v.emplace_back(C::value,7);v.emplace(v.begin(),C{}(),8);return v.size()!=2||v[0].second!=8||v[1].first(7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-sdk-constant" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPairCallbackEmplaceStaticMember) {
+  const auto Source = tmpFile("vector-pair-callback-emplace-static-member.cpp");
+  const auto Output = tmpFile("vector-pair-callback-emplace-static-member.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+struct S{static int call(int n)noexcept{return n+3;}};int check(){std::vector<std::pair<F,int>> v;v.emplace_back(S::call,7);return v[0].first(7)!=10;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-pair-callback-emplace-static-member" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2VectorPairCallbackEmplaceRetainsSourceAndConversionBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"callback-truth-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<bool,int>> v;v.emplace_back(target,7);return 0;}
+)cpp"},
+      {"declaration-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept;
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return 0;}
+)cpp"},
+      {"implicit-trait-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(C{},7);return 0;}
+)cpp"},
+      {"missing-allocation-definition", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return 0;}
+)cpp"},
+      {"sdk-function-address", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){using G=int&(*)(int&)noexcept;std::vector<std::pair<G,int>> v;v.emplace_back(static_cast<G>(&std::forward<int&>),7);return 0;}
+)cpp"},
+      {"sdk-value-storage", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+const F& alias=C::value;int main(){std::vector<std::pair<F,int>> v;v.emplace_back(alias,7);return 0;}
+)cpp"},
+      {"source-body", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{long double hidden=n;return int(hidden)+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return v[0].first(7)!=8;}
+)cpp"},
+      {"unsupported-member-pointer", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+struct S{int call(int n){return n+1;}};int main(){std::vector<std::pair<int(S::*)(int),int>> v;v.emplace_back(&S::call,7);return 0;}
+)cpp"},
+      {"unsupported-signature", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;long double target(int n)noexcept{++effects;return n+1;}
+using F=long double(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+struct Convert{operator F()const{return target;}};int main(){std::vector<std::pair<F,int>> v;v.emplace_back(Convert{},7);return 0;}
+)cpp"},
+      {"variadic-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n,...)noexcept{++effects;return n+1;}
+using F=int(*)(int,...)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::pair<F,int>> v;v.emplace_back(target,7);return 0;}
+)cpp"},
+      {"volatile-pointer", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){F volatile p=target;std::vector<std::pair<F,int>> v;v.emplace_back(p,7);return 0;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("vector-pair-callback-emplace-reject-") + Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("vector-pair-callback-emplace-reject-") + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitVectorPairEmplaceArgumentOnce) {
   const auto Source =
       tmpFile("function-trait-vector-pair-emplace-argument-once.cpp");

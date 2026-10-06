@@ -228,6 +228,8 @@ Core v2 は検査済みの全要素が空の基底クラス連鎖で、通常／
 
 `vector::emplace` と `emplace_back` は、対応する pair 要素の片方または両方のフィールドに、型が完全一致する検証済み trait 値を受け取れます。const、左辺値、右辺値、検証済みソース関数の結果は独立した pair の格納領域を使います。既存のスカラー変換、引数評価、拡張時のエイリアス、返される要素参照を保持します。暗黙のユーザー変換、無関係な SDK オブジェクト、trait からコールバックへの変換には引き続き独立した検証が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+vector の emplace で構築する pair フィールドは、検証済みの通常の関数ポインターと関数参照、互換な `noexcept` 除去、`nullptr` も受け取れます。直接変換はコールバックのシグネチャ、ソース定義、独立した pair の格納領域を保持します。全呼び出し引数の転送束縛を取得してからフィールド値を読み取るため、後の引数による参照先の更新を早すぎるスナップショットで失いません。暗黙のユーザー・trait 変換、volatile ポインター、SDK 関数アドレスには既存の制限が残ります。 容量拡張時には、検証済みのソース側のメモリ確保後、既存要素の移動前にフィールド値を読み取ります。空き容量がある場合はメモリを確保せず構築します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 準備とスカラー変換
 
 通常の NeverC と標準リソースをインストールすれば利用できます。C++ フロントエンドと承認済み SDK ヘッダーは内蔵されており、Clang の別途インストールは不要です。ビルドの詳細は[フロントエンドの説明](../../utils/translate-frontends/cpp/README.md)を参照してください。

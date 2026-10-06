@@ -8973,6 +8973,20 @@ so references to existing fields remain valid inputs and returned references
 identify the actual stored element. Trait-to-callback conversions still need
 their existing independent argument and operation proofs.
 
+Pair fields in vector emplacement also accept checked ordinary callback
+pointers, function references, compatible `noexcept` removal and `nullptr` through
+the existing callback conversion proof. Callback definitions and original
+signatures remain checked independently. Exact trait fields can share a pair
+with callback fields; evaluated checked SDK trait values remain callback values
+without acquiring SDK storage aliases. Both emplace paths capture all caller
+forwarding bindings before loading pair field values, so a later argument can
+update a referenced scalar or callback value before its copy. The existing
+bindings retain aliases to existing elements. When growing, field values are
+read after the checked source allocation and before existing elements are
+relocated; in-place construction reads them before shifting live elements and
+requires no allocation. Implicit user or trait conversions, volatile pointers, non-static member pointers and SDK function
+addresses retain their independent restrictions.
+
 Core v2 consumes nonnull function-pointer values from the pinned
 `std::integral_constant<Pointer, Function>::value` as checked callback addresses.
 The exact primary and implicit specialization, every record/value redeclaration,
