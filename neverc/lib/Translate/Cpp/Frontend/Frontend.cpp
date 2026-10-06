@@ -6868,8 +6868,14 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
   switch (Info->Operation) {
   case UtilityUniquePtrOperation::MoveAssign:
   case UtilityUniquePtrOperation::ConvertingMoveAssign:
-    if (!utilityUniquePtrMoveAssignmentSource(
-            A, Method, Info->Owner, Info->SourceOwner.value_or(Info->Owner)) ||
+    if (SignatureOnly && Info->SourceOwner &&
+        (!utilityUniquePtrSource(A, Info->SourceOwner->Record, false) ||
+         !utilityUniquePtrElementQueryLayout(A, *Info->SourceOwner,
+                                             Call->getExprLoc())))
+      return std::nullopt;
+    if ((!SignatureOnly && !utilityUniquePtrMoveAssignmentSource(
+                               A, Method, Info->Owner,
+                               Info->SourceOwner.value_or(Info->Owner))) ||
         Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
         Prototype->getNoexceptExpr())
       return std::nullopt;

@@ -9220,9 +9220,7 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
   }
   if (SignatureOnly &&
       (!Method ||
-       !((Method->getOverloadedOperator() == OO_Equal &&
-          !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
-          Method->getParamDecl(0)->getType()->isNullPtrType()) ||
+       !(Method->getOverloadedOperator() == OO_Equal ||
          Method->getOverloadedOperator() == OO_Arrow ||
          Method->getOverloadedOperator() == OO_Star ||
          Method->getOverloadedOperator() == OO_Subscript ||
@@ -9301,9 +9299,16 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
   } else if (Method->getOverloadedOperator() == OO_Equal &&
              Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
              AssignmentResult()) {
-    const auto Source = approvedUtilityUniquePtrRecord(
-        S, SM, Call->getArg(ArgumentIndex)->getType()->getAsCXXRecordDecl(),
-        Context);
+    const auto Source =
+        SignatureOnly
+            ? approvedUtilityUniquePtrLayout(
+                  S, SM,
+                  Call->getArg(ArgumentIndex)->getType()->getAsCXXRecordDecl(),
+                  Context)
+            : approvedUtilityUniquePtrRecord(
+                  S, SM,
+                  Call->getArg(ArgumentIndex)->getType()->getAsCXXRecordDecl(),
+                  Context);
     const auto *Primary = Method->getPrimaryTemplate();
     const auto Parameter = Method->getParamDecl(0)->getType();
     if (!Source || !Primary ||

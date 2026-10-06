@@ -3557,15 +3557,15 @@ signature, without assignment, reset or default deletion bodies. SDK wrapper
 pointees retain checked layout completion; source operands and defaults keep
 their independent checks. No pointer store or deletion is selected by the query.
 Source assignment or delegated-reset replacements and independent member
-addresses remain rejected; pure move-assignment queries gain no permission.
+addresses remain rejected; move assignment keeps its separate exact signature proof.
 
-Result-source queries additionally admit already materialized pinned same-type
+Result-source queries additionally admit exact pinned signatures for same-type
 and const-adding converting move assignment. Scalar and unbounded-array owners
 retain the exact destination `Owner&` result, including bounded inner arrays,
 qualified pointees and same-type stateless custom deleters. Both source and
 destination original types, written designators, casts, source defaults and
-exception specifications keep their ordinary dependencies. The concrete SDK
-wrapper must release that exact source parameter into the destination's pinned
+exception specifications keep their ordinary dependencies. Evaluated move
+assignment requires the concrete SDK wrapper to release that exact source parameter into the destination's pinned
 `reset`, forward its mutable `get_deleter` into an implicit trivial assignment,
 then return `*this`. Array wrappers additionally move the same source's pinned
 stateless bounds checker into an implicit trivial assignment. Private reference
@@ -3574,17 +3574,22 @@ or its already materialized cast body. Const-adding default-deleter conversion
 must select its pinned empty SDK constructor and exact array enable default.
 These inspections neither instantiate private bodies nor give their references
 permission as independent project expressions.
-The query closes only the selected destination deletion, pointee destruction or
+Evaluated move assignment closes only the selected destination deletion, pointee destruction or
 source-defined deleter callback; a borrowed source or receiver needs no unused
 owner or pointee construction. Local initializers, owning temporaries and factory
 operands retain their independent allocation and lifetime proof. Unevaluated
 assignment transfers no pointer, calls no deleter and evaluates no designator,
 default or factory. Ordinary evaluated forms keep right-before-left operator
 ordering, receiver-before-argument explicit member ordering, self-move ownership
-and returned receiver identity. Query-only wrapper bodies, unmaterialized
-converting specializations, source replacements of the assignment or its
-selected delegates and independent member addresses remain rejected. Other
-conversions and custom deleter assignment forms keep their existing boundary.
+and returned receiver identity. Pure move queries authenticate the exact SDK
+declaration chain, checked destination and source owner layouts, mutable
+destination and matching source xvalue, and the resolved Owner&/nonthrowing
+signature. Neither assignment nor release, reset or default deletion bodies are
+required. SDK wrapper pointees retain authenticated layout completion on both
+sides. The query selects no pointer transfer or destination deletion. Source
+replacements of assignment or its delegates and independent member addresses
+remain rejected. Other conversions and custom deleter assignment forms keep
+their existing boundary; owner-comparison queries gain no new permission.
 
 Result-source queries also admit the four already materialized pinned C++17
 `owner == nullptr`, `nullptr == owner`, `owner != nullptr` and `nullptr != owner`
