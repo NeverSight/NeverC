@@ -7463,6 +7463,45 @@ static QualType utilityDefaultDeleteQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Method->getReturnType());
 }
 
+static bool utilityAllocatorConstructQuerySignature(
+    Adapter &A, const CallExpr *Call, const CXXMethodDecl *Method,
+    QualType Element, llvm::ArrayRef<TemplateArgument> Pack,
+    unsigned PointerIndex) {
+  const auto ConstructedPointer = A.Context.getPointerType(Element);
+  if (!Element->isObjectType() || Element->isArrayType() ||
+      Call->getNumArgs() != PointerIndex + Pack.size() + 1 ||
+      !A.Context.hasSameType(Method->getParamDecl(PointerIndex)->getType(),
+                             ConstructedPointer) ||
+      !A.Context.hasSameType(Call->getArg(PointerIndex)->getType(),
+                             ConstructedPointer) ||
+      !utilityMemoryElementQueryLayout(A, Element, Call->getExprLoc()) ||
+      A.type(ConstructedPointer, Call->getExprLoc(), false).empty())
+    return false;
+  for (unsigned Index = 0; Index < Pack.size(); ++Index) {
+    A.chargeExpansion(1, Call->getExprLoc());
+    if (Pack[Index].getKind() != TemplateArgument::Type)
+      return false;
+    const auto ArgumentType = Pack[Index].getAsType();
+    const auto Forwarded = ArgumentType->isLValueReferenceType()
+                               ? ArgumentType
+                               : A.Context.getRValueReferenceType(
+                                     ArgumentType.getNonReferenceType());
+    const auto *Argument = Call->getArg(PointerIndex + Index + 1);
+    if (!A.Context.hasSameType(
+            Method->getParamDecl(PointerIndex + Index + 1)->getType(),
+            Forwarded) ||
+        !A.Context.hasSameType(Argument->getType(),
+                               Forwarded->getPointeeType()) ||
+        (Forwarded->isLValueReferenceType() ? !Argument->isLValue()
+                                            : Argument->isLValue()) ||
+        !utilityMemoryElementQueryLayout(A, Forwarded->getPointeeType(),
+                                         Argument->getExprLoc()) ||
+        A.type(Forwarded, Argument->getExprLoc(), false).empty())
+      return false;
+  }
+  return true;
+}
+
 static QualType utilityAllocatorQuerySource(Adapter &A, const CallExpr *Call) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Member ? Member->getMethodDecl() : nullptr;
@@ -7508,36 +7547,10 @@ static QualType utilityAllocatorQuerySource(Adapter &A, const CallExpr *Call) {
         Arguments->get(0).getKind() != TemplateArgument::Type ||
         Arguments->get(1).getKind() != TemplateArgument::Pack)
       return {};
-    const auto Element = Arguments->get(0).getAsType();
-    const auto Pack = Arguments->get(1).pack_elements();
-    const auto ConstructedPointer = A.Context.getPointerType(Element);
-    if (!Element->isObjectType() || Element->isArrayType() ||
-        Call->getNumArgs() != Pack.size() + 1 ||
-        !Parameter(0, ConstructedPointer) ||
-        !utilityMemoryElementQueryLayout(A, Element, Call->getExprLoc()) ||
-        A.type(ConstructedPointer, Call->getExprLoc(), false).empty())
+    if (!utilityAllocatorConstructQuerySignature(
+            A, Call, Method, Arguments->get(0).getAsType(),
+            Arguments->get(1).pack_elements(), 0))
       return {};
-    for (unsigned Index = 0; Index < Pack.size(); ++Index) {
-      A.chargeExpansion(1, Call->getExprLoc());
-      if (Pack[Index].getKind() != TemplateArgument::Type)
-        return {};
-      const auto ArgumentType = Pack[Index].getAsType();
-      const auto Forwarded = ArgumentType->isLValueReferenceType()
-                                 ? ArgumentType
-                                 : A.Context.getRValueReferenceType(
-                                       ArgumentType.getNonReferenceType());
-      const auto *Argument = Call->getArg(Index + 1);
-      if (!A.Context.hasSameType(Method->getParamDecl(Index + 1)->getType(),
-                                 Forwarded) ||
-          !A.Context.hasSameType(Argument->getType(),
-                                 Forwarded->getPointeeType()) ||
-          (Forwarded->isLValueReferenceType() ? !Argument->isLValue()
-                                              : Argument->isLValue()) ||
-          !utilityMemoryElementQueryLayout(A, Forwarded->getPointeeType(),
-                                           Argument->getExprLoc()) ||
-          A.type(Forwarded, Argument->getExprLoc(), false).empty())
-        return {};
-    }
     Result = A.Context.VoidTy;
     Exception = EST_None;
   } else if (Name == "destroy") {
@@ -7598,6 +7611,147 @@ static QualType utilityAllocatorQuerySource(Adapter &A, const CallExpr *Call) {
     return {};
   // Each exact signature is local to this query. Operand sources and all
   // evaluated storage operations and lifetime proofs stay independent.
+  return A.Context.getCanonicalType(Result);
+}
+
+static QualType utilityAllocatorTraitsQuerySource(Adapter &A,
+                                                  const CallExpr *Call) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto Traits = approvedUtilityAllocatorTraitsRecord(
+      A.S, A.Sources, Method ? Method->getParent() : nullptr, A.Context);
+  if (!A.S.coreV2() || !Method || !Method->getIdentifier() || !Reference ||
+      !Prototype || !Traits || !Method->isStatic() || Method->isVariadic() ||
+      Method->isConst() || Method->getRefQualifier() != RQ_None ||
+      !Method->isInlined() || !Call->isPRValue() || !Call->getNumArgs() ||
+      Call->getNumArgs() != Method->getNumParams() ||
+      Prototype->getNoexceptExpr() ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !utilityUniquePtrSDKRecordSource(A, Traits->Record, "allocator_traits",
+                                       "__memory/allocator_traits.h") ||
+      !utilityUniquePtrSDKRecordSource(
+          A, Traits->Allocator.Record, "allocator", "__memory/allocator.h",
+          {"__fwd/memory.h", "__memory/allocator_traits.h"}) ||
+      !utilitySDKFunctionSource(A, Method, "__memory/allocator_traits.h",
+                                false))
+    return {};
+  const auto &Layout = A.Context.getASTRecordLayout(Traits->Record);
+  if (Layout.getSize().getQuantity() != 1 ||
+      Layout.getAlignment().getQuantity() != 1)
+    return {};
+  const auto Allocator = A.Context.getRecordType(Traits->Allocator.Record);
+  const auto Pointer = A.Context.getPointerType(Traits->Allocator.ElementType);
+  const auto Size = A.Context.getSizeType();
+  const auto Name = Method->getName();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  auto TypeArgument = [&](unsigned Index, QualType Expected) {
+    return Arguments && Index < Arguments->size() &&
+           Arguments->get(Index).getKind() == TemplateArgument::Type &&
+           A.Context.hasSameType(Arguments->get(Index).getAsType(), Expected);
+  };
+  auto IntegralArgument = [&](unsigned Index) {
+    return Arguments && Index < Arguments->size() &&
+           Arguments->get(Index).getKind() == TemplateArgument::Integral &&
+           A.Context.hasSameType(Arguments->get(Index).getIntegralType(),
+                                 A.Context.IntTy);
+  };
+  auto Parameter = [&](unsigned Index, QualType Expected) {
+    return Index < Call->getNumArgs() &&
+           A.Context.hasSameType(Method->getParamDecl(Index)->getType(),
+                                 Expected) &&
+           A.Context.hasSameType(Call->getArg(Index)->getType(), Expected);
+  };
+  auto Ordinary = [&] { return !Method->getPrimaryTemplate() && !Arguments; };
+  QualType Result;
+  ExceptionSpecificationType Exception;
+  bool Const = false;
+  if (Name == "allocate") {
+    if ((Call->getNumArgs() != 2 && Call->getNumArgs() != 3) ||
+        !Parameter(1, Size))
+      return {};
+    if (Call->getNumArgs() == 2) {
+      if (!Ordinary())
+        return {};
+    } else if (!Method->getPrimaryTemplate() || !Arguments ||
+               Arguments->size() != 2 || !TypeArgument(0, Allocator) ||
+               !IntegralArgument(1) ||
+               !Parameter(2, A.Context.getPointerType(
+                                 A.Context.getConstType(A.Context.VoidTy)))) {
+      return {};
+    }
+    Result = Pointer;
+    Exception = EST_None;
+  } else if (Name == "deallocate") {
+    if (!Ordinary() || Call->getNumArgs() != 3 || !Parameter(1, Pointer) ||
+        !Parameter(2, Size))
+      return {};
+    Result = A.Context.VoidTy;
+    Exception = EST_BasicNoexcept;
+  } else if (Name == "construct") {
+    if (!Method->getPrimaryTemplate() || !Arguments || Arguments->size() != 3 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        Arguments->get(1).getKind() != TemplateArgument::Pack ||
+        !IntegralArgument(2) ||
+        !utilityAllocatorConstructQuerySignature(
+            A, Call, Method, Arguments->get(0).getAsType(),
+            Arguments->get(1).pack_elements(), 1))
+      return {};
+    Result = A.Context.VoidTy;
+    Exception = EST_None;
+  } else if (Name == "destroy") {
+    if (!Method->getPrimaryTemplate() || !Arguments || Arguments->size() < 2 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        Call->getNumArgs() != 2)
+      return {};
+    const auto Element = Arguments->get(0).getAsType();
+    if (Arguments->size() == 2) {
+      if (!TypeArgument(0, Traits->Allocator.ElementType) ||
+          !IntegralArgument(1))
+        return {};
+    } else if (Arguments->size() != 3 || !TypeArgument(1, A.Context.VoidTy) ||
+               !IntegralArgument(2)) {
+      return {};
+    }
+    const auto Target = A.Context.getPointerType(Element);
+    if (!Element->isObjectType() || Element->isArrayType() ||
+        !Parameter(1, Target) ||
+        !utilityMemoryElementQueryLayout(A, Element, Call->getExprLoc()) ||
+        A.type(Target, Call->getExprLoc(), false).empty())
+      return {};
+    Result = A.Context.VoidTy;
+    Exception = EST_None;
+  } else if (Name == "max_size" ||
+             Name == "select_on_container_copy_construction") {
+    const bool Maximum = Name == "max_size";
+    if (!Method->getPrimaryTemplate() || !Arguments ||
+        Arguments->size() != (Maximum ? 2u : 3u) ||
+        !TypeArgument(0, Allocator) ||
+        (!Maximum && !TypeArgument(1, A.Context.VoidTy)) ||
+        !IntegralArgument(Maximum ? 1 : 2) || Call->getNumArgs() != 1)
+      return {};
+    Result = Maximum ? Size : Allocator;
+    Exception = Maximum ? EST_BasicNoexcept : EST_None;
+    Const = true;
+  } else {
+    return {};
+  }
+  const auto Receiver = Const ? A.Context.getConstType(Allocator) : Allocator;
+  if (!A.Context.hasSameType(Method->getParamDecl(0)->getType(),
+                             A.Context.getLValueReferenceType(Receiver)) ||
+      !A.Context.hasSameType(Call->getArg(0)->getType(), Receiver) ||
+      (!Const && !Call->getArg(0)->isLValue()) ||
+      Prototype->getExceptionSpecType() != Exception ||
+      !A.Context.hasSameType(Method->getReturnType(), Result) ||
+      !A.Context.hasSameType(Call->getType(), Result) ||
+      !utilityMemoryElementQueryLayout(A, Traits->Allocator.ElementType,
+                                       Call->getExprLoc()) ||
+      A.type(Pointer, Call->getExprLoc(), false).empty())
+    return {};
+  // The exact traits signature carries this query. No forwarding, fallback,
+  // allocation, selected copy or lifetime body is needed or authorized here.
   return A.Context.getCanonicalType(Result);
 }
 
@@ -14716,6 +14870,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityAllocatorTraitsQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =

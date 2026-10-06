@@ -3229,6 +3229,28 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure pinned `allocator_traits` allocation, deallocation, construction,
+destruction, `max_size` and copy-selection queries authenticate exact public
+static signatures and declaration chains without forwarding or fallback bodies.
+The checked allocator and empty one-byte traits class retain exact template
+sources. Allocation returns the concrete element pointer and remains potentially
+throwing; deallocation retains `void` and nonthrowing metadata. Construction and
+destruction retain `void` and potentially throwing metadata. `max_size` retains
+the SDK size result and nonthrowing metadata; copy selection retains the exact
+allocator result and potentially throwing metadata.
+
+Concrete allocator parameters, pointer/count/hint parameters, template selector
+types and integral selectors remain checked. Construction shares the exact
+forwarding-pack and reference-collapse proof with allocator member queries.
+Destruction also admits the checked public fallback signature for a distinct
+source object type. Allocator, target and forwarded-element layouts remain
+independent, including authenticated SDK wrappers and source records with deleted
+lifetime operations. Original receiver, operand, template, selected default and
+source-function dependencies remain checked. Queries invoke no operands,
+forwarding, fallback, allocation, copy, construction, destruction or cleanup.
+Source traits/member replacements and independent function addresses remain
+rejected. Evaluated operations keep their complete storage and lifetime proofs.
+
 Pure pinned allocator `construct` and `destroy` call queries authenticate their
 exact mutable-receiver, `void`, potentially throwing signatures without member
 bodies. Construction authenticates the concrete target pointer and two template
@@ -3244,8 +3266,8 @@ operation. Original receiver, pointer, argument, written template, selected
 default and source-function dependencies remain independent. Queries invoke no
 operands, placement construction, destructors or cleanup. Independent member
 addresses and source member replacements remain rejected. Evaluated construction
-and destruction retain their complete SDK-body and lifetime proofs; allocator
-traits keep their separate existing query boundaries.
+and destruction retain their complete SDK-body and lifetime proofs. Evaluated
+traits operations retain complete forwarding and lifetime proofs.
 
 Pure pinned allocator `allocate`, `deallocate`, `address` and `max_size`
 queries authenticate exact public constness, parameter and return types,
@@ -3264,8 +3286,8 @@ no allocation, bounds calculation or storage. Queries invoke no operands,
 allocation, address read, deallocation, construction or cleanup. Evaluated
 operations keep their complete method, allocation-limit and lifetime proofs.
 Source allocator or method replacements and independent member addresses
-remain rejected; allocator-traits operations keep their separate existing
-boundaries.
+remain rejected; evaluated traits operations keep their complete storage and
+lifetime proofs.
 
 Pure scalar and unbounded-array `default_delete` call-result queries authenticate
 the exact pinned inline const call operator, its declaration chain, checked
