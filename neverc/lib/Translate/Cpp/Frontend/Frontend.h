@@ -1815,7 +1815,7 @@ public:
   std::vector<clang::VarDecl *> Globals;
   std::map<const clang::VarDecl *, json::Object> ConstantStaticInitializers;
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
-  std::map<const clang::DeclRefExpr *, const clang::CallExpr *>
+  std::map<const clang::DeclRefExpr *, const clang::Stmt *>
       SDKFunctionConstantValueUses;
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;

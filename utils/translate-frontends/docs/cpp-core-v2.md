@@ -8908,12 +8908,17 @@ Default ABI and checked `noexcept` removal retain the normal callback proofs.
 
 These values lower through the existing function-address operation and may be
 stored in admitted callbacks or passed to direct callback calls, `invoke`,
-`apply` and function-address template arguments. The exact authenticated
-invoke/apply callable operand consumes a pointer value even when Clang marks
-its forwarding-reference argument as an ODR use; that exception belongs to the
-particular dispatch and reference node. Other reference bindings retain the
-storage rejection. They create no SDK global or
-trait object. Original written aliases, function signature and template value
+`apply` and function-address template arguments. Checked pair/tuple element
+construction and `make_pair`/`make_tuple` also copy these values into function-pointer
+value elements, including callback slots in otherwise mixed-reference records.
+The exact authenticated callable or value-element operand consumes a pointer
+value even when Clang marks its forwarding-reference argument as an ODR use;
+that exception belongs to the particular operation and reference node.
+Constructors require the checked element-construction kind, factories retain
+their exact selected copy graph, and each destination must be a function-pointer
+value slot. Reference-element destinations, `ref`/`cref`, `tie`,
+`forward_as_tuple` and user reference bindings retain the storage rejection.
+Forwarding uses a local pointer carrier and creates no SDK global or trait object. Original written aliases, function signature and template value
 sources remain checked before folding, and evaluated addresses require the
 selected source definition and checked body. Address-taking or reference
 binding to the trait constant itself remains rejected; this path exposes its

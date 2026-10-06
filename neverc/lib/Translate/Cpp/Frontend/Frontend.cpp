@@ -14695,6 +14695,26 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   std::set<const CallExpr *> ArraySwapQuerySources;
   std::set<const TypeTraitExpr *> ArraySwapOperationQueries;
+  void retainSDKFunctionConstantValue(const Expr *Value, QualType Destination,
+                                      const Stmt *Consumer) {
+    if (!Value || Destination.isNull() || !Destination->isFunctionPointerType())
+      return;
+    const auto *Reference = dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts());
+    if (!Reference ||
+        !approvedSDKFunctionConstant(
+            A.S, A.Sources, dyn_cast<VarDecl>(Reference->getDecl()), A.Context))
+      return;
+    // Only this authenticated operation copies the pointer value. Reference
+    // destinations receive no exception to the trait storage boundary.
+    auto [Entry, Inserted] =
+        A.SDKFunctionConstantValueUses.emplace(Reference, Consumer);
+    if (Inserted)
+      A.chargeExpansion(1, Reference->getExprLoc());
+    else if (Entry->second != Consumer)
+      A.reject(
+          Reference->getExprLoc(), "trait pointer value source",
+          "A trait value reference requires its exact consuming operation.");
+  }
   void collectOperationSource(const Stmt *S) {
     if (auto Found = MemberPointerCarrierSources.find(S);
         Found != MemberPointerCarrierSources.end())
@@ -14750,23 +14770,69 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
       if (Operation == UtilityOperation::FunctionalInvoke ||
           Operation == UtilityOperation::TupleApply)
-        if (const auto *Reference =
-                dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts());
-            Reference &&
-            approvedSDKFunctionConstant(A.S, A.Sources,
-                                        dyn_cast<VarDecl>(Reference->getDecl()),
-                                        A.Context)) {
-          // These exact pinned dispatches only read the callable pointer.
-          // Their forwarding reference does not expose trait storage identity.
-          auto [Entry, Inserted] =
-              A.SDKFunctionConstantValueUses.emplace(Reference, Call);
-          if (Inserted)
-            A.chargeExpansion(1, Call->getExprLoc());
-          else if (Entry->second != Call)
-            A.reject(Call->getExprLoc(), "trait callable value source",
-                     "A trait value reference requires its exact consuming "
-                     "dispatch.");
+        retainSDKFunctionConstantValue(Call->getArg(0),
+                                       Call->getArg(0)->getType(), Call);
+      if (Operation == UtilityOperation::MakePair && Call->getNumArgs() == 2) {
+        auto Pair = approvedUtilityPairRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Pair)
+          Pair = approvedUtilityMixedReferencePairRecord(
+              A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (Pair && approvedUtilityMakePairSelectedCopies(A.S, A.Sources, Call,
+                                                          *Pair, A.Context)) {
+          retainSDKFunctionConstantValue(Call->getArg(0),
+                                         Pair->First->getType(), Call);
+          retainSDKFunctionConstantValue(Call->getArg(1),
+                                         Pair->Second->getType(), Call);
         }
+      }
+      if (Operation == UtilityOperation::MakeTuple) {
+        auto Tuple = approvedUtilityTupleRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Tuple)
+          Tuple = approvedUtilityMixedReferenceTupleRecord(
+              A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (Tuple && Tuple->Elements.size() == Call->getNumArgs() &&
+            approvedUtilityMakeTupleSelectedCopies(A.S, A.Sources, Call, *Tuple,
+                                                   A.Context))
+          for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+            retainSDKFunctionConstantValue(Call->getArg(I),
+                                           Tuple->Elements[I]->getType(), Call);
+      }
+    }
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
+      if (const auto Kind = approvedUtilityPairConstruction(
+              A.S, A.Sources, Construction, A.Context);
+          Kind == UtilityPairConstruction::Elements) {
+        auto Pair = approvedUtilityPairRecord(
+            A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Pair)
+          Pair = approvedUtilityMixedReferencePairRecord(
+              A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl(),
+              A.Context);
+        if (Pair && Construction->getNumArgs() == 2) {
+          retainSDKFunctionConstantValue(Construction->getArg(0),
+                                         Pair->First->getType(), Construction);
+          retainSDKFunctionConstantValue(Construction->getArg(1),
+                                         Pair->Second->getType(), Construction);
+        }
+      } else if (const auto Kind = approvedUtilityTupleConstruction(
+                     A.S, A.Sources, Construction, A.Context);
+                 Kind == UtilityTupleConstruction::Elements) {
+        auto Tuple = approvedUtilityTupleRecord(
+            A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Tuple)
+          Tuple = approvedUtilityMixedReferenceTupleRecord(
+              A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl(),
+              A.Context);
+        if (Tuple && Tuple->Elements.size() == Construction->getNumArgs())
+          for (unsigned I = 0; I < Construction->getNumArgs(); ++I)
+            retainSDKFunctionConstantValue(Construction->getArg(I),
+                                           Tuple->Elements[I]->getType(),
+                                           Construction);
+      }
     }
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;

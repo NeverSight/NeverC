@@ -385,7 +385,7 @@ class FunctionLowering {
     }
     if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
       if (A.S.coreV2() && A.SDKFunctionConstantValueUses.count(R)) {
-        // The authenticated SDK dispatch reads only this pointer value. Give
+        // The authenticated SDK operation reads only this pointer value. Give
         // its forwarding parameter a local carrier, without SDK storage.
         auto Place = temporary(type(R->getType(), L), L);
         assign(Place, expression(R), L);
