@@ -4130,8 +4130,13 @@ referents retain their qualification when selecting the copy. All caller
 operands complete before the referent is read and copied into independent
 parameter storage. Selected default effects and parameter cleanup retain the
 SDK invocation's lifetime. Source member and call-operator dispatch share this
-proof. SDK record value parameters, union referents, replacement wrapper
+proof. Other SDK record value parameters, union referents, replacement wrapper
 conversions and independently unsupported constructors retain their diagnostics.
+Checked function-pointer trait wrappers also provide exact by-value trait
+parameters through these invocation paths using the pinned SDK copy constructor,
+wrapper conversion and forwarded parameter identity. Their independent one-byte
+carrier, source target checks and SDK storage restrictions follow the
+[trait object contract](#function-pointer-trait-constants).
 
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and
@@ -9195,6 +9200,20 @@ carrier copy; SDK constructors are never emitted as source-owned runtime calls.
 Other owned arguments retain their selected source constructors, default argument
 effects and cleanup. Other trait domains, SDK storage aliases and unsupported
 selected source bodies remain rejected.
+
+Authenticated wrappers around these exact function-pointer trait objects also
+provide by-value trait parameters through `invoke`, `apply` and direct wrapped
+calls, including source call operators and member functions. The pinned wrapper
+conversion must consume the matching forwarded SDK parameter, and the selected
+trait constructor must be the existing authenticated copy of the same
+unqualified trait type. Const referents retain their qualification; an xvalue
+wrapper still supplies its lvalue referent. Lowering reads the wrapper's current
+pointer after caller operands complete and copies the empty carrier into
+independent one-byte parameter storage. Callable and operand effects occur once,
+and no SDK constructor or static `value` storage is emitted. The original source
+function targets, actual trait layout and consumed operations retain their
+existing proofs. Other trait domains, unsupported targets, replacement wrapper
+conversions and SDK `value` storage aliases retain their diagnostics.
 
 The functional result check also admits these exact authenticated trait records
 for by-value `invoke` and `apply` results. Existing record result destinations

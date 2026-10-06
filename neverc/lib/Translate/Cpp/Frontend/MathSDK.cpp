@@ -3252,12 +3252,15 @@ approvedFunctionalReferenceArgumentValue(const State &S,
       !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
       S.owns(SM, Definition->getLocation()) &&
       Context.hasSameUnqualifiedType(Wrapper->ReferentType, Parameter);
+  const bool TraitRecord =
+      Wrapper && functionTraitObjectValue(S, SM, ParameterRecord, Context) &&
+      Context.hasSameUnqualifiedType(Wrapper->ReferentType, Parameter);
   return Wrapper && ((Parameter->isFunctionPointerType() &&
                       utilityCallbackDirectConversion(
                           Context, Wrapper->ReferentType, Parameter)) ||
                      utilityScalarDirectConversion(
                          Context, Wrapper->ReferentType, Parameter) ||
-                     SourceRecord)
+                     SourceRecord || TraitRecord)
              ? Wrapper
              : std::nullopt;
 }
@@ -12270,6 +12273,10 @@ approvedUtilityMakeTupleSelectedCopies(
   return Copies;
 }
 
+static bool approvedFunctionalInvokeReferenceWrapperFlow(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ParmVarDecl *Parameter, QualType Target, const ASTContext &Context);
+
 // A pinned trait copy creates independent empty parameter storage. Prove its
 // selected SDK constructor and exact forwarding path without emitting an SDK
 // constructor as a source-owned runtime call.
@@ -12298,15 +12305,23 @@ static bool functionalInvokeTraitValue(const State &S, const SourceManager &SM,
       Constructor->isMoveConstructor()
           ? Context.getRValueReferenceType(Record)
           : Context.getLValueReferenceType(Record.withConst());
-  const auto ForwardedType =
+  const auto WrittenForwardedType =
       ForwardedSource ? ForwardedSource->getType()
                       : ForwardedParameter->getType().getNonReferenceType();
+  const auto Wrapper = approvedFunctionalReferenceArgumentValue(
+      S, SM, Context, Target, WrittenForwardedType);
+  const auto ForwardedType =
+      Wrapper ? Wrapper->ReferentType : WrittenForwardedType;
   const bool LValue =
-      ForwardedSource ? ForwardedSource->isLValue()
-                      : ForwardedParameter->getType()->isLValueReferenceType();
+      Wrapper ? true
+      : ForwardedSource
+          ? ForwardedSource->isLValue()
+          : ForwardedParameter->getType()->isLValueReferenceType();
   const bool XValue =
-      ForwardedSource ? ForwardedSource->isXValue()
-                      : ForwardedParameter->getType()->isRValueReferenceType();
+      Wrapper ? false
+      : ForwardedSource
+          ? ForwardedSource->isXValue()
+          : ForwardedParameter->getType()->isRValueReferenceType();
   return Context.hasSameType(Constructor->getParamDecl(0)->getType(),
                              ExpectedParameter) &&
          Context.hasSameUnqualifiedType(Argument->getType(), ForwardedType) &&
@@ -12316,7 +12331,10 @@ static bool functionalInvokeTraitValue(const State &S, const SourceManager &SM,
           Argument->getType().isConstQualified()) &&
          Argument->isLValue() == LValue && Argument->isXValue() == XValue &&
          (!Constructor->isMoveConstructor() || Argument->isXValue()) &&
-         functionalInvokeParameterReference(Argument, ForwardedParameter);
+         (functionalInvokeParameterReference(Argument, ForwardedParameter) ||
+          (Wrapper && Constructor->isCopyConstructor() &&
+           approvedFunctionalInvokeReferenceWrapperFlow(
+               S, SM, Argument, ForwardedParameter, Target, Context)));
 }
 
 static bool approvedFunctionalInvokeReferenceWrapperFlow(
@@ -13912,8 +13930,11 @@ static bool approvedUtilityTupleApplyTraitValue(
   if (!Apply || Index >= Apply->Tuple.size() || !Operation ||
       Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
       Parameter.isNull() ||
-      !Context.hasSameUnqualifiedType(
-          Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter))
+      (!Context.hasSameUnqualifiedType(
+           Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter) &&
+       !approvedFunctionalReferenceArgumentValue(
+           S, SM, Context, Parameter,
+           Apply->Tuple.elementType(Index).getNonReferenceType())))
     return false;
   return functionalInvokeTraitValue(
       S, SM, Operation->getArg(Index + Offset),
