@@ -9866,6 +9866,19 @@ class FunctionLowering {
                      quantity(Index, type(A.Context.getSizeType(), L), L),
                      type(Element, L), L);
       };
+      auto ApplyReferenceArgument = [&](Expression Element, unsigned Index,
+                                        QualType Parameter) {
+        const auto SourceType = Tuple->elementType(Index).getNonReferenceType();
+        if (const auto Binding = approvedFunctionalReferenceArgumentBinding(
+                A.S, A.Sources, A.Context, Parameter, SourceType))
+          return snapshot(cast(ReferenceMember(std::move(Element), *Binding),
+                               type(Parameter, L), L),
+                          L);
+        return snapshot(
+            cast(address(std::move(Element), Parameter->getPointeeType(), L),
+                 type(Parameter, L), L),
+            L);
+      };
       bool InvocationFullExpression = false;
       auto FinishInvocation = [&](Expression Result) {
         // Calls have already captured their scalar result, reference address
@@ -9950,10 +9963,8 @@ class FunctionLowering {
             const auto Parameter = Method->getParamDecl(I)->getType();
             auto Element = ApplyElement(json::Object(TupleValue), I + 1);
             if (Parameter->isReferenceType()) {
-              auto Pointer =
-                  address(std::move(Element), Parameter->getPointeeType(), L);
-              Arguments.push_back(snapshot(
-                  cast(std::move(Pointer), type(Parameter, L), L), L));
+              Arguments.push_back(
+                  ApplyReferenceArgument(std::move(Element), I + 1, Parameter));
             } else if (recordValue(Parameter)) {
               const auto *Copy =
                   I < MemberCallable->SelectedCopies.size()
@@ -10055,10 +10066,8 @@ class FunctionLowering {
           auto Element =
               ApplyElement(json::Object(TupleValue), I);
           if (Parameter->isReferenceType()) {
-            auto Pointer =
-                address(std::move(Element), Parameter->getPointeeType(), L);
             Arguments.push_back(
-                snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
+                ApplyReferenceArgument(std::move(Element), I, Parameter));
           } else if (recordValue(Parameter)) {
             const auto *Copy =
                 I < ReferenceCallable->SelectedCopies.size()
@@ -10179,10 +10188,8 @@ class FunctionLowering {
         auto Element =
             ApplyElement(json::Object(TupleValue), I);
         if (Parameter->isReferenceType()) {
-          auto Pointer =
-              address(std::move(Element), Parameter->getPointeeType(), L);
           Arguments.push_back(
-              snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
+              ApplyReferenceArgument(std::move(Element), I, Parameter));
         } else if (recordValue(Parameter)) {
           const auto *Copy = approvedUtilityTupleApplySelectedCopy(
               A.S, A.Sources, Call, I, Parameter, A.Context);
@@ -22444,8 +22451,20 @@ class FunctionLowering {
                                        QualType Parameter,
                                        const CXXConstructExpr *Copy,
                                        SourceLocation L) {
-    if (Parameter->isReferenceType())
+    if (Parameter->isReferenceType()) {
+      if (const auto Binding = approvedFunctionalReferenceArgumentBinding(
+              A.S, A.Sources, A.Context, Parameter,
+              Forwarded.getNonReferenceType())) {
+        auto Wrapper = dereference(std::move(Source), L);
+        Source = snapshot(Expression{{"kind", "member"},
+                                     {"type", type(Binding->PointerType, L)},
+                                     {"name", "nct_reference_wrapper_pointer"},
+                                     {"args", json::Array{std::move(Wrapper)}},
+                                     {"loc", A.loc(L)}},
+                          L);
+      }
       return snapshot(cast(std::move(Source), type(Parameter, L), L), L);
+    }
     if (recordValue(Parameter)) {
       auto Place = objectTemporary(Parameter, L);
       if (Copy)

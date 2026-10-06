@@ -1286,6 +1286,30 @@ approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
   return FunctionalObjectConstruction::CopyOrMove;
 }
 
+std::optional<FunctionalReferenceRecord>
+approvedFunctionalReferenceArgumentBinding(const State &S,
+                                           const SourceManager &SM,
+                                           const ASTContext &Context,
+                                           QualType Parameter,
+                                           QualType Argument) {
+  if (Parameter.isNull() || !Parameter->isLValueReferenceType() ||
+      Argument.isNull() || Argument->isReferenceType() ||
+      Argument.isVolatileQualified() || Argument.isRestrictQualified() ||
+      Argument.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const auto Referent = Parameter->getPointeeType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Argument->getAsCXXRecordDecl(), Context);
+  return Wrapper &&
+                 supportedFunctionalReferenceValue(S, SM, Context, Referent) &&
+                 Context.hasSameUnqualifiedType(Referent,
+                                                Wrapper->ReferentType) &&
+                 (Referent.isConstQualified() ||
+                  !Wrapper->ReferentType.isConstQualified())
+             ? Wrapper
+             : std::nullopt;
+}
+
 std::optional<FunctionalReferenceConstruction>
 approvedFunctionalReferenceConstruction(
     const State &S, const SourceManager &SM,
@@ -12007,12 +12031,36 @@ static bool functionalInvokeTraitValue(const State &S, const SourceManager &SM,
          functionalInvokeParameterReference(Argument, ForwardedParameter);
 }
 
+static bool approvedFunctionalInvokeReferenceWrapperFlow(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ParmVarDecl *Parameter, QualType Target, const ASTContext &Context) {
+  if (!Parameter || !Parameter->getType()->isReferenceType())
+    return false;
+  const auto Binding = approvedFunctionalReferenceArgumentBinding(
+      S, SM, Context, Target, Parameter->getType().getNonReferenceType());
+  const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto Access = Conversion ? approvedFunctionalReferenceAccessCallImpl(
+                                       S, SM, Conversion, Context, false)
+                                 : std::nullopt;
+  return Binding && Conversion &&
+         isa_and_nonnull<CXXConversionDecl>(Conversion->getDirectCallee()) &&
+         Access && !Access->ObjectIsArrow &&
+         Binding->Record->getCanonicalDecl() ==
+             Access->Wrapper.Record->getCanonicalDecl() &&
+         (functionalInvokeParameterReference(Access->Object, Parameter) ||
+          approvedFunctionalForwardingCall(S, SM, Access->Object, Parameter));
+}
+
 static bool approvedFunctionalInvokeArgumentFlow(
     const State &S, const SourceManager &SM, const Expr *Expression,
     const ParmVarDecl *Parameter, QualType Target,
     const ASTContext &Context, bool AllowConstructorDefaults = false) {
   if (functionalInvokeParameterReference(Expression, Parameter) ||
       approvedFunctionalForwardingCall(S, SM, Expression, Parameter))
+    return true;
+  if (approvedFunctionalInvokeReferenceWrapperFlow(S, SM, Expression, Parameter,
+                                                   Target, Context))
     return true;
   if (Target.isNull() || !Target->isRecordType())
     return false;
@@ -12153,6 +12201,9 @@ supportedFunctionalInvokeReferenceArgument(const State &S,
     return false;
   const auto Referent = Parameter->getPointeeType();
   const auto Argument = ArgumentExpression->getType();
+  if (approvedFunctionalReferenceArgumentBinding(S, SM, Context, Parameter,
+                                                 Argument))
+    return true;
   return supportedFunctionalInvokeReference(S, SM, Context, Referent) &&
          (Referent->isFunctionType() ? ArgumentExpression->isLValue()
           : Parameter->isLValueReferenceType()
@@ -13630,17 +13681,20 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
           : Parameter->isLValueReferenceType()
               ? (ElementIsLValue || ParameterReferent.isConstQualified())
               : !ElementIsLValue;
-      Supported = Category &&
-                  supportedFunctionalInvokeReference(S, SM, Context,
-                                                     ParameterReferent) &&
-                  Context.hasSameUnqualifiedType(ParameterReferent, Element) &&
-                  (!StoredElement->isReferenceType() ||
-                   ParameterReferent.isAtLeastAsQualifiedAs(Element,
-                                                            Context)) &&
-                  !ParameterReferent.isVolatileQualified() &&
-                  (StoredElement->isReferenceType() ||
-                   ParameterReferent.isConstQualified() ||
-                   !TupleArgument.isConstQualified());
+      Supported =
+          approvedFunctionalReferenceArgumentBinding(S, SM, Context, Parameter,
+                                                     Element)
+              .has_value() ||
+          (Category &&
+           supportedFunctionalInvokeReference(S, SM, Context,
+                                              ParameterReferent) &&
+           Context.hasSameUnqualifiedType(ParameterReferent, Element) &&
+           (!StoredElement->isReferenceType() ||
+            ParameterReferent.isAtLeastAsQualifiedAs(Element, Context)) &&
+           !ParameterReferent.isVolatileQualified() &&
+           (StoredElement->isReferenceType() ||
+            ParameterReferent.isConstQualified() ||
+            !TupleArgument.isConstQualified()));
     } else {
       Supported = (TraitValue ||
                    supportedFunctionalByValue(S, SM, Context, Parameter) ||
@@ -31133,6 +31187,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Parameter->isReferenceType()) {
         const auto ParameterReferent = Parameter->getPointeeType();
         const auto TupleArgument = Call->getArg(1)->getType();
+        if (approvedFunctionalReferenceArgumentBinding(S, SM, Context,
+                                                       Parameter, Element)) {
+          const auto Apply =
+              approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+          const auto *Selected =
+              Apply ? dyn_cast_or_null<CallExpr>(Apply->Operation) : nullptr;
+          if (!Selected || Selected->getNumArgs() != Tuple->size() ||
+              !approvedFunctionalInvokeReferenceWrapperFlow(
+                  S, SM, Selected->getArg(I),
+                  Apply->DispatchFunction->getParamDecl(I + 1), Parameter,
+                  Context))
+            return std::nullopt;
+          continue;
+        }
         const bool ElementIsLValue = Element->isFunctionType() ||
                                      StoredElement->isLValueReferenceType() ||
                                      Call->getArg(1)->isLValue();

@@ -4072,6 +4072,20 @@ referenced object or function; object forms also lower the implicit `T&`
 conversion. These operations preserve object qualification and accept object
 or raw-pointer receivers. Volatile referents remain outside this boundary.
 
+Admitted wrapper values can also bind matching supported lvalue-reference
+callback parameters through `std::invoke` and `std::apply`, including explicit
+tuples of wrapper values. The selected conversion must be the pinned wrapper's
+exact nonthrowing conversion, applied to the authenticated forwarded SDK
+parameter. Its referent type must match the parameter after removing top-level
+cv qualification, and the binding cannot discard `const`. Lowering reads the
+wrapper's checked pointer field after caller arguments have been evaluated,
+then passes the original referent address. Primitive, admitted source-object,
+array, function and function-pointer trait referents retain their existing
+source and layout checks. User-call, member-call and wrapped-callable dispatch
+use the same parameter proof. Wrapper conversions to by-value parameters,
+arbitrary source conversions, volatile referents and aliases of SDK trait
+`value` storage remain excluded. Source callback bodies are still checked.
+
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and
 wrapper-taking overloads retain the exact wrapper type and referent

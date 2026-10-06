@@ -382,6 +382,12 @@ bool approvedFunctionalReferenceMetadata(const State &S,
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<FunctionalReferenceRecord>
+approvedFunctionalReferenceArgumentBinding(const State &S,
+                                           const clang::SourceManager &SM,
+                                           const clang::ASTContext &Context,
+                                           clang::QualType Parameter,
+                                           clang::QualType Argument);
 enum class FunctionalReferenceConstruction { Direct, CopyOrMove };
 std::optional<FunctionalReferenceConstruction>
 approvedFunctionalReferenceConstruction(

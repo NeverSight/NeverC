@@ -79,6 +79,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 經驗證的函式指標 trait 物件也可作為 `array` 元素。初始化、const 存取、複製／移動、巢狀及零長度陣列、`fill` 和成員／自由函式 `swap` 保留既有儲存與操作檢查。不同元素保持不同位址；volatile 元素及其他 trait 類型仍不受支援。 預設物件與空陣列保留未使用 `value` 初始化器的延遲實例化；實際 `value` 運算式仍須通過既有常數求值檢查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
+經驗證的 `reference_wrapper` 引數現在可透過 `invoke` 和 `apply` 繫結相符且受支援的左值參考參數，包括明確儲存包裝器值的 tuple。固定 SDK 的精確轉換及轉送參數均須通過認證。呼叫保留原參考目標的位址、寫入效果和 const 限定。包裝器向傳值參數的轉換、任意原始碼轉換及 volatile 參考目標仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 Core v2 一元型別轉換現檢查原始輸入、實際替換後的原始碼與結果，包括最終型別中消失的別名範本參數。固定版本的十六種轉換沿用既有型別中繼資料與執行期型別，原生驗證仍僅在 CI 執行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索引為非負常數整數，也支援固定陣列型別搭配模板索引。折疊前仍檢查型別和索引原始碼；不支援的陣列型別與隱含類別轉換索引仍被拒絕。原生結果須由實作版本的 CI 驗證。 未知長度陣列（如 `int[][3]`）的型別中繼資料、別名和範本引數現可保留維度、為零的外層長度及已知內層界限。執行時期型別和操作查詢仍遵循各自限制；標準標頭及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
