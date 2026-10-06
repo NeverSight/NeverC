@@ -3244,11 +3244,20 @@ approvedFunctionalReferenceArgumentValue(const State &S,
     return std::nullopt;
   const auto Wrapper = approvedFunctionalReferenceRecord(
       S, SM, Argument->getAsCXXRecordDecl(), Context);
+  const auto *ParameterRecord = Parameter->getAsCXXRecordDecl();
+  const auto *Definition =
+      ParameterRecord ? ParameterRecord->getDefinition() : nullptr;
+  const bool SourceRecord =
+      Wrapper && Definition && !Definition->isUnion() &&
+      !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
+      S.owns(SM, Definition->getLocation()) &&
+      Context.hasSameUnqualifiedType(Wrapper->ReferentType, Parameter);
   return Wrapper && ((Parameter->isFunctionPointerType() &&
                       utilityCallbackDirectConversion(
                           Context, Wrapper->ReferentType, Parameter)) ||
                      utilityScalarDirectConversion(
-                         Context, Wrapper->ReferentType, Parameter))
+                         Context, Wrapper->ReferentType, Parameter) ||
+                     SourceRecord)
              ? Wrapper
              : std::nullopt;
 }
@@ -12358,17 +12367,20 @@ static bool approvedFunctionalInvokeArgumentFlow(
   const auto *Definition = Target->getAsCXXRecordDecl();
   Definition = Definition ? Definition->getDefinition() : nullptr;
   return Construction && Constructor && Definition &&
-         (AllowConstructorDefaults
-              ? utilitySelectedSourceConstructorArguments(S, SM, Construction,
-                                                           Context)
-              : Construction->getNumArgs() == 1 &&
-                    Constructor->getNumParams() == 1) &&
+         (AllowConstructorDefaults ? utilitySelectedSourceConstructorArguments(
+                                         S, SM, Construction, Context)
+                                   : Construction->getNumArgs() == 1 &&
+                                         Constructor->getNumParams() == 1) &&
          Constructor->isCopyOrMoveConstructor() &&
          Constructor->getParent()->getCanonicalDecl() ==
              Definition->getCanonicalDecl() &&
          S.owns(SM, Constructor->getLocation()) &&
          Context.hasSameUnqualifiedType(Construction->getType(), Target) &&
-         functionalInvokeParameterReference(Construction->getArg(0), Parameter);
+         (functionalInvokeParameterReference(Construction->getArg(0),
+                                             Parameter) ||
+          (Constructor->isCopyConstructor() &&
+           approvedFunctionalInvokeReferenceWrapperFlow(
+               S, SM, Construction->getArg(0), Parameter, Target, Context)));
 }
 
 static const CXXConstructExpr *functionalInvokeSelectedCopy(
@@ -12385,13 +12397,22 @@ static const CXXConstructExpr *functionalInvokeSelectedCopy(
   const auto *Constructor = Construction->getConstructor();
   const auto Source = Constructor->getParamDecl(0)->getType();
   const auto *SelectedSource = Construction->getArg(0);
+  const auto Wrapper = approvedFunctionalReferenceArgumentValue(
+      S, SM, Context, Target, ForwardedSource->getType());
+  const auto ForwardedType =
+      Wrapper ? Wrapper->ReferentType : ForwardedSource->getType();
   if (!Source->isReferenceType() ||
       !Context.hasSameType(Source->getPointeeType(),
                            SelectedSource->getType()) ||
       !Context.hasSameUnqualifiedType(SelectedSource->getType(),
-                                      ForwardedSource->getType()) ||
-      SelectedSource->isLValue() != ForwardedSource->isLValue() ||
-      SelectedSource->isXValue() != ForwardedSource->isXValue())
+                                      ForwardedType) ||
+      SelectedSource->isLValue() !=
+          (Wrapper ? true : ForwardedSource->isLValue()) ||
+      SelectedSource->isXValue() !=
+          (Wrapper ? false : ForwardedSource->isXValue()) ||
+      (Wrapper && (!Constructor->isCopyConstructor() ||
+                   (!Source->getPointeeType().isConstQualified() &&
+                    Wrapper->ReferentType.isConstQualified()))))
     return nullptr;
   return Construction;
 }
@@ -13868,8 +13889,11 @@ const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
   if (!Apply || Index >= Apply->Tuple.size() || !Operation ||
       Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
       Parameter.isNull() || !Parameter->isRecordType() ||
-      !Context.hasSameUnqualifiedType(
-          Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter))
+      (!Context.hasSameUnqualifiedType(
+           Apply->Tuple.elementType(Index).getNonReferenceType(), Parameter) &&
+       !approvedFunctionalReferenceArgumentValue(
+           S, SM, Context, Parameter,
+           Apply->Tuple.elementType(Index).getNonReferenceType())))
     return nullptr;
   return functionalInvokeSelectedCopy(
       S, SM, Operation->getArg(Index + Offset),

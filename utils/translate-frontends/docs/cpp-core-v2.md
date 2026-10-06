@@ -4119,6 +4119,19 @@ parameter, so a later argument's update is observed and each operand is evaluate
 once. Const wrappers and const referents can supply values. Long-double and
 volatile referents, arbitrary user conversions and independently unsupported
 source bodies retain their existing boundaries.
+Exact source-owned standard-layout record referents also provide by-value
+parameters through `invoke`, `apply` and direct wrapped calls. The authenticated
+SDK dispatch must select a copy constructor of that exact source record and
+apply the pinned wrapper conversion to the matching forwarded parameter. The
+constructor's reference qualification, selected defaults, definition and
+source dependencies retain their independent checks. A wrapper always supplies
+its lvalue referent, including when the wrapper itself is an xvalue; const
+referents retain their qualification when selecting the copy. All caller
+operands complete before the referent is read and copied into independent
+parameter storage. Selected default effects and parameter cleanup retain the
+SDK invocation's lifetime. Source member and call-operator dispatch share this
+proof. SDK record value parameters, union referents, replacement wrapper
+conversions and independently unsupported constructors retain their diagnostics.
 
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and

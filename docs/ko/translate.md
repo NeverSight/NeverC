@@ -83,6 +83,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 `reference_wrapper` 인수는 이제 `invoke`와 `apply`를 통해 일치하는 지원 대상 lvalue 참조 매개변수에 바인딩할 수 있습니다. 래퍼 값을 명시적으로 저장한 tuple도 포함됩니다. 고정 SDK의 정확한 변환과 전달 매개변수를 검증하며, 원래 참조 대상의 주소, 쓰기 효과, const 한정을 보존합니다. 검증된 함수 및 함수 포인터 래퍼는 호환 가능한 `noexcept` 제거를 포함해 일반 콜백의 값 매개변수에도 사용할 수 있습니다. 호출자 인수가 평가된 뒤 값을 읽어 이후 변경을 보존하며 null 포인터도 값으로 전달합니다. 임의의 소스 변환, 함수 래퍼의 bool 변환, volatile 참조 대상은 계속 지원하지 않습니다. 검증된 산술 값 및 객체 포인터 래퍼도 같은 호출 경로에서 지원되는 스칼라 값 매개변수에 사용할 수 있습니다. 산술 값의 bool 변환과 포인터 한정 변환을 포함하며 호출자 인수가 평가된 뒤 읽습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 검증된 인수 없는 `optional::emplace()`는 허용된 비 const 스칼라, trivial 소스 소유 레코드, 검증된 함수 포인터 trait 객체와 이 요소들을 재귀적으로 포함하는 배열을 값 초기화합니다. 고정 SDK의 reset, 제자리 생성, 참조 반환 본문을 검증합니다. 반복 emplace는 내부 저장소의 동일성을 유지하며 스칼라와 포인터를 0 또는 null로 재설정합니다. nontrivial 기본 생성자, 기본 멤버 초기화자, volatile 요소는 이 경로에서 지원하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
 완성되지 않은 함수 포인터 `integral_constant` 특수화는 사용하지 않는 별칭, 타입 변환, 호환 타입 질의와 중첩 pair, tuple, 참조 래퍼 메타데이터에서 타입 동일성을 유지합니다. 고정 SDK 주 템플릿의 정확한 초기화자, 선언 인수, 소스 함수 시그니처를 검증하며 trait를 완성하거나 저장소를 생성하지 않습니다. 소스 함수 본문에는 독립적인 프로필 검사를 계속 적용합니다. 실제 객체, 콜백 주소, SDK `value` 저장소 별칭에는 기존 정의, 레이아웃, 연산 검사를 계속 적용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).

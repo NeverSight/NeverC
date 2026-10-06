@@ -83,6 +83,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 经验证的 `reference_wrapper` 实参现在可通过 `invoke` 和 `apply` 绑定匹配且受支持的左值引用形参，包括显式存储包装器值的 tuple。固定 SDK 的精确转换及转发形参均须通过认证。调用保留原引用目标的地址、写入效果和 const 限定。已校验的函数和函数指针包装器也可提供普通回调的按值形参，包括兼容的 `noexcept` 去除。回调值在调用方实参求值后读取，保留后续修改；空指针仍按值传递。任意源码转换、函数包装器到布尔值的转换及 volatile 引用目标仍不受支持。 经验证的算术值和对象指针包装器也可通过相同调用路径提供受支持的标量按值形参，包括算术值到 bool 和指针限定转换，并在调用方实参求值后读取。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+经验证的源码自有标准布局记录包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的按值形参。选中的源码拷贝构造、默认参数及依赖仍须通过检查。形参使用独立存储，在拷贝前观察后续实参的修改；默认参数副作用和形参清理保留调用中的生命周期。右值包装器仍提供左值引用目标。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 经检查的零参数 `optional::emplace()` 现在可对已接纳的非 const 标量、平凡源码自有记录、经验证的函数指针 trait 对象及由这些元素递归组成的数组进行值初始化。固定 SDK 的 reset、原位构造和引用返回函数体均须通过认证。重复 emplace 保留内部存储身份，标量和指针值重置为零或空指针。非平凡默认构造函数、默认成员初始化器及 volatile 元素仍不在此路径的支持范围内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
 尚未完成的函数指针 `integral_constant` 特化现在可在未使用别名、类型变换、兼容类型查询，以及嵌套 pair、tuple 和引用包装器的元数据中保留类型身份。固定 SDK 主模板的精确初始化器、声明实参和源码函数签名均须检查，无须完成 trait 类型或生成其存储。源码函数体仍须独立通过配置检查。实际对象、回调地址及 SDK `value` 存储别名仍须通过原有定义、布局和操作检查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).

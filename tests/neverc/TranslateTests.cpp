@@ -28784,6 +28784,432 @@ int use_bool(bool f,int n){return f?n:0;}int main(){return std::invoke(use_bool,
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueApplyConst) {
+  const auto Source = tmpFile("reference-wrapper-record-apply-const.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-apply-const.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+int use(R r){return r.n+1;}int main(){const R r{7};const std::tuple<std::reference_wrapper<const R>> a(std::cref(r));return std::apply(use,a)!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-apply-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueApplyMember) {
+  const auto Source = tmpFile("reference-wrapper-record-apply-member.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-apply-member.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};struct C{int use(R r)const{return r.n+1;}};int main(){R r{7};C c;std::tuple<C*,std::reference_wrapper<R>> a(&c,std::ref(r));return std::apply(&C::use,a)!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-apply-member" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueApplyObject) {
+  const auto Source = tmpFile("reference-wrapper-record-apply-object.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-apply-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};struct C{int operator()(R r)const{return r.n+1;}};int main(){R r{7};C c;std::tuple<std::reference_wrapper<R>> a(std::ref(r));return std::apply(c,a)!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-apply-object" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueApplyRecord) {
+  const auto Source = tmpFile("reference-wrapper-record-apply-record.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-apply-record.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+int use(R r){return r.n+1;}int main(){R r{7};std::tuple<std::reference_wrapper<R>> a(std::ref(r));return std::apply(use,a)!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-apply-record" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueApplySelectedCopy) {
+  const auto Source =
+      tmpFile("reference-wrapper-record-apply-selected-copy.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-record-apply-selected-copy.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int copies;int destructions;
+struct R{int n;R(int v):n(v){}R(const R& r):n(r.n){++copies;}~R(){++destructions;}};
+int use(R r){return r.n+1;}
+int main(){{R r(7);const std::tuple<std::reference_wrapper<R>> a(std::ref(r));int value=std::apply(use,a);if(value!=8||r.n!=7||copies!=1||destructions!=1)return 1;}return copies!=1||destructions!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-apply-selected-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueApplyWrappedCallable) {
+  const auto Source =
+      tmpFile("reference-wrapper-record-apply-wrapped-callable.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-record-apply-wrapped-callable.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};int use(R r){return r.n+1;}int main(){R r{7};auto f=std::ref(use);std::tuple<std::reference_wrapper<R>> a(std::ref(r));return std::apply(f,a)!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-record-apply-wrapped-callable" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueDefaultCopy) {
+  const auto Source = tmpFile("reference-wrapper-record-default-copy.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-default-copy.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int copies;int defaults;int destructions;int next(){++defaults;return 2;}struct R{int n;R(int v):n(v){}R(const R& r,int add=next()):n(r.n+add){++copies;}~R(){++destructions;}};int use(R r){return r.n;}int main(){{R r(7);int value=std::invoke(use,std::ref(r));if(value!=9||r.n!=7||copies!=1||defaults!=1||destructions!=1)return 1;}return destructions!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-default-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueDirectWrapperCall) {
+  const auto Source =
+      tmpFile("reference-wrapper-record-direct-wrapper-call.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-record-direct-wrapper-call.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};int use(R r){r.n+=1;return r.n;}int main(){R r{7};auto f=std::ref(use);return f(std::ref(r))!=8||r.n!=7;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-direct-wrapper-call" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueInvokeConst) {
+  const auto Source = tmpFile("reference-wrapper-record-invoke-const.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-invoke-const.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+int use(R r){return r.n+1;}int main(){const R r{7};return std::invoke(use,std::cref(r))!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-invoke-const" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueInvokeLate) {
+  const auto Source = tmpFile("reference-wrapper-record-invoke-late.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-invoke-late.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+R r{3};int change(){r.n=7;return 2;}int use(R v,int n){return v.n+n;}int main(){return std::invoke(use,std::ref(r),change())!=9;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-invoke-late" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueInvokeMember) {
+  const auto Source = tmpFile("reference-wrapper-record-invoke-member.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-invoke-member.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+struct C{int use(R r)const{return r.n+1;}};int main(){R r{7};C c;return std::invoke(&C::use,&c,std::ref(r))!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-invoke-member" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueInvokeObject) {
+  const auto Source = tmpFile("reference-wrapper-record-invoke-object.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-invoke-object.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+struct C{int operator()(R r)const{return r.n+1;}};int main(){R r{7};C c;return std::invoke(c,std::ref(r))!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-invoke-object" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueInvokeRecord) {
+  const auto Source = tmpFile("reference-wrapper-record-invoke-record.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-invoke-record.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+int use(R r){return r.n+1;}int main(){R r{7};return std::invoke(use,std::ref(r))!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-invoke-record" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueInvokeWrappedCallable) {
+  const auto Source =
+      tmpFile("reference-wrapper-record-invoke-wrapped-callable.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-record-invoke-wrapped-callable.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};
+int use(R r){return r.n+1;}int main(){R r{7};auto f=std::ref(use);return std::invoke(f,std::ref(r))!=8;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-record-invoke-wrapped-callable" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueMutableCopy) {
+  const auto Source = tmpFile("reference-wrapper-record-mutable-copy.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-mutable-copy.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int copies;struct R{int n;R(int v):n(v){}R(R& r):n(r.n){++copies;++r.n;}};int use(R r){return r.n;}int main(){R r(7);auto w=std::ref(r);int value=std::invoke(use,static_cast<decltype(w)&&>(w));return value!=7||r.n!=8||copies!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-mutable-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperRecordValueSelectedCopy) {
+  const auto Source = tmpFile("reference-wrapper-record-selected-copy.cpp");
+  const auto Output = tmpFile("reference-wrapper-record-selected-copy.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+int copies;int destructions;
+struct R{int n;R(int v):n(v){}R(const R& r):n(r.n){++copies;}~R(){++destructions;}};
+int use(R r){return r.n+1;}
+int main(){{R r(7);int value=std::invoke(use,std::ref(r));if(value!=8||r.n!=7||copies!=1||destructions!=1)return 1;}return copies!=1||destructions!=2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-record-selected-copy" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperRecordValuesRetainCopyAndSourceBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"copy-body", R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;R(int v):n(v){}R(const R& r){long double x=r.n;n=int(x);}};int use(R r){return r.n;}int main(){R r(7);return std::invoke(use,std::ref(r));}
+)cpp"},
+      {"copy-declaration", R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;R(int v):n(v){}R(const R&);};int use(R r){return r.n;}int main(){R r(7);return std::invoke(use,std::ref(r));}
+)cpp"},
+      {"record-field", R"cpp(#include <functional>
+#include <tuple>
+struct R{long double n;};int use(R r){return int(r.n);}int main(){R r{7};return std::invoke(use,std::ref(r));}
+)cpp"},
+      {"sdk-record-value", R"cpp(#include <functional>
+#include <tuple>
+int use(std::pair<int,int> r){return r.first;}int main(){std::pair<int,int> r(7,1);return std::invoke(use,std::ref(r));}
+)cpp"},
+      {"source-wrapper-conversion", R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;};R r{7};int effects;namespace std{inline namespace __1{template<> reference_wrapper<R>::operator R&() const noexcept{++effects;return r;}}}int use(R v){return v.n;}int main(){return std::invoke(use,std::ref(r));}
+)cpp"},
+      {"union-value", R"cpp(#include <functional>
+#include <tuple>
+union R{int n;};int use(R r){return r.n;}int main(){R r{7};return std::invoke(use,std::ref(r));}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <tuple>
+struct A{int n;};struct R{int n;R(const A& a):n(a.n){}};int use(R r){return r.n;}int main(){A a{7};return std::invoke(use,a);}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <functional>
+#include <tuple>
+struct R{int n;R(int v):n(v){}R(const volatile R& r):n(r.n){}};int use(R r){return r.n;}int main(){volatile R r(7);return std::invoke(use,std::ref(r));}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("reference-wrapper-record-reject-") + Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("reference-wrapper-record-reject-") + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionalDefaultArrayConstDefault) {
   const auto Source = tmpFile("functional-default-array-const-default.cpp");
   const auto Output = tmpFile("functional-default-array-const-default.nc");
