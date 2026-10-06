@@ -166137,3 +166137,355 @@ using R=decltype(std::declval<long double>());int main(){return 0;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryArrayReferent) {
+  const auto Source = tmpFile("make-unique-signature-query-array-referent.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-array-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int main(){int x[2]={3,4}; using W=std::reference_wrapper<int[2]>; using U=decltype(std::make_unique<W>(x)); return sizeof(U)==sizeof(void*)&&alignof(U)==alignof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-array-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryCallbackReferent) {
+  const auto Source =
+      tmpFile("make-unique-signature-query-callback-referent.cpp");
+  const auto Output =
+      tmpFile("make-unique-signature-query-callback-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int f(int x) noexcept {return x+1;} int main(){using F=int(*)(int) noexcept; F target=f; using W=std::reference_wrapper<F>;using U=decltype(std::make_unique<W>(target));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-callback-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryConstResult) {
+  const auto Source = tmpFile("make-unique-signature-query-const-result.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-const-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){const int x=3;using U=decltype(std::make_unique<std::reference_wrapper<const int>>(x));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-const-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryCopyResult) {
+  const auto Source = tmpFile("make-unique-signature-query-copy-result.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-copy-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3;W w(x);using U=decltype(std::make_unique<W>(w));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-copy-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryDirectResult) {
+  const auto Source = tmpFile("make-unique-signature-query-direct-result.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-direct-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3;using U=decltype(std::make_unique<W>(x));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-direct-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryFunctionReferent) {
+  const auto Source =
+      tmpFile("make-unique-signature-query-function-referent.cpp");
+  const auto Output =
+      tmpFile("make-unique-signature-query-function-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int f(int x) noexcept {return x+1;} int main(){using W=std::reference_wrapper<int(int) noexcept>;using U=decltype(std::make_unique<W>(f));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-function-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryMoveResult) {
+  const auto Source = tmpFile("make-unique-signature-query-move-result.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-move-result.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3;W w(x);using U=decltype(std::make_unique<W>(std::move(w)));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-move-result" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryPlainControl) {
+  const auto Source = tmpFile("make-unique-signature-query-plain-control.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-plain-control.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){using U=decltype(std::make_unique<int>(0));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-plain-control" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("make-unique-signature-query-query-effects.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-query-effects.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int x=3,effects;int& pick(){++effects;return x;}int main(){using U=decltype(std::make_unique<W>(pick()));return sizeof(U)==sizeof(void*)&&!noexcept(std::make_unique<W>(pick()))&&effects==0?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-query-effects" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryQueryExpressionSizes) {
+  const auto Source =
+      tmpFile("make-unique-signature-query-query-expression-sizes.cpp");
+  const auto Output =
+      tmpFile("make-unique-signature-query-query-expression-sizes.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int x=3,effects;int& pick(){++effects;return x;}int main(){using W=std::reference_wrapper<int>;return sizeof(std::make_unique<W>(pick()))==sizeof(void*)&&alignof(decltype(std::make_unique<W>(pick())))==alignof(void*)&&!noexcept(std::make_unique<W>(pick()))&&effects==0?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "make-unique-signature-query-query-expression-sizes" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MakeUniqueSignatureQueryQueryNoSelectedConstruction) {
+  const auto Source =
+      tmpFile("make-unique-signature-query-query-no-selected-construction.cpp");
+  const auto Output =
+      tmpFile("make-unique-signature-query-query-no-selected-construction.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+using W=std::reference_wrapper<int>;int main(){using U=decltype(std::make_unique<W>());return sizeof(U)==sizeof(void*)?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-query-no-selected-construction" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MakeUniqueSignatureQueryRecordReferent) {
+  const auto Source =
+      tmpFile("make-unique-signature-query-record-referent.cpp");
+  const auto Output = tmpFile("make-unique-signature-query-record-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int effects;struct R{int value;~R(){++effects;}};int main(){R r{3};using W=std::reference_wrapper<R>;using U=decltype(std::make_unique<W>(r));return sizeof(U)==sizeof(void*)&&effects==0?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-unique-signature-query-record-referent" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MakeUniqueSignatureQueryRetainsSourceAndRuntimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-factory-address", R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int main(){auto f=&std::make_unique<int,int>;return f?0:1;}
+)cpp"},
+      {"long-double-referent", R"cpp(#include <functional>
+#include <memory>
+int main(){long double x=3;using W=std::reference_wrapper<long double>;using U=decltype(std::make_unique<W>(x));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"},
+      {"long-double-result", R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int main(){using U=decltype(std::make_unique<long double>(0));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"},
+      {"query-does-not-authorize-runtime", R"cpp(#include <functional>
+#include <memory>
+struct R{int value;operator int&(){return value;}};using W=std::reference_wrapper<int>;int main(){R r{3};using U=decltype(std::make_unique<W>(r));auto p=std::make_unique<W>(r);return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-argument-body", R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int x;int& pick(){long double y=1; x=(int)y;return x;}int main(){using W=std::reference_wrapper<int>;using U=decltype(std::make_unique<W>(pick()));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-factory-replacement", R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+namespace std{inline namespace __1{template<> unique_ptr<int> make_unique<int,int>(int&& x){return unique_ptr<int>(new int(x));}}}int main(){using U=decltype(std::make_unique<int>(0));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-wrapper-partial", R"cpp(#include <functional>
+#include <memory>
+namespace std{inline namespace __1{template<class T> class reference_wrapper<T*>{public:T** pointer;};}} int main(){int x=3;int* p=&x;using W=std::reference_wrapper<int*>;using U=decltype(std::make_unique<W>(p));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"},
+      {"volatile-argument", R"cpp(#include <functional>
+#include <memory>
+#include <utility>
+int main(){volatile int x=3;using U=decltype(std::make_unique<int>(x));return sizeof(U)==sizeof(void*)?0:1;}
+)cpp"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("make-unique-signature-query-reject-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("make-unique-signature-query-reject-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

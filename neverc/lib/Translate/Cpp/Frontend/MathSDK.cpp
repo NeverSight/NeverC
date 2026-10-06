@@ -2711,10 +2711,10 @@ utilityDefaultDeleteExpression(const State &S, const SourceManager &SM,
   return Ambiguous ? nullptr : Result;
 }
 
-std::optional<UtilityUniquePtrRecord>
-approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
-                               const CXXRecordDecl *Record,
-                               const ASTContext &Context) {
+static std::optional<UtilityUniquePtrRecord>
+utilityUniquePtrRecord(const State &S, const SourceManager &SM,
+                       const CXXRecordDecl *Record, const ASTContext &Context,
+                       bool RequireDeletion) {
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
@@ -2883,10 +2883,24 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
   const auto *DefaultDeletion =
       StandardDeleter ? utilityDefaultDeleteExpression(S, SM, *Deleter, Context)
                       : nullptr;
-  if (StandardDeleter && !DefaultDeletion)
+  if (RequireDeletion && StandardDeleter && !DefaultDeletion)
     return std::nullopt;
   return UtilityUniquePtrRecord{Definition, Element,         Pointer,
                                 *Deleter,   DefaultDeletion, CustomDeleter};
+}
+
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context) {
+  return utilityUniquePtrRecord(S, SM, Record, Context, true);
+}
+
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityUniquePtrLayout(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context) {
+  return utilityUniquePtrRecord(S, SM, Record, Context, false);
 }
 
 std::optional<UtilityAllocatorRecord>
@@ -10158,6 +10172,83 @@ static bool utilityConstructorTrailingDefaults(
   return true;
 }
 
+static bool utilityMakeUniqueObjectArguments(const FunctionDecl *Function,
+                                             const CallExpr *Call,
+                                             QualType ElementType,
+                                             const ASTContext &Context) {
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Arguments || Function->getNumParams() != Call->getNumArgs())
+    return false;
+  if (Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), ElementType) ||
+      Arguments->get(1).getKind() != TemplateArgument::Pack ||
+      Arguments->get(1).pack_size() != Call->getNumArgs() ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !Arguments->get(2).getIntegralType()->isIntegerType() ||
+      !Arguments->get(2).getAsIntegral().isZero())
+    return false;
+  unsigned PackIndex = 0;
+  for (const auto &Argument : Arguments->get(1).pack_elements()) {
+    const auto Parameter = Function->getParamDecl(PackIndex)->getType();
+    const auto *Actual = Call->getArg(PackIndex++);
+    if (Argument.getKind() != TemplateArgument::Type ||
+        !Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        Parameter->getPointeeType().isRestrictQualified() ||
+        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        Actual->getType()) ||
+        (Parameter->isLValueReferenceType() ? !Actual->isLValue()
+                                            : Actual->isLValue()))
+      return false;
+    auto Deduced = Argument.getAsType();
+    if (Deduced->isLValueReferenceType()) {
+      if (!Parameter->isLValueReferenceType() ||
+          !Context.hasSameType(Deduced->getPointeeType(),
+                               Parameter->getPointeeType()))
+        return false;
+    } else if (Deduced->isReferenceType() ||
+               !Parameter->isRValueReferenceType() ||
+               !Context.hasSameType(Deduced, Parameter->getPointeeType())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool approvedUtilityMakeUniqueSignatureQuery(const State &S,
+                                             const SourceManager &SM,
+                                             const CallExpr *Call,
+                                             const ASTContext &Context) {
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Call->isPRValue())
+    return false;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto Owner = approvedUtilityUniquePtrLayout(
+      S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  return Function && Primary && Pattern && Prototype && Owner &&
+         !Owner->Deleter.Array && !Owner->CustomDeleter &&
+         Function->getIdentifier() && Function->getName() == "make_unique" &&
+         !Function->isVariadic() && Function->isInlined() &&
+         Pattern->hasBody() && Prototype->getExceptionSpecType() == EST_None &&
+         Context.hasSameType(Call->getType(), Function->getReturnType()) &&
+         Context.hasSameUnqualifiedType(Function->getReturnType(),
+                                        Context.getRecordType(Owner->Record)) &&
+         approvedUtilityReference(S, SM, Call, Function) &&
+         approvedStandardSDKDeclaration(S, SM, Function) &&
+         approvedStandardSDKDeclaration(S, SM, Primary) &&
+         cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                       "__memory/unique_ptr.h") &&
+         cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                       "__memory/unique_ptr.h") &&
+         utilityMakeUniqueObjectArguments(Function, Call, Owner->ElementType,
+                                          Context);
+}
+
 std::optional<UtilityMakeUniqueCall>
 approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
                               const CallExpr *Call, const ASTContext &Context) {
@@ -10217,41 +10308,9 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
     // The pinned single-object overload has T, Args..., and its enable-if
     // parameter. Authenticate the concrete specialization so future overloads
     // with the same public name cannot enter this path.
-    if (Arguments->size() != 3 ||
-        Arguments->get(0).getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Arguments->get(0).getAsType(),
-                             Owner->ElementType) ||
-        Arguments->get(1).getKind() != TemplateArgument::Pack ||
-        Arguments->get(1).pack_size() != Call->getNumArgs() ||
-        Arguments->get(2).getKind() != TemplateArgument::Integral ||
-        !Arguments->get(2).getIntegralType()->isIntegerType() ||
-        !Arguments->get(2).getAsIntegral().isZero())
+    if (!utilityMakeUniqueObjectArguments(Function, Call, Owner->ElementType,
+                                          Context))
       return std::nullopt;
-    unsigned PackIndex = 0;
-    for (const auto &Argument : Arguments->get(1).pack_elements()) {
-      const auto Parameter = Function->getParamDecl(PackIndex)->getType();
-      const auto *Actual = Call->getArg(PackIndex++);
-      if (Argument.getKind() != TemplateArgument::Type ||
-          !Parameter->isReferenceType() ||
-          Parameter->getPointeeType().isVolatileQualified() ||
-          Parameter->getPointeeType().isRestrictQualified() ||
-          !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                          Actual->getType()) ||
-          (Parameter->isLValueReferenceType() ? !Actual->isLValue()
-                                              : Actual->isLValue()))
-        return std::nullopt;
-      auto Deduced = Argument.getAsType();
-      if (Deduced->isLValueReferenceType()) {
-        if (!Parameter->isLValueReferenceType() ||
-            !Context.hasSameType(Deduced->getPointeeType(),
-                                 Parameter->getPointeeType()))
-          return std::nullopt;
-      } else if (Deduced->isReferenceType() ||
-                 !Parameter->isRValueReferenceType() ||
-                 !Context.hasSameType(Deduced, Parameter->getPointeeType())) {
-        return std::nullopt;
-      }
-    }
   }
 
   const CXXNewExpr *Allocation = nullptr;

@@ -10,6 +10,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include <functional>
 #include <map>
 #include <cstddef>
 #include <optional>
@@ -206,6 +207,7 @@ struct State {
   // Signature proofs belong to exact lexical query operands, never to an
   // instantiated declaration or a shared default argument expression.
   std::map<const clang::CallExpr *, clang::QualType> UnevaluatedFunctionalCalls;
+  std::map<const clang::CallExpr *, clang::QualType> UnevaluatedMemoryCalls;
   mutable std::map<std::string, std::string> PathCache;
   std::vector<std::string> Arguments;
   json::Array Diagnostics;
@@ -581,6 +583,14 @@ std::optional<UtilityUniquePtrRecord>
 approvedUtilityUniquePtrRecord(const State &S, const clang::SourceManager &SM,
                                const clang::CXXRecordDecl *Record,
                                const clang::ASTContext &Context);
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityUniquePtrLayout(const State &S, const clang::SourceManager &SM,
+                               const clang::CXXRecordDecl *Record,
+                               const clang::ASTContext &Context);
+bool approvedUtilityMakeUniqueSignatureQuery(const State &S,
+                                             const clang::SourceManager &SM,
+                                             const clang::CallExpr *Call,
+                                             const clang::ASTContext &Context);
 enum class UtilityUniquePtrConstruction {
   Default,
   Null,
@@ -1889,6 +1899,7 @@ public:
   std::map<const clang::TypeTraitExpr *, OperationTraitSource> OperationTraits;
   std::map<const clang::CXXMethodDecl *, SpecialMemberSource> SpecialMembers;
   bool CheckingSource = false;
+  std::function<bool(clang::QualType, clang::SourceLocation)> CompleteSDKRecord;
   std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
   std::set<const clang::TypeTraitExpr *> DeferredOperationQueries, VerifiedOperationQueries;
   std::map<const clang::StringLiteral *, std::string> StringObjects;

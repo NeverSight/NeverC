@@ -3229,6 +3229,31 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure single-object `make_unique<T>` result queries also accept the exact
+pinned SDK signature when its concrete body has not been instantiated.
+The primary template, selected declaration, all redeclarations, exact `T`,
+forwarding pack, enable-if argument and return type remain authenticated.
+The matching default-deleter owner must retain its checked pointer-sized ABI,
+including the original empty padding and deleter fields. Layout metadata does
+not require a selected deletion body; runtime construction, allocation and
+cleanup continue through their independent complete operation proofs.
+A lazy `reference_wrapper` pointee may complete only its authenticated SDK
+primary class layout, which must then pass the ordinary concrete layout proof.
+This does not instantiate its constructor, getter or factory bodies; source
+partials and source replacements cannot authorize this completion.
+
+`decltype`, `sizeof`, `alignof` and `noexcept` queries evaluate no caller
+arguments and emit no factory, allocation, construction or deletion call.
+The pinned single-object factory remains potentially throwing. Referents,
+callback signatures, element and operand types, explicit template arguments and
+source function bodies remain checked even when their expressions are not
+executed. A signature query selects no pointee constructor: for example,
+`decltype(make_unique<reference_wrapper<int>>())` is valid metadata but does
+not admit runtime default wrapper construction. An evaluated call using the
+same specialization must pass its ordinary construction proof. Independent
+factory addresses and SDK source replacements remain rejected. Array factory
+queries retain their separately documented existing operation boundary.
+
 Checked single-object `make_unique<reference_wrapper<T>>` also accepts an
 exact nonvolatile lvalue referent or an exact wrapper value for copy/move.
 Existing concrete factory template arguments, allocation operator, extent,

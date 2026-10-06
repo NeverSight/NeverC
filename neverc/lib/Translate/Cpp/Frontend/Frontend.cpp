@@ -10,6 +10,7 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticAST.h"
+#include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Builtins.h"
@@ -20,6 +21,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Sema/Sema.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/DenseMap.h"
@@ -2999,9 +3001,12 @@ utilityInitializerListDestructionSource(Adapter &A,
 }
 
 static std::optional<UtilityUniquePtrRecord>
-utilityUniquePtrSource(Adapter &A, const CXXRecordDecl *Record) {
+utilityUniquePtrSource(Adapter &A, const CXXRecordDecl *Record,
+                       bool RequireDeletion = true) {
   const auto Owner =
-      approvedUtilityUniquePtrRecord(A.S, A.Sources, Record, A.Context);
+      RequireDeletion
+          ? approvedUtilityUniquePtrRecord(A.S, A.Sources, Record, A.Context)
+          : approvedUtilityUniquePtrLayout(A.S, A.Sources, Record, A.Context);
   if (!Owner)
     return std::nullopt;
   for (const auto *Definition : {Owner->Record, Owner->Deleter.Record}) {
@@ -3061,6 +3066,29 @@ static bool utilitySDKFunctionSource(Adapter &A, const FunctionDecl *Function,
           !Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl())))
         return false;
   return true;
+}
+
+static QualType utilityMakeUniqueQuerySource(Adapter &A, const CallExpr *Call) {
+  if (!approvedUtilityMakeUniqueSignatureQuery(A.S, A.Sources, Call,
+                                               A.Context) ||
+      !utilitySDKFunctionSource(A, Call->getDirectCallee(),
+                                "__memory/unique_ptr.h", false) ||
+      !utilityUniquePtrSource(A, Call->getType()->getAsCXXRecordDecl(), false))
+    return {};
+  const auto Owner = approvedUtilityUniquePtrLayout(
+      A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+  const auto *Element = Owner->ElementType->getAsCXXRecordDecl();
+  if (Element && !Element->getDefinition() &&
+      approvedFunctionalReferenceMetadata(A.S, A.Sources, Element)) {
+    // The result carrier contains a pointer to this exact SDK wrapper. Complete
+    // only its authenticated class layout, never its factory or member bodies.
+    A.chargeExpansion(1, Call->getExprLoc());
+    if (!A.CompleteSDKRecord ||
+        !A.CompleteSDKRecord(Owner->ElementType, Call->getExprLoc()) ||
+        !approvedFunctionalReferenceRecord(A.S, A.Sources, Element, A.Context))
+      return {};
+  }
+  return A.Context.getCanonicalType(Call->getDirectCallee()->getReturnType());
 }
 
 static bool utilityUniquePtrFunctionSource(Adapter &A,
@@ -8208,7 +8236,8 @@ public:
         utilityAddressofSource(A, Call) || utilityPointerToSource(A, Call) ||
         utilityArrayCallSource(A, Call) || utilityValueAdapterSource(A, Call) ||
         functionalObjectCallSource(A, Call) ||
-        A.S.UnevaluatedFunctionalCalls.count(Call))
+        (A.S.UnevaluatedFunctionalCalls.count(Call) ||
+         A.S.UnevaluatedMemoryCalls.count(Call)))
       return Prototype ==
              Call->getDirectCallee()->getType()->getAs<FunctionProtoType>();
     return prototypeSource(Prototype, Call->getDirectCallee()) &&
@@ -10261,7 +10290,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
         if (!requireFunctionalReference(D, L, Depth + 1))
           return {};
-      } else if (approvedUtilityUniquePtrRecord(S, Sources, D, Context)) {
+      } else if (approvedUtilityUniquePtrLayout(S, Sources, D, Context)) {
         if (!requireUtilityUniquePtr(D, L, Depth + 1))
           return {};
       } else if (approvedMemoryTemplateMetadata(S, Sources, D) ==
@@ -10613,7 +10642,7 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
            "Nested std::unique_ptr types exceed the protocol limit.");
     return false;
   }
-  auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record, Context);
+  auto Unique = approvedUtilityUniquePtrLayout(S, Sources, Record, Context);
   if (!Unique) {
     reject(Location, "standard library record",
            "Only the pinned single-object and unbounded-array std::unique_ptr "
@@ -10632,8 +10661,6 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
              Depth + 1)
             .empty())
       return false;
-  } else {
-    uniquePtrDeleteFunction(*Unique, Location);
   }
   S.Module["memory_lifetimes"] = true;
   Records.push_back(const_cast<CXXRecordDecl *>(Unique->Record));
@@ -14253,6 +14280,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (const auto Result = functionalQuerySource(A, Call);
             !Result.isNull())
           A.S.UnevaluatedFunctionalCalls.emplace(Call, Result);
+        else if (const auto Result = utilityMakeUniqueQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
           Pending.push_back(Operand);
@@ -14368,6 +14398,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (Result.isNull())
           if (auto Query = A.S.UnevaluatedFunctionalCalls.find(Call);
               Query != A.S.UnevaluatedFunctionalCalls.end())
+            Result = Query->second;
+        if (Result.isNull())
+          if (auto Query = A.S.UnevaluatedMemoryCalls.find(Call);
+              Query != A.S.UnevaluatedMemoryCalls.end())
             Result = Query->second;
         if (Result.isNull() && functionalObjectCallSource(A, Call))
           // The exact operation proves this scalar result and SDK signature.
@@ -15023,6 +15057,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         }
         if (ReferenceInvoke || UserInvoke ||
             A.S.UnevaluatedFunctionalCalls.count(Call) ||
+            A.S.UnevaluatedMemoryCalls.count(Call) ||
             functionalReferenceAccessSource(A, Call) ||
             functionalFunctionInvokeSource(A, Call) ||
             !applyResultSource(Call).isNull() ||
@@ -15323,7 +15358,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         } else if (Callee != AuthenticatedUtilityReferences.end() &&
                    (!applyResultSource(Callee->second).isNull() ||
                     functionalObjectCallSource(A, Callee->second) ||
-                    A.S.UnevaluatedFunctionalCalls.count(Callee->second))) {
+                    A.S.UnevaluatedFunctionalCalls.count(Callee->second) ||
+                    A.S.UnevaluatedMemoryCalls.count(Callee->second))) {
           // This exact callee reference/decay owns a pinned SDK signature.
           // Retain its caller's types, not private result declval/forward calls.
           // Written template arguments and actual operands are still visited.
@@ -21956,6 +21992,7 @@ public:
         if (Leaf) {
           const bool Utility =
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
+              A.S.UnevaluatedMemoryCalls.count(Call) ||
               approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
@@ -22379,7 +22416,8 @@ public:
         return true; // Its typed argument subtrees are still visited by RAV.
       if (A.S.coreV2() && ApprovedErasedUtilityCalls.count(C))
         return true; // The enclosing authenticated call erases this adapter.
-      if (A.S.coreV2() && A.S.UnevaluatedFunctionalCalls.count(C))
+      if (A.S.coreV2() && (A.S.UnevaluatedFunctionalCalls.count(C) ||
+                           A.S.UnevaluatedMemoryCalls.count(C)))
         return true; // Only this lexical query call owns the SDK signature
                      // proof.
       if (A.S.coreV2())
@@ -23060,7 +23098,7 @@ static void orderCoreV2Records(Adapter &A) {
     const auto UtilityOptional =
         approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUniquePtr =
-        approvedUtilityUniquePtrRecord(A.S, A.Sources, R, A.Context);
+        approvedUtilityUniquePtrLayout(A.S, A.Sources, R, A.Context);
     const auto UtilityString =
         approvedUtilityStringRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityVector =
@@ -23249,7 +23287,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         S.coreV2() ? approvedUtilityOptionalRecord(S, Sources, R, Context)
                    : std::optional<UtilityOptionalRecord>();
     const auto UtilityUniquePtr =
-        S.coreV2() ? approvedUtilityUniquePtrRecord(S, Sources, R, Context)
+        S.coreV2() ? approvedUtilityUniquePtrLayout(S, Sources, R, Context)
                    : std::optional<UtilityUniquePtrRecord>();
     const auto UtilityString =
         S.coreV2() ? approvedUtilityStringRecord(S, Sources, R, Context)
@@ -23842,6 +23880,7 @@ public:
 
 class Consumer : public ASTConsumer {
   State &S;
+  CompilerInstance &CI;
   std::vector<ExplicitFunctionInstantiationSource> Directives;
   std::vector<ExplicitStaticDataInstantiationSource> StaticDirectives;
   std::vector<ExplicitMemberClassInstantiationSource> MemberClassDirectives;
@@ -23961,7 +24000,7 @@ class Consumer : public ASTConsumer {
   }
 
 public:
-  explicit Consumer(State &S) : S(S) {}
+  Consumer(State &S, CompilerInstance &CI) : S(S), CI(CI) {}
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
   bool retainNeverCSpecialMemberSource(
       ASTContext &Context, const CXXMethodDecl *Method) override {
@@ -24401,6 +24440,10 @@ public:
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
+    A.CompleteSDKRecord = [&](QualType Type, SourceLocation Location) {
+      return !CI.getSema().RequireCompleteType(Location, Type,
+                                               diag::err_incomplete_type);
+    };
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
     A.OperationTraits = std::move(OperationTraits);
     A.SpecialMembers = std::move(SpecialMembers);
@@ -24441,7 +24484,7 @@ public:
       });
     }
     CI.getPreprocessor().addPPCallbacks(std::move(Policy));
-    return std::make_unique<Consumer>(S);
+    return std::make_unique<Consumer>(S, CI);
   }
 };
 

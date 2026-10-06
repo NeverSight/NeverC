@@ -99,6 +99,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 `make_unique<reference_wrapper<T>>`는 정확한 타입의 좌값 참조 대상에서 생성하거나 동일한 래퍼 값을 복사/이동할 수 있습니다. 선택된 SDK 팩터리, 할당, 전달, 래퍼 및 소유자 생성을 검증합니다. 인수는 할당 전에 한 번 평가하며 래퍼 복사는 할당 후 원본을 읽어 할당 콜백의 영향을 유지합니다. 소유자는 래퍼 저장소를 소멸시키고 참조 대상은 소멸시키지 않습니다. const 바인딩과 지원되는 참조 대상의 검사를 유지하며 임의 사용자 변환, SDK 소스 대체 및 기본 래퍼 생성은 제한됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+단일 객체 `make_unique<T>`의 순수 결과 질의는 할당, 생성 또는 삭제 함수 본문을 인스턴스화하지 않고 고정 SDK의 정확한 팩터리 시그니처와 포인터 크기 소유자 배치를 검증합니다. `decltype`, `sizeof`, `alignof`, `noexcept`는 인수나 소유권 작업을 실행하지 않으며 팩터리는 여전히 예외를 던질 수 있습니다. 요소 및 인수 타입, 소스 본문, 명시적 템플릿 인수와 SDK 출처를 검사합니다. 질의는 런타임 생성을 허용하지 않으며 배열 팩터리 질의는 기존 경계를 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
