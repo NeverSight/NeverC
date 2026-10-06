@@ -27952,6 +27952,454 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasPairMetadata) {
+  const auto Source =
+      tmpFile("function-trait-metadata-alias-pair-metadata.cpp");
+  const auto Output = tmpFile("function-trait-metadata-alias-pair-metadata.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+using P=std::pair<C,int>;static_assert(sizeof(P*)==sizeof(void*));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-pair-metadata" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasPointerLayout) {
+  const auto Source =
+      tmpFile("function-trait-metadata-alias-pointer-layout.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-alias-pointer-layout.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+static_assert(sizeof(C*)==sizeof(void*));static_assert(alignof(C*)==alignof(void*));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-pointer-layout" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasReferenceMetadata) {
+  const auto Source =
+      tmpFile("function-trait-metadata-alias-reference-metadata.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-alias-reference-metadata.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+static_assert(std::is_same_v<std::remove_reference_t<C&>,C>);static_assert(std::is_reference_v<C&&>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-metadata-alias-reference-metadata" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasSameType) {
+  const auto Source = tmpFile("function-trait-metadata-alias-same-type.cpp");
+  const auto Output = tmpFile("function-trait-metadata-alias-same-type.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+static_assert(std::is_same_v<C,std::integral_constant<F,target>>);static_assert(std::is_class_v<C>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-same-type" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasTransforms) {
+  const auto Source = tmpFile("function-trait-metadata-alias-transforms.cpp");
+  const auto Output = tmpFile("function-trait-metadata-alias-transforms.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+using Q=std::remove_cv_t<std::add_const_t<C>>;using P=std::remove_pointer_t<C*>;static_assert(std::is_same_v<C,Q>&&std::is_same_v<C,P>);int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-transforms" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasTupleMetadata) {
+  const auto Source =
+      tmpFile("function-trait-metadata-alias-tuple-metadata.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-alias-tuple-metadata.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+using T=std::tuple<C,int>;static_assert(sizeof(T*)==sizeof(void*));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-tuple-metadata" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasUnused) {
+  const auto Source = tmpFile("function-trait-metadata-alias-unused.cpp");
+  const auto Output = tmpFile("function-trait-metadata-alias-unused.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-unused" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasUsingImport) {
+  const auto Source = tmpFile("function-trait-metadata-alias-using-import.cpp");
+  const auto Output = tmpFile("function-trait-metadata-alias-using-import.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+namespace local{using std::integral_constant;using Same=integral_constant<F,target>;static_assert(std::is_same_v<C,Same>);}int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-alias-using-import" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitMetadataAliasWrapperMetadata) {
+  const auto Source =
+      tmpFile("function-trait-metadata-alias-wrapper-metadata.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-alias-wrapper-metadata.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+using W=std::reference_wrapper<C>;static_assert(sizeof(W*)==sizeof(void*));int main(){return 0;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-trait-metadata-alias-wrapper-metadata" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitMetadataMetadataOptionalPointerDefault) {
+  const auto Source =
+      tmpFile("function-trait-metadata-metadata-optional-pointer-default.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-metadata-optional-pointer-default.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::optional<F> o(target);F& v=o.emplace();return !o||v!=nullptr||&v!=&*o;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-metadata-optional-pointer-default" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitMetadataMetadataOptionalScalarDefault) {
+  const auto Source =
+      tmpFile("function-trait-metadata-metadata-optional-scalar-default.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-metadata-optional-scalar-default.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::optional<int> o(9);int& v=o.emplace();return !o||v!=0||&v!=&*o;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-metadata-optional-scalar-default" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitMetadataMetadataOptionalSourceDefault) {
+  const auto Source =
+      tmpFile("function-trait-metadata-metadata-optional-source-default.cpp");
+  const auto Output =
+      tmpFile("function-trait-metadata-metadata-optional-source-default.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+struct Value{int n;};int main(){std::optional<Value> o(Value{9});Value& v=o.emplace();return !o||v.n!=0||&v!=&*o;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-trait-metadata-metadata-optional-source-default" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitMetadataRetainsSourceAndStorageBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"unused-source-body", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{long double hidden=n;return int(hidden)+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp"},
+      {"actual-source-body", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{long double hidden=n;return int(hidden)+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){C c;return c()(7)!=8;}
+)cpp"},
+      {"declaration-target", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept;
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp"},
+      {"null-trait", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,nullptr>;
+int main(){return 0;}
+)cpp"},
+      {"object-pointer-trait", R"cpp(#include <type_traits>
+int value;using C=std::integral_constant<int*,&value>;int main(){return 0;}
+)cpp"},
+      {"sdk-value-storage", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+const F& alias=C::value;int main(){return alias(7)!=8;}
+)cpp"},
+      {"source-redeclaration", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*)(int)noexcept;
+namespace std { inline namespace __1 { template<class T,T> struct integral_constant; } }
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp"},
+      {"unsupported-signature", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+long double target(int n)noexcept{return n+1;}
+using F=long double(*)(int)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp"},
+      {"variadic-target", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n,...)noexcept{return n+1;}
+using F=int(*)(int,...)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp"},
+      {"volatile-pointer", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int target(int n)noexcept{return n+1;}
+using F=int(*volatile)(int)noexcept;
+using C=std::integral_constant<F,target>;
+int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("function-trait-metadata-reject-") + Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("function-trait-metadata-reject-") + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitOptionalAssignment) {
   const auto Source = tmpFile("function-trait-optional-assignment.cpp");
   const auto Output = tmpFile("function-trait-optional-assignment.nc");

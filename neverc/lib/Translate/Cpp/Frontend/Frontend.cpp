@@ -2448,6 +2448,16 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(T->getPointeeType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedFunctionTraitMetadata(
+                   S, Sources, T->getAsCXXRecordDecl(), Context)) {
+      const auto *Trait =
+          cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      checkQueryType(Trait->getTemplateArgs().get(0).getAsType(), L,
+                     AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+      const auto *Target =
+          cast<FunctionDecl>(Trait->getTemplateArgs().get(1).getAsDecl());
+      functionPointerType(Context.getPointerType(Target->getType()), L);
+    } else if (AllowIncompleteRecords &&
                approvedFunctionalReferenceMetadata(S, Sources,
                                                    T->getAsCXXRecordDecl())) {
       const auto *Wrapper =
@@ -13414,7 +13424,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto Name = Template->getName();
     llvm::StringRef DefinitionPath, ForwardPath;
-    if (Name == "pointer_traits")
+    if (Name == "integral_constant")
+      DefinitionPath = "__type_traits/integral_constant.h";
+    else if (Name == "pointer_traits")
       DefinitionPath = "__memory/pointer_traits.h";
     else if (Name == "allocator") {
       DefinitionPath = "__memory/allocator.h";

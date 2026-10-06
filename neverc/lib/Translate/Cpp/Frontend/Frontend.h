@@ -245,6 +245,10 @@ const clang::FunctionDecl *
 approvedSDKFunctionConstant(const State &S, const clang::SourceManager &SM,
                             const clang::VarDecl *Variable,
                             const clang::ASTContext &Context);
+bool approvedFunctionTraitMetadata(const State &S,
+                                   const clang::SourceManager &SM,
+                                   const clang::CXXRecordDecl *Record,
+                                   const clang::ASTContext &Context);
 struct FunctionTraitValueCall {
   const clang::FunctionDecl *Target;
   const clang::Expr *Object;

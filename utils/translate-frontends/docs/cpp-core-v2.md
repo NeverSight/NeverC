@@ -8925,6 +8925,19 @@ execution requires the implementing revision's CI.
 
 ## Function-pointer trait constants
 
+An uncompleted function-pointer `integral_constant` specialization can retain
+checked type identity without instantiating its body. Unused aliases,
+classification and identity queries, admitted type transforms, pointer/reference
+metadata and nested pair, tuple or reference-wrapper metadata use this proof.
+The exact pinned primary and every redeclaration, unchanged primary `value`
+initializer, concrete pointer type and nonnull source function declaration are
+checked. Source replacements or partial specializations cannot borrow that
+identity. The target must have its owned definition and admitted original
+signature, and its source body retains the ordinary profile checks. This
+metadata path completes no record and emits no trait storage or callback address. Actual complete objects,
+layout and operations retain their independent proofs; evaluated SDK `value`
+expressions and storage aliases retain their existing restrictions.
+
 Core v2 consumes nonnull function-pointer values from the pinned
 `std::integral_constant<Pointer, Function>::value` as checked callback addresses.
 The exact primary and implicit specialization, every record/value redeclaration,

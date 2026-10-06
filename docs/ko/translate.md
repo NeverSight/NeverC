@@ -83,6 +83,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 인수 없는 `optional::emplace()`는 허용된 비 const 스칼라, trivial 소스 소유 레코드, 검증된 함수 포인터 trait 객체와 이 요소들을 재귀적으로 포함하는 배열을 값 초기화합니다. 고정 SDK의 reset, 제자리 생성, 참조 반환 본문을 검증합니다. 반복 emplace는 내부 저장소의 동일성을 유지하며 스칼라와 포인터를 0 또는 null로 재설정합니다. nontrivial 기본 생성자, 기본 멤버 초기화자, volatile 요소는 이 경로에서 지원하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
+완성되지 않은 함수 포인터 `integral_constant` 특수화는 사용하지 않는 별칭, 타입 변환, 호환 타입 질의와 중첩 pair, tuple, 참조 래퍼 메타데이터에서 타입 동일성을 유지합니다. 고정 SDK 주 템플릿의 정확한 초기화자, 선언 인수, 소스 함수 시그니처를 검증하며 trait를 완성하거나 저장소를 생성하지 않습니다. 소스 함수 본문에는 독립적인 프로필 검사를 계속 적용합니다. 실제 객체, 콜백 주소, SDK `value` 저장소 별칭에는 기존 정의, 레이아웃, 연산 검사를 계속 적용합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 단항 형식 변환은 원래 입력, 실제 치환된 소스와 결과를 검사합니다. 최종 형식에서 사라지는 별칭 템플릿 인수도 포함됩니다. 고정 버전의 열여섯 변환은 기존 형식 메타데이터와 실행 시 형식을 사용하며 네이티브 검증은 CI에서만 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2는 검증된 `__array_rank`와 `__array_extent`도 지원하며, 고정 배열 타입에 대한 템플릿 인덱스를 포함한 음이 아닌 상수 정수 인덱스를 처리합니다. 상수로 바꾸기 전에 타입과 인덱스 소스를 검사합니다. 지원하지 않는 배열 타입과 암시적 클래스 변환 인덱스는 제외되며, 네이티브 결과는 구현 리비전의 CI로 검증해야 합니다. `int[][3]`처럼 길이를 알 수 없는 배열도 타입 메타데이터, 별칭과 템플릿 인수에서 차원 수, 바깥 길이를 나타내는 0과 알려진 안쪽 길이를 보존합니다. 런타임 타입과 연산 질의의 별도 제한은 유지되며 표준 헤더와 전체 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

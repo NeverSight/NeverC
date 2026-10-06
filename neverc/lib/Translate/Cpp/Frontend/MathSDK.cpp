@@ -223,12 +223,9 @@ approvedSDKIntegerConstant(const State &S, const SourceManager &SM,
 }
 
 static const FunctionDecl *
-functionTraitConstantTarget(const State &S, const SourceManager &SM,
-                            const VarDecl *Variable,
-                            const ASTContext &Context) {
-  const auto *Record = Variable ? dyn_cast<ClassTemplateSpecializationDecl>(
-                                      Variable->getDeclContext())
-                                : nullptr;
+functionTraitTemplateTarget(const State &S, const SourceManager &SM,
+                            const ClassTemplateSpecializationDecl *Record,
+                            const ASTContext &Context, bool Lazy = false) {
   const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   const auto Path = "__type_traits/integral_constant.h";
@@ -238,24 +235,22 @@ functionTraitConstantTarget(const State &S, const SourceManager &SM,
     return approvedStandardSDKDeclaration(S, SM, Declaration) && Origin &&
            Origin->Root == "libcxx" && Origin->Path == Path;
   };
-  if (!S.coreV2() || !Record || !Primary || !Definition ||
-      Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+  if (!S.coreV2() || !Record || !Primary || (!Lazy && !Definition) ||
+      Record->isInvalidDecl() || Record->isUnion() ||
+      Record->isDependentContext() ||
+      (Record->getSpecializationKind() != TSK_ImplicitInstantiation &&
+       !(Lazy && Record->getSpecializationKind() == TSK_Undeclared)) ||
       Record->getName() != "integral_constant" ||
-      Variable->getName() != "value" || !Variable->isStaticDataMember() ||
-      !Variable->isConstexpr() || Variable->getType().isNull() ||
-      !Variable->getType().isConstQualified() ||
-      Variable->getType().isVolatileQualified() ||
-      !Variable->getType()->isFunctionPointerType() || !Pinned(Variable) ||
-      !Pinned(Definition) || !Pinned(Primary->getTemplatedDecl()))
+      Record->getSpecializedTemplateOrPartial()
+          .is<ClassTemplatePartialSpecializationDecl *>() ||
+      (Definition && !Pinned(Definition)) ||
+      !Pinned(Primary->getTemplatedDecl()))
     return nullptr;
   for (const auto *Declaration : Record->redecls())
     if (!Pinned(Declaration))
       return nullptr;
   for (const auto *Declaration : Primary->redecls())
     if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
-      return nullptr;
-  for (const auto *Declaration : Variable->redecls())
-    if (!Pinned(Declaration))
       return nullptr;
   const auto &Arguments = Record->getTemplateArgs();
   if (Arguments.size() != 2 ||
@@ -269,7 +264,6 @@ functionTraitConstantTarget(const State &S, const SourceManager &SM,
       !S.owns(SM, Target->getLocation()) || Pointer.isVolatileQualified() ||
       Pointer.isRestrictQualified() ||
       Pointer.getAddressSpace() != LangAS::Default ||
-      !Context.hasSameUnqualifiedType(Pointer, Variable->getType()) ||
       !Context.hasSameUnqualifiedType(Pointer,
                                       Arguments.get(1).getParamTypeForDecl()))
     return nullptr;
@@ -285,6 +279,32 @@ functionTraitConstantTarget(const State &S, const SourceManager &SM,
          Context.hasSameFunctionTypeIgnoringExceptionSpec(Function,
                                                           Target->getType()))))
     return nullptr;
+  return Target;
+}
+
+static const FunctionDecl *
+functionTraitConstantTarget(const State &S, const SourceManager &SM,
+                            const VarDecl *Variable,
+                            const ASTContext &Context) {
+  const auto *Record = Variable ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      Variable->getDeclContext())
+                                : nullptr;
+  const auto *Target = functionTraitTemplateTarget(S, SM, Record, Context);
+  if (!Target || Variable->getName() != "value" ||
+      !Variable->isStaticDataMember() || !Variable->isConstexpr() ||
+      Variable->getType().isNull() || !Variable->getType().isConstQualified() ||
+      Variable->getType().isVolatileQualified() ||
+      !Variable->getType()->isFunctionPointerType() ||
+      !Context.hasSameUnqualifiedType(
+          Record->getTemplateArgs().get(0).getAsType(), Variable->getType()))
+    return nullptr;
+  for (const auto *Declaration : Variable->redecls()) {
+    const auto Origin = S.sdkFile(SM, Declaration->getLocation());
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) || !Origin ||
+        Origin->Root != "libcxx" ||
+        Origin->Path != "__type_traits/integral_constant.h")
+      return nullptr;
+  }
   return Target;
 }
 
@@ -788,21 +808,24 @@ static bool functionalObjectTemplateOrigin(const State &S,
 // initializer lazy when no trait operator or value expression is selected.
 // Authenticate that exact primary initializer without relaxing evaluated
 // values.
-static bool uninstantiatedFunctionTraitValue(const State &S,
-                                             const SourceManager &SM,
-                                             const VarDecl *Variable,
-                                             const ASTContext &Context) {
-  const auto *Target = functionTraitConstantTarget(S, SM, Variable, Context);
-  const auto *Definition = Target ? Target->getDefinition() : nullptr;
-  const VarDecl *Initializer = nullptr;
-  if (!Definition || !S.owns(SM, Definition->getLocation()) ||
-      Variable->getAnyInitializer(Initializer))
-    return false;
-  const auto *Record =
-      cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
-  const auto *Primary = Record->getSpecializedTemplate();
+static const VarDecl *
+functionTraitPrimaryValue(const State &S, const SourceManager &SM,
+                          const ClassTemplateDecl *Primary,
+                          const ASTContext &Context) {
+  if (!Primary)
+    return nullptr;
   const auto *Parameters = Primary->getTemplateParameters();
-  const auto *Pattern = Variable->getInstantiatedFromStaticDataMember();
+  const VarDecl *Pattern = nullptr;
+  const auto *Definition = Primary->getTemplatedDecl()->getDefinition();
+  if (!Definition)
+    return nullptr;
+  for (const auto *Declaration : Definition->decls())
+    if (const auto *Value = dyn_cast<VarDecl>(Declaration);
+        Value && Value->getName() == "value") {
+      if (Pattern)
+        return nullptr;
+      Pattern = Value;
+    }
   const auto *TypeParameter =
       Parameters->size() == 2
           ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0))
@@ -818,24 +841,69 @@ static bool uninstantiatedFunctionTraitValue(const State &S,
       !PatternType.isNull() ? PatternType->getAs<TemplateTypeParmType>()
                             : nullptr;
   return Pattern && TypeParameter && ValueParameter && Value &&
-         Pattern->getDeclContext() ==
-             Primary->getTemplatedDecl()->getDefinition() &&
-         Pattern->getName() == "value" && Pattern->isStaticDataMember() &&
-         Pattern->isConstexpr() && PatternType.isConstQualified() &&
-         !PatternType.isVolatileQualified() &&
-         !PatternType.isRestrictQualified() &&
-         PatternType.getAddressSpace() == LangAS::Default && PatternParameter &&
-         Context.hasSameType(PatternType.getUnqualifiedType(),
-                             QualType(TypeParameter->getTypeForDecl(), 0)) &&
-         !TypeParameter->isParameterPack() && TypeParameter->getDepth() == 0 &&
-         TypeParameter->getIndex() == 0 && !ValueParameter->isParameterPack() &&
-         ValueParameter->getDepth() == 0 && ValueParameter->getIndex() == 1 &&
-         Context.hasSameType(ValueParameter->getType(),
-                             PatternType.getUnqualifiedType()) &&
-         Value->getDecl() == ValueParameter &&
-         Context.hasSameType(Value->getType(), ValueParameter->getType()) &&
-         approvedStandardSDKDeclaration(S, SM, Pattern) &&
-         functionalObjectOrigin(S, SM, Pattern, "integral_constant");
+                 Pattern->getDeclContext() ==
+                     Primary->getTemplatedDecl()->getDefinition() &&
+                 Pattern->getName() == "value" &&
+                 Pattern->isStaticDataMember() && Pattern->isConstexpr() &&
+                 PatternType.isConstQualified() &&
+                 !PatternType.isVolatileQualified() &&
+                 !PatternType.isRestrictQualified() &&
+                 PatternType.getAddressSpace() == LangAS::Default &&
+                 PatternParameter &&
+                 Context.hasSameType(
+                     PatternType.getUnqualifiedType(),
+                     QualType(TypeParameter->getTypeForDecl(), 0)) &&
+                 !TypeParameter->isParameterPack() &&
+                 TypeParameter->getDepth() == 0 &&
+                 TypeParameter->getIndex() == 0 &&
+                 !ValueParameter->isParameterPack() &&
+                 ValueParameter->getDepth() == 0 &&
+                 ValueParameter->getIndex() == 1 &&
+                 Context.hasSameType(ValueParameter->getType(),
+                                     PatternType.getUnqualifiedType()) &&
+                 Value->getDecl() == ValueParameter &&
+                 Context.hasSameType(Value->getType(),
+                                     ValueParameter->getType()) &&
+                 approvedStandardSDKDeclaration(S, SM, Pattern) &&
+                 functionalObjectOrigin(S, SM, Pattern, "integral_constant")
+             ? Pattern
+             : nullptr;
+}
+
+static bool uninstantiatedFunctionTraitValue(const State &S,
+                                             const SourceManager &SM,
+                                             const VarDecl *Variable,
+                                             const ASTContext &Context) {
+  const auto *Target = functionTraitConstantTarget(S, SM, Variable, Context);
+  const auto *Definition = Target ? Target->getDefinition() : nullptr;
+  const VarDecl *Initializer = nullptr;
+  if (!Definition || !S.owns(SM, Definition->getLocation()) ||
+      Variable->getAnyInitializer(Initializer))
+    return false;
+  const auto *Record =
+      cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
+  const auto *Pattern = functionTraitPrimaryValue(
+      S, SM, Record->getSpecializedTemplate(), Context);
+  return Pattern && Variable->getInstantiatedFromStaticDataMember() == Pattern;
+}
+
+bool approvedFunctionTraitMetadata(const State &S, const SourceManager &SM,
+                                   const CXXRecordDecl *Record,
+                                   const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!Specialization || Record->getDefinition())
+    return false;
+  const auto *Target =
+      functionTraitTemplateTarget(S, SM, Specialization, Context, true);
+  const auto *Definition = Target ? Target->getDefinition() : nullptr;
+  const auto *Primary = Specialization->getSpecializedTemplate();
+  if (!Definition || !S.owns(SM, Definition->getLocation()) ||
+      !functionTraitPrimaryValue(S, SM, Primary, Context))
+    return false;
+  llvm::SmallVector<ClassTemplatePartialSpecializationDecl *, 1> Partials;
+  Primary->getPartialSpecializations(Partials);
+  return Partials.empty();
 }
 
 static const VarDecl *functionTraitObjectValue(const State &S,

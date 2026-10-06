@@ -83,6 +83,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 經檢查的零引數 `optional::emplace()` 現在可對已接納的非 const 純量、平凡原始碼自有記錄、經驗證的函式指標 trait 物件及由這些元素遞迴組成的陣列進行值初始化。固定 SDK 的 reset、原位建構和參考回傳函式主體均須通過認證。重複 emplace 保留內部儲存身分，純量和指標值重設為零或空指標。非平凡預設建構函式、預設成員初始化器及 volatile 元素仍不在此路徑的支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
+尚未完成的函式指標 `integral_constant` 特化現在可在未使用別名、型別轉換、相容型別查詢，以及巢狀 pair、tuple 和參考包裝器的中繼資料中保留型別身分。固定 SDK 主範本的精確初始化器、宣告引數和原始碼函式簽章均須檢查，無須完成 trait 型別或產生其儲存。原始碼函式主體仍須獨立通過設定檢查。實際物件、回呼位址及 SDK `value` 儲存別名仍須通過原有定義、配置和操作檢查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 Core v2 一元型別轉換現檢查原始輸入、實際替換後的原始碼與結果，包括最終型別中消失的別名範本參數。固定版本的十六種轉換沿用既有型別中繼資料與執行期型別，原生驗證仍僅在 CI 執行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索引為非負常數整數，也支援固定陣列型別搭配模板索引。折疊前仍檢查型別和索引原始碼；不支援的陣列型別與隱含類別轉換索引仍被拒絕。原生結果須由實作版本的 CI 驗證。 未知長度陣列（如 `int[][3]`）的型別中繼資料、別名和範本引數現可保留維度、為零的外層長度及已知內層界限。執行時期型別和操作查詢仍遵循各自限制；標準標頭及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
