@@ -27952,6 +27952,245 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTraitObjectContainerPairConstruction) {
+  const auto Source =
+      tmpFile("function-trait-object-container-pair-construction.cpp");
+  const auto Output =
+      tmpFile("function-trait-object-container-pair-construction.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::pair<C,int>p{C{},2};return p.first()(p.second)!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-object-container-pair-construction" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitObjectContainerPairCopyAssignment) {
+  const auto Source =
+      tmpFile("function-trait-object-container-pair-copy-assignment.cpp");
+  const auto Output =
+      tmpFile("function-trait-object-container-pair-copy-assignment.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto a=std::make_pair(C{},2);auto b=a;auto c=std::move(b);a=c;return a.first()(a.second)!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-object-container-pair-copy-assignment" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitObjectContainerPairFactory) {
+  const auto Source =
+      tmpFile("function-trait-object-container-pair-factory.cpp");
+  const auto Output =
+      tmpFile("function-trait-object-container-pair-factory.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_pair(C{},2);return p.first()(p.second)!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-object-container-pair-factory" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitObjectContainerPairMixedReference) {
+  const auto Source =
+      tmpFile("function-trait-object-container-pair-mixed-reference.cpp");
+  const auto Output =
+      tmpFile("function-trait-object-container-pair-mixed-reference.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){int n=2;std::pair<C,int&>p(C{},n);p.second=3;return p.first()(n)!=4||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(
+        "function-trait-object-container-pair-mixed-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitObjectContainerPairSecond) {
+  const auto Source =
+      tmpFile("function-trait-object-container-pair-second.cpp");
+  const auto Output = tmpFile("function-trait-object-container-pair-second.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto p=std::make_pair(2,C{});return p.second()(p.first)!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-object-container-pair-second" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitObjectContainersRetainElementAndSourceBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"tuple-construction", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::tuple<C,int>t(C{},2);return std::get<0>(t)()(std::get<1>(t))!=3||effects!=1;}
+)cpp",
+       "TR0201"},
+
+      {"tuple-copy-assignment", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto a=std::make_tuple(C{},2);auto b=a;auto c=std::move(b);a=c;return std::get<0>(a)()(std::get<1>(a))!=3||effects!=1;}
+)cpp",
+       "TR0201"},
+
+      {"tuple-factory", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){auto t=std::make_tuple(C{},2);return std::get<0>(t)()(std::get<1>(t))!=3||effects!=1;}
+)cpp",
+       "TR0201"},
+
+      {"tuple-mixed-reference", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){int n=2;std::tuple<C,int&>t(C{},n);std::get<1>(t)=3;return std::get<0>(t)()(n)!=4||effects!=1;}
+)cpp",
+       "TR0201"},
+
+      {"tuple-multiple-targets", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int other(int n)noexcept{++effects;return n+2;}using D=std::integral_constant<F,other>;int main(){auto t=std::make_tuple(C{},D{});return std::get<0>(t)()(1)!=2||std::get<1>(t)()(1)!=3||effects!=2;}
+)cpp",
+       "TR0201"},
+
+      {"bool-trait-element", R"cpp(#include <type_traits>
+#include <utility>
+int main(){auto p=std::make_pair(std::true_type{},1);return p.first();}
+)cpp",
+       "TR0203"},
+      {"hidden-value-source", R"cpp(#include <type_traits>
+#include <utility>
+int target(int n){return n;}using C=std::integral_constant<int(*)(int),(sizeof(long double),target)>;int main(){auto p=std::make_pair(C{},1);return p.first()(p.second);}
+)cpp",
+       "TR0201"},
+      {"missing-target-definition", R"cpp(#include <type_traits>
+#include <utility>
+int target(int);using C=std::integral_constant<int(*)(int),target>;int main(){auto p=std::make_pair(C{},1);return p.first()(p.second);}
+)cpp",
+       "TR0203"},
+      {"mixed-trait-storage-reference", R"cpp(#include <type_traits>
+#include <tuple>
+int target(int n){return n;}using F=int(*)(int);using C=std::integral_constant<F,target>;int main(){std::tuple<C,const F&>t(C{},C::value);return std::get<0>(t)()(1)+std::get<1>(t)(1);}
+)cpp",
+       "TR0201"},
+      {"null-trait-element", R"cpp(#include <type_traits>
+#include <tuple>
+using C=std::integral_constant<int(*)(int),nullptr>;int main(){auto t=std::make_tuple(C{});return std::get<0>(t)()==nullptr;}
+)cpp",
+       "TR0203"},
+      {"object-pointer-trait-element", R"cpp(#include <type_traits>
+#include <utility>
+int n;using C=std::integral_constant<int*,&n>;int main(){auto p=std::make_pair(C{},1);return *p.first();}
+)cpp",
+       "TR0203"},
+      {"unsupported-selected-body", R"cpp(#include <type_traits>
+#include <tuple>
+int target(int n){long double x=0;return n;}using C=std::integral_constant<int(*)(int),target>;int main(){auto t=std::make_tuple(C{});return std::get<0>(t)()(1);}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source =
+        tmpFile(std::string("function-trait-object-container-reject-") +
+                Case.Name + ".cpp");
+    auto Output =
+        tmpFile(std::string("function-trait-object-container-reject-") +
+                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTraitObjectCallOperator) {
   const auto Source = tmpFile("function-trait-object-call-operator.cpp");
   const auto Output = tmpFile("function-trait-object-call-operator.nc");

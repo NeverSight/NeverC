@@ -8944,6 +8944,16 @@ address. No SDK method is emitted as a runtime call. Selected source definitions
 and bodies remain required for evaluated addresses; bool/object-pointer/null
 trait objects and unsupported or hidden source constructs remain excluded.
 
+These exact objects also form checked `pair` value elements, including direct
+construction, `make_pair`, copied/moved pairs, assignment and mixed-reference
+pairs. Copy and assignment admission requires the existing trivial lifecycle
+and exact pinned layout checks. Each element retains its trait specialization
+and target identity; callback results still require the checked source body.
+The one-byte carrier does not admit unrelated trait domains or storage references
+to `value`. A tuple leaf using empty-base optimization remains outside the
+current concrete-field tuple layout; it must retain explicit rejection until
+that owning layout and its empty-object operations are supported.
+
 ## Unary type transforms
 
 Core v2 checks the sixteen unary type transforms in the pinned frontend:

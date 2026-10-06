@@ -772,7 +772,8 @@ static const VarDecl *functionTraitObjectValue(const State &S,
                                                const CXXRecordDecl *Record,
                                                const ASTContext &Context) {
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
-  if (!Definition || Definition->isUnion() || Definition->getNumBases() ||
+  if (!Definition || Definition->getName() != "integral_constant" ||
+      Definition->isUnion() || Definition->getNumBases() ||
       Definition->isDependentContext() || !Definition->isEmpty() ||
       !Definition->isStandardLayout() || !Definition->isTriviallyCopyable() ||
       !Definition->hasTrivialDestructor() || !Definition->field_empty() ||
@@ -3445,6 +3446,10 @@ static bool utilityPairValue(const State &S, const SourceManager &SM,
     return true;
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (functionTraitObjectValue(S, SM, Record, Context))
+    return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default &&
+           Record->hasTrivialCopyConstructor();
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
     return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
@@ -3471,6 +3476,11 @@ static bool utilityPairAssignableValue(const State &S,
     return utilityPairValue(S, SM, Context, Type, Depth);
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (functionTraitObjectValue(S, SM, Record, Context))
+    return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default &&
+           Record->hasTrivialCopyAssignment() &&
+           Record->hasTrivialMoveAssignment();
   if (const auto Optional =
           approvedUtilityOptionalRecord(S, SM, Record, Context))
     return !Optional->ElementType.isConstQualified() &&
