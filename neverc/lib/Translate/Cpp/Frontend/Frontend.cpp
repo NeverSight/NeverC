@@ -14745,6 +14745,29 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           queueConsumedOperationSignatures(Query);
         }
       }
+    if (const auto *Call = dyn_cast<CallExpr>(S); Call && Call->getNumArgs()) {
+      const auto Operation =
+          approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+      if (Operation == UtilityOperation::FunctionalInvoke ||
+          Operation == UtilityOperation::TupleApply)
+        if (const auto *Reference =
+                dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenImpCasts());
+            Reference &&
+            approvedSDKFunctionConstant(A.S, A.Sources,
+                                        dyn_cast<VarDecl>(Reference->getDecl()),
+                                        A.Context)) {
+          // These exact pinned dispatches only read the callable pointer.
+          // Their forwarding reference does not expose trait storage identity.
+          auto [Entry, Inserted] =
+              A.SDKFunctionConstantValueUses.emplace(Reference, Call);
+          if (Inserted)
+            A.chargeExpansion(1, Call->getExprLoc());
+          else if (Entry->second != Call)
+            A.reject(Call->getExprLoc(), "trait callable value source",
+                     "A trait value reference requires its exact consuming "
+                     "dispatch.");
+        }
+    }
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
       const FunctionDecl *AuthenticatedVectorEndpoint = nullptr;
@@ -18553,6 +18576,24 @@ public:
         Binding && !A.decompositionBinding(Binding)) {
       A.reject(Reference->getLocation(), "structured binding reference",
                "A binding reference requires its checked local decomposition owner.");
+      return true;
+    }
+    if (const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+        Variable && Variable->getType()->isFunctionPointerType() &&
+        approvedStandardSDKDeclaration(A.S, A.Sources, Variable)) {
+      const auto *Target =
+          approvedSDKFunctionConstant(A.S, A.Sources, Variable, A.Context);
+      if (!Target)
+        A.reject(Reference->getLocation(), "standard function constant",
+                 "A pinned function-pointer trait constant requires an exact "
+                 "ordinary source function value.");
+      else if (Reference->isNonOdrUse() == NOUR_None &&
+               !A.SDKFunctionConstantValueUses.count(Reference))
+        A.reject(Reference->getLocation(), "standard trait storage",
+                 "An approved function-pointer trait may be consumed as a "
+                 "constant value, but its storage identity is unavailable.");
+      else
+        A.functionAddressTarget(Target, Reference->getLocation());
       return true;
     }
     if (auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());

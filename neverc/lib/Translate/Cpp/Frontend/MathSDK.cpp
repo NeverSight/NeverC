@@ -222,6 +222,87 @@ approvedSDKIntegerConstant(const State &S, const SourceManager &SM,
              : std::nullopt;
 }
 
+const FunctionDecl *approvedSDKFunctionConstant(const State &S,
+                                                const SourceManager &SM,
+                                                const VarDecl *Variable,
+                                                const ASTContext &Context) {
+  const auto *Record = Variable ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      Variable->getDeclContext())
+                                : nullptr;
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto Path = "__type_traits/integral_constant.h";
+  auto Pinned = [&](const Decl *Declaration) {
+    const auto Origin =
+        Declaration ? S.sdkFile(SM, Declaration->getLocation()) : std::nullopt;
+    return approvedStandardSDKDeclaration(S, SM, Declaration) && Origin &&
+           Origin->Root == "libcxx" && Origin->Path == Path;
+  };
+  if (!S.coreV2() || !Record || !Primary || !Definition ||
+      Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Record->getName() != "integral_constant" ||
+      Variable->getName() != "value" || !Variable->isStaticDataMember() ||
+      !Variable->isConstexpr() || Variable->getType().isNull() ||
+      !Variable->getType().isConstQualified() ||
+      Variable->getType().isVolatileQualified() ||
+      !Variable->getType()->isFunctionPointerType() || !Pinned(Variable) ||
+      !Pinned(Definition) || !Pinned(Primary->getTemplatedDecl()))
+    return nullptr;
+  for (const auto *Declaration : Record->redecls())
+    if (!Pinned(Declaration))
+      return nullptr;
+  for (const auto *Declaration : Primary->redecls())
+    if (!Pinned(Declaration) || !Pinned(Declaration->getTemplatedDecl()))
+      return nullptr;
+  for (const auto *Declaration : Variable->redecls())
+    if (!Pinned(Declaration))
+      return nullptr;
+  const auto &Arguments = Record->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Declaration)
+    return nullptr;
+  auto Pointer = Arguments.get(0).getAsType();
+  const auto *Target =
+      dyn_cast_or_null<FunctionDecl>(Arguments.get(1).getAsDecl());
+  if (Pointer.isNull() || !Pointer->isFunctionPointerType() || !Target ||
+      !S.owns(SM, Target->getLocation()) || Pointer.isVolatileQualified() ||
+      Pointer.isRestrictQualified() ||
+      Pointer.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Pointer, Variable->getType()) ||
+      !Context.hasSameUnqualifiedType(Pointer,
+                                      Arguments.get(1).getParamTypeForDecl()))
+    return nullptr;
+  auto Function = Pointer->getPointeeType();
+  const auto *Expected = Function->getAs<FunctionProtoType>();
+  const auto *Actual = Target->getType()->getAs<FunctionProtoType>();
+  if (Function.hasQualifiers() ||
+      Function.getAddressSpace() != LangAS::Default ||
+      !ordinaryCallbackPrototype(Expected) ||
+      !ordinaryCallbackPrototype(Actual) ||
+      !(Context.hasSameType(Function, Target->getType()) ||
+        (Actual->isNothrow() && !Expected->isNothrow() &&
+         Context.hasSameFunctionTypeIgnoringExceptionSpec(Function,
+                                                          Target->getType()))))
+    return nullptr;
+  const VarDecl *Initializer = nullptr;
+  if (!Variable->getAnyInitializer(Initializer) || !Pinned(Initializer) ||
+      Initializer->getCanonicalDecl() != Variable->getCanonicalDecl())
+    return nullptr;
+  const auto *Value = Initializer->evaluateValue();
+  if (!Value || !Value->isLValue() || Value->isNullPointer() ||
+      !Value->getLValueOffset().isZero() || Value->isLValueOnePastTheEnd() ||
+      Value->getLValueCallIndex() || Value->getLValueVersion() ||
+      (Value->hasLValuePath() && !Value->getLValuePath().empty()))
+    return nullptr;
+  const auto *ValueTarget = dyn_cast_or_null<FunctionDecl>(
+      Value->getLValueBase().dyn_cast<const ValueDecl *>());
+  return ValueTarget &&
+                 ValueTarget->getCanonicalDecl() == Target->getCanonicalDecl()
+             ? Target
+             : nullptr;
+}
+
 bool approvedNumericLimitsConstant(const State &S, const SourceManager &SM,
                                    const CallExpr *Call, ASTContext &Context,
                                    APValue &Value) {

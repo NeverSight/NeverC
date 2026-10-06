@@ -45,7 +45,8 @@ int main() {
 }
 ```
 
-This surface is compile-time-only. Constructing a standard-library object,
+Function-pointer trait values follow their [checked address contract](#function-pointer-trait-constants).
+Constructing a standard-library object,
 calling a standard-library function or taking the address/reference identity of
 a trait constant is rejected. Quoted `"type_traits"`, unapproved standard
 headers, platform headers and user shadow headers remain outside this boundary.
@@ -8893,6 +8894,33 @@ pointer arguments, object-reference arguments, pointer-typed null arguments,
 variadic or unsupported signatures and nondefault ABI metadata remain excluded.
 Native C23 and the translation protocol are unchanged. Cross-platform native
 execution requires the implementing revision's CI.
+
+## Function-pointer trait constants
+
+Core v2 consumes nonnull function-pointer values from the pinned
+`std::integral_constant<Pointer, Function>::value` as checked callback addresses.
+The exact primary and implicit specialization, every record/value redeclaration,
+and the initializer must originate in `__type_traits/integral_constant.h`.
+The pointer type and declaration argument must match the constexpr field;
+its APValue must identify that exact ordinary source function without an
+offset, subobject path, null address, call index or temporary version.
+Default ABI and checked `noexcept` removal retain the normal callback proofs.
+
+These values lower through the existing function-address operation and may be
+stored in admitted callbacks or passed to direct callback calls, `invoke`,
+`apply` and function-address template arguments. The exact authenticated
+invoke/apply callable operand consumes a pointer value even when Clang marks
+its forwarding-reference argument as an ODR use; that exception belongs to the
+particular dispatch and reference node. Other reference bindings retain the
+storage rejection. They create no SDK global or
+trait object. Original written aliases, function signature and template value
+sources remain checked before folding, and evaluated addresses require the
+selected source definition and checked body. Address-taking or reference
+binding to the trait constant itself remains rejected; this path exposes its
+resolved value without its storage identity. Null pointer arguments,
+unsupported signatures, SDK replacements and unrelated foreign constants do
+not gain admission. Native C23 and the protocol are unchanged. Cross-platform
+native execution requires the implementing revision's CI.
 
 ## Unary type transforms
 

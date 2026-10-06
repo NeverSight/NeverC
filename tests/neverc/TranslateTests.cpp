@@ -26505,7 +26505,7 @@ TEST_F(TranslateTest, CoreV2TypeTraitsKeepsTheHeaderBoundaryCompileTimeOnly) {
   const Rejection Cases[] = {
       {"quoted", "#include \"type_traits\"\nint main(){return 0;}",
        "TR0201"},
-      {"other-header", "#include <vector>\nint main(){return 0;}",
+      {"other-header", "#include <thread>\nint main(){return 0;}",
        "TR0201"},
       {"runtime-object",
        "#include <type_traits>\nint main(){return std::true_type{} ? 0 : 1;}",
@@ -27949,6 +27949,180 @@ TEST_F(TranslateTest,
       auto Run = exec(Executable.string(), {});
       EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
     }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitConstantAdapters) {
+  const auto Source = tmpFile("function-trait-constant-adapters.cpp");
+  const auto Output = tmpFile("function-trait-constant-adapters.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+#include <functional>
+#include <tuple>
+int effects;int target(int n)noexcept{++effects;return n+1;}using C=std::integral_constant<int(*)(int)noexcept,target>;int main(){auto p=C::value;auto t=std::make_tuple(2);return std::invoke(C::value,1)!=2||std::apply(C::value,t)!=3||p(3)!=4||effects!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-constant-adapters" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitConstantNoexceptRemoval) {
+  const auto Source = tmpFile("function-trait-constant-noexcept-removal.cpp");
+  const auto Output = tmpFile("function-trait-constant-noexcept-removal.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+using F=int(*)(int);int effects;int target(int n)noexcept{++effects;return n+1;}using C=std::integral_constant<F,target>;int main(){static_assert(!noexcept(C::value(1)));F p=C::value;return p(2)!=3||effects!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-constant-noexcept-removal" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitConstantTemplateSource) {
+  const auto Source = tmpFile("function-trait-constant-template-source.cpp");
+  const auto Output = tmpFile("function-trait-constant-template-source.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+int target(int n){return n+1;}using C=std::integral_constant<int(*)(int),target>;template<auto F>int invoke(int n){return F(n);}int main(){return invoke<C::value>(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-constant-template-source" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitConstantTemplateTarget) {
+  const auto Source = tmpFile("function-trait-constant-template-target.cpp");
+  const auto Output = tmpFile("function-trait-constant-template-target.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+template<class T>int target(int n)noexcept{return n+sizeof(T);}using C=std::integral_constant<int(*)(int)noexcept,target<char>>;int main(){return C::value(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable =
+        tmpFile("function-trait-constant-template-target" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTraitConstantValue) {
+  const auto Source = tmpFile("function-trait-constant-value.cpp");
+  const auto Output = tmpFile("function-trait-constant-value.nc");
+  writeFile(Source, R"cpp(#include <type_traits>
+using F=int(*)(int)noexcept;int target(int n)noexcept{return n+1;}using C=std::integral_constant<F,target>;int main(){static_assert(C::value==&target);return C::value(2)!=3;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("function-trait-constant-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionTraitConstantsRetainSourceAndStorageBoundaries) {
+  struct Case {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Case Cases[] = {
+      {"user-reference-escape", R"cpp(#include <type_traits>
+int target(int n){return n;}using C=std::integral_constant<int(*)(int),target>;int read(int(*const&p)(int)){return p(1);}int main(){return read(C::value);}
+)cpp",
+       "TR0201"},
+
+      {"address-of-trait-storage", R"cpp(#include <type_traits>
+int target(int n){return n;}using C=std::integral_constant<int(*)(int),target>;int main(){auto p=&C::value;return (*p)(1);}
+)cpp",
+       "TR0201"},
+      {"reference-to-trait-storage", R"cpp(#include <type_traits>
+int target(int n){return n;}using C=std::integral_constant<int(*)(int),target>;int main(){auto&r=C::value;return r(1);}
+)cpp",
+       "TR0201"},
+      {"hidden-type-alias", R"cpp(#include <type_traits>
+using P=decltype((sizeof(long double),static_cast<int(*)(int)>(nullptr)));int target(int n){return n;}using C=std::integral_constant<P,target>;int main(){return C::value(1);}
+)cpp",
+       "TR0201"},
+      {"hidden-target-argument", R"cpp(#include <type_traits>
+template<class T>int target(int n){return n;}using C=std::integral_constant<int(*)(int),target<decltype((sizeof(long double),int{}))>>;int main(){return C::value(1);}
+)cpp",
+       "TR0201"},
+      {"hidden-value-source", R"cpp(#include <type_traits>
+int target(int n){return n;}using C=std::integral_constant<int(*)(int),(sizeof(long double),target)>;int main(){return C::value(1);}
+)cpp",
+       "TR0201"},
+      {"unsupported-selected-body", R"cpp(#include <type_traits>
+int target(int n){long double hidden=0;return n;}using C=std::integral_constant<int(*)(int),target>;int main(){return C::value(1);}
+)cpp",
+       "TR0201"},
+      {"missing-target-definition", R"cpp(#include <type_traits>
+int target(int);using C=std::integral_constant<int(*)(int),target>;int main(){return C::value(1);}
+)cpp",
+       "TR0203"},
+      {"pointer-null-trait", R"cpp(#include <type_traits>
+using C=std::integral_constant<int(*)(int),nullptr>;int main(){return C::value==nullptr;}
+)cpp",
+       "TR0201"},
+      {"variadic-target", R"cpp(#include <type_traits>
+int target(int,...){return 3;}using C=std::integral_constant<int(*)(int,...),target>;int main(){return C::value(1,2);}
+)cpp",
+       "TR0201"},
+      {"wide-target", R"cpp(#include <type_traits>
+long double target(long double n){return n;}using C=std::integral_constant<long double(*)(long double),target>;int main(){return C::value(1);}
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Source =
+        tmpFile(std::string("function-trait-reject-") + Case.Name + ".cpp");
+    auto Output =
+        tmpFile(std::string("function-trait-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
   }
 }
 

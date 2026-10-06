@@ -383,8 +383,16 @@ class FunctionLowering {
         reject(L, "array copy source", "No bound semantic array source is active.");
       return Found->second;
     }
-    if (const auto *R = dyn_cast<DeclRefExpr>(E))
+    if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
+      if (A.S.coreV2() && A.SDKFunctionConstantValueUses.count(R)) {
+        // The authenticated SDK dispatch reads only this pointer value. Give
+        // its forwarding parameter a local carrier, without SDK storage.
+        auto Place = temporary(type(R->getType(), L), L);
+        assign(Place, expression(R), L);
+        return Place;
+      }
       return storage(R->getDecl(), E->getExprLoc());
+    }
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
       if (A.S.coreV2())
         if (const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
@@ -20193,6 +20201,17 @@ class FunctionLowering {
           Value.setIsUnsigned(unsignedInteger(T));
           return A.literal(Value, T, L);
         }
+      if (A.S.coreV2())
+        if (const auto *Variable = dyn_cast<VarDecl>(R->getDecl()))
+          if (const auto *Target = approvedSDKFunctionConstant(
+                  A.S, A.Sources, Variable, A.Context)) {
+            if (R->isNonOdrUse() == NOUR_None &&
+                !A.SDKFunctionConstantValueUses.count(R))
+              reject(L, "standard trait storage",
+                     "An approved function-pointer trait may be lowered only "
+                     "as a constant value.");
+            return cast(A.functionAddress(Target, L), T, L);
+          }
       if (A.S.coreV2())
         if (const auto *Variable = dyn_cast<VarDecl>(R->getDecl()))
           if (auto Value = approvedSDKIntegerConstant(

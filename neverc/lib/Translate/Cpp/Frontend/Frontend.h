@@ -241,6 +241,10 @@ std::optional<llvm::APSInt>
 approvedSDKIntegerConstant(const State &S, const clang::SourceManager &SM,
                            const clang::VarDecl *D,
                            const clang::ASTContext &Context);
+const clang::FunctionDecl *
+approvedSDKFunctionConstant(const State &S, const clang::SourceManager &SM,
+                            const clang::VarDecl *Variable,
+                            const clang::ASTContext &Context);
 bool approvedNumericLimitsConstant(const State &S,
                                    const clang::SourceManager &SM,
                                    const clang::CallExpr *Call,
@@ -1811,6 +1815,8 @@ public:
   std::vector<clang::VarDecl *> Globals;
   std::map<const clang::VarDecl *, json::Object> ConstantStaticInitializers;
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
+  std::map<const clang::DeclRefExpr *, const clang::CallExpr *>
+      SDKFunctionConstantValueUses;
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
   std::set<const clang::Expr *> SeparateArrayFillers;
