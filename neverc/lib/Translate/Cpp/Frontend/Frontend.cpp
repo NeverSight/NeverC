@@ -3068,6 +3068,22 @@ static bool utilitySDKFunctionSource(Adapter &A, const FunctionDecl *Function,
   return true;
 }
 
+static bool utilityUniquePtrElementQueryLayout(
+    Adapter &A, const UtilityUniquePtrRecord &Owner, SourceLocation Location) {
+  const auto *Element = Owner.ElementType->getAsCXXRecordDecl();
+  if (Element && !Element->getDefinition() &&
+      approvedFunctionalReferenceMetadata(A.S, A.Sources, Element)) {
+    // The result carrier contains a pointer to this exact SDK wrapper. Complete
+    // only its authenticated class layout, never its factory or member bodies.
+    A.chargeExpansion(1, Location);
+    if (!A.CompleteSDKRecord ||
+        !A.CompleteSDKRecord(Owner.ElementType, Location) ||
+        !approvedFunctionalReferenceRecord(A.S, A.Sources, Element, A.Context))
+      return false;
+  }
+  return true;
+}
+
 static QualType utilityMakeUniqueQuerySource(Adapter &A, const CallExpr *Call) {
   if (!approvedUtilityMakeUniqueSignatureQuery(A.S, A.Sources, Call,
                                                A.Context) ||
@@ -3077,17 +3093,8 @@ static QualType utilityMakeUniqueQuerySource(Adapter &A, const CallExpr *Call) {
     return {};
   const auto Owner = approvedUtilityUniquePtrLayout(
       A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
-  const auto *Element = Owner->ElementType->getAsCXXRecordDecl();
-  if (Element && !Element->getDefinition() &&
-      approvedFunctionalReferenceMetadata(A.S, A.Sources, Element)) {
-    // The result carrier contains a pointer to this exact SDK wrapper. Complete
-    // only its authenticated class layout, never its factory or member bodies.
-    A.chargeExpansion(1, Call->getExprLoc());
-    if (!A.CompleteSDKRecord ||
-        !A.CompleteSDKRecord(Owner->ElementType, Call->getExprLoc()) ||
-        !approvedFunctionalReferenceRecord(A.S, A.Sources, Element, A.Context))
-      return {};
-  }
+  if (!utilityUniquePtrElementQueryLayout(A, *Owner, Call->getExprLoc()))
+    return {};
   return A.Context.getCanonicalType(Call->getDirectCallee()->getReturnType());
 }
 
@@ -6854,6 +6861,9 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
       !utilityUniquePtrSource(A, Info->Owner.Record, !SignatureOnly) ||
       !utilitySDKFunctionSource(A, Method, "__memory/unique_ptr.h",
                                 !SignatureOnly))
+    return std::nullopt;
+  if (SignatureOnly &&
+      !utilityUniquePtrElementQueryLayout(A, Info->Owner, Call->getExprLoc()))
     return std::nullopt;
   switch (Info->Operation) {
   case UtilityUniquePtrOperation::MoveAssign:

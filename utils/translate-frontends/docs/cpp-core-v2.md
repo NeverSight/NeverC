@@ -3433,6 +3433,17 @@ overload and specialization receives its own exact lexical proof. Signature
 metadata does not authorize reset, release, assignment, swap or evaluated
 operations. Independent member addresses and source SDK replacements remain
 rejected.
+Pure observation signatures can also complete an otherwise lazy pinned
+`reference_wrapper` element class layout. This uses the same authenticated
+primary-template and redeclaration proof as factory result metadata; source
+partials or replacements cannot supply it. `get` and scalar arrow results
+retain the exact wrapper pointer and qualification, including array-owner
+getters. The completed wrapper must pass the ordinary pointer-sized layout
+proof, and its scalar, array, function, callback or source-record referent keeps
+its independent source and type checks. No wrapper constructor, getter,
+factory or deletion body is instantiated. This completion grants no runtime
+construction or ownership permission.
+
 The same exact-member result-source proof also admits `release()` on mutable
 scalar and array owners with matching standard or admitted custom deleters.
 The result preserves the exact raw pointer type, pointee qualification and

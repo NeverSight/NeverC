@@ -167275,3 +167275,404 @@ int replacement;namespace std{inline namespace __1{template<>int& unique_ptr<int
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryArrayReferentGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-array-referent-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-array-referent-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int[2]>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-wrapper-observation-array-referent-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrWrapperObservationQueryCallbackReferentGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-callback-referent-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-callback-referent-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+int f(int n){return n+1;}using W=std::reference_wrapper<int(*)(int)>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-wrapper-observation-callback-referent-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrWrapperObservationQueryConstWrapperOwnerGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-const-wrapper-owner-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-const-wrapper-owner-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<const W>;int main(){using P=decltype(std::declval<const U&>().get());static_assert(std::is_same_v<P,const W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-wrapper-observation-const-wrapper-owner-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrWrapperObservationQueryFunctionReferentGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-function-referent-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-function-referent-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+int f(int n){return n+1;}using W=std::reference_wrapper<int(int)>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-wrapper-observation-function-referent-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryRecordGet) {
+  const auto Source = tmpFile("unique-wrapper-observation-record-get.cpp");
+  const auto Output = tmpFile("unique-wrapper-observation-record-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;};using U=std::unique_ptr<R>;int main(){using P=decltype(std::declval<U&>().get());static_assert(std::is_same_v<P,R*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-wrapper-observation-record-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryRecordReferentGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-record-referent-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-record-referent-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;};using W=std::reference_wrapper<R>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-wrapper-observation-record-referent-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryWrapperArrayGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-wrapper-array-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-wrapper-array-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W[]>;int main(){using P=decltype(std::declval<const U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-wrapper-observation-wrapper-array-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrWrapperObservationQueryWrapperArraySubscript) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-wrapper-array-subscript.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-wrapper-array-subscript.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<const int>;using U=std::unique_ptr<W[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,W&>);return sizeof(R)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-wrapper-observation-wrapper-array-subscript" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryWrapperArrow) {
+  const auto Source = tmpFile("unique-wrapper-observation-wrapper-arrow.cpp");
+  const auto Output = tmpFile("unique-wrapper-observation-wrapper-arrow.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().operator->());static_assert(std::is_same_v<P,W*>);static_assert(noexcept(std::declval<U&>().operator->()));return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-wrapper-observation-wrapper-arrow" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryWrapperConstGet) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-wrapper-const-get.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-wrapper-const-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<const int>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-wrapper-observation-wrapper-const-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrWrapperObservationQueryWrapperDereference) {
+  const auto Source =
+      tmpFile("unique-wrapper-observation-wrapper-dereference.cpp");
+  const auto Output =
+      tmpFile("unique-wrapper-observation-wrapper-dereference.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(*std::declval<U&>());static_assert(std::is_same_v<R,W&>);static_assert(noexcept(*std::declval<U&>()));return sizeof(R)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-wrapper-observation-wrapper-dereference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrWrapperObservationQueryWrapperGet) {
+  const auto Source = tmpFile("unique-wrapper-observation-wrapper-get.cpp");
+  const auto Output = tmpFile("unique-wrapper-observation-wrapper-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<const U&>().get());static_assert(std::is_same_v<P,W*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-wrapper-observation-wrapper-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrWrapperObservationQueryRetainsSourceAndReferentBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-get-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){return sizeof(&U::get)>0?0:1;}
+)cpp"},
+      {"long-double-referent", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<long double>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"oversized-array-referent", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int[65537]>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-callback-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+int f(int n){long double x=n;return int(x);}using W=std::reference_wrapper<int(int)>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-callback-signature", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int(long double)>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-wrapper-partial", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}using W=std::reference_wrapper<int*>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"volatile-referent", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<volatile int>;using U=std::unique_ptr<W>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("unique-wrapper-observation-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("unique-wrapper-observation-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

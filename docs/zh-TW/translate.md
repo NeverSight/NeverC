@@ -105,6 +105,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 純 `unique_ptr` 觀察查詢現可驗證尚未實例化函式主體或預設刪除器主體的固定 SDK 成員簽章，涵蓋 `get`、可變/const `get_deleter`、布林轉換、單一物件箭頭/解參照及陣列索引，並保留結果限定與已解析例外中繼資料。接收者與索引運算式不執行，其原始碼、選定預設引數、擁有者配置及 SDK 來源仍受檢查。實際操作與查詢暫存物件仍需獨立生命週期證明；獨立成員位址與 SDK 原始碼替換仍遭拒絕。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+純 `unique_ptr` 觀察查詢也可完成仍處於惰性狀態的固定 SDK `reference_wrapper` 元素配置。`get` 與單一物件箭頭的指標結果保留包裝器型別、const 限定與指標大小 ABI，不需實例化包裝器建構、getter 或刪除器主體。純量、陣列、函式、回呼及原始碼記錄參照仍接受各自的原始碼與型別檢查；SDK 部分特化、原始碼替換與不支援的參照物件仍遭拒絕。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 經驗證的函式指標 trait 包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的 trait 傳值參數，包括 const 參考目標和右值包裝器。固定 SDK 的 trait 複製與包裝器轉換仍須通過認證。每個參數使用獨立的一位元組儲存；可呼叫物件及引數的副作用只發生一次，原始碼函式目標仍須檢查。其他 trait 域和 SDK `value` 儲存別名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 經驗證的原始碼自有標準布局記錄包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的傳值參數。選中的原始碼複製建構、預設參數及相依性仍須通過檢查。參數使用獨立儲存，在複製前觀察後續引數的修改；預設參數副作用和參數清理保留呼叫中的生命週期。右值包裝器仍提供左值參考目標。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
