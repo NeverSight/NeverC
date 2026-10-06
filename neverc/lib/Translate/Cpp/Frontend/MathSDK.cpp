@@ -10216,6 +10216,26 @@ static bool utilityMakeUniqueObjectArguments(const FunctionDecl *Function,
   return true;
 }
 
+static bool utilityMakeUniqueArrayArguments(const FunctionDecl *Function,
+                                            const CallExpr *Call,
+                                            QualType ElementType,
+                                            const ASTContext &Context) {
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 || Function->getNumParams() != 1 ||
+      Call->getNumArgs() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type)
+    return false;
+  const auto *Array = Context.getAsArrayType(Arguments->get(0).getAsType());
+  return Array && isa<IncompleteArrayType>(Array) &&
+         Context.hasSameType(Array->getElementType(), ElementType) &&
+         Arguments->get(1).getKind() == TemplateArgument::Integral &&
+         Arguments->get(1).getIntegralType()->isIntegerType() &&
+         Arguments->get(1).getAsIntegral().isZero() &&
+         Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             Context.getSizeType()) &&
+         Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType());
+}
+
 bool approvedUtilityMakeUniqueSignatureQuery(const State &S,
                                              const SourceManager &SM,
                                              const CallExpr *Call,
@@ -10230,23 +10250,27 @@ bool approvedUtilityMakeUniqueSignatureQuery(const State &S,
       Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
   const auto Owner = approvedUtilityUniquePtrLayout(
       S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-  return Function && Primary && Pattern && Prototype && Owner &&
-         !Owner->Deleter.Array && !Owner->CustomDeleter &&
-         Function->getIdentifier() && Function->getName() == "make_unique" &&
-         !Function->isVariadic() && Function->isInlined() &&
-         Pattern->hasBody() && Prototype->getExceptionSpecType() == EST_None &&
-         Context.hasSameType(Call->getType(), Function->getReturnType()) &&
-         Context.hasSameUnqualifiedType(Function->getReturnType(),
-                                        Context.getRecordType(Owner->Record)) &&
-         approvedUtilityReference(S, SM, Call, Function) &&
-         approvedStandardSDKDeclaration(S, SM, Function) &&
-         approvedStandardSDKDeclaration(S, SM, Primary) &&
-         cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
-                       "__memory/unique_ptr.h") &&
-         cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
-                       "__memory/unique_ptr.h") &&
-         utilityMakeUniqueObjectArguments(Function, Call, Owner->ElementType,
-                                          Context);
+  if (!(Function && Primary && Pattern && Prototype && Owner &&
+        !Owner->CustomDeleter && Function->getIdentifier() &&
+        Function->getName() == "make_unique" && !Function->isVariadic() &&
+        Function->isInlined() && Pattern->hasBody() &&
+        Prototype->getExceptionSpecType() == EST_None &&
+        Context.hasSameType(Call->getType(), Function->getReturnType()) &&
+        Context.hasSameUnqualifiedType(Function->getReturnType(),
+                                       Context.getRecordType(Owner->Record)) &&
+        approvedUtilityReference(S, SM, Call, Function) &&
+        approvedStandardSDKDeclaration(S, SM, Function) &&
+        approvedStandardSDKDeclaration(S, SM, Primary) &&
+        cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                      "__memory/unique_ptr.h") &&
+        cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                      "__memory/unique_ptr.h")))
+    return false;
+  return Owner->Deleter.Array
+             ? utilityMakeUniqueArrayArguments(Function, Call,
+                                               Owner->ElementType, Context)
+             : utilityMakeUniqueObjectArguments(Function, Call,
+                                                Owner->ElementType, Context);
 }
 
 std::optional<UtilityMakeUniqueCall>
@@ -10283,24 +10307,11 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
 
   std::optional<uint64_t> ArrayCount;
   if (Owner->Deleter.Array) {
-    const auto Specialized =
-        Arguments->size() ? Arguments->get(0) : TemplateArgument();
-    const auto *Array = Specialized.getKind() == TemplateArgument::Type
-                            ? Context.getAsArrayType(Specialized.getAsType())
-                            : nullptr;
     const auto Count = Call->getNumArgs() == 1
                            ? Call->getArg(0)->getIntegerConstantExpr(Context)
                            : std::optional<llvm::APSInt>();
-    if (Arguments->size() != 2 || !Array || !isa<IncompleteArrayType>(Array) ||
-        !Context.hasSameType(Array->getElementType(), Owner->ElementType) ||
-        Arguments->get(1).getKind() != TemplateArgument::Integral ||
-        !Arguments->get(1).getIntegralType()->isIntegerType() ||
-        !Arguments->get(1).getAsIntegral().isZero() ||
-        Function->getNumParams() != 1 ||
-        !Context.hasSameType(Function->getParamDecl(0)->getType(),
-                             Context.getSizeType()) ||
-        !Context.hasSameType(Call->getArg(0)->getType(),
-                             Context.getSizeType()) ||
+    if (!utilityMakeUniqueArrayArguments(Function, Call, Owner->ElementType,
+                                         Context) ||
         !Count || Count->getLimitedValue(65537) > 65536)
       return std::nullopt;
     ArrayCount = Count->getZExtValue();

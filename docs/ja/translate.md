@@ -99,7 +99,9 @@ tuple 内の検証済み関数ポインター trait オブジェクトは、メ�
 
 検証済みの `make_unique<reference_wrapper<T>>` は、型が一致する左辺値の参照先から構築し、または同じ型のラッパー値をコピー／移動できます。選択された SDK ファクトリー、割り当て、転送、ラッパーと所有者の構築を認証します。引数は割り当て前に一度評価し、ラッパーのコピーは割り当て後に元の値を読み、割り当てコールバックの効果を保持します。所有者はラッパーの保存領域を破棄し、参照先を破棄しません。const と対応する参照先の検査を保持し、任意のユーザー変換、SDK のソース置換、ラッパーのデフォルト構築には制限を適用します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
-単一オブジェクトの `make_unique<T>` の純粋な結果クエリは、割り当て、構築、削除の関数本体を実体化せずに、固定 SDK の正確なファクトリー署名とポインターサイズの所有者レイアウトを認証します。`decltype`、`sizeof`、`alignof`、`noexcept` は引数や所有権操作を実行せず、ファクトリーは例外を送出し得ます。要素と引数の型、ソース本体、明示テンプレート引数、SDK の出所を検査します。クエリは実行時構築を許可せず、配列ファクトリーのクエリには既存の制限が適用されます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+単一オブジェクトの `make_unique<T>` の純粋な結果クエリは、割り当て、構築、削除の関数本体を実体化せずに、固定 SDK の正確なファクトリー署名とポインターサイズの所有者レイアウトを認証します。`decltype`、`sizeof`、`alignof`、`noexcept` は引数や所有権操作を実行せず、ファクトリーは例外を送出し得ます。要素と引数の型、ソース本体、明示テンプレート引数、SDK の出所を検査します。クエリは実行時構築を許可しません。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
+純粋な `make_unique<T[]>` クエリは、割り当てや要素構築を実体化せずに、正確な非有界配列オーバーロード、`size_t` パラメーター、配列所有者レイアウトを認証します。動的または大きな外側の要素数は未評価のメタデータであり、配列割り当て、cookie、後始末を選択しません。固定された内側の次元、要素型、要素数を返すソース本体、SDK の出所を検査します。実行時ファクトリーは一定の要素数上限と構築・削除の要件を保持します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 検証済みの関数ポインター trait のラッパーは、const な参照先と右辺値ラッパーを含め、`invoke`、`apply` と直接ラッパー呼び出しで正確な trait 型の値渡しパラメーターにも対応します。固定 SDK の trait コピーとラッパー変換を引き続き検証します。各パラメーターは独立した 1 バイトのストレージを持ち、呼び出し可能オブジェクトと引数の副作用は一度だけ発生します。元のソース関数の検証、他の trait ドメインと SDK `value` ストレージの別名に関する制限も維持します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 

@@ -3251,8 +3251,26 @@ executed. A signature query selects no pointee constructor: for example,
 `decltype(make_unique<reference_wrapper<int>>())` is valid metadata but does
 not admit runtime default wrapper construction. An evaluated call using the
 same specialization must pass its ordinary construction proof. Independent
-factory addresses and SDK source replacements remain rejected. Array factory
-queries retain their separately documented existing operation boundary.
+factory addresses and SDK source replacements remain rejected.
+
+Pure unbounded-array `make_unique<T[]>` result queries use the same exact
+lexical signature ownership. Their selected SDK overload must retain its
+original `T[]`, integral enable-if argument, single `size_t` parameter and
+matching `unique_ptr<T[]>` result. Checked scalar, qualified scalar, source
+record, wrapper and bounded-inner-array element types keep their independent
+source and layout proof. The array owner retains its authenticated stateless
+bounds checker and pointer-sized ABI. Neither factory nor deletion bodies are
+required for this metadata.
+
+Outer extent expressions, including zero, dynamic values and values beyond the
+runtime expansion limit, remain unevaluated and still require their original
+source proof. No allocation, array cookie, element constructor or destruction
+is selected. A query can name an array of elements with no available default
+constructor without admitting an evaluated array factory. Runtime calls retain
+the constant 0–65536 extent requirement and their complete allocation,
+construction, cookie and cleanup proof, even for a specialization also queried
+in the same source. Fixed inner dimensions retain the ordinary type limits.
+Independent array-factory addresses and source SDK replacements remain rejected.
 
 Checked single-object `make_unique<reference_wrapper<T>>` also accepts an
 exact nonvolatile lvalue referent or an exact wrapper value for copy/move.
