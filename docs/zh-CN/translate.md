@@ -115,6 +115,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 纯自由函数 `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` 查询现可认证固定 SDK 的精确重载，无需实例化包装函数、成员或默认删除器函数体。两个同类型、已检查的可变所有者左值保留 `void` 结果和非抛出元数据，覆盖单对象、数组、包装器及自定义删除器。推导及显式模板参数仍保留原始源码检查。操作数不执行，也不交换指针；实际操作和独立函数取址继续要求原有完整证明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+纯 `unique_ptr::operator=(nullptr_t)` 查询现可验证固定 SDK 的精确签名，无需实例化赋值、reset 或默认删除器函数体。运算符语法和显式成员调用保留所有者左值引用结果与非抛出元数据，覆盖单对象、数组、包装器及自定义删除器。接收对象和空指针操作数均不执行，也不删除对象或写入指针。源码与生命周期检查独立保留，实际赋值仍要求完整删除证明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 经验证的函数指针 trait 包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的 trait 按值形参，包括 const 引用目标和右值包装器。固定 SDK 的 trait 拷贝和包装器转换仍须通过认证。每个形参使用独立的一字节存储；可调用对象及实参的副作用只发生一次，原源码函数目标仍须检查。其他 trait 域和 SDK `value` 存储别名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 经验证的源码自有标准布局记录包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的按值形参。选中的源码拷贝构造、默认参数及依赖仍须通过检查。形参使用独立存储，在拷贝前观察后续实参的修改；默认参数副作用和形参清理保留调用中的生命周期。右值包装器仍提供左值引用目标。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

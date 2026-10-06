@@ -9220,7 +9220,10 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
   }
   if (SignatureOnly &&
       (!Method ||
-       !(Method->getOverloadedOperator() == OO_Arrow ||
+       !((Method->getOverloadedOperator() == OO_Equal &&
+          !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
+          Method->getParamDecl(0)->getType()->isNullPtrType()) ||
+         Method->getOverloadedOperator() == OO_Arrow ||
          Method->getOverloadedOperator() == OO_Star ||
          Method->getOverloadedOperator() == OO_Subscript ||
          Method->getDeclName().getNameKind() ==

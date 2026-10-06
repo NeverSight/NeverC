@@ -3430,7 +3430,7 @@ reference or pointer selects no unused pointee constructor or owning cleanup.
 Unevaluated observations make no receiver, index, default-argument, factory,
 allocation, constructor, deleter or destruction calls. Each selected observation
 overload and specialization receives its own exact lexical proof. Signature
-metadata does not authorize assignment or evaluated
+metadata does not authorize evaluated assignment or other evaluated
 operations. Independent member addresses and source SDK replacements remain
 rejected.
 Pure observation signatures can also complete an otherwise lazy pinned
@@ -3510,8 +3510,8 @@ must remain in the pinned SDK. Evaluated free swap additionally requires its
 actual single member call to reference the wrapper's two exact parameters and
 select the same owner's pinned member definition and exception specification.
 That runtime proof consumes existing bodies; it does not instantiate SDK code
-or traverse the private member call as project source. Borrowed swaps select no owner or pointee construction, deleter call
-or destruction. Local owner initializers, temporary member receivers and
+or traverse the private member call as project source. Borrowed swaps select no
+owner or pointee construction, deleter call or destruction. Local owner initializers, temporary member receivers and
 factory/argument temporaries retain their separate owning lifetime source.
 Unevaluated swap neither exchanges pointers nor evaluates either operand or a
 default, allocates storage, or invokes construction, deletion or cleanup.
@@ -3527,33 +3527,37 @@ two mutable same-owner lvalues, resolved void/nonthrowing metadata and checked
 pointee layouts. Written explicit template arguments and both operand sources
 remain independently checked. Operands are not evaluated and pointers are not
 exchanged. Source SDK replacements and independent addresses remain rejected;
-the generic
-`std::swap<Owner>` overload has no new permission. Signature-only free-swap
+the generic `std::swap<Owner>` overload has no new permission. Signature-only free-swap
 queries retain each caller source without selecting an unused body.
 
-Result-source queries also admit the already materialized pinned
+Result-source queries also admit the exact pinned signature of
 `unique_ptr::operator=(nullptr_t)` for mutable scalar and array owners, including
 qualified pointees, bounded inner array extents and admitted custom deleters.
 Operator syntax and explicit member calls retain the exact owner lvalue
 reference result and nonthrowing signature. The receiver may be an object
 expression or an exact raw owner pointer; its original type, written expression,
 source defaults and `nullptr_t` operand keep their ordinary source dependencies.
-The actual SDK assignment body must call the same owner's pinned `reset()`
+Evaluated assignment requires the actual SDK body to call the same owner's
+pinned `reset()`
 with its exact unrewritten zero default, then return `*this`. The reset member,
 its instantiation pattern and all redeclarations remain authenticated SDK
 source; this proof neither instantiates a body nor traverses its private call
-as project source. The query closes the same selected deallocation, pointee
-destruction or source-defined deleter callback as reset. Every original callback
-declaration and exception specification must be admitted. A borrowed receiver
+as project source. Evaluated assignment closes the same selected deallocation,
+pointee destruction or source-defined deleter callback as reset. Every original
+callback declaration and exception specification must be admitted. A borrowed receiver
 requires no owner or pointee construction; local initializers, temporary
 receivers and factory receivers retain their separate owning lifetime source.
 Unevaluated assignment preserves the pointer and original owner identity,
 evaluates neither operand nor defaults, and invokes no deletion or cleanup.
 Its ordinary evaluated form retains C++17 right-before-left ordering for
 operator syntax and receiver-before-argument ordering for explicit member calls.
-Query-only bodies, different unmaterialized specializations, source assignment
-or delegated-reset replacements and independent member addresses remain
-rejected.
+Pure null-assignment queries require the exact authenticated SDK declaration
+chain, mutable owner reference, nullptr operand and resolved Owner&/nonthrowing
+signature, without assignment, reset or default deletion bodies. SDK wrapper
+pointees retain checked layout completion; source operands and defaults keep
+their independent checks. No pointer store or deletion is selected by the query.
+Source assignment or delegated-reset replacements and independent member
+addresses remain rejected; pure move-assignment queries gain no permission.
 
 Result-source queries additionally admit already materialized pinned same-type
 and const-adding converting move assignment. Scalar and unbounded-array owners

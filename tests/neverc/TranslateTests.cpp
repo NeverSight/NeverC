@@ -70076,22 +70076,6 @@ int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int
 int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int>;int f(P&p){auto local=std::make_unique<int>(value(1));local=nullptr;static_assert(__is_same(decltype(std::make_unique<int>(value())=nullptr),P&));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-member", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-array", R"cpp(
-using P=std::unique_ptr<int[]>;int f(P&p){p.reset(nullptr);static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-custom", R"cpp(
-struct D{void operator()(int*)const noexcept{}};using P=std::unique_ptr<int,D>;int f(P&p){p.reset();static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-specialization", R"cpp(
-int f(std::unique_ptr<int>&p,std::unique_ptr<const int>&q){p=nullptr;static_assert(noexcept(q=nullptr));return 0;}
-)cpp",
-       "TR0203"},
       {"assignment-specialization", R"cpp(
 namespace std{inline namespace __1{template<>unique_ptr<int>& unique_ptr<int>::operator=(nullptr_t)noexcept{return *this;}}}using P=std::unique_ptr<int>;int f(P&p){p=nullptr;static_assert(__is_same(decltype(p=nullptr),P&));return 0;}
 )cpp",
@@ -167154,11 +167138,11 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::get)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-assignment", R"cpp(
+      {"query-does-not-authorize-move-assignment", R"cpp(
 #include <memory>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept((p=nullptr)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept((p=std::move(p))));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -167872,12 +167856,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::release)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-assignment", R"cpp(
+      {"query-does-not-authorize-move-assignment", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept((p=nullptr)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept((p=std::move(p))));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168182,12 +168166,12 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-assignment", R"cpp(
+      {"query-does-not-authorize-move-assignment", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept((p=nullptr)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept((p=std::move(p))));return 0;}int main(){return 0;}
 )cpp"},
       {"source-element-layout", R"cpp(
 #include <memory>
@@ -168501,12 +168485,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::swap)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-assignment", R"cpp(
+      {"query-does-not-authorize-move-assignment", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(noexcept((p=nullptr)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(noexcept((p=std::move(p))));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168906,12 +168890,12 @@ using U=std::unique_ptr<int>;using F=void(*)(U&,U&)noexcept;int main(){return si
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::swap(std::declval<U&>(),std::declval<U&>())));return 0;}
 )cpp"},
-      {"query-does-not-authorize-assignment", R"cpp(
+      {"query-does-not-authorize-move-assignment", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(noexcept(p=nullptr));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(noexcept(p=std::move(p)));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168960,6 +168944,406 @@ using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::swap<int,std
                                 Case.first + ".cpp");
     const auto Output = tmpFile(std::string("unique-free-swap-signature-") +
                                 Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryArrayNullAssignment) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-array-null-assignment.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-array-null-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[]>;int main(){using R=decltype(std::declval<U&>().operator=(nullptr));static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-assignment-signature-array-null-assignment" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryConstElementNullAssignment) {
+  const auto Source = tmpFile(
+      "unique-null-assignment-signature-const-element-null-assignment.cpp");
+  const auto Output = tmpFile(
+      "unique-null-assignment-signature-const-element-null-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int>;int main(){using R=decltype(std::declval<U&>()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-assignment-signature-const-element-null-assignment" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryCustomNullAssignment) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-custom-null-assignment.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-custom-null-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;int main(){using R=decltype(std::declval<U&>()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-assignment-signature-custom-null-assignment" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrNullAssignmentSignatureQueryMultidimensionalNullAssignment) {
+  const auto Source = tmpFile(
+      "unique-null-assignment-signature-multidimensional-null-assignment.cpp");
+  const auto Output = tmpFile(
+      "unique-null-assignment-signature-multidimensional-null-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[][2]>;int main(){using R=decltype(std::declval<U&>()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-assignment-signature-multidimensional-null-assignment" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryOperandEffects) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-operand-effects.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using N=decltype(nullptr);int effects=0;N zero()noexcept{++effects;return nullptr;}int main(){using R=decltype(std::declval<U&>()=zero());static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=zero()));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-assignment-signature-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryQueryDeletedLifetime) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-query-deleted-lifetime.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-query-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct X{int n;X()=delete;~X()=delete;};using U=std::unique_ptr<X>;int main(){using R=decltype(std::declval<U&>()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-assignment-signature-query-deleted-lifetime" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrNullAssignmentSignatureQueryQueryEffects) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-query-effects.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects=0;U&owner()noexcept{++effects;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(owner()=nullptr));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-assignment-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryQueryOnlyParameter) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-query-only-parameter.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-query-only-parameter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p){using R=decltype(p=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(p=nullptr));return 3;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-assignment-signature-query-only-parameter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryRawPointerReceiver) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-raw-pointer-receiver.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-raw-pointer-receiver.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){U*p=nullptr;using R=decltype(p->operator=(nullptr));static_assert(std::is_same_v<R,U&>);static_assert(noexcept(p->operator=(nullptr)));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-null-assignment-signature-raw-pointer-receiver" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryScalarNullAssignment) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-scalar-null-assignment.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-scalar-null-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-assignment-signature-scalar-null-assignment" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrNullAssignmentSignatureQueryWrapperNullAssignment) {
+  const auto Source =
+      tmpFile("unique-null-assignment-signature-wrapper-null-assignment.cpp");
+  const auto Output =
+      tmpFile("unique-null-assignment-signature-wrapper-null-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(std::declval<U&>()=nullptr);static_assert(std::is_same_v<R,U&>);static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-null-assignment-signature-wrapper-null-assignment" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrNullAssignmentSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-assignment-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using N=decltype(nullptr);using F=U&(U::*)(N)noexcept;int main(){return sizeof(static_cast<F>(&U::operator=))==0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp"},
+      {"query-does-not-authorize-move-assignment", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=nullptr));using R=decltype(p=std::move(q));static_assert(std::is_same_v<R,U&>);return 0;}int main(){return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p){static_assert(noexcept(p=nullptr));p=nullptr;return 0;}int main(){return 0;}
+)cpp"},
+      {"source-array-reset-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>void unique_ptr<int[]>::reset(nullptr_t)noexcept{}}}using U=std::unique_ptr<int[]>;int main(){static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp"},
+      {"source-assignment-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>unique_ptr<int>& unique_ptr<int>::operator=(nullptr_t)noexcept{return *this;}}}using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using U=std::unique_ptr<R>;int main(){static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using N=decltype(nullptr);N zero(int n=sizeof(long double))noexcept{return nullptr;}int main(){static_assert(noexcept(std::declval<U&>()=zero()));return 0;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U&owner()noexcept{long double n=1;return *static_cast<U*>(nullptr);}int main(){static_assert(noexcept(owner()=nullptr));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("unique-null-assignment-signature-") + Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("unique-null-assignment-signature-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});

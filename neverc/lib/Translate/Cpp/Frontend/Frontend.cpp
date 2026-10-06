@@ -6875,7 +6875,8 @@ utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
       return std::nullopt;
     return Info;
   case UtilityUniquePtrOperation::NullAssign:
-    if (!utilityUniquePtrNullAssignmentSource(A, Method, Info->Owner))
+    if (!SignatureOnly &&
+        !utilityUniquePtrNullAssignmentSource(A, Method, Info->Owner))
       return std::nullopt;
     [[fallthrough]];
   case UtilityUniquePtrOperation::Reset:
