@@ -3430,7 +3430,7 @@ reference or pointer selects no unused pointee constructor or owning cleanup.
 Unevaluated observations make no receiver, index, default-argument, factory,
 allocation, constructor, deleter or destruction calls. Each selected observation
 overload and specialization receives its own exact lexical proof. Signature
-metadata does not authorize assignment, swap or evaluated
+metadata does not authorize assignment or evaluated
 operations. Independent member addresses and source SDK replacements remain
 rejected.
 Pure observation signatures can also complete an otherwise lazy pinned
@@ -3493,8 +3493,9 @@ node; the shared initializer gives no permission to another evaluated use.
 Caller defaults and operands keep their independent source and lifetime proof.
 Independent member addresses and source SDK replacements remain rejected.
 
-The same query boundary admits already materialized member `swap` and the exact
-pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` overload. Both retain a
+The same query boundary admits exact pinned member `swap` signatures,
+including members whose bodies have not been instantiated, and the already
+materialized pinned `std::swap(unique_ptr<T, D>&, unique_ptr<T, D>&)` overload. Both retain a
 `void` result and nonthrowing signature for mutable scalar or array owners with
 the same concrete owner and deleter type, including admitted custom deleters,
 qualified pointees and bounded inner array extents. Member receivers may be
@@ -3513,8 +3514,13 @@ or destruction. Local owner initializers, temporary member receivers and
 factory/argument temporaries retain their separate owning lifetime source.
 Unevaluated swap neither exchanges pointers nor evaluates either operand or a
 default, allocates storage, or invokes construction, deletion or cleanup.
-Self-swap retains the same owner identity. Result-source queries without the
-materialized member/free bodies, different specializations, source SDK
+Self-swap retains the same owner identity. Pure member queries need the exact
+pinned declaration chain, mutable same-owner references, pointer-sized layout
+and resolved exception metadata; no member or default deletion body is needed.
+SDK wrapper elements keep their authenticated layout completion and referent
+checks. A borrowed element may have a deleted constructor or destructor without
+selecting either. Evaluated operations keep their independent complete proofs.
+Free queries without their materialized wrapper/member bodies, source SDK
 replacements and independent addresses remain rejected; the generic
 `std::swap<Owner>` overload has no new permission. Signature-only free-swap
 `noexcept` queries keep their existing exception-source boundary and need no

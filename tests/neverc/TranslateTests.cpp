@@ -69779,10 +69779,6 @@ int object;template<int*>using T=int;struct D{void operator()(T<&object>*)const 
 int value(int=sizeof(long double))noexcept{return 2;}using P=std::unique_ptr<int>;int f(P&q){auto p=std::make_unique<int>(value(1));p.swap(q);static_assert(__is_same(decltype(std::make_unique<int>(value()).swap(q)),void));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-member", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();static_assert(__is_same(decltype(p.swap(q)),void));return 0;}
-)cpp",
-       "TR0203"},
       {"query-only-free", R"cpp(
 using P=std::unique_ptr<int>;int f(P&p,P&q){p.swap(q);static_assert(__is_same(decltype(std::swap(p,q)),void));return 0;}
 )cpp",
@@ -167174,11 +167170,11 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::get)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-swap", R"cpp(
+      {"query-does-not-authorize-free-swap", R"cpp(
 #include <memory>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.swap(p)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(std::swap(p,p)));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -167892,12 +167888,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::release)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-swap", R"cpp(
+      {"query-does-not-authorize-free-swap", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.swap(p)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(std::swap(p,p)));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168202,12 +168198,12 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-swap", R"cpp(
+      {"query-does-not-authorize-free-swap", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept(p.swap(p)));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::swap(p,p)));return 0;}int main(){return 0;}
 )cpp"},
       {"source-element-layout", R"cpp(
 #include <memory>
@@ -168244,6 +168240,332 @@ namespace std{inline namespace __1{template<>void unique_ptr<int>::reset(int*)no
         tmpFile(std::string("unique-reset-signature-") + Case.first + ".cpp");
     const auto Output =
         tmpFile(std::string("unique-reset-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrMemberSwapSignatureQueryArrayMemberSwap) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-array-member-swap.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-array-member-swap.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[]>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-member-swap-signature-array-member-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrMemberSwapSignatureQueryConstElementMemberSwap) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-const-element-member-swap.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-const-element-member-swap.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-member-swap-signature-const-element-member-swap" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrMemberSwapSignatureQueryCustomMemberSwap) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-custom-member-swap.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-custom-member-swap.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-member-swap-signature-custom-member-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrMemberSwapSignatureQueryMultidimensionalMemberSwap) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-multidimensional-member-swap.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-multidimensional-member-swap.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[][2]>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-member-swap-signature-multidimensional-member-swap" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrMemberSwapSignatureQueryQueryDeletedLifetime) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-query-deleted-lifetime.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-query-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct X{int n;X()=delete;~X()=delete;};using U=std::unique_ptr<X>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-member-swap-signature-query-deleted-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrMemberSwapSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("unique-member-swap-signature-query-effects.cpp");
+  const auto Output = tmpFile("unique-member-swap-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects;U& owner()noexcept{++effects;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner().swap(owner()));static_assert(noexcept(owner().swap(owner())));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-member-swap-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrMemberSwapSignatureQueryQueryOnlyParameter) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-query-only-parameter.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-query-only-parameter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(noexcept(p.swap(q)));return 0;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-member-swap-signature-query-only-parameter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrMemberSwapSignatureQueryScalarMemberSwap) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-scalar-member-swap.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-scalar-member-swap.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::declval<U&>().swap(std::declval<U&>())));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-member-swap-signature-scalar-member-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrMemberSwapSignatureQueryWrapperMemberSwap) {
+  const auto Source =
+      tmpFile("unique-member-swap-signature-wrapper-member-swap.cpp");
+  const auto Output =
+      tmpFile("unique-member-swap-signature-wrapper-member-swap.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-member-swap-signature-wrapper-member-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrMemberSwapSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-swap-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){return sizeof(&U::swap)>0?0:1;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"query-does-not-authorize-free-swap", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(noexcept(std::swap(p,q)));return 0;}int main(){return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p,U&q){using V=decltype(p.swap(q));static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct X{long double n;};using U=std::unique_ptr<X>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-peer-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner(int=sizeof(long double))noexcept{return *static_cast<U*>(nullptr);}int main(){using R=decltype(std::declval<U&>().swap(owner()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner()noexcept{long double n=1;(void)n;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner().swap(owner()));static_assert(std::is_same_v<R,void>);return 0;}
+)cpp"},
+      {"source-swap-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>void unique_ptr<int>::swap(unique_ptr<int>&)noexcept{}}}using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::declval<U&>().swap(std::declval<U&>())));return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("unique-member-swap-signature-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("unique-member-swap-signature-") +
+                                Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});

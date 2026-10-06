@@ -9227,7 +9227,8 @@ utilityUniquePtrCall(const State &S, const SourceManager &SM,
              DeclarationName::CXXConversionFunctionName ||
          (Method->getIdentifier() &&
           (Method->getName() == "get" || Method->getName() == "get_deleter" ||
-           Method->getName() == "release" || Method->getName() == "reset")))))
+           Method->getName() == "release" || Method->getName() == "reset" ||
+           Method->getName() == "swap")))))
     return std::nullopt;
   const auto Owner =
       SignatureOnly
