@@ -6839,16 +6839,21 @@ utilityUniquePtrMoveAssignmentSource(Adapter &A, const CXXMethodDecl *Method,
 }
 
 static std::optional<UtilityUniquePtrCall>
-utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call) {
+utilityUniquePtrMemberSource(Adapter &A, const CallExpr *Call,
+                             bool SignatureOnly = false) {
   const auto Info =
-      approvedUtilityUniquePtrCall(A.S, A.Sources, Call, A.Context);
+      SignatureOnly
+          ? approvedUtilityUniquePtrObservationQuery(A.S, A.Sources, Call,
+                                                     A.Context)
+          : approvedUtilityUniquePtrCall(A.S, A.Sources, Call, A.Context);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
   const auto *Prototype =
       Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
   if (!Info || !Prototype || !directMethodReference(Call) ||
-      !utilityUniquePtrSource(A, Info->Owner.Record) ||
-      !utilityUniquePtrFunctionSource(A, Method))
+      !utilityUniquePtrSource(A, Info->Owner.Record, !SignatureOnly) ||
+      !utilitySDKFunctionSource(A, Method, "__memory/unique_ptr.h",
+                                !SignatureOnly))
     return std::nullopt;
   switch (Info->Operation) {
   case UtilityUniquePtrOperation::MoveAssign:
@@ -14283,6 +14288,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         else if (const auto Result = utilityMakeUniqueQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (utilityUniquePtrMemberSource(A, Call, true))
+          A.S.UnevaluatedMemoryCalls.emplace(
+              Call, A.Context.getCanonicalType(
+                        Call->getDirectCallee()->getReturnType()));
       for (const auto *Child : Current->children())
         if (const auto *Operand = dyn_cast_or_null<Expr>(Child))
           Pending.push_back(Operand);

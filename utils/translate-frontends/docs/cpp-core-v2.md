@@ -3405,13 +3405,17 @@ Stateful, reference, non-raw-pointer, nontrivial, overloaded, ref-qualified and
 throwing custom deleters remain rejected.
 
 Result queries (`decltype`, `sizeof`, `alignof` and `noexcept`) admit the exact
-already materialized `unique_ptr` observation members: `get`, mutable/const
+pinned `unique_ptr` observation signatures, including members whose bodies
+have not been instantiated: `get`, mutable/const
 `get_deleter`, `operator bool`, scalar `operator->`/`operator*` and array
 `operator[]`. Object, const-object and exact raw-pointer receivers retain the
 runtime member boundary and the original result type, including qualified
 pointees, source-owned objects and bounded inner array extents. The selected
-member definition, its instantiation pattern and all redeclarations must stay
-in the pinned SDK. Scalar dereference also authenticates its resolved
+member declaration, any existing definition, its instantiation pattern and all
+redeclarations must stay in the pinned SDK. Default-deleter owners require their
+authenticated pointer-sized class layout but no selected deletion body for
+these observations. Evaluated operations retain their independent complete
+member and deletion proof. Scalar dereference also authenticates its resolved
 `noexcept(*std::declval<pointer>())` metadata and the exact pinned `declval`
 specialization; it does not instantiate that helper's body. Getter, arrow and
 Boolean observations remain nonthrowing, while the pinned array subscript
@@ -3424,9 +3428,11 @@ construction, allocation and cleanup source, including admitted `make_unique`
 factories and custom deleter callbacks. Borrowing an owner through a source
 reference or pointer selects no unused pointee constructor or owning cleanup.
 Unevaluated observations make no receiver, index, default-argument, factory,
-allocation, constructor, deleter or destruction calls. Query-only member
-bodies or different overloads/specializations, independent member addresses,
-and source SDK replacements remain rejected.
+allocation, constructor, deleter or destruction calls. Each selected observation
+overload and specialization receives its own exact lexical proof. Signature
+metadata does not authorize reset, release, assignment, swap or evaluated
+operations. Independent member addresses and source SDK replacements remain
+rejected.
 The same exact-member result-source proof also admits `release()` on mutable
 scalar and array owners with matching standard or admitted custom deleters.
 The result preserves the exact raw pointer type, pointee qualification and

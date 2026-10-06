@@ -9188,9 +9188,10 @@ approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
-std::optional<UtilityUniquePtrCall>
-approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
-                             const CallExpr *Call, const ASTContext &Context) {
+static std::optional<UtilityUniquePtrCall>
+utilityUniquePtrCall(const State &S, const SourceManager &SM,
+                     const CallExpr *Call, const ASTContext &Context,
+                     bool SignatureOnly) {
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
@@ -9217,8 +9218,22 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
       return std::nullopt;
     ObjectType = ObjectType->getPointeeType();
   }
-  const auto Owner = approvedUtilityUniquePtrRecord(
-      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (SignatureOnly &&
+      (!Method ||
+       !(Method->getOverloadedOperator() == OO_Arrow ||
+         Method->getOverloadedOperator() == OO_Star ||
+         Method->getOverloadedOperator() == OO_Subscript ||
+         Method->getDeclName().getNameKind() ==
+             DeclarationName::CXXConversionFunctionName ||
+         (Method->getIdentifier() &&
+          (Method->getName() == "get" || Method->getName() == "get_deleter")))))
+    return std::nullopt;
+  const auto Owner =
+      SignatureOnly
+          ? approvedUtilityUniquePtrLayout(
+                S, SM, Method ? Method->getParent() : nullptr, Context)
+          : approvedUtilityUniquePtrRecord(
+                S, SM, Method ? Method->getParent() : nullptr, Context);
   const auto *Prototype =
       Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
   const bool ArraySubscript =
@@ -9230,7 +9245,8 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
       Method->getNameAsString() == "operator bool" && Prototype->isNothrow() &&
       !Method->isStatic() && !Method->isVariadic() && Method->isConst() &&
       !Method->getNumParams() && !Call->getNumArgs() && Method->isInlined() &&
-      Method->hasBody() && approvedStandardSDKDeclaration(S, SM, Method) &&
+      (SignatureOnly || Method->hasBody()) &&
+      approvedStandardSDKDeclaration(S, SM, Method) &&
       cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                     "__memory/unique_ptr.h") &&
       S.owns(SM, Call->getExprLoc()) &&
@@ -9243,8 +9259,8 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
         std::nullopt, ObjectIsArrow};
   if (!Call || !Method || !Object || !Reference || !Owner || !Prototype ||
       (!Prototype->isNothrow() && !ArraySubscript) || Method->isStatic() ||
-      Method->isVariadic() ||
-      !Method->isInlined() || !Method->hasBody() ||
+      Method->isVariadic() || !Method->isInlined() ||
+      (!SignatureOnly && !Method->hasBody()) ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__memory/unique_ptr.h") ||
@@ -9403,6 +9419,18 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
   }
   return UtilityUniquePtrCall{*Owner,        Operation,    Object,
                               ArgumentIndex, std::nullopt, ObjectIsArrow};
+}
+
+std::optional<UtilityUniquePtrCall>
+approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
+                             const CallExpr *Call, const ASTContext &Context) {
+  return utilityUniquePtrCall(S, SM, Call, Context, false);
+}
+
+std::optional<UtilityUniquePtrCall> approvedUtilityUniquePtrObservationQuery(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  return utilityUniquePtrCall(S, SM, Call, Context, true);
 }
 
 bool approvedUtilityUniquePtrDestructor(const State &S, const SourceManager &SM,

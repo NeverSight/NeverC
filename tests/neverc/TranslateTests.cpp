@@ -68960,34 +68960,6 @@ Size index(int=sizeof(long double))noexcept{return 0;}int f(std::unique_ptr<int[
 Size index()noexcept(sizeof(long double)>0){return 0;}int f(std::unique_ptr<int[]>&p){p[index()];static_assert(!noexcept(p[index()]));return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-get", R"cpp(
-int f(std::unique_ptr<int>&p){static_assert(noexcept(p.get()));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-arrow", R"cpp(
-int f(std::unique_ptr<int>&p){p.get();static_assert(sizeof(p.operator->())==sizeof(int*));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-dereference", R"cpp(
-int f(std::unique_ptr<int>&p){p.get();static_assert(noexcept(*p));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-boolean", R"cpp(
-int f(std::unique_ptr<int>&p){p.get();static_assert(noexcept(p.operator bool()));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-subscript", R"cpp(
-int f(std::unique_ptr<int[]>&p){p.get();static_assert(sizeof(p[Size(0)])==sizeof(int));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-const-deleter", R"cpp(
-int f(std::unique_ptr<int>&p){p.get_deleter();const auto&q=p;static_assert(noexcept(q.get_deleter()));return 0;}
-)cpp",
-       "TR0203"},
-      {"query-only-specialization", R"cpp(
-int f(std::unique_ptr<int>&p,std::unique_ptr<unsigned>&q){p.get();static_assert(sizeof(q.get())==sizeof(unsigned*));return 0;}
-)cpp",
-       "TR0203"},
       {"independent-member-address", R"cpp(
 using P=std::unique_ptr<int>;int f(P&p){p.get();static_assert(sizeof(&P::get)>0);return 0;}
 )cpp",
@@ -166857,6 +166829,449 @@ int main(){using U=decltype(std::make_unique<volatile int[]>(4));return sizeof(U
     EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
                 Result.err.find("TR0203") != std::string::npos)
         << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryArrayDeleter) {
+  const auto Source = tmpFile("unique-observation-signature-array-deleter.cpp");
+  const auto Output = tmpFile("unique-observation-signature-array-deleter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int main(){using D=decltype(std::declval<U&>().get_deleter());static_assert(std::is_same_v<D,std::default_delete<int[]>&>);static_assert(noexcept(std::declval<U&>().get_deleter()));return sizeof(D)==1?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-array-deleter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryArrayGet) {
+  const auto Source = tmpFile("unique-observation-signature-array-get.cpp");
+  const auto Output = tmpFile("unique-observation-signature-array-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[]>;int main(){using P=decltype(std::declval<const U&>().get());static_assert(std::is_same_v<P,const int*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-array-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrObservationSignatureQueryArrayQueryEffects) {
+  const auto Source =
+      tmpFile("unique-observation-signature-array-query-effects.cpp");
+  const auto Output =
+      tmpFile("unique-observation-signature-array-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int effects;U& owner()noexcept{++effects;return *static_cast<U*>(nullptr);}decltype(sizeof(0)) index()noexcept{++effects;return 7;}int main(){using R=decltype(owner()[index()]);static_assert(std::is_same_v<R,int&>);static_assert(!noexcept(owner()[index()]));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-observation-signature-array-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryArraySubscript) {
+  const auto Source =
+      tmpFile("unique-observation-signature-array-subscript.cpp");
+  const auto Output =
+      tmpFile("unique-observation-signature-array-subscript.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,int&>);return sizeof(R)==sizeof(int)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-array-subscript" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryArrowReceiver) {
+  const auto Source =
+      tmpFile("unique-observation-signature-arrow-receiver.cpp");
+  const auto Output = tmpFile("unique-observation-signature-arrow-receiver.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects;U* owner()noexcept{++effects;return nullptr;}int main(){using P=decltype(owner()->get());static_assert(std::is_same_v<P,int*>);static_assert(noexcept(owner()->get()));return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-arrow-receiver" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryBooleanQuery) {
+  const auto Source = tmpFile("unique-observation-signature-boolean-query.cpp");
+  const auto Output = tmpFile("unique-observation-signature-boolean-query.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){return noexcept(static_cast<bool>(std::declval<const U&>()))?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-boolean-query" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryConstDeleter) {
+  const auto Source = tmpFile("unique-observation-signature-const-deleter.cpp");
+  const auto Output = tmpFile("unique-observation-signature-const-deleter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using D=decltype(std::declval<const U&>().get_deleter());static_assert(std::is_same_v<D,const std::default_delete<int>&>);static_assert(noexcept(std::declval<const U&>().get_deleter()));return sizeof(D)==1?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-const-deleter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrObservationSignatureQueryConstDereference) {
+  const auto Source =
+      tmpFile("unique-observation-signature-const-dereference.cpp");
+  const auto Output =
+      tmpFile("unique-observation-signature-const-dereference.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int>;int main(){using R=decltype(*std::declval<const U&>());static_assert(std::is_same_v<R,const int&>);static_assert(noexcept(*std::declval<const U&>()));return sizeof(R)==sizeof(int)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-observation-signature-const-dereference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryGetDeleter) {
+  const auto Source = tmpFile("unique-observation-signature-get-deleter.cpp");
+  const auto Output = tmpFile("unique-observation-signature-get-deleter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>().get_deleter());static_assert(std::is_same_v<R,std::default_delete<int>&>);return sizeof(R)==1?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-get-deleter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrObservationSignatureQueryMultidimensionalSubscript) {
+  const auto Source =
+      tmpFile("unique-observation-signature-multidimensional-subscript.cpp");
+  const auto Output =
+      tmpFile("unique-observation-signature-multidimensional-subscript.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[][2]>;int main(){using R=decltype(std::declval<const U&>()[0]);static_assert(std::is_same_v<R,const int(&)[2]>);static_assert(!noexcept(std::declval<const U&>()[0]));return sizeof(R)==2*sizeof(int)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-multidimensional-subscript" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrObservationSignatureQueryQueryOnlyParameter) {
+  const auto Source =
+      tmpFile("unique-observation-signature-query-only-parameter.cpp");
+  const auto Output =
+      tmpFile("unique-observation-signature-query-only-parameter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(const U&p){using P=decltype(p.get());using R=decltype(*p);static_assert(std::is_same_v<P,int*>);static_assert(std::is_same_v<R,int&>);static_assert(noexcept(p.operator bool()));return sizeof(P)==sizeof(void*)?0:1;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-observation-signature-query-only-parameter" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryScalarArrow) {
+  const auto Source = tmpFile("unique-observation-signature-scalar-arrow.cpp");
+  const auto Output = tmpFile("unique-observation-signature-scalar-arrow.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using P=decltype(std::declval<const U&>().operator->());static_assert(std::is_same_v<P,int*>);static_assert(noexcept(std::declval<const U&>().operator->()));return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-scalar-arrow" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrObservationSignatureQueryScalarDereference) {
+  const auto Source =
+      tmpFile("unique-observation-signature-scalar-dereference.cpp");
+  const auto Output =
+      tmpFile("unique-observation-signature-scalar-dereference.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(*std::declval<U&>());static_assert(std::is_same_v<R,int&>);return sizeof(R)==sizeof(int)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-observation-signature-scalar-dereference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrObservationSignatureQueryScalarGet) {
+  const auto Source = tmpFile("unique-observation-signature-scalar-get.cpp");
+  const auto Output = tmpFile("unique-observation-signature-scalar-get.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using P=decltype(std::declval<const U&>().get());static_assert(std::is_same_v<P,int*>);return sizeof(P)==sizeof(void*)?0:1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-observation-signature-scalar-get" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrObservationSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-dereference-address", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){return sizeof(&U::operator*)>0?0:1;}
+)cpp"},
+      {"independent-get-address", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){return sizeof(&U::get)>0?0:1;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"query-does-not-authorize-reset", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(noexcept(p.reset()));return 0;}int main(){return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+struct R{int n;~R()noexcept;};using U=std::unique_ptr<R>;int f(U&p){static_assert(sizeof(p.get())==sizeof(R*));p.reset(nullptr);return 0;}int main(){return 0;}
+)cpp"},
+      {"source-declval-specialization", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int*&& declval<int*>()noexcept;}}using U=std::unique_ptr<int>;int main(){static_assert(noexcept(*std::declval<U&>()));return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using U=std::unique_ptr<R>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-get-specialization", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int* unique_ptr<int>::get()const noexcept{return nullptr;}}}using U=std::unique_ptr<int>;int main(){static_assert(noexcept(std::declval<U&>().get()));return 0;}
+)cpp"},
+      {"source-index-default", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[]>;decltype(sizeof(0)) index(int=sizeof(long double))noexcept{return 0;}int main(){using R=decltype(std::declval<U&>()[index()]);return sizeof(R)==sizeof(int)?0:1;}
+)cpp"},
+      {"source-receiver-body", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U& owner()noexcept{long double n=1;(void)n;return *static_cast<U*>(nullptr);}int main(){using P=decltype(owner().get());return sizeof(P)==sizeof(void*)?0:1;}
+)cpp"},
+      {"source-subscript-specialization", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+int replacement;namespace std{inline namespace __1{template<>int& unique_ptr<int[]>::operator[](size_t)const{return replacement;}}}using U=std::unique_ptr<int[]>;int main(){using R=decltype(std::declval<U&>()[0]);static_assert(std::is_same_v<R,int&>);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("unique-observation-signature-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("unique-observation-signature-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
     expectNoArtifacts(Output);
   }
 }

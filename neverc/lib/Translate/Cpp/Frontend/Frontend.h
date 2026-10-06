@@ -632,6 +632,9 @@ std::optional<UtilityUniquePtrCall>
 approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
                              const clang::CallExpr *Call,
                              const clang::ASTContext &Context);
+std::optional<UtilityUniquePtrCall> approvedUtilityUniquePtrObservationQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityMakeUniqueCall {
   UtilityUniquePtrRecord Owner;
   const clang::CXXNewExpr *Allocation;
