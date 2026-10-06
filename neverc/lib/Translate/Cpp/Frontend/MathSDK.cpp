@@ -3235,15 +3235,20 @@ approvedFunctionalReferenceArgumentValue(const State &S,
                                          const ASTContext &Context,
                                          QualType Parameter,
                                          QualType Argument) {
-  if (Parameter.isNull() || !Parameter->isFunctionPointerType() ||
-      Argument.isNull() || Argument->isReferenceType() ||
-      Argument.isVolatileQualified() || Argument.isRestrictQualified() ||
+  if (Parameter.isNull() || Parameter->isReferenceType() ||
+      Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
+      Parameter.getAddressSpace() != LangAS::Default || Argument.isNull() ||
+      Argument->isReferenceType() || Argument.isVolatileQualified() ||
+      Argument.isRestrictQualified() ||
       Argument.getAddressSpace() != LangAS::Default)
     return std::nullopt;
   const auto Wrapper = approvedFunctionalReferenceRecord(
       S, SM, Argument->getAsCXXRecordDecl(), Context);
-  return Wrapper && utilityCallbackDirectConversion(
-                        Context, Wrapper->ReferentType, Parameter)
+  return Wrapper && ((Parameter->isFunctionPointerType() &&
+                      utilityCallbackDirectConversion(
+                          Context, Wrapper->ReferentType, Parameter)) ||
+                     utilityScalarDirectConversion(
+                         Context, Wrapper->ReferentType, Parameter))
              ? Wrapper
              : std::nullopt;
 }

@@ -4105,9 +4105,20 @@ Function referents supply their checked address, while pointer referents supply
 their current stored value. Const wrappers and const pointer referents may copy
 values, and a null pointer remains a null value. Member, source call-operator and
 wrapped-callable dispatch use the same proof and value lowering. Arbitrary
-source conversions, wrapper-to-boolean conversions, volatile referents and
+source conversions, function-wrapper-to-boolean conversions, volatile referents and
 aliases of SDK trait `value` storage remain excluded. Source callback bodies and
 address targets are still checked independently.
+Checked arithmetic and object-pointer wrappers also supply admitted scalar value
+parameters through the same `invoke` and `apply` paths, including source member
+functions, call operators and wrapped callables. Arithmetic conversions include
+integral-to-floating and arithmetic-to-boolean forms; compatible object-pointer
+qualification conversions retain their pointee types. The exact SDK conversion
+and forwarded parameter remain authenticated. All caller operands complete
+before the current referent is read and converted to the selected by-value
+parameter, so a later argument's update is observed and each operand is evaluated
+once. Const wrappers and const referents can supply values. Long-double and
+volatile referents, arbitrary user conversions and independently unsupported
+source bodies retain their existing boundaries.
 
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and

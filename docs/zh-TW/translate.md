@@ -81,7 +81,7 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 已支援的空標準函式物件和經驗證的回呼 trait 物件也可在固定原始陣列中預設建構，包括 const 和多維陣列。既有逐元素建構為每個物件保留獨立儲存，並檢查陣列數量限制。區域、靜態和全域陣列、常數大小的 `new[]` 以及巢狀 `vector` 的範圍來源使用同一建構函式驗證。原始碼回呼定義、配置／釋放，以及不支援的 trait 或函式物件型別仍須通過既有檢查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-經驗證的 `reference_wrapper` 引數現在可透過 `invoke` 和 `apply` 繫結相符且受支援的左值參考參數，包括明確儲存包裝器值的 tuple。固定 SDK 的精確轉換及轉送參數均須通過認證。呼叫保留原參考目標的位址、寫入效果和 const 限定。已校驗的函式和函式指標包裝器也可提供普通回呼的傳值參數，包括相容的 `noexcept` 移除。回呼值在呼叫方引數求值後讀取，保留後續修改；空指標仍以值傳遞。任意原始碼轉換、包裝器到布林值的轉換及 volatile 參考目標仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+經驗證的 `reference_wrapper` 引數現在可透過 `invoke` 和 `apply` 繫結相符且受支援的左值參考參數，包括明確儲存包裝器值的 tuple。固定 SDK 的精確轉換及轉送參數均須通過認證。呼叫保留原參考目標的位址、寫入效果和 const 限定。已校驗的函式和函式指標包裝器也可提供普通回呼的傳值參數，包括相容的 `noexcept` 移除。回呼值在呼叫方引數求值後讀取，保留後續修改；空指標仍以值傳遞。任意原始碼轉換、函式包裝器到布林值的轉換及 volatile 參考目標仍不受支援。 經驗證的算術值和物件指標包裝器也可透過相同呼叫路徑提供受支援的純量傳值參數，包括算術值到 bool 與指標限定轉換，並在呼叫方引數求值後讀取。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
 經檢查的零引數 `optional::emplace()` 現在可對已接納的非 const 純量、平凡原始碼自有記錄、經驗證的函式指標 trait 物件及由這些元素遞迴組成的陣列進行值初始化。固定 SDK 的 reset、原位建構和參考回傳函式主體均須通過認證。重複 emplace 保留內部儲存身分，純量和指標值重設為零或空指標。非平凡預設建構函式、預設成員初始化器及 volatile 元素仍不在此路徑的支援範圍內。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
