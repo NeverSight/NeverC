@@ -129,6 +129,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 純配置器 `allocate`、`deallocate`、`address`、`max_size` 查詢現可驗證固定 SDK 的精確簽章，不需成員函式主體。仍需檢查一位元組配置器及純量、原始碼紀錄或 SDK 包裝器元素的配置。配置保留指標結果與可能拋出的簽章；釋放、兩種位址多載及大小上限保留精確結果與不拋出的中繼資料。原始接收者、指標、計數、提示及數值來源仍須檢查，但不執行。執行階段配置限制及實際操作的完整證明保持獨立。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+純配置器 `construct` 和 `destroy` 呼叫查詢現可認證固定 SDK 的精確 `void`、可能擲出例外簽章，無需成員函式本體。建構仍檢查具體目標指標、範本參數包、參考折疊和引數類別，目標型別可與配置器元素不同。純量、來源記錄和 SDK 包裝器配置仍須檢查；未選取生命週期操作時，可查詢已刪除建構或解構的型別。原始運算元和範本來源保持獨立，運算元不執行，實際建構和銷毀仍要求完整生命週期證明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 經驗證的函式指標 trait 包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的 trait 傳值參數，包括 const 參考目標和右值包裝器。固定 SDK 的 trait 複製與包裝器轉換仍須通過認證。每個參數使用獨立的一位元組儲存；可呼叫物件及引數的副作用只發生一次，原始碼函式目標仍須檢查。其他 trait 域和 SDK `value` 儲存別名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 經驗證的原始碼自有標準布局記錄包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的傳值參數。選中的原始碼複製建構、預設參數及相依性仍須通過檢查。參數使用獨立儲存，在複製前觀察後續引數的修改；預設參數副作用和參數清理保留呼叫中的生命週期。右值包裝器仍提供左值參考目標。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

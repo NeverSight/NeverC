@@ -129,6 +129,8 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 纯分配器 `allocate`、`deallocate`、`address`、`max_size` 查询现可认证固定 SDK 的精确签名，无需成员函数体。仍须检查一字节分配器，以及标量、源记录或 SDK 包装器元素的布局。分配保留指针结果和可能抛出的签名；释放、两种地址重载和大小上限保留精确结果与不抛出的元数据。原始接收者、指针、计数、提示和数值来源仍须检查，但不执行。运行时分配限制及实际操作的完整证明保持独立。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+纯分配器 `construct` 和 `destroy` 调用查询现可认证固定 SDK 的精确 `void`、可能抛出签名，无需成员函数体。构造仍检查具体目标指针、模板参数包、引用折叠和实参类别，目标类型可与分配器元素不同。标量、源记录和 SDK 包装器布局仍须检查；未选择生命周期操作时，可查询已删除构造或析构的类型。原始操作数和模板来源保持独立，操作数不执行，实际构造和销毁仍要求完整生命周期证明。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 经验证的函数指针 trait 包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的 trait 按值形参，包括 const 引用目标和右值包装器。固定 SDK 的 trait 拷贝和包装器转换仍须通过认证。每个形参使用独立的一字节存储；可调用对象及实参的副作用只发生一次，原源码函数目标仍须检查。其他 trait 域和 SDK `value` 存储别名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 经验证的源码自有标准布局记录包装器也可通过 `invoke`、`apply` 和直接包装调用提供精确类型的按值形参。选中的源码拷贝构造、默认参数及依赖仍须通过检查。形参使用独立存储，在拷贝前观察后续实参的修改；默认参数副作用和形参清理保留调用中的生命周期。右值包装器仍提供左值引用目标。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

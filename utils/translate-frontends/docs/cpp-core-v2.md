@@ -3229,6 +3229,24 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure pinned allocator `construct` and `destroy` call queries authenticate their
+exact mutable-receiver, `void`, potentially throwing signatures without member
+bodies. Construction authenticates the concrete target pointer and two template
+arguments: the constructed object type and the forwarding argument pack. Each
+expanded reference parameter retains exact reference collapsing, pointee
+constness and the original argument's value category. Empty packs, explicit
+arguments and targets distinct from the allocator element retain this proof.
+
+Allocator, constructed-element and forwarded-argument layouts remain checked,
+including scalar values, source records and authenticated SDK wrappers. Deleted
+constructors or destructors do not prevent a query that selects no lifetime
+operation. Original receiver, pointer, argument, written template, selected
+default and source-function dependencies remain independent. Queries invoke no
+operands, placement construction, destructors or cleanup. Independent member
+addresses and source member replacements remain rejected. Evaluated construction
+and destruction retain their complete SDK-body and lifetime proofs; allocator
+traits keep their separate existing query boundaries.
+
 Pure pinned allocator `allocate`, `deallocate`, `address` and `max_size`
 queries authenticate exact public constness, parameter and return types,
 resolved exception metadata, function declaration chains and one-byte allocator
@@ -3246,8 +3264,8 @@ no allocation, bounds calculation or storage. Queries invoke no operands,
 allocation, address read, deallocation, construction or cleanup. Evaluated
 operations keep their complete method, allocation-limit and lifetime proofs.
 Source allocator or method replacements and independent member addresses
-remain rejected; construct, destroy and allocator-traits operations keep their
-separate existing boundaries.
+remain rejected; allocator-traits operations keep their separate existing
+boundaries.
 
 Pure scalar and unbounded-array `default_delete` call-result queries authenticate
 the exact pinned inline const call operator, its declaration chain, checked
