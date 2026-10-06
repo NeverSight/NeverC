@@ -20894,6 +20894,18 @@ class FunctionLowering {
       reject(L, "nested vector emplacement",
              "The checked constant count is required.");
     const uint64_t Count = Evaluated.Val.getInt().getLimitedValue(65537);
+    std::optional<Expression> ConvertedFill;
+    if (Kind == UtilityVectorNestedEmplace::CountValue &&
+        !A.Context.hasSameUnqualifiedType(Call->getArg(Offset + 1)->getType(),
+                                          Nested->ElementType)) {
+      // The inner constructor's const-reference parameter binds a converted
+      // temporary before its allocation. Exact fill types keep the live alias.
+      auto Fill = utilityConstructorArgumentValue(
+          json::Object(Sources[1]),
+          Call->getDirectCallee()->getParamDecl(Offset + 1)->getType(), L);
+      ConvertedFill =
+          snapshot(cast(std::move(Fill), type(Nested->ElementType, L), L), L);
+    }
     auto Member = [&](const char *Name) {
       return Expression{{"kind", "member"},
                         {"type", PointerType},
@@ -20935,9 +20947,14 @@ class FunctionLowering {
            One, Done, L);
     label(One, L);
     if (Kind == UtilityVectorNestedEmplace::CountValue) {
-      auto Fill = utilityConstructorArgumentValue(
-          json::Object(Sources[1]),
-          Call->getDirectCallee()->getParamDecl(Offset + 1)->getType(), L);
+      auto Fill =
+          ConvertedFill
+              ? json::Object(*ConvertedFill)
+              : utilityConstructorArgumentValue(json::Object(Sources[1]),
+                                                Call->getDirectCallee()
+                                                    ->getParamDecl(Offset + 1)
+                                                    ->getType(),
+                                                L);
       if (Nested->OwningElement)
         copyVectorElement(dereference(json::Object(Current), L),
                           std::move(Fill), *Nested, L,

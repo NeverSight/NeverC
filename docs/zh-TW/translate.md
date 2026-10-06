@@ -230,7 +230,7 @@ Core v2 支援經過檢查的全空基底類別鏈，涵蓋一般／範本建構
 
 vector 就地建構的 pair 欄位也支援已驗證的普通函式指標和函式參考、相容的 `noexcept` 移除及 `nullptr`。直接降低保留回呼簽章、原始碼定義和獨立 pair 儲存。先擷取所有呼叫端引數的轉送繫結，再讀取 pair 欄位值，因此後續引數修改參考值時不會被過早快照。隱含使用者或 trait 轉換、volatile 指標和 SDK 函式位址仍受各自限制。 擴容時在已校驗的原始碼配置完成後、既有元素搬移前讀取欄位值；有剩餘容量時直接建構，無須配置。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-巢狀 `vector` 元素支援透過 `emplace` 和 `emplace_back` 按已校驗的常數數量 `0..65536` 直接建構，並可傳入型別精確匹配的填充值。內層緩衝區獨立；轉發綁定在外層配置後保留別名，各內層元素沿用既有預設或複製建構。零數量不配置內層緩衝區。動態或有副作用的數量、隱式填充值轉換和自訂配置器仍受既有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
+巢狀 `vector` 元素支援透過 `emplace` 和 `emplace_back` 按已校驗的常數數量 `0..65536` 直接建構，並可傳入型別精確匹配的填充值或已支援的純量、回呼轉換。內層緩衝區獨立。型別精確匹配的填充值參考在配置期間保持有效；轉換後的值在外層配置後、內層配置前儲存。零數量仍求值填充參數，但不配置內層緩衝區。動態或有副作用的數量、使用者定義的填充值轉換和自訂配置器仍受既有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
 ## 安裝與純量轉譯
 

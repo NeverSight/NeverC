@@ -7033,17 +7033,24 @@ construction, assignment and insertion copy each nested element into
 independent storage, including values referenced from the destination vector.
 Nested-vector elements also support direct `emplace` and `emplace_back`
 construction from a checked constant count in `0..65536`, with an optional exact
-fill value. The count is an integer with no source effects; dynamic, negative
-and excessive counts retain their existing restrictions. Each inner buffer is
-independent. Caller forwarding bindings are captured once, before outer
-allocation, and the inner construction occurs before old outer elements move.
-Fill references remain live through inner allocation and each element uses its
-existing scalar copy or authenticated resource copy constructor. Zero counts
-allocate no inner buffer but still evaluate the supplied fill argument. Returned
-references and positional iterators identify the actual stored inner vector.
-Tests cover growth aliases, in-place insertion, three levels of independent
-buffers, argument effects, source allocation mutations, and source element
-construction/destruction counts. Implicit fill conversions and custom allocators
+fill value or an admitted scalar or callback conversion. The count is an integer
+with no source effects; dynamic, negative and excessive counts retain their
+existing restrictions. Each inner buffer is independent. Caller forwarding
+bindings are captured once, before outer allocation, and the inner construction
+occurs before old outer elements move. Exact fill references remain live through
+inner allocation. A converted fill temporary is saved after outer allocation
+and before inner allocation, matching the inner constructor's const-reference
+binding. Scalar conversions include admitted arithmetic and object-pointer
+conversions; callback conversions include source function references, null
+pointers and compatible removal of `noexcept`. Direct authenticated SDK callback
+constants also work without introducing SDK storage globals. Each inner element
+uses its existing scalar copy or authenticated resource copy constructor. Zero
+counts allocate no inner buffer but still evaluate the supplied fill argument.
+Returned references and positional iterators identify the actual stored inner
+vector. Tests cover growth aliases, in-place insertion, three levels of
+independent buffers, argument effects, scalar and callback conversions, source
+allocation mutations, and source element construction/destruction counts.
+User-defined fill conversions, volatile fill operands and custom allocators
 remain outside this boundary.
 
 All six vector comparisons recurse through nested vectors whose leaves are

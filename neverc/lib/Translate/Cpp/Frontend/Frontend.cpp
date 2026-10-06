@@ -14834,6 +14834,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           retainSDKFunctionConstantValue(Call->getArg(Offset + 1),
                                          Pair->Second->getType(), Call);
         }
+        if (Vector && approvedUtilityVectorNestedEmplace(
+                          A.S, A.Sources, *Vector, Call, Offset, A.Context) ==
+                          UtilityVectorNestedEmplace::CountValue) {
+          const auto Nested = approvedUtilityVectorRecord(
+              A.S, A.Sources, Vector->ElementType->getAsCXXRecordDecl(),
+              A.Context);
+          retainSDKFunctionConstantValue(Call->getArg(Offset + 1),
+                                         Nested->ElementType, Call);
+        }
       }
       if (Operation == UtilityOperation::MakePair && Call->getNumArgs() == 2) {
         auto Pair = approvedUtilityPairRecord(

@@ -7173,12 +7173,18 @@ std::optional<UtilityVectorNestedEmplace> approvedUtilityVectorNestedEmplace(
   const auto FillType = Fill->getType();
   const auto FillParameter =
       Function->getParamDecl(FirstArgument + 1)->getType();
+  const bool FillConversion =
+      Context.hasSameUnqualifiedType(FillType, Nested->ElementType) ||
+      (!Nested->OwningElement &&
+       utilityScalarDirectConversion(Context, FillType, Nested->ElementType)) ||
+      (Nested->ElementType->isFunctionPointerType() &&
+       utilityCallbackDirectConversion(Context, FillType, Nested->ElementType));
   if (!utilityVectorCopyableElements(S, SM, *Nested, Context) ||
       !FillParameter->isReferenceType() ||
       !Context.hasSameUnqualifiedType(FillParameter->getPointeeType(),
                                       FillType) ||
-      !Context.hasSameUnqualifiedType(FillType, Nested->ElementType) ||
-      FillType.isVolatileQualified() || FillType.isRestrictQualified() ||
+      !FillConversion || FillType.isVolatileQualified() ||
+      FillType.isRestrictQualified() ||
       FillType.getAddressSpace() != LangAS::Default)
     return std::nullopt;
   return UtilityVectorNestedEmplace::CountValue;

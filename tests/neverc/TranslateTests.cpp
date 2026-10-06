@@ -28394,6 +28394,709 @@ int use_bool(bool f,int n){return f?n:0;}int main(){return std::invoke(use_bool,
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionAllocationConversion) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-allocation-conversion.cpp");
+  const auto Output =
+      tmpFile("nested-vector-fill-conversion-allocation-conversion.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;short selected=3;
+void* operator new(Size n){++allocations;selected+=2;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::vector<int>> v;v.emplace_back(2,selected);return selected!=7||v[0][0]!=5||v[0][1]!=5;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "nested-vector-fill-conversion-allocation-conversion" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionArgumentOnce) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-argument-once.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-argument-once.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int calls;const short& choose(){++calls;static short n=8;return n;}int check(){std::vector<std::vector<int>> v;v.emplace_back(2,choose());v.emplace(v.begin(),1,choose());return calls!=2||v[0][0]!=8||v[1][1]!=8;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-argument-once" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2NestedVectorFillConversionCallbackAllocationConversion) {
+  const auto Source = tmpFile(
+      "nested-vector-fill-conversion-callback-allocation-conversion.cpp");
+  const auto Output = tmpFile(
+      "nested-vector-fill-conversion-callback-allocation-conversion.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int target(int)noexcept;int other(int)noexcept;using Fn=int(*)(int)noexcept;Fn selected=target;int allocations,releases;
+void* operator new(Size n){++allocations;selected=allocations==1?other:target;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int other(int n)noexcept{return n+2;}int check(){std::vector<std::vector<int(*)(int)>> v;v.emplace_back(2,selected);return allocations!=2||selected!=target||v[0][0](7)!=9||v[0][1](7)!=9;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-callback-allocation-conversion" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionConstNumeric) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-const-numeric.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-const-numeric.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){const short x=7;std::vector<std::vector<int>> v;v.emplace_back(2,x);return v[0][0]!=7||v[0][1]!=7;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-const-numeric" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionFloating) {
+  const auto Source = tmpFile("nested-vector-fill-conversion-floating.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-floating.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::vector<double>> v;v.emplace_back(2,7);v.emplace(v.begin(),1,8.5f);return v[0][0]!=8.5||v[1][1]!=7.;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-floating" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionFunctionReference) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-function-reference.cpp");
+  const auto Output =
+      tmpFile("nested-vector-fill-conversion-function-reference.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::vector<F>> v;v.emplace_back(2,target);v.emplace(v.begin(),1,target);return v[0][0](7)!=8||v[1][1](7)!=8||effects!=2;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "nested-vector-fill-conversion-function-reference" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionInPlace) {
+  const auto Source = tmpFile("nested-vector-fill-conversion-in-place.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-in-place.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::vector<int>> v;v.reserve(4);short n=7;v.emplace_back(2,n);auto it=v.emplace(v.begin(),1,short(8));return it!=v.begin()||v[0][0]!=8||v[1][1]!=7;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-in-place" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionNoexceptRemoval) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-noexcept-removal.cpp");
+  const auto Output =
+      tmpFile("nested-vector-fill-conversion-noexcept-removal.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){F f=target;std::vector<std::vector<int(*)(int)>> v;v.emplace_back(2,f);v.emplace(v.begin(),1,f);return v[0][0](7)!=8||v[1][1](7)!=8||effects!=2;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "nested-vector-fill-conversion-noexcept-removal" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionNull) {
+  const auto Source = tmpFile("nested-vector-fill-conversion-null.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-null.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::vector<F>> v;v.emplace_back(2,nullptr);v.emplace(v.begin(),1,nullptr);return v[0][0]!=nullptr||v[1][1]!=nullptr;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-null" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionNumeric) {
+  const auto Source = tmpFile("nested-vector-fill-conversion-numeric.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-numeric.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){short x=7;std::vector<std::vector<int>> v;v.emplace_back(2,x);v.emplace(v.begin(),1,short(8));return v[0][0]!=8||v[1][1]!=7;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-numeric" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionPointerQualification) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-pointer-qualification.cpp");
+  const auto Output =
+      tmpFile("nested-vector-fill-conversion-pointer-qualification.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){int n=7;int* p=&n;std::vector<std::vector<const int*>> v;v.emplace_back(2,p);v.emplace(v.begin(),1,p);return v[0][0]!=&n||*v[1][1]!=7;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "nested-vector-fill-conversion-pointer-qualification" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionSdkConstant) {
+  const auto Source = tmpFile("nested-vector-fill-conversion-sdk-constant.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-sdk-constant.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){std::vector<std::vector<F>> v;v.emplace_back(2,C::value);return v[0][1](7)!=8||effects!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-sdk-constant" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionVoidPointer) {
+  const auto Source = tmpFile("nested-vector-fill-conversion-void-pointer.cpp");
+  const auto Output = tmpFile("nested-vector-fill-conversion-void-pointer.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int check(){int n=7;int* p=&n;std::vector<std::vector<void*>> v;v.emplace_back(2,p);return v[0][0]!=p||v[0][1]!=p;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-void-pointer" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedVectorFillConversionZeroConversion) {
+  const auto Source =
+      tmpFile("nested-vector-fill-conversion-zero-conversion.cpp");
+  const auto Output =
+      tmpFile("nested-vector-fill-conversion-zero-conversion.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int calls;short choose(){++calls;return 7;}int check(){std::vector<std::vector<int>> v;v.emplace_back(0,choose());return calls!=1||!v[0].empty()||allocations!=1;}
+int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("nested-vector-fill-conversion-zero-conversion" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2NestedVectorFillConversionsRetainSourceAndSDKBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"declaration-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int external(int)noexcept;int main(){std::vector<std::vector<F>> v;v.emplace_back(2,external);}
+)cpp"},
+      {"effectful-count", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::vector<int>> v;v.emplace_back((++effects,2),short(7));}
+)cpp"},
+      {"long-double-fill", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){long double n=7;std::vector<std::vector<int>> v;v.emplace_back(2,n);}
+)cpp"},
+      {"missing-allocation", R"cpp(#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){std::vector<std::vector<int>> v;v.emplace_back(2,short(7));}
+)cpp"},
+      {"runtime-count", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(int argc,char**){std::vector<std::vector<int>> v;v.emplace_back(argc,short(7));}
+)cpp"},
+      {"sdk-function-target", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+using G=int&(*)(int&)noexcept;int main(){std::vector<std::vector<G>> v;v.emplace_back(2,static_cast<G>(&std::forward<int&>));}
+)cpp"},
+      {"sdk-value-alias", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+const F& alias=C::value;int main(){std::vector<std::vector<F>> v;v.emplace_back(2,alias);}
+)cpp"},
+      {"user-callback-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+struct N{operator F()const{return target;}};int main(){std::vector<std::vector<F>> v;v.emplace_back(2,N{});}
+)cpp"},
+      {"user-scalar-conversion", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+struct N{operator int()const{return 7;}};int main(){std::vector<std::vector<int>> v;v.emplace_back(2,N{});}
+)cpp"},
+      {"volatile-fill", R"cpp(using Size=decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+int allocations,releases;
+void* operator new(Size n){++allocations;return malloc(n);}
+void operator delete(void* p)noexcept{++releases;free(p);}
+void operator delete(void* p,Size)noexcept{++releases;free(p);}
+#include <type_traits>
+#include <functional>
+#include <utility>
+#include <vector>
+#include <array>
+#include <optional>
+int effects;int target(int n)noexcept{++effects;return n+1;}
+using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
+int main(){volatile short n=7;std::vector<std::vector<int>> v;v.emplace_back(2,n);}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source =
+        tmpFile(std::string("nested-fill-conversion-reject-") + Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("nested-fill-conversion-reject-") + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NestedVectorEmplaceAllocationReference) {
   const auto Source = tmpFile("nested-vector-emplace-allocation-reference.cpp");
   const auto Output = tmpFile("nested-vector-emplace-allocation-reference.nc");
@@ -28865,23 +29568,6 @@ int main(){int r=check();return r?r:(allocations>0&&allocations==releases?0:91);
 TEST_F(TranslateTest,
        CoreV2NestedVectorEmplaceRetainsCountAndSourceBoundaries) {
   const std::pair<const char *, const char *> Cases[] = {
-      {"converting-fill", R"cpp(using Size=decltype(sizeof(0));
-extern "C" void* malloc(Size);
-extern "C" void free(void*);
-int allocations,releases;
-void* operator new(Size n){++allocations;return malloc(n);}
-void operator delete(void* p)noexcept{++releases;free(p);}
-void operator delete(void* p,Size)noexcept{++releases;free(p);}
-#include <type_traits>
-#include <functional>
-#include <utility>
-#include <vector>
-#include <array>
-#include <optional>
-int effects;int target(int n)noexcept{++effects;return n+1;}
-using F=int(*)(int)noexcept;using C=std::integral_constant<F,target>;
-int main(){std::vector<std::vector<int>> v;v.emplace_back(2,short(7));return 0;}
-)cpp"},
       {"effectful-count", R"cpp(using Size=decltype(sizeof(0));
 extern "C" void* malloc(Size);
 extern "C" void free(void*);
