@@ -1475,22 +1475,18 @@ class FunctionLowering {
           Approved.Method->getParamDecl(Index)->getType().getNonReferenceType();
       if (Type->isFunctionType())
         Type = A.Context.getPointerType(Type);
-      return type(Type, L);
+      return Type;
     };
-    auto Left = snapshot(
-        cast(utilityConstructorArgumentValue(
-                 std::move(Sources[0]),
-                 Call->getDirectCallee()->getParamDecl(1)->getType(), L),
-             ParameterValueType(0), L),
-        L);
+    auto Left = utilityInvocationArgument(
+        std::move(Sources[0]),
+        Call->getDirectCallee()->getParamDecl(1)->getType(),
+        ParameterValueType(0), nullptr, L);
     std::optional<Expression> Right;
     if (!Unary)
-      Right = snapshot(
-          cast(utilityConstructorArgumentValue(
-                   std::move(Sources[1]),
-                   Call->getDirectCallee()->getParamDecl(2)->getType(), L),
-               ParameterValueType(1), L),
-          L);
+      Right = utilityInvocationArgument(
+          std::move(Sources[1]),
+          Call->getDirectCallee()->getParamDecl(2)->getType(),
+          ParameterValueType(1), nullptr, L);
     return functionalOperationValues(L, std::move(Left), std::move(Right),
                                      Info);
   }
@@ -3490,24 +3486,22 @@ class FunctionLowering {
         if (Call->getNumArgs() != (Unary ? 2u : 3u))
           reject(L, "functional reference invoke",
                  "The checked function object arity must match its arguments.");
-        auto Left = snapshot(cast(
-            utilityConstructorArgumentValue(
-                std::move(Sources[0]),
-                Call->getDirectCallee()
-                    ->getParamDecl(1 - OperatorOffset)
-                    ->getType(), L),
-            type(Info->Method->getParamDecl(0)->getType()
-                     .getNonReferenceType(), L), L), L);
+        auto Left = utilityInvocationArgument(
+            std::move(Sources[0]),
+            Call->getDirectCallee()
+                ->getParamDecl(1 - OperatorOffset)
+                ->getType(),
+            Info->Method->getParamDecl(0)->getType().getNonReferenceType(),
+            nullptr, L);
         std::optional<Expression> Right;
         if (!Unary)
-          Right = snapshot(cast(
-              utilityConstructorArgumentValue(
-                  std::move(Sources[1]),
-                  Call->getDirectCallee()
-                      ->getParamDecl(2 - OperatorOffset)
-                      ->getType(), L),
-              type(Info->Method->getParamDecl(1)->getType()
-                       .getNonReferenceType(), L), L), L);
+          Right = utilityInvocationArgument(
+              std::move(Sources[1]),
+              Call->getDirectCallee()
+                  ->getParamDecl(2 - OperatorOffset)
+                  ->getType(),
+              Info->Method->getParamDecl(1)->getType().getNonReferenceType(),
+              nullptr, L);
         return functionalOperationValues(L, std::move(Left),
                                          std::move(Right), *Info->Operation);
       }
@@ -10037,16 +10031,18 @@ class FunctionLowering {
           if (!Tuple || Tuple->size() != (Unary ? 1u : 2u))
             reject(L, "utility tuple apply",
                    "The referenced function object arity differs from the tuple.");
-          auto Left = snapshot(cast(
-              ApplyElement(json::Object(TupleValue), 0),
-              type(ReferenceCallable->Method->getParamDecl(0)->getType()
-                       .getNonReferenceType(), L), L), L);
+          auto Left =
+              ApplyValueArgument(ApplyElement(json::Object(TupleValue), 0), 0,
+                                 ReferenceCallable->Method->getParamDecl(0)
+                                     ->getType()
+                                     .getNonReferenceType());
           std::optional<Expression> Right;
           if (!Unary)
-            Right = snapshot(cast(
-                ApplyElement(std::move(TupleValue), 1),
-                type(ReferenceCallable->Method->getParamDecl(1)->getType()
-                         .getNonReferenceType(), L), L), L);
+            Right =
+                ApplyValueArgument(ApplyElement(std::move(TupleValue), 1), 1,
+                                   ReferenceCallable->Method->getParamDecl(1)
+                                       ->getType()
+                                       .getNonReferenceType());
           return functionalOperationValues(
               L, std::move(Left), std::move(Right),
               *ReferenceCallable->Operation);
@@ -10150,16 +10146,17 @@ class FunctionLowering {
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
-        auto Left = snapshot(cast(
-            ApplyElement(json::Object(TupleValue), 0),
-            type(ObjectOperation->Method->getParamDecl(0)->getType()
-                     .getNonReferenceType(), L), L), L);
+        auto Left =
+            ApplyValueArgument(ApplyElement(json::Object(TupleValue), 0), 0,
+                               ObjectOperation->Method->getParamDecl(0)
+                                   ->getType()
+                                   .getNonReferenceType());
         std::optional<Expression> Right;
         if (!Unary)
-          Right = snapshot(cast(
-              ApplyElement(std::move(TupleValue), 1),
-              type(ObjectOperation->Method->getParamDecl(1)->getType()
-                       .getNonReferenceType(), L), L), L);
+          Right = ApplyValueArgument(ApplyElement(std::move(TupleValue), 1), 1,
+                                     ObjectOperation->Method->getParamDecl(1)
+                                         ->getType()
+                                         .getNonReferenceType());
         return functionalOperationValues(L, std::move(Left), std::move(Right),
                                          ObjectOperation->Operation);
       }

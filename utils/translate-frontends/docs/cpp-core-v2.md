@@ -4138,6 +4138,20 @@ wrapper conversion and forwarded parameter identity. Their independent one-byte
 carrier, source target checks and SDK storage restrictions follow the
 [trait object contract](#function-pointer-trait-constants).
 
+Typed standard function objects also consume admitted scalar wrapper operands
+through `invoke`, `apply` and direct or invoked wrappers around the callable.
+The selected standard operation and method retain their pinned SDK body proof.
+Each wrapper operand additionally requires the exact pinned conversion on the
+matching forwarded dispatch parameter; outer adapters preserve the authenticated
+wrapper type and forwarding identity. Lowering captures all caller bindings
+before reading the current referents and applying the selected typed parameter
+conversions. Arithmetic, comparison and logical operations therefore preserve
+later operand updates, single evaluation, floating conversions, typed narrowing
+and arithmetic-to-boolean conversion. Const referents and explicit tuples of
+wrapper values use the same proof. Arbitrary source conversions, volatile or
+long-double referents, wrapper-to-boolean function-pointer conversions and
+replacement SDK operators or wrapper conversions retain their diagnostics.
+
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and
 wrapper-taking overloads retain the exact wrapper type and referent

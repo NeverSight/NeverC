@@ -13172,6 +13172,15 @@ static bool functionalObjectArgumentConversion(
            utilityCallbackDirectConversion(Context, From, To)));
 }
 
+static bool functionalObjectWrapperArgumentConversion(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    QualType From, QualType To, const Expr *SelectedArgument,
+    const ParmVarDecl *ForwardedParameter) {
+  return approvedFunctionalReferenceArgumentValue(S, SM, Context, To, From) &&
+         approvedFunctionalInvokeReferenceWrapperFlow(
+             S, SM, SelectedArgument, ForwardedParameter, To, Context);
+}
+
 static const FunctionDecl *functionTraitValueMethod(const State &S,
                                                     const SourceManager &SM,
                                                     const CXXMethodDecl *Method,
@@ -13309,7 +13318,11 @@ std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperatio
   for (unsigned I = 1; I < Call->getNumArgs(); ++I)
     if (!functionalObjectArgumentConversion(
             Context, *Operation, Call->getArg(I)->getType(),
-            OperationCall->getArg(I)->getType()))
+            OperationCall->getArg(I)->getType()) &&
+        !functionalObjectWrapperArgumentConversion(
+            S, SM, Context, Call->getArg(I)->getType(),
+            OperationCall->getArg(I)->getType(), OperationCall->getArg(I),
+            DispatchFunction->getParamDecl(I)))
       return std::nullopt;
   return FunctionalInvokeObjectCall{*Operation, Method};
 }
@@ -14079,7 +14092,12 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
         !utilityScalarDirectConversion(
             Context,
             Stored->isReferenceType() ? Stored->getPointeeType() : Stored,
-            OperationCall->getArg(I + 1)->getType()))
+            OperationCall->getArg(I + 1)->getType()) &&
+        !functionalObjectWrapperArgumentConversion(
+            S, SM, Context, Stored.getNonReferenceType(),
+            OperationCall->getArg(I + 1)->getType(),
+            OperationCall->getArg(I + 1),
+            Apply->DispatchFunction->getParamDecl(I + 1)))
       return std::nullopt;
   return UtilityTupleApplyObjectOperation{*Operation, Method};
 }
@@ -14322,7 +14340,11 @@ approvedFunctionalReferenceDirectInvoke(
     for (unsigned I = 1; I < Call->getNumArgs(); ++I)
       if (!functionalObjectArgumentConversion(
               Context, *Operation, Call->getArg(I)->getType(),
-              OperationCall->getArg(I)->getType()))
+              OperationCall->getArg(I)->getType()) &&
+          !functionalObjectWrapperArgumentConversion(
+              S, SM, Context, Call->getArg(I)->getType(),
+              OperationCall->getArg(I)->getType(), OperationCall->getArg(I),
+              DispatchFunction->getParamDecl(I)))
         return std::nullopt;
     return FunctionalReferenceInvokeCall{
         *Wrapper, FunctionalReferenceInvokeKind::FunctionObject, {},
@@ -14507,7 +14529,17 @@ approvedFunctionalReferenceInvokeCall(
     for (unsigned I = 1; I < Call->getNumArgs(); ++I)
       if (!functionalObjectArgumentConversion(
               Context, *Inner->Operation, Call->getArg(I)->getType(),
-              InnerCall->getArg(I)->getType()))
+              InnerCall->getArg(I)->getType()) &&
+          !(Context.hasSameType(Call->getArg(I)->getType(),
+                                InnerCall->getArg(I)->getType()) &&
+            approvedFunctionalReferenceRecord(
+                S, SM, Call->getArg(I)->getType()->getAsCXXRecordDecl(),
+                Context) &&
+            (functionalInvokeParameterReference(
+                 InnerCall->getArg(I), DispatchFunction->getParamDecl(I)) ||
+             approvedFunctionalForwardingCall(
+                 S, SM, InnerCall->getArg(I),
+                 DispatchFunction->getParamDecl(I)))))
         return std::nullopt;
     return Inner;
   }
@@ -14613,8 +14645,12 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
                              : StoredElement;
     bool Supported = false;
     if (StandardObject) {
-      Supported = utilityScalarDirectConversion(
-          Context, Element, Target.getNonReferenceType());
+      Supported = utilityScalarDirectConversion(Context, Element,
+                                                Target.getNonReferenceType()) ||
+                  (approvedFunctionalReferenceArgumentValue(
+                       S, SM, Context, Target.getNonReferenceType(), Element) &&
+                   Context.hasSameUnqualifiedType(
+                       Element, Operation->getArg(I + 1)->getType()));
     } else if (Target->isReferenceType()) {
       const auto Referent = Target->getPointeeType();
       const bool ElementIsLValue =

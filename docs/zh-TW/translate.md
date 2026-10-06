@@ -83,6 +83,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 經驗證的 `reference_wrapper` 引數現在可透過 `invoke` 和 `apply` 繫結相符且受支援的左值參考參數，包括明確儲存包裝器值的 tuple。固定 SDK 的精確轉換及轉送參數均須通過認證。呼叫保留原參考目標的位址、寫入效果和 const 限定。已校驗的函式和函式指標包裝器也可提供普通回呼的傳值參數，包括相容的 `noexcept` 移除。回呼值在呼叫方引數求值後讀取，保留後續修改；空指標仍以值傳遞。任意原始碼轉換、函式包裝器到布林值的轉換及 volatile 參考目標仍不受支援。 經驗證的算術值和物件指標包裝器也可透過相同呼叫路徑提供受支援的純量傳值參數，包括算術值到 bool 與指標限定轉換，並在呼叫方引數求值後讀取。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
+具型別的標準函式物件也可透過 `invoke`、`apply` 及直接或經 invoke 呼叫的可呼叫物件包裝器接收已校驗的純量包裝器引數。算術、比較和邏輯運算使用選中的參數轉換，包括浮點、窄化及算術值到 bool 的轉換。SDK 包裝器的精確轉換及轉送流程仍須通過認證。在呼叫方引數求值完成後讀取參考目標，保留後續修改及單次求值語意。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+
 經驗證的函式指標 trait 包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的 trait 傳值參數，包括 const 參考目標和右值包裝器。固定 SDK 的 trait 複製與包裝器轉換仍須通過認證。每個參數使用獨立的一位元組儲存；可呼叫物件及引數的副作用只發生一次，原始碼函式目標仍須檢查。其他 trait 域和 SDK `value` 儲存別名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 經驗證的原始碼自有標準布局記錄包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的傳值參數。選中的原始碼複製建構、預設參數及相依性仍須通過檢查。參數使用獨立儲存，在複製前觀察後續引數的修改；預設參數副作用和參數清理保留呼叫中的生命週期。右值包裝器仍提供左值參考目標。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
