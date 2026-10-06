@@ -7054,8 +7054,8 @@ static QualType utilityUniquePtrSwapQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Function->getReturnType());
 }
 
-static QualType utilityUniquePtrEqualityQuerySource(Adapter &A,
-                                                    const CallExpr *Call) {
+static QualType utilityUniquePtrComparisonQuerySource(Adapter &A,
+                                                      const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
       Call ? directFunctionReference(Call) : nullptr);
@@ -7065,7 +7065,11 @@ static QualType utilityUniquePtrEqualityQuerySource(Adapter &A,
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
   if (!A.S.coreV2() || !Function || isa<CXXMethodDecl>(Function) ||
       (Function->getOverloadedOperator() != OO_EqualEqual &&
-       Function->getOverloadedOperator() != OO_ExclaimEqual) ||
+       Function->getOverloadedOperator() != OO_ExclaimEqual &&
+       Function->getOverloadedOperator() != OO_Less &&
+       Function->getOverloadedOperator() != OO_Greater &&
+       Function->getOverloadedOperator() != OO_LessEqual &&
+       Function->getOverloadedOperator() != OO_GreaterEqual) ||
       !Function->getPrimaryTemplate() || !Function->isInlined() || !Reference ||
       Reference->getDecl() != Function ||
       !A.S.owns(A.Sources, Reference->getExprLoc()) || !Prototype ||
@@ -14433,7 +14437,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result =
-                     utilityUniquePtrEqualityQuerySource(A, Call);
+                     utilityUniquePtrComparisonQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =

@@ -3633,9 +3633,9 @@ owning temporaries keep their original lifetime dependencies.
 Both written operand expressions, aliases, original
 function signatures, exception specifications and selected source defaults
 retain their original source dependencies.
-Evaluated equality requires its wrapper to compare the exact two parameter getters with built-in
-pointer equality. Each getter must select its matching owner's actual pinned
-definition and nonthrowing signature and read the wrapper's corresponding
+Evaluated equality requires its wrapper to compare the exact two parameter
+getters with built-in pointer equality. Each getter must select its matching
+owner's actual pinned definition and nonthrowing signature and read the wrapper's corresponding
 parameter. Inequality must negate a call to the exact pinned equality
 specialization on its unchanged parameter pair. Both free wrappers, their
 primaries, instantiation patterns and all redeclarations remain authenticated
@@ -3645,22 +3645,24 @@ or pointee construction, deleter callback or destruction. Local owners and
 owning temporary/factory operands retain their separate allocation and lifetime
 source. Unevaluated queries preserve both pointers and invoke no operand,
 default, allocation, construction, deletion or cleanup. Ordinary comparisons
-evaluate both operands once in an unspecified C++17 order. Pure equality/inequality signature queries need no instantiated bodies. Such
-queries require the authenticated function declaration chain, exact owner and
-deleter template arguments, const-reference parameters, checked operand layouts
+evaluate both operands once in an unspecified C++17 order. Pure equality and
+inequality signature queries need no instantiated bodies. Such queries require
+the authenticated function declaration chain, exact owner and deleter template
+arguments, const-reference parameters, checked operand layouts
 and resolved bool/potentially throwing metadata. Both operand sources, aliases
 and explicit template arguments retain independent checks; SDK wrapper pointees
 keep authenticated layout completion. Source comparison or getter replacements
 and independent function addresses remain rejected. Ordering and null-comparison
-queries keep their separate existing boundaries.
+queries keep their separate exact signature boundaries.
 
-Already materialized pinned owner-to-owner `<`, `>`, `<=` and `>=` also admit
-result-source queries. The scalar/array, common unqualified element, qualified
+Exact pinned owner-to-owner `<`, `>`, `<=` and `>=` signatures also admit
+result-source queries without instantiated wrapper, getter, comparator or default
+deletion bodies. The scalar/array, common unqualified element, qualified
 pointee and deleter boundaries match owner equality, including bounded inner
 arrays, borrowed const owners, mutable/const xvalues and source-owned pointees.
 All four retain a `bool` prvalue and potentially throwing C++17 signature. The
-`<` wrapper must keep its exact two pointer aliases and SDK `common_type`
-specialization, including the selected SDK type identity. Its actual call must
+evaluated `<` wrapper must keep its exact two pointer aliases and SDK
+`common_type` specialization, including the selected SDK type identity. Its actual call must
 construct the pinned empty trivial `std::less<CommonPointer>` and compare the
 unchanged parameter getters through that comparator's materialized pointer
 comparison body. Every selected getter, comparator method, class template and
@@ -3676,10 +3678,14 @@ lifetimes remain independently checked. Borrowing selects no unused construction
 deleter callback or destruction. Unevaluated ordering reads no pointer and
 invokes no operand, default, allocation, ownership transfer or cleanup. Ordinary
 ordering keeps the existing flat-address total order and evaluates each operand
-once in an unspecified C++17 order. Missing result-query bodies or pairs, source
-wrapper/delegate/getter/comparator/common-type replacements, independent
-function addresses remain rejected. Pure comparison `noexcept` queries retain
-their existing signature-source boundary without selecting unused wrapper bodies.
+once in an unspecified C++17 order. Pure owner-ordering queries authenticate
+the exact SDK function declaration chain, concrete owner/deleter template types,
+const-reference parameters, compatible checked owner layouts and resolved
+bool/potentially throwing signatures. They select no getter, comparator or
+pointer comparison and retain each original operand source. SDK wrapper
+pointees keep authenticated layout completion. Source wrapper, delegate, getter,
+comparator or common-type replacements and independent function addresses
+remain rejected. Owner/null queries keep their separate existing boundary.
 
 The same ordering source boundary also admits already materialized pinned
 C++17 owner/null `<`, `>`, `<=` and `>=`, in both operand orders. Scalar and

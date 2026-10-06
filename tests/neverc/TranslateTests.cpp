@@ -71270,34 +71270,6 @@ namespace std{inline namespace __1{template<>int*unique_ptr<int[]>::get()const n
 using P=std::unique_ptr<int>;using F=bool(*)(const P&,const P&);int f(P&p,P&q){p<q;static_assert(sizeof(static_cast<F>(&std::operator<))>0);return 0;}
 )cpp",
        "TR0201"},
-      {"query-only-less", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p.get();q.get();static_assert(__is_same(decltype(p<q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p>q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-less-equal", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p<=q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-greater-equal", R"cpp(
-using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-reverse", R"cpp(
-using P=std::unique_ptr<int>;using Q=std::unique_ptr<const int>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(q<p),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-array", R"cpp(
-using P=std::unique_ptr<int[]>;int f(P&p,P&q){p.get();q.get();static_assert(__is_same(decltype(p<=q),bool));return 0;}
-)cpp",
-       "TR0201"},
-      {"query-only-custom", R"cpp(
-struct D{void operator()(int*)const noexcept{}};struct E{void operator()(int*)noexcept{}};using P=std::unique_ptr<int,D>;using Q=std::unique_ptr<int,E>;int f(P&p,Q&q){p<q;static_assert(__is_same(decltype(p>=q),bool));return 0;}
-)cpp",
-       "TR0201"},
       {"less-specialization", R"cpp(
 namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using P=std::unique_ptr<int>;int f(P&p,P&q){p<q;static_assert(__is_same(decltype(p<q),bool));return 0;}
 )cpp",
@@ -167102,11 +167074,11 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::get)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().get());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype(p<p),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.get());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -167820,12 +167792,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::release)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using P=decltype(std::declval<U&>().release());return sizeof(P)==sizeof(void*)?0:1;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype(p<p),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using P=decltype(p.release());static_assert(sizeof(P)==sizeof(void*));static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168130,12 +168102,12 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int f(U&p){using V=decltype(p.reset());static_assert(std::is_same_v<V,void>);p.reset();return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype(p<p),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p){using R=decltype(p.reset());static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"source-element-layout", R"cpp(
 #include <memory>
@@ -168449,12 +168421,12 @@ using U=std::unique_ptr<int>;int main(){return sizeof(&U::swap)>0?0:1;}
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>().swap(std::declval<U&>()));static_assert(std::is_same_v<R,void>);return 0;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype(p<p),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int f(U&p,U&q){using R=decltype(p.swap(q));static_assert(std::is_same_v<R,void>);static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -168854,12 +168826,12 @@ using U=std::unique_ptr<int>;using F=void(*)(U&,U&)noexcept;int main(){return si
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::swap(std::declval<U&>(),std::declval<U&>())));return 0;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(__is_same(decltype(p<p),bool));return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(std::swap(p,q)));static_assert(__is_same(decltype(p<nullptr),bool));return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -169252,12 +169224,12 @@ using U=std::unique_ptr<int>;using N=decltype(nullptr);using F=U&(U::*)(N)noexce
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::declval<U&>()=nullptr));return 0;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=nullptr));using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=nullptr));using R=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -169716,12 +169688,12 @@ using U=std::unique_ptr<int>;using F=U&(U::*)(U&&)noexcept;int main(){return siz
 #include <type_traits>
 using U=std::unique_ptr<long double>;int main(){static_assert(noexcept(std::declval<U&>()=std::declval<U&&>()));return 0;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){static_assert(noexcept(p=std::move(q)));using R=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -170194,12 +170166,12 @@ using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&
 #include <type_traits>
 using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype(p==nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
-      {"query-does-not-authorize-ordering", R"cpp(
+      {"query-does-not-authorize-null-ordering", R"cpp(
 #include <memory>
 #include <functional>
 #include <utility>
 #include <type_traits>
-using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype(p<q);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p==q);using S=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
 )cpp"},
       {"query-does-not-authorize-runtime-delete", R"cpp(
 #include <memory>
@@ -170250,6 +170222,482 @@ using U=std::unique_ptr<int>;U&owner(int n=sizeof(long double))noexcept{return *
                                 Case.first + ".cpp");
     const auto Output =
         tmpFile(std::string("unique-equality-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrOrderingSignatureQueryArrayOwnerOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-array-owner-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-array-owner-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<const int[]>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-array-owner-ordering" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryArrayWrapperOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-array-wrapper-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-array-wrapper-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W[]>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-array-wrapper-ordering" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrOrderingSignatureQueryConstXvalueOwners) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-const-xvalue-owners.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-const-xvalue-owners.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<const U&&>()<std::declval<const U&>());using N=decltype(std::declval<const U&&>()>std::declval<const U&>());static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<N,bool>);static_assert(!noexcept(std::declval<const U&&>()<std::declval<const U&>()));return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-ordering-signature-const-xvalue-owners" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryCustomOwnerOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-custom-owner-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-custom-owner-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};using U=std::unique_ptr<int,D>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-custom-owner-ordering" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryDifferentCustomDeleters) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-different-custom-deleters.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-different-custom-deleters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+struct D{void operator()(int*)const noexcept{}};struct E{void operator()(int*)noexcept{}};using P=std::unique_ptr<int,D>;using Q=std::unique_ptr<int,E>;int main(){using R=decltype(std::declval<P&>()<std::declval<Q&>());using N=decltype(std::declval<P&>()>std::declval<Q&>());static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<N,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-different-custom-deleters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryExplicitTemplateTypes) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-explicit-template-types.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-explicit-template-types.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using D=std::default_delete<int>;int main(){using R=decltype(std::operator< <int,D,int,D>(std::declval<U&>(),std::declval<U&>()));static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-explicit-template-types" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryMultidimensionalOwnerOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-multidimensional-owner-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-multidimensional-owner-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int[][2]>;using C=std::unique_ptr<const int[][2]>;int main(){using R=decltype(std::declval<U&>()<std::declval<C&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-ordering-signature-multidimensional-owner-ordering" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryQualifiedOwnerOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-qualified-owner-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-qualified-owner-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using C=std::unique_ptr<const int>;int main(){using R=decltype(std::declval<U&>()<std::declval<C&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-qualified-owner-ordering" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryQueryDeletedLifetime) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-query-deleted-lifetime.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-query-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct X{int n;X()=delete;~X()=delete;};using U=std::unique_ptr<X>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-query-deleted-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrOrderingSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("unique-ordering-signature-query-effects.cpp");
+  const auto Output = tmpFile("unique-ordering-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int effects=0;U&owner()noexcept{++effects;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner()<owner());static_assert(std::is_same_v<R,bool>);return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-ordering-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);return 3;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UniquePtrOrderingSignatureQueryRawOwnerPointers) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-raw-owner-pointers.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-raw-owner-pointers.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){U*p=nullptr;U*q=nullptr;using R=decltype(*p<*q);static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("unique-ordering-signature-raw-owner-pointers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryScalarOwnerOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-scalar-owner-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-scalar-owner-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int main(){using L=decltype(std::declval<U&>()<std::declval<U&>());using G=decltype(std::declval<U&>()>std::declval<U&>());using E=decltype(std::declval<U&>()<=std::declval<U&>());using N=decltype(std::declval<U&>()>=std::declval<U&>());static_assert(std::is_same_v<L,bool>);static_assert(std::is_same_v<G,bool>);static_assert(std::is_same_v<E,bool>);static_assert(std::is_same_v<N,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-scalar-owner-ordering" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2UniquePtrOrderingSignatureQueryWrapperOwnerOrdering) {
+  const auto Source =
+      tmpFile("unique-ordering-signature-wrapper-owner-ordering.cpp");
+  const auto Output =
+      tmpFile("unique-ordering-signature-wrapper-owner-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using U=std::unique_ptr<W>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "unique-ordering-signature-wrapper-owner-ordering" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2UniquePtrOrderingSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"independent-ordering-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;using D=std::default_delete<int>;using F=bool(*)(const U&,const U&);int main(){return sizeof(static_cast<F>(&std::operator< <int,D,int,D>))<0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<long double>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(__is_same(R,bool));return 0;}
+)cpp"},
+      {"query-does-not-authorize-null-ordering", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);using S=decltype(p<nullptr);static_assert(std::is_same_v<R,bool>);static_assert(std::is_same_v<S,bool>);return 0;}int main(){return 0;}
+)cpp"},
+      {"query-does-not-authorize-runtime-delete", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;int inspect(U&p,U&q){using R=decltype(p<q);static_assert(std::is_same_v<R,bool>);p.reset();return 0;}int main(){return 0;}
+)cpp"},
+      {"source-element-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct X{long double n;};using U=std::unique_ptr<X>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(__is_same(R,bool));return 0;}
+)cpp"},
+      {"source-getter-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>int*unique_ptr<int>::get()const noexcept{return nullptr;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(__is_same(R,bool));return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U&owner()noexcept{long double n=1;return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner()<owner());static_assert(__is_same(R,bool));return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using U=std::unique_ptr<int>;U&owner(int n=sizeof(long double))noexcept{return *static_cast<U*>(nullptr);}int main(){using R=decltype(owner()<owner());static_assert(__is_same(R,bool));return 0;}
+)cpp"},
+      {"source-ordering-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>bool operator< <int,default_delete<int>,int,default_delete<int>>(const unique_ptr<int>&,const unique_ptr<int>&){return true;}}}using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U&>()<std::declval<U&>());static_assert(__is_same(R,bool));return 0;}
+)cpp"},
+      {"source-owner-alias", R"cpp(
+#include <memory>
+#include <utility>
+#include <type_traits>
+int object;template<int*>using U=std::unique_ptr<int>;int main(){using R=decltype(std::declval<U<&object>&>()<std::declval<U<&object>&>());static_assert(std::is_same_v<R,bool>);return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("unique-ordering-signature-") +
+                                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("unique-ordering-signature-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
