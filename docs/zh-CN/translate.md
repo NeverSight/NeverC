@@ -79,7 +79,7 @@ tuple 中经过验证的函数指针 trait 对象也支持成员 `swap` 和 `std
 
 经验证的函数指针 trait 对象也可作为 `array` 元素。初始化、const 访问、复制／移动、嵌套及零长度数组、`fill` 和成员／自由函数 `swap` 保留现有存储及操作检查。不同元素保持不同地址；volatile 元素和其他 trait 类型仍不受支持。 默认对象和空数组保留未使用 `value` 初始化器的懒实例化；实际 `value` 表达式仍须通过现有常量求值检查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-经验证的 `reference_wrapper` 实参现在可通过 `invoke` 和 `apply` 绑定匹配且受支持的左值引用形参，包括显式存储包装器值的 tuple。固定 SDK 的精确转换及转发形参均须通过认证。调用保留原引用目标的地址、写入效果和 const 限定。包装器向按值形参的转换、任意源码转换及 volatile 引用目标仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+经验证的 `reference_wrapper` 实参现在可通过 `invoke` 和 `apply` 绑定匹配且受支持的左值引用形参，包括显式存储包装器值的 tuple。固定 SDK 的精确转换及转发形参均须通过认证。调用保留原引用目标的地址、写入效果和 const 限定。已校验的函数和函数指针包装器也可提供普通回调的按值形参，包括兼容的 `noexcept` 去除。回调值在调用方实参求值后读取，保留后续修改；空指针仍按值传递。任意源码转换、包装器到布尔值的转换及 volatile 引用目标仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
 经检查的零参数 `optional::emplace()` 现在可对已接纳的非 const 标量、平凡源码自有记录、经验证的函数指针 trait 对象及由这些元素递归组成的数组进行值初始化。固定 SDK 的 reset、原位构造和引用返回函数体均须通过认证。重复 emplace 保留内部存储身份，标量和指针值重置为零或空指针。非平凡默认构造函数、默认成员初始化器及 volatile 元素仍不在此路径的支持范围内。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 

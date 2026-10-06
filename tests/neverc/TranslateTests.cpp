@@ -27952,6 +27952,448 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueApplyConstValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-apply-const-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-apply-const-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){const F f=target;const std::tuple<std::reference_wrapper<const F>,int> args{std::cref(f),7};return std::apply(use,args)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-apply-const-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperCallbackValueApplyFunctionReference) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-apply-function-reference.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-apply-function-reference.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){auto args=std::make_tuple(std::ref(target),7);return std::apply(use,args)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-apply-function-reference" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueApplyMemberValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-apply-member-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-apply-member-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+struct R{int use(F f,int n)const{return f(n);}};int main(){R r;std::tuple<R&,std::reference_wrapper<F>,int> args{r,std::ref(selected),7};return std::apply(&R::use,args)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-apply-member-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueApplyValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-apply-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-apply-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){F f=target;std::tuple<std::reference_wrapper<F>,int> args{std::ref(f),7};return std::apply(use,args)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-apply-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueApplyWrappedCallable) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-apply-wrapped-callable.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-apply-wrapped-callable.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){std::tuple<std::reference_wrapper<F>,int> args{std::ref(selected),7};return std::apply(std::ref(use),args)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-apply-wrapped-callable" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueInvokeConstValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-const-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-const-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){const F f=target;return std::invoke(use,std::cref(f),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-invoke-const-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperCallbackValueInvokeFunctionReference) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-function-reference.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-function-reference.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){return std::invoke(use,std::ref(target),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-invoke-function-reference" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueInvokeLateValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-late-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-late-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int change(){selected=other;return 7;}int main(){return std::invoke(use,std::ref(selected),change())!=9||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-invoke-late-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueInvokeMemberValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-member-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-member-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+struct R{int use(F f,int n)const{return f(n);}};int main(){R r;return std::invoke(&R::use,r,std::ref(selected),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-invoke-member-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperCallbackValueInvokeNoexceptRemoval) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-noexcept-removal.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-noexcept-removal.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int use_plain(int(*f)(int),int n){return f(n);}int main(){return std::invoke(use_plain,std::ref(selected),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-invoke-noexcept-removal" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueInvokeNullValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-null-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-null-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int use_null(F f,int n){return f==nullptr?n:0;}int main(){F f=nullptr;return std::invoke(use_null,std::ref(f),7)!=7;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-invoke-null-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueInvokeObjectValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-object-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-object-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+struct R{int operator()(F f,int n)const{return f(n);}};int main(){return std::invoke(R{},std::ref(selected),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "reference-wrapper-callback-value-invoke-object-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceWrapperCallbackValueInvokeValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){F f=target;return std::invoke(use,std::ref(f),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-invoke-value" + Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperCallbackValueInvokeWrappedCallable) {
+  const auto Source =
+      tmpFile("reference-wrapper-callback-value-invoke-wrapped-callable.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-callback-value-invoke-wrapped-callable.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){auto callable=std::ref(use);return std::invoke(callable,std::ref(selected),7)!=8||calls!=1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-callback-value-invoke-wrapped-callable" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperCallbackValueRetainsSignatureAndSourceBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"declaration-target", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int absent(int)noexcept;int main(){F f=absent;return std::invoke(use,std::ref(f),7);}
+)cpp"},
+      {"sdk-function-reference", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+using G=int&(*)(int&)noexcept;int use_g(G f,int& n){return f(n);}int main(){auto g=static_cast<G>(&std::forward<int&>);int n=7;return std::invoke(use_g,std::ref(g),n);}
+)cpp"},
+      {"source-target-body", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int unsupported(int n)noexcept{long double x=n;return int(x);}int main(){F f=unsupported;return std::invoke(use,std::ref(f),7);}
+)cpp"},
+      {"trait-implicit-value", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+#include <type_traits>
+using C=std::integral_constant<F,target>;int main(){return std::invoke(use,C{},7);}
+)cpp"},
+      {"user-conversion", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+struct W{operator F()const{return target;}};int main(){return std::invoke(use,W{},7);}
+)cpp"},
+      {"variadic-target", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int variadic(int,...);int use_var(int(*f)(int,...),int n){return f(n);}int main(){auto f=&variadic;return std::invoke(use_var,std::ref(f),7);}
+)cpp"},
+      {"volatile-wrapper", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int main(){volatile F f=target;return std::invoke(use,std::ref(f),7);}
+)cpp"},
+      {"wrapper-scalar-conversion", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;int target(int n)noexcept{++calls;return n+1;}int other(int n)noexcept{++calls;return n+2;}using F=int(*)(int)noexcept;F selected=target;int use(F f,int n){return f(n);}
+int use_bool(bool f,int n){return f?n:0;}int main(){return std::invoke(use_bool,std::ref(selected),7);}
+)cpp"}};
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(
+        std::string("reference-wrapper-callback-reject-") + Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("reference-wrapper-callback-reject-") + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NestedVectorEmplaceAllocationReference) {
   const auto Source = tmpFile("nested-vector-emplace-allocation-reference.cpp");
   const auto Output = tmpFile("nested-vector-emplace-allocation-reference.nc");

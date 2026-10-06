@@ -9879,6 +9879,15 @@ class FunctionLowering {
                  type(Parameter, L), L),
             L);
       };
+      auto ApplyValueArgument = [&](Expression Element, unsigned Index,
+                                    QualType Parameter) {
+        const auto SourceType = Tuple->elementType(Index).getNonReferenceType();
+        if (const auto Binding = approvedFunctionalReferenceArgumentValue(
+                A.S, A.Sources, A.Context, Parameter, SourceType))
+          return functionalReferenceArgumentValue(std::move(Element), *Binding,
+                                                  Parameter, L);
+        return snapshot(cast(std::move(Element), type(Parameter, L), L), L);
+      };
       bool InvocationFullExpression = false;
       auto FinishInvocation = [&](Expression Result) {
         // Calls have already captured their scalar result, reference address
@@ -9974,7 +9983,7 @@ class FunctionLowering {
                   std::move(Element), Parameter, Copy));
             } else {
               Arguments.push_back(
-                  snapshot(cast(std::move(Element), type(Parameter, L), L), L));
+                  ApplyValueArgument(std::move(Element), I + 1, Parameter));
             }
           }
           chargeCall(Arguments, L);
@@ -10077,7 +10086,7 @@ class FunctionLowering {
                 std::move(Element), Parameter, Copy));
           } else {
             Arguments.push_back(
-                snapshot(cast(std::move(Element), type(Parameter, L), L), L));
+                ApplyValueArgument(std::move(Element), I, Parameter));
           }
         }
         if (Method) {
@@ -10196,7 +10205,8 @@ class FunctionLowering {
           Arguments.push_back(
               ApplyRecordArgument(std::move(Element), Parameter, Copy));
         } else {
-          Arguments.push_back(snapshot(cast(std::move(Element), type(Parameter, L), L), L));
+          Arguments.push_back(
+              ApplyValueArgument(std::move(Element), I, Parameter));
         }
       }
       if (Method) {
@@ -22565,10 +22575,31 @@ class FunctionLowering {
     return Arguments;
   }
 
+  Expression
+  functionalReferenceArgumentValue(Expression Wrapper,
+                                   const FunctionalReferenceRecord &Binding,
+                                   QualType Parameter, SourceLocation L) {
+    auto Referent =
+        snapshot(Expression{{"kind", "member"},
+                            {"type", type(Binding.PointerType, L)},
+                            {"name", "nct_reference_wrapper_pointer"},
+                            {"args", json::Array{std::move(Wrapper)}},
+                            {"loc", A.loc(L)}},
+                 L);
+    if (!Binding.ReferentType->isFunctionType())
+      Referent = dereference(std::move(Referent), L);
+    return snapshot(cast(std::move(Referent), type(Parameter, L), L), L);
+  }
+
   Expression utilityInvocationArgument(Expression Source, QualType Forwarded,
                                        QualType Parameter,
                                        const CXXConstructExpr *Copy,
                                        SourceLocation L) {
+    if (const auto Binding = approvedFunctionalReferenceArgumentValue(
+            A.S, A.Sources, A.Context, Parameter,
+            Forwarded.getNonReferenceType()))
+      return functionalReferenceArgumentValue(dereference(std::move(Source), L),
+                                              *Binding, Parameter, L);
     if (Parameter->isReferenceType()) {
       if (const auto Binding = approvedFunctionalReferenceArgumentBinding(
               A.S, A.Sources, A.Context, Parameter,

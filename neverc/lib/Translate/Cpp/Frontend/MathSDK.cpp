@@ -3219,6 +3219,25 @@ static bool utilityCallbackDirectConversion(const ASTContext &Context,
            Context.hasSameFunctionTypeIgnoringExceptionSpec(Source, Target)));
 }
 
+std::optional<FunctionalReferenceRecord>
+approvedFunctionalReferenceArgumentValue(const State &S,
+                                         const SourceManager &SM,
+                                         const ASTContext &Context,
+                                         QualType Parameter,
+                                         QualType Argument) {
+  if (Parameter.isNull() || !Parameter->isFunctionPointerType() ||
+      Argument.isNull() || Argument->isReferenceType() ||
+      Argument.isVolatileQualified() || Argument.isRestrictQualified() ||
+      Argument.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Argument->getAsCXXRecordDecl(), Context);
+  return Wrapper && utilityCallbackDirectConversion(
+                        Context, Wrapper->ReferentType, Parameter)
+             ? Wrapper
+             : std::nullopt;
+}
+
 bool approvedFunctionalSignatureQuery(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
                                       const ASTContext &Context) {
@@ -12233,8 +12252,11 @@ static bool approvedFunctionalInvokeReferenceWrapperFlow(
     const ParmVarDecl *Parameter, QualType Target, const ASTContext &Context) {
   if (!Parameter || !Parameter->getType()->isReferenceType())
     return false;
-  const auto Binding = approvedFunctionalReferenceArgumentBinding(
+  auto Binding = approvedFunctionalReferenceArgumentBinding(
       S, SM, Context, Target, Parameter->getType().getNonReferenceType());
+  if (!Binding)
+    Binding = approvedFunctionalReferenceArgumentValue(
+        S, SM, Context, Target, Parameter->getType().getNonReferenceType());
   const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
       functionalInvokeStrippedExpression(Expression));
   const auto Access = Conversion ? approvedFunctionalReferenceAccessCallImpl(
@@ -12438,6 +12460,14 @@ static bool functionalMemberValueConversion(const ASTContext &Context,
   return utilityPointerConversion(Context, From, To);
 }
 
+static bool functionalInvokeValueConversion(const State &S,
+                                            const SourceManager &SM,
+                                            const ASTContext &Context,
+                                            QualType From, QualType To) {
+  return functionalMemberValueConversion(Context, From, To) ||
+         approvedFunctionalReferenceArgumentValue(S, SM, Context, To, From);
+}
+
 static bool functionalMemberReceiverValueCategory(
     const CXXMethodDecl *Method, const Expr *Object, bool ObjectIsPointer,
     bool ObjectIsWrapper = false) {
@@ -12533,8 +12563,8 @@ approvedNativeMemberPointerCall(
           functionalInvokeStrippedExpression(ArgumentExpression);
       Supported = !Parameter->isReferenceType() && Source &&
                   supportedFunctionalByValue(S, SM, Context, Parameter) &&
-                  functionalMemberValueConversion(Context, Source->getType(),
-                                                  Parameter);
+                  functionalInvokeValueConversion(S, SM, Context,
+                                                  Source->getType(), Parameter);
     }
     if (!Supported)
       return std::nullopt;
@@ -12967,11 +12997,11 @@ approvedFunctionalMemberInvokeCallImpl(
         Supported = supportedFunctionalInvokeReferenceArgument(
             S, SM, Context, Parameter, ArgumentExpression);
       } else {
-        Supported = !Parameter->isReferenceType() &&
-                    (supportedFunctionalByValue(S, SM, Context, Parameter) ||
-                     Copy) &&
-                    functionalMemberValueConversion(Context, Argument,
-                                                    Parameter);
+        Supported =
+            !Parameter->isReferenceType() &&
+            (supportedFunctionalByValue(S, SM, Context, Parameter) || Copy) &&
+            functionalInvokeValueConversion(S, SM, Context, Argument,
+                                            Parameter);
       }
       if (!Supported ||
           !approvedFunctionalInvokeArgumentFlow(
@@ -13264,8 +13294,8 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
             ? supportedFunctionalInvokeReferenceArgument(
                   S, SM, Context, Parameter, ArgumentExpression)
             : (supportedFunctionalByValue(S, SM, Context, Parameter) || Copy) &&
-                  functionalMemberValueConversion(
-                      Context, ArgumentExpression->getType(), Parameter);
+                  functionalInvokeValueConversion(
+                      S, SM, Context, ArgumentExpression->getType(), Parameter);
     if (!Supported ||
         !approvedFunctionalInvokeArgumentFlow(
             S, SM, Operation->getArg(I + 1),
@@ -13893,11 +13923,12 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
             ParameterReferent.isConstQualified() ||
             !TupleArgument.isConstQualified()));
     } else {
-      Supported = (TraitValue ||
-                   supportedFunctionalByValue(S, SM, Context, Parameter) ||
-                   approvedUtilityTupleApplySelectedCopy(S, SM, Call, I,
-                                                         Parameter, Context)) &&
-                  functionalMemberValueConversion(Context, Element, Parameter);
+      Supported =
+          (TraitValue ||
+           supportedFunctionalByValue(S, SM, Context, Parameter) ||
+           approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
+                                                 Context)) &&
+          functionalInvokeValueConversion(S, SM, Context, Element, Parameter);
     }
     if (!Supported || (!TraitValue && !approvedFunctionalInvokeArgumentFlow(
                                           S, SM, Operation->getArg(I + 1),
@@ -14251,8 +14282,9 @@ approvedFunctionalReferenceDirectInvoke(
                      S, SM, Context, Parameter, ArgumentExpression)
                : (supportedFunctionalByValue(S, SM, Context, Parameter) ||
                   Copy) &&
-                     functionalMemberValueConversion(
-                         Context, ArgumentExpression->getType(), Parameter)) &&
+                     functionalInvokeValueConversion(
+                         S, SM, Context, ArgumentExpression->getType(),
+                         Parameter)) &&
           approvedFunctionalInvokeArgumentFlow(
               S, SM, OperationCall->getArg(I + 1),
               DispatchFunction->getParamDecl(I + 1), Parameter, Context,
@@ -14303,12 +14335,12 @@ approvedFunctionalReferenceDirectInvoke(
             : nullptr;
     const bool Supported =
         Parameter->isReferenceType()
-            ? supportedFunctionalInvokeReferenceArgument(S, SM, Context, Parameter,
-                                                         ArgumentExpression)
+            ? supportedFunctionalInvokeReferenceArgument(
+                  S, SM, Context, Parameter, ArgumentExpression)
             : !Parameter->isReferenceType() &&
                   (supportedFunctionalByValue(S, SM, Context, Parameter) ||
                    Copy) &&
-                  functionalMemberValueConversion(Context, Argument,
+                  functionalInvokeValueConversion(S, SM, Context, Argument,
                                                   Parameter);
     if (!Supported)
       return std::nullopt;
@@ -14383,10 +14415,12 @@ approvedFunctionalReferenceInvokeCall(
               ? supportedFunctionalInvokeReferenceArgument(
                     S, SM, Context, Parameter, ArgumentExpression)
               : (supportedFunctionalByValue(S, SM, Context, Parameter) ||
-                 (Inner->SelectedCopies.size() == Inner->Method->getNumParams() &&
+                 (Inner->SelectedCopies.size() ==
+                      Inner->Method->getNumParams() &&
                   Inner->SelectedCopies[I])) &&
-                    functionalMemberValueConversion(
-                        Context, ArgumentExpression->getType(), Parameter);
+                    functionalInvokeValueConversion(
+                        S, SM, Context, ArgumentExpression->getType(),
+                        Parameter);
       if (!Supported)
         return std::nullopt;
     }
@@ -14402,13 +14436,13 @@ approvedFunctionalReferenceInvokeCall(
     return std::nullopt;
   for (unsigned I = 1; I < Call->getNumArgs(); ++I) {
     const auto Parameter = Prototype->getParamType(I - 1);
-    const bool Supported = Parameter->isReferenceType()
-                               ? supportedFunctionalInvokeReferenceArgument(
-                                     S, SM, Context, Parameter, Call->getArg(I))
-                               : !Parameter->isReferenceType() &&
-                                     functionalMemberValueConversion(
-                                         Context, Call->getArg(I)->getType(),
-                                         Parameter);
+    const bool Supported =
+        Parameter->isReferenceType()
+            ? supportedFunctionalInvokeReferenceArgument(
+                  S, SM, Context, Parameter, Call->getArg(I))
+            : !Parameter->isReferenceType() &&
+                  functionalInvokeValueConversion(
+                      S, SM, Context, Call->getArg(I)->getType(), Parameter);
     if (!Supported)
       return std::nullopt;
   }
@@ -14498,7 +14532,7 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
            (Reference->SelectedCopies.size() == Arity &&
             Reference->SelectedCopies[I] &&
             Context.hasSameUnqualifiedType(Element, Target))) &&
-          functionalMemberValueConversion(Context, Element, Target);
+          functionalInvokeValueConversion(S, SM, Context, Element, Target);
     }
     if (!Supported)
       return std::nullopt;
@@ -31248,7 +31282,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Supported = !Parameter->isReferenceType() &&
                     (supportedFunctionalByValue(S, SM, Context, Parameter) ||
                      (*Copies)[I]) &&
-                    functionalMemberValueConversion(Context, Argument,
+                    functionalInvokeValueConversion(S, SM, Context, Argument,
                                                     Parameter);
       }
       if (!Supported)
@@ -31516,6 +31550,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool Callback =
           supportedFunctionalByValue(S, SM, Context, Parameter) &&
           utilityCallbackDirectConversion(Context, Element, Parameter);
+      bool WrapperValue = false;
+      if (approvedFunctionalReferenceArgumentValue(S, SM, Context, Parameter,
+                                                   Element)) {
+        const auto Apply =
+            approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+        const auto *Selected =
+            Apply ? dyn_cast_or_null<CallExpr>(Apply->Operation) : nullptr;
+        WrapperValue = Selected && Selected->getNumArgs() == Tuple->size() &&
+                       approvedFunctionalInvokeReferenceWrapperFlow(
+                           S, SM, Selected->getArg(I),
+                           Apply->DispatchFunction->getParamDecl(I + 1),
+                           Parameter, Context);
+      }
       const bool Record =
           Element->isRecordType() && Parameter->isRecordType() &&
           (approvedUtilityTupleApplyTraitValue(S, SM, Call, I, Parameter,
@@ -31524,7 +31571,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             utilityTupleDirectConversion(S, SM, Context, Element, Parameter)) ||
            approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
                                                  Context));
-      if (!Scalar && !Callback && !Record)
+      if (!Scalar && !Callback && !Record && !WrapperValue)
         return std::nullopt;
     }
     return UtilityOperation::TupleApply;

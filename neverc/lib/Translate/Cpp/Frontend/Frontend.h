@@ -392,6 +392,12 @@ approvedFunctionalReferenceArgumentBinding(const State &S,
                                            const clang::ASTContext &Context,
                                            clang::QualType Parameter,
                                            clang::QualType Argument);
+std::optional<FunctionalReferenceRecord>
+approvedFunctionalReferenceArgumentValue(const State &S,
+                                         const clang::SourceManager &SM,
+                                         const clang::ASTContext &Context,
+                                         clang::QualType Parameter,
+                                         clang::QualType Argument);
 enum class FunctionalReferenceConstruction { Direct, CopyOrMove };
 std::optional<FunctionalReferenceConstruction>
 approvedFunctionalReferenceConstruction(

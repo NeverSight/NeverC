@@ -4096,9 +4096,18 @@ wrapper's checked pointer field after caller arguments have been evaluated,
 then passes the original referent address. Primitive, admitted source-object,
 array, function and function-pointer trait referents retain their existing
 source and layout checks. User-call, member-call and wrapped-callable dispatch
-use the same parameter proof. Wrapper conversions to by-value parameters,
-arbitrary source conversions, volatile referents and aliases of SDK trait
-`value` storage remain excluded. Source callback bodies are still checked.
+use the same parameter proof. Checked function and function-pointer wrappers
+also provide ordinary callback value parameters through `invoke` and `apply`,
+including compatible `noexcept` removal. The exact pinned conversion and
+forwarded parameter remain authenticated; lowering reads the callback only after
+caller operands have completed, retaining later changes to a referenced pointer.
+Function referents supply their checked address, while pointer referents supply
+their current stored value. Const wrappers and const pointer referents may copy
+values, and a null pointer remains a null value. Member, source call-operator and
+wrapped-callable dispatch use the same proof and value lowering. Arbitrary
+source conversions, wrapper-to-boolean conversions, volatile referents and
+aliases of SDK trait `value` storage remain excluded. Source callback bodies and
+address targets are still checked independently.
 
 Exact direct and parenthesized `std::ref`/`std::cref` calls also support
 result-source queries for these admitted referents. Both lvalue-taking and

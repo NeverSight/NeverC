@@ -79,7 +79,7 @@ tuple 内の検証済み関数ポインター trait オブジェクトは、メ�
 
 検証済みの関数ポインター trait オブジェクトを `array` の要素として使用できます。初期化、const アクセス、コピー／ムーブ、入れ子とサイズゼロの配列、`fill`、メンバー／非メンバー `swap` は既存の保存領域と操作の検証を維持します。異なる要素は異なるアドレスを保持し、volatile 要素と他の trait 型は対象外です。 デフォルトオブジェクトと空配列では未使用の `value` 初期化子を遅延したまま保持し、実際の `value` 式には既存の定数評価検証を適用します。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
-検証済みの `reference_wrapper` 引数は、`invoke` と `apply` を通じて、対応するサポート対象の左辺値参照パラメーターに束縛できます。ラッパー値を明示的に格納した tuple も対象です。固定 SDK の正確な変換と転送パラメーターを検証し、元の参照先のアドレス、書き込みの効果、const 修飾を保持します。値渡しパラメーターへのラッパー変換、任意のソース定義変換、volatile な参照先は引き続き対象外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
+検証済みの `reference_wrapper` 引数は、`invoke` と `apply` を通じて、対応するサポート対象の左辺値参照パラメーターに束縛できます。ラッパー値を明示的に格納した tuple も対象です。固定 SDK の正確な変換と転送パラメーターを検証し、元の参照先のアドレス、書き込みの効果、const 修飾を保持します。検証済みの関数および関数ポインターのラッパーは、互換性のある `noexcept` の除去を含め、通常のコールバックの値渡しパラメーターにも対応します。呼び出し側の引数評価後に値を読み取り、後の更新を保持します。ヌルポインターも値として渡します。任意のソース定義変換、ラッパーから真偽値への変換、volatile な参照先は引き続き対象外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).
 
 検証済みの引数なし `optional::emplace()` は、受け入れ済みの非 const スカラー、自明なソース所有レコード、検証済みの関数ポインター trait オブジェクト、およびこれらを再帰的に含む配列を値初期化します。固定 SDK の reset、配置構築、参照を返す本体を検証します。再 emplace は内部ストレージの同一性を保ち、スカラーとポインターをゼロまたは null に戻します。非自明なデフォルトコンストラクター、デフォルトメンバー初期化子、volatile 要素はこの経路の対象外です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
 
