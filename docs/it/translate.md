@@ -221,6 +221,9 @@ I record statici supportano inizializzazione costante e stato modificabile condi
 
 
 Core v2 supporta catene verificate di classi base tutte vuote, con costruttori ordinari o template, copia, spostamento, assegnazione e distruzione. Ogni base usa un vero primo membro C con layout verificato indipendentemente. La delega conserva il ruolo di sotto-oggetto e condivide l’inizializzazione statica con le chiamate per oggetti completi. Restano preservati la pulizia dei parametri e l’ordine di distruzione dalla derivata alla base. Lo storage delle derivate non vuote, i costruttori ereditati, gli header standard e C++/STL completo restano incompleti. La verifica nativa richiede la CI della revisione implementata. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
+
+Gli oggetti trait di puntatori a funzione verificati possono essere elementi di `vector`, anche negli elementi array, pair, optional e vector annidati supportati. Le operazioni esistenti di crescita, copia/spostamento, inserimento, cancellazione e intervalli conservano memoria indipendente degli elementi e callback sorgente verificati. I vector booleani, gli allocatori personalizzati, i confronti non ammessi e gli alias della memoria SDK `value` mantengono le restrizioni esistenti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

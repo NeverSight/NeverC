@@ -8938,6 +8938,18 @@ metadata path completes no record and emits no trait storage or callback address
 layout and operations retain their independent proofs; evaluated SDK `value`
 expressions and storage aliases retain their existing restrictions.
 
+Checked trait objects are also admitted as `vector` elements and inside the
+existing supported array, pair, optional and nested-vector element shapes. The
+vector element proof reuses the exact trait primary, initializer, source target
+and empty-object layout checks; it does not admit arbitrary SDK records.
+Existing default/value construction, growth, copy/move, assignment, insertion,
+erasure and range lowerings retain separate element storage. Optional trait
+elements keep their engagement flag, and nested owning elements retain their
+existing cleanup. Allocation and deallocation retain their source-definition
+requirements. Source callbacks still require their independent definitions
+and signature checks. Boolean vectors, custom allocators, element comparison
+without its existing proof and aliases of SDK `value` storage remain excluded.
+
 Core v2 consumes nonnull function-pointer values from the pinned
 `std::integral_constant<Pointer, Function>::value` as checked callback addresses.
 The exact primary and implicit specialization, every record/value redeclaration,

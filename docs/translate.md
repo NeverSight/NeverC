@@ -657,6 +657,9 @@ Static records now support constant initialization and shared mutable state, inc
 
 
 Core v2 supports checked all-empty base chains with ordinary/template constructors, copy/move operations, assignment and destruction. Each base uses real first-member C storage with independently checked layout. Construction preserves base roles through delegation, shares static initialization with complete-object calls, and retains parameter cleanup and derived-to-base destruction order. Nonempty derived storage, inherited constructors, standard headers and full C++/STL remain unfinished. Native validation requires implementing-revision CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
+
+Checked function-pointer trait objects can serve as `vector` elements, including approved array, pair, optional and nested-vector elements. Existing growth, copy/move, insertion, erasure and range operations preserve independent element storage and checked source callbacks. Boolean vectors, custom allocators, unproved element comparisons and SDK `value` storage aliases retain their existing restrictions. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

@@ -221,6 +221,9 @@ Les enregistrements statiques prennent en charge l’initialisation constante et
 
 
 Core v2 prend en charge les chaînes vérifiées de bases toutes vides, avec constructeurs ordinaires ou templates, copie, déplacement, affectation et destruction. Chaque base occupe un véritable premier membre C dont la disposition est vérifiée indépendamment. La délégation conserve le rôle de sous-objet ; les appels pour objets complets partagent la même initialisation statique. Le nettoyage des paramètres et la destruction du dérivé vers la base sont conservés. Le stockage des dérivés non vides, les constructeurs hérités, les en-têtes standard et le C++/STL complet restent à terminer. La validation native exige la CI de la révision concernée. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
+
+Les objets trait de pointeurs de fonction vérifiés peuvent servir d’éléments de `vector`, y compris dans les éléments array, pair, optional et vector imbriqués pris en charge. Les opérations existantes de croissance, copie/déplacement, insertion, effacement et parcours conservent un stockage indépendant des éléments et les callbacks source vérifiés. Les vecteurs booléens, allocateurs personnalisés, comparaisons non admises et alias du stockage SDK `value` gardent leurs restrictions. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

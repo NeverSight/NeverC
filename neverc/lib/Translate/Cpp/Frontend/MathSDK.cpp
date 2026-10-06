@@ -6601,6 +6601,10 @@ static bool utilityVectorOptionalValue(const State &S, const SourceManager &SM,
     return false;
   if (utilityScalar(Context, Element) || Element->isFunctionPointerType())
     return true;
+  if (!Element.isRestrictQualified() &&
+      Element.getAddressSpace() == LangAS::Default &&
+      functionTraitObjectValue(S, SM, Element->getAsCXXRecordDecl(), Context))
+    return true;
   const auto *Record = Element->getAsCXXRecordDecl();
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context))
     return utilityVectorArrayValue(S, SM, Context, Element) &&
@@ -6662,6 +6666,10 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor();
+  const bool FunctionTraitElement =
+      !Element.isRestrictQualified() &&
+      Element.getAddressSpace() == LangAS::Default &&
+      functionTraitObjectValue(S, SM, ElementRecord, Context);
   const bool ValuePairElement =
       ElementRecord && ElementRecord->hasTrivialCopyConstructor() &&
       ElementRecord->hasTrivialMoveConstructor() &&
@@ -6765,9 +6773,9 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
         Element->isObjectPointerType() || Element->isFunctionPointerType() ||
-        TrivialSourceRecord ||
-        ValuePairElement || ValueArrayElement || ValueOptionalElement ||
-        OwningElement || SourceOwnedElement) ||
+        TrivialSourceRecord || FunctionTraitElement || ValuePairElement ||
+        ValueArrayElement || ValueOptionalElement || OwningElement ||
+        SourceOwnedElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);

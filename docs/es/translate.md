@@ -221,6 +221,9 @@ Los registros estáticos admiten inicialización constante y estado mutable comp
 
 
 Core v2 admite cadenas verificadas de clases base todas vacías, con constructores ordinarios o de plantilla, copia, movimiento, asignación y destrucción. Cada base ocupa un primer miembro C real con disposición comprobada de forma independiente. La delegación conserva el papel de subobjeto y comparte la inicialización estática con las llamadas para objetos completos. Se conservan la limpieza de parámetros y la destrucción desde la clase derivada hasta la base. El almacenamiento de derivadas no vacías, los constructores heredados, las cabeceras estándar y C++/STL completo siguen pendientes. La validación nativa requiere CI de la revisión implementada. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
+
+Los objetos trait de punteros de función verificados pueden ser elementos de `vector`, también dentro de elementos array, pair, optional y vector anidados admitidos. Las operaciones existentes de crecimiento, copia/movimiento, inserción, borrado y rangos conservan el almacenamiento independiente de los elementos y los callbacks del código fuente verificados. Los vectores booleanos, asignadores personalizados, comparaciones no admitidas y alias del almacenamiento SDK `value` mantienen sus restricciones. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

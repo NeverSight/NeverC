@@ -221,6 +221,9 @@ Statische Datensätze unterstützen konstante Initialisierung und gemeinsamen ve
 
 
 Core v2 unterstützt geprüfte Basisklassenketten aus ausschließlich leeren Klassen mit gewöhnlichen und Template-Konstruktoren, Kopieren, Verschieben, Zuweisung und Destruktion. Jede Basis erhält einen echten ersten C-Member mit unabhängig geprüftem Layout. Delegation bewahrt die Basisrolle; Aufrufe für vollständige Objekte teilen dieselbe statische Initialisierung. Parameterbereinigung und Destruktion von der abgeleiteten Klasse zur Basis bleiben erhalten. Nichtleere abgeleitete Klassen, geerbte Konstruktoren, Standardheader und vollständiges C++/STL bleiben unvollständig. Native Nachweise erfordern CI für die Implementierungsrevision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
+
+Geprüfte Funktionszeiger-Trait-Objekte können als `vector`-Elemente dienen, auch in unterstützten array-, pair-, optional- und verschachtelten vector-Elementen. Bestehende Wachstums-, Kopier-/Verschiebe-, Einfüge-, Lösch- und Bereichsoperationen erhalten unabhängigen Elementspeicher und geprüfte Quellcode-Callbacks. Bool-Vektoren, eigene Allokatoren, nicht zugelassene Elementvergleiche und Aliase des SDK-`value`-Speichers behalten ihre Einschränkungen. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

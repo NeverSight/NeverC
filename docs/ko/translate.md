@@ -221,6 +221,9 @@ Core v2는 정적 참조로 수명이 연장되는 상수 초기화 스칼라·�
 
 
 Core v2는 검사된 모든 클래스가 빈 기반 클래스 체인에서 일반·템플릿 생성자, 복사·이동, 대입과 소멸을 지원합니다. 각 기반 클래스는 실제 C 첫 멤버로 저장되며 레이아웃을 독립적으로 검증합니다. 위임 중에도 기반 객체 생성 역할을 유지하고 완전한 객체 호출과 정적 초기화를 공유하며, 매개변수 정리와 파생 클래스에서 기반 클래스로의 소멸 순서를 보존합니다. 비어 있지 않은 파생 클래스 저장, 상속 생성자, 표준 헤더와 전체 C++/STL은 아직 미완성이며 네이티브 검증에는 구현 리비전의 CI가 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
+
+검증된 함수 포인터 trait 객체를 `vector` 요소로 사용할 수 있으며 지원되는 array, pair, optional, 중첩 vector 요소에도 포함할 수 있습니다. 기존 확장, 복사와 이동, 삽입, 삭제, 범위 연산은 독립적인 요소 저장소와 검증된 소스 콜백을 유지합니다. bool vector, 사용자 정의 할당자, 승인되지 않은 요소 비교, SDK `value` 저장소 별칭에는 기존 제한이 적용됩니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.
