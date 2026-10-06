@@ -1583,6 +1583,12 @@ struct UtilityOptionalRecord {
   const clang::FieldDecl *Value, *Engaged;
   clang::QualType ElementType;
 };
+std::optional<FunctionalReferenceRecord>
+approvedUtilityOptionalReferenceEmplace(const State &S,
+                                        const clang::SourceManager &SM,
+                                        const UtilityOptionalRecord &Optional,
+                                        const clang::CallExpr *Call,
+                                        const clang::ASTContext &Context);
 struct UtilitySourceComparison {
   const clang::CXXMethodDecl *Member;
   const clang::FunctionDecl *Friend, *Namespace;

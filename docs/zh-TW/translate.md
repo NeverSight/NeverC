@@ -95,6 +95,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 經檢查的包裝器 vector 也支援從精確型別的左值參考目標執行 `emplace_back(referent)` 和位置插入 `emplace(pos, referent)`。選中的每條 SDK 轉送分支、allocator 適配層及包裝器建構均須認證。綁定儲存參考目標的位址，實參只求值一次，並沿用既有擴充和插入行為。const 綁定及受支援的函式、回呼、陣列和原始碼記錄參考目標保留各自檢查；使用者轉換和原始碼替換 SDK 適配層仍被拒絕。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+經檢查的包裝器 optional 也支援從精確型別的左值參考目標執行 `emplace(referent)`。選中的 optional reset、儲存位址、轉送、placement 建構、直接包裝器建構和 engaged 旗標均須共同認證。空 optional 和已佔用 optional 都綁定原位址，實參只求值一次，並傳回所存包裝器的參考。const、函式、回呼、陣列和原始碼記錄參考目標保留各自檢查與生命週期；使用者轉換和原始碼替換 SDK 操作仍被拒絕。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
+
 經驗證的函式指標 trait 包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的 trait 傳值參數，包括 const 參考目標和右值包裝器。固定 SDK 的 trait 複製與包裝器轉換仍須通過認證。每個參數使用獨立的一位元組儲存；可呼叫物件及引數的副作用只發生一次，原始碼函式目標仍須檢查。其他 trait 域和 SDK `value` 儲存別名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 經驗證的原始碼自有標準布局記錄包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的傳值參數。選中的原始碼複製建構、預設參數及相依性仍須通過檢查。參數使用獨立儲存，在複製前觀察後續引數的修改；預設參數副作用和參數清理保留呼叫中的生命週期。右值包裝器仍提供左值參考目標。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

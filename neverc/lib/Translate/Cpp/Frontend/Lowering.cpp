@@ -11271,14 +11271,20 @@ class FunctionLowering {
                             Optional->Value, L);
       }
       if (Operation == UtilityOperation::OptionalEmplace) {
-        auto Argument = snapshot(expression(Call->getArg(0)), L);
-        if (recordValue(Optional->Value->getType()))
-          assign(std::move(Value), std::move(Argument), L);
-        else
-          assign(
-              std::move(Value),
-              cast(std::move(Argument), type(Optional->Value->getType(), L), L),
-              L);
+        if (const auto Reference = approvedUtilityOptionalReferenceEmplace(
+                A.S, A.Sources, *Optional, Call, A.Context)) {
+          constructFunctionalReferenceBinding(std::move(Value), *Reference,
+                                              Call->getArg(0), L);
+        } else {
+          auto Argument = snapshot(expression(Call->getArg(0)), L);
+          if (recordValue(Optional->Value->getType()))
+            assign(std::move(Value), std::move(Argument), L);
+          else
+            assign(std::move(Value),
+                   cast(std::move(Argument),
+                        type(Optional->Value->getType(), L), L),
+                   L);
+        }
         assign(std::move(Engaged), boolean(true, L), L);
         return fieldStorage(dereference(std::move(ObjectAddress), L),
                             Optional->Value, L);

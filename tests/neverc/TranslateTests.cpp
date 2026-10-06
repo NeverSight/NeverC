@@ -29642,6 +29642,443 @@ int target(int,...)noexcept;using F=int(*)(int,...)noexcept;using C=std::integra
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceWrapperOptionalDirectEmplaceArgumentOnce) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-argument-once.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-argument-once.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int x=3,effects;int& pick(){++effects;return x;}int main(){std::optional<W> o;W& r=o.emplace(pick());return effects==1&&&r==&*o&&&r.get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-argument-once" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceArrayReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-array-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-array-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int a[2]={3,4};std::optional<std::reference_wrapper<int[2]>> o;auto& r=o.emplace(a);r.get()[1]=7;return a[1]==7&&&r.get()==&a?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-array-referent" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceCallbackReferent) {
+  const auto Source = tmpFile(
+      "reference-wrapper-optional-direct-emplace-callback-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-callback-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int calls;int target(int x)noexcept{++calls;return x+1;}int main(){using F=int(*)(int)noexcept;F f=target;std::optional<std::reference_wrapper<F>> o;o.emplace(f);return o->get()(7)==8&&calls==1?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-callback-referent" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceConstBindMutable) {
+  const auto Source = tmpFile(
+      "reference-wrapper-optional-direct-emplace-const-bind-mutable.cpp");
+  const auto Output = tmpFile(
+      "reference-wrapper-optional-direct-emplace-const-bind-mutable.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3;std::optional<std::reference_wrapper<const int>> o;o.emplace(x);x=7;return o->get()==7?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-const-bind-mutable" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceConstReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-const-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-const-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){const int x=3;std::optional<std::reference_wrapper<const int>> o;o.emplace(x);return &o->get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-const-referent" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceEngagedRebind) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-engaged-rebind.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-engaged-rebind.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3,y=4;std::optional<W> o(std::ref(x));W& r=o.emplace(y);r.get()=7;return x==3&&y==7&&&r==&*o?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-engaged-rebind" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceFunctionReferent) {
+  const auto Source = tmpFile(
+      "reference-wrapper-optional-direct-emplace-function-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-function-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int calls;int target(int x)noexcept{++calls;return x+1;}int main(){using F=int(int)noexcept;std::optional<std::reference_wrapper<F>> o;o.emplace(target);return o->get()(7)==8&&calls==1?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-function-referent" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceMemberDestination) {
+  const auto Source = tmpFile(
+      "reference-wrapper-optional-direct-emplace-member-destination.cpp");
+  const auto Output = tmpFile(
+      "reference-wrapper-optional-direct-emplace-member-destination.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+struct R{std::optional<W> o;};int main(){int x=3;R r{};W& w=r.o.emplace(x);w.get()=7;return x==7&&&w==&*r.o?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-member-destination" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceOptionalDirect) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-optional-direct.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-optional-direct.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+int main(){int x=3;std::optional<std::reference_wrapper<int>> o;o.emplace(x);return &o->get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-optional-direct" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceOptionalValue) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-optional-value.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-optional-value.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+int main(){int x=3;std::optional<std::reference_wrapper<int>> o(std::ref(x));return &o->get()==&x?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-optional-value" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceRecordReferent) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-record-referent.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-record-referent.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int destroys;struct R{int n;~R(){++destroys;}};int check(){R r{3};{std::optional<std::reference_wrapper<R>> o;o.emplace(r);o->get().n=7;o.reset();if(destroys)return 1;}return r.n==7&&destroys==0?0:2;}int main(){int r=check();return r?r:(destroys==1?0:3);}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-record-referent" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceReferentAlias) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-referent-alias.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-referent-alias.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3;std::optional<W> o(std::ref(x));o.emplace(o->get());return &o->get()==&x&&x==3?0:1;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-referent-alias" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceWrapperOptionalDirectEmplaceResetReemplace) {
+  const auto Source =
+      tmpFile("reference-wrapper-optional-direct-emplace-reset-reemplace.cpp");
+  const auto Output =
+      tmpFile("reference-wrapper-optional-direct-emplace-reset-reemplace.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+int main(){int x=3,y=4;std::optional<W> o;o.emplace(x);o.reset();if(o)return 1;o.emplace(y);return &o->get()==&y&&x==3?0:2;}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reference-wrapper-optional-direct-emplace-reset-reemplace" +
+                Optimization);
+    auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(
+    TranslateTest,
+    CoreV2ReferenceWrapperOptionalDirectEmplaceRetainsStorageAndConstructorBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"long-double-referent", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+int main(){long double x=3;std::optional<std::reference_wrapper<long double>> v;v.emplace(x);return 0;}
+)cpp"},
+      {"sdk-function-target", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+int main(){using F=int&(*)(int&)noexcept;F f=static_cast<F>(&std::forward<int&>);std::optional<std::reference_wrapper<F>> v;v.emplace(f);return 0;}
+)cpp"},
+      {"source-argument-body", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+int& pick(int& x){long double y=1;return y?x:x;}int main(){int x=3;std::optional<std::reference_wrapper<int>> v;v.emplace(pick(x));return 0;}
+)cpp"},
+      {"source-construct-at-replacement", R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std {inline namespace __1 {template<> reference_wrapper<int>* __construct_at(reference_wrapper<int>* p,int& x){return ::new((void*)p)reference_wrapper<int>(x);}}}
+int main(){int x=3;std::optional<W> o;o.emplace(x);return 0;}
+)cpp"},
+      {"source-forward-replacement", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+namespace std { inline namespace __1 { template<> int& forward<int&>(int& x) noexcept {return x;} } }
+int main(){int x=3;std::optional<std::reference_wrapper<int>> v;v.emplace(x);return 0;}
+)cpp"},
+      {"source-optional-replacement", R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std {inline namespace __1 {template<> template<> reference_wrapper<int>& optional<reference_wrapper<int>>::emplace<int&>(int& x){static reference_wrapper<int> w(x);return w;}}}
+int main(){int x=3;std::optional<W> o;o.emplace(x);return 0;}
+)cpp"},
+      {"source-wrapper-constructor", R"cpp(#include <optional>
+#include <functional>
+namespace std { inline namespace __1 { template<> template<> reference_wrapper<int>::reference_wrapper(int& x) noexcept { __f_=&x; } } }
+int main(){int x=3;std::optional<std::reference_wrapper<int>> v;v.emplace(x);return 0;}
+)cpp"},
+      {"user-conversion", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+struct R{int n;operator int&(){return n;}};int main(){R r{3};std::optional<std::reference_wrapper<int>> v;v.emplace(r);return 0;}
+)cpp"},
+      {"variadic-function", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+int target(int x,...){return x;}int main(){using F=int(int,...);std::optional<std::reference_wrapper<F>> v;v.emplace(target);return 0;}
+)cpp"},
+      {"volatile-referent", R"cpp(#include <optional>
+#include <functional>
+#include <utility>
+int main(){volatile int x=3;std::optional<std::reference_wrapper<volatile int>> v;v.emplace(x);return 0;}
+)cpp"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("reference-wrapper-optional-direct-emplace-reject-") +
+        Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("reference-wrapper-optional-direct-emplace-reject-") +
+        Case.first + ".nc");
+    writeFile(Source, Case.second);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceWrapperVectorDirectEmplaceArgumentOnce) {
   const auto Source =
       tmpFile("reference-wrapper-vector-direct-emplace-argument-once.cpp");

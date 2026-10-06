@@ -95,6 +95,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 검증된 래퍼 vector는 정확한 타입의 좌값 참조 대상에서 `emplace_back(referent)`와 `emplace(pos, referent)`도 지원합니다. 선택된 SDK 전달 분기, allocator 어댑터 및 래퍼 생성자를 각각 검증합니다. 바인딩은 대상 주소를 저장하고 인수를 한 번 평가하며 기존 확장 및 삽입 동작을 유지합니다. const 바인딩과 지원되는 함수, 콜백, 배열 및 소스 레코드의 검사를 유지하고 사용자 변환과 SDK 어댑터의 소스 대체를 거부합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#vector-header-and-metadata-from-vector).
 
+검증된 래퍼 optional은 정확한 타입의 좌값 참조 대상에서 `emplace(referent)`도 지원합니다. 선택된 reset, 저장 주소, 전달, placement 생성, 직접 래퍼 생성 및 engaged 플래그를 함께 검증합니다. 비어 있거나 값이 있는 optional 모두 원래 주소에 바인딩하고 인수를 한 번 평가하며 저장된 래퍼 참조를 반환합니다. const, 함수, 콜백, 배열 및 소스 레코드의 검사와 수명을 유지하며 사용자 변환과 SDK 연산의 소스 대체를 거부합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#value-optionals-from-optional).
+
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

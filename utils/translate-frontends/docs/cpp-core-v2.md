@@ -2779,6 +2779,25 @@ shadows and forged declarations remain rejected.
 
 ## Value optionals from `<optional>`
 
+Checked `optional<reference_wrapper<T>>` also supports `emplace(referent)` from
+an exact nonvolatile lvalue referent. Its concrete SDK member, template and body
+must retain the selected reset, exact storage receiver, SDK forwarding and
+returned storage reference. The storage helper must construct at the approved
+value-field address and set the original engaged field. Its selected
+`__construct_at` body must use the pinned global placement allocation, original
+destination pointer, unchanged forwarded reference and independently approved
+direct wrapper constructor. Existing value/move and default-emplace proofs
+retain their separate parameter and initialization requirements. Source SDK
+replacements and arbitrary user conversions remain rejected.
+
+Direct emplace reuses the checked wrapper address binding. Empty and engaged
+optionals store the original referent address, evaluate its expression once and
+return the actual stored wrapper reference. Re-emplace and reset do not assign
+or destroy the referent. Const bindings, supported functions and callbacks,
+arrays and source-record referents keep their existing checks and lifetimes.
+Unsupported referent types, source argument bodies and SDK function targets
+remain rejected; no default wrapper constructor is granted.
+
 Checked fixed-arity ordinary function pointers, including `noexcept` signatures,
 retain their value through optional construction, copy/move, assignment, reset,
 `emplace`, `make_optional`, `value_or` and authenticated swap. Compatible

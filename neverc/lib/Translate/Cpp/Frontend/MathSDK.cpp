@@ -12251,6 +12251,25 @@ static bool approvedFunctionalForwardingCall(
                        "__utility/forward.h");
 }
 
+static bool functionalReferenceForwardedParameter(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    const Expr *Expression, const ParmVarDecl *Parameter) {
+  const auto *Forward = dyn_cast_or_null<CallExpr>(
+      Expression ? Expression->IgnoreParenImpCasts() : nullptr);
+  const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  return Parameter && Parameter->getType()->isLValueReferenceType() &&
+         approvedFunctionalForwardingCall(S, SM, Expression, Parameter) &&
+         Arguments && Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments->get(0).getAsType(),
+                             Parameter->getType()) &&
+         Forward->isLValue() &&
+         Context.hasSameType(Forward->getType(),
+                             Parameter->getType()->getPointeeType());
+}
+
 std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -15430,18 +15449,10 @@ struct UtilityVectorReferenceEmplaceProof {
   llvm::DenseSet<const CXXMethodDecl *> Completed;
 
   bool forwarded(const Expr *Expression, const ParmVarDecl *Parameter) const {
-    const auto *Forward = dyn_cast_or_null<CallExpr>(
-        Expression ? Expression->IgnoreParenImpCasts() : nullptr);
-    const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
-    const auto *Arguments =
-        Function ? Function->getTemplateSpecializationArgs() : nullptr;
-    return approvedFunctionalForwardingCall(S, SM, Expression, Parameter) &&
-           Arguments && Arguments->size() == 1 &&
-           Arguments->get(0).getKind() == TemplateArgument::Type &&
-           Context.hasSameType(Arguments->get(0).getAsType(), ParameterType) &&
-           Forward->isLValue() &&
-           Context.hasSameType(Forward->getType(),
-                               ParameterType->getPointeeType());
+    return Parameter &&
+           Context.hasSameType(Parameter->getType(), ParameterType) &&
+           functionalReferenceForwardedParameter(S, SM, Context, Expression,
+                                                 Parameter);
   }
 
   bool method(const CXXMethodDecl *Method, unsigned Depth) {
@@ -16932,7 +16943,8 @@ static bool utilityOptionalDefaultValue(const State &S, const SourceManager &SM,
 static bool utilityOptionalConstructAt(const State &S, const SourceManager &SM,
                                        const FunctionDecl *Function,
                                        QualType Type, const ASTContext &Context,
-                                       bool Default = false) {
+                                       bool Default = false,
+                                       QualType ReferenceParameter = {}) {
   if (!utilitySwapSDKFunction(S, SM, Function, "__construct_at",
                               "__memory/construct_at.h") ||
       Function->getNumParams() != (Default ? 1u : 2u) ||
@@ -16940,7 +16952,9 @@ static bool utilityOptionalConstructAt(const State &S, const SourceManager &SM,
                            Context.getPointerType(Type)) ||
       (!Default &&
        !Context.hasSameType(Function->getParamDecl(1)->getType(),
-                            Context.getRValueReferenceType(Type))) ||
+                            ReferenceParameter.isNull()
+                                ? Context.getRValueReferenceType(Type)
+                                : ReferenceParameter)) ||
       !Context.hasSameType(Function->getReturnType(),
                            Context.getPointerType(Type)))
     return false;
@@ -16970,6 +16984,18 @@ static bool utilityOptionalConstructAt(const State &S, const SourceManager &SM,
                                           Function->getParamDecl(0)))
     return false;
   const Expr *Initializer = New->getInitializer();
+  if (!ReferenceParameter.isNull()) {
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Initializer);
+    return !Default && ReferenceParameter->isLValueReferenceType() &&
+           Construction && Construction->getNumArgs() == 1 &&
+           Context.hasSameType(Construction->getType(), Type) &&
+           approvedFunctionalReferenceConstruction(S, SM, Construction,
+                                                   Context) ==
+               FunctionalReferenceConstruction::Direct &&
+           functionalReferenceForwardedParameter(S, SM, Context,
+                                                 Construction->getArg(0),
+                                                 Function->getParamDecl(1));
+  }
   if (Default) {
     if (!utilityOptionalDefaultValue(S, SM, Context, Type))
       return false;
@@ -17010,7 +17036,8 @@ static bool utilityOptionalConstruct(const State &S, const SourceManager &SM,
                                      const CXXMethodDecl *Method,
                                      const UtilityOptionalRecord &Optional,
                                      const ASTContext &Context,
-                                     bool Default = false) {
+                                     bool Default = false,
+                                     QualType ReferenceParameter = {}) {
   const auto Type = Optional.ElementType;
   if (!utilityCompositeSwapMethod(S, SM, Method, "__construct", "optional") ||
       Method->isStatic() || Method->isConst() || Method->isVolatile() ||
@@ -17018,8 +17045,11 @@ static bool utilityOptionalConstruct(const State &S, const SourceManager &SM,
           Optional.StorageBase->getCanonicalDecl() ||
       Method->getNumParams() != (Default ? 0u : 1u) ||
       !Method->getReturnType()->isVoidType() ||
-      (!Default && !Context.hasSameType(Method->getParamDecl(0)->getType(),
-                                        Context.getRValueReferenceType(Type))))
+      (!Default &&
+       !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            ReferenceParameter.isNull()
+                                ? Context.getRValueReferenceType(Type)
+                                : ReferenceParameter)))
     return false;
   const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
   if (!Body || Body->size() != 3)
@@ -17030,10 +17060,14 @@ static bool utilityOptionalConstruct(const State &S, const SourceManager &SM,
   if (!Noop || !utilityOptionalSwapNoop(Noop) || !Call ||
       Call->getNumArgs() != (Default ? 1u : 2u) ||
       !utilityOptionalConstructAt(S, SM, Call->getDirectCallee(), Type, Context,
-                                  Default) ||
-      (!Default &&
-       !utilityOptionalSwapForward(S, SM, Call->getArg(1),
-                                   Method->getParamDecl(0), Type, Context)) ||
+                                  Default, ReferenceParameter) ||
+      (!Default && !(ReferenceParameter.isNull()
+                         ? utilityOptionalSwapForward(S, SM, Call->getArg(1),
+                                                      Method->getParamDecl(0),
+                                                      Type, Context)
+                         : functionalReferenceForwardedParameter(
+                               S, SM, Context, Call->getArg(1),
+                               Method->getParamDecl(0)))) ||
       !utilityOptionalSwapEngage(*Statement, true, Optional.StorageBase,
                                  Optional))
     return false;
@@ -17083,6 +17117,61 @@ static bool utilityOptionalDefaultEmplace(const State &S,
          Return &&
          utilityOptionalSwapRead(S, SM, Return->getRetValue(), Method, false,
                                  Optional, false, Context);
+}
+
+std::optional<FunctionalReferenceRecord>
+approvedUtilityOptionalReferenceEmplace(const State &S, const SourceManager &SM,
+                                        const UtilityOptionalRecord &Optional,
+                                        const CallExpr *Call,
+                                        const ASTContext &Context) {
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Optional.ElementType->getAsCXXRecordDecl(), Context);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  if (!Wrapper || !Call || Call->getNumArgs() != 1 ||
+      !utilityCompositeSwapMethod(S, SM, Method, "emplace", "optional") ||
+      Method->getNumParams() != 1 || Method->isConst() ||
+      Method->isVolatile() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Optional.Record->getCanonicalDecl() ||
+      !Context.hasSameType(
+          Method->getReturnType(),
+          Context.getLValueReferenceType(Optional.ElementType)))
+    return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto *Argument = Call->getArg(0);
+  const auto ArgumentType = Argument->getType();
+  if (!Parameter->isLValueReferenceType() || !Argument->isLValue() ||
+      ArgumentType.isVolatileQualified() ||
+      ArgumentType.isRestrictQualified() ||
+      ArgumentType.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameType(Parameter->getPointeeType(), ArgumentType) ||
+      !Context.hasSameUnqualifiedType(ArgumentType, Wrapper->ReferentType) ||
+      (ArgumentType.isConstQualified() &&
+       !Wrapper->ReferentType.isConstQualified()))
+    return std::nullopt;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 3)
+    return std::nullopt;
+  auto Statement = Body->body_begin();
+  if (!utilityOptionalSwapReset(S, SM, *Statement++, Method, false, Optional))
+    return std::nullopt;
+  const auto *Construct = dyn_cast<CXXMemberCallExpr>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  return Construct && Construct->getNumArgs() == 1 &&
+                 utilityOptionalSwapReceiver(
+                     Construct->getImplicitObjectArgument(), Method, false) &&
+                 functionalReferenceForwardedParameter(
+                     S, SM, Context, Construct->getArg(0),
+                     Method->getParamDecl(0)) &&
+                 utilityOptionalConstruct(S, SM, Construct->getMethodDecl(),
+                                          Optional, Context, false,
+                                          Parameter) &&
+                 Return &&
+                 utilityOptionalSwapRead(S, SM, Return->getRetValue(), Method,
+                                         false, Optional, false, Context)
+             ? Wrapper
+             : std::nullopt;
 }
 
 static bool utilityOptionalSwapTransfer(const State &S, const SourceManager &SM,
@@ -24244,8 +24333,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(
             Method->getParamDecl(0)->getType()->getPointeeType(),
             Call->getArg(0)->getType()) &&
-        utilityTupleDirectConversion(S, SM, Context, Call->getArg(0)->getType(),
-                                     Optional->ElementType))
+        (utilityTupleDirectConversion(S, SM, Context,
+                                      Call->getArg(0)->getType(),
+                                      Optional->ElementType) ||
+         approvedUtilityOptionalReferenceEmplace(S, SM, *Optional, Call,
+                                                 Context)))
       return UtilityOperation::OptionalEmplace;
     if (!Operator && Name == "value_or" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Call->isPRValue() &&
