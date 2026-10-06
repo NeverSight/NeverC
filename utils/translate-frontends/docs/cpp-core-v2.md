@@ -3589,7 +3589,7 @@ required. SDK wrapper pointees retain authenticated layout completion on both
 sides. The query selects no pointer transfer or destination deletion. Source
 replacements of assignment or its delegates and independent member addresses
 remain rejected. Other conversions and custom deleter assignment forms keep
-their existing boundary; owner-comparison queries gain no new permission.
+their existing boundary; owner comparison keeps its separate exact signature proof.
 
 Result-source queries also admit the four already materialized pinned C++17
 `owner == nullptr`, `nullptr == owner`, `owner != nullptr` and `nullptr != owner`
@@ -3618,8 +3618,9 @@ or selected Boolean-member replacements and independent function addresses
 remain rejected. Pure free comparison `noexcept` queries keep their existing
 signature-source boundary and need no unused wrapper body.
 
-The same result-source boundary also admits already materialized pinned C++17
-owner-to-owner `==` and `!=`. Both preserve a `bool` prvalue result and their
+The same result-source boundary also admits exact pinned C++17 signatures of
+owner-to-owner `==` and `!=`, without instantiated comparison, getter or default
+deletion bodies. Both preserve a `bool` prvalue result and their
 potentially throwing signature, even though the exact getters are nonthrowing.
 Scalar and array owners must have the same unqualified element type and array
 kind; the two concrete owner/deleter types may differ, including admitted custom
@@ -3632,7 +3633,7 @@ owning temporaries keep their original lifetime dependencies.
 Both written operand expressions, aliases, original
 function signatures, exception specifications and selected source defaults
 retain their original source dependencies.
-The equality wrapper must compare the exact two parameter getters with built-in
+Evaluated equality requires its wrapper to compare the exact two parameter getters with built-in
 pointer equality. Each getter must select its matching owner's actual pinned
 definition and nonthrowing signature and read the wrapper's corresponding
 parameter. Inequality must negate a call to the exact pinned equality
@@ -3644,9 +3645,14 @@ or pointee construction, deleter callback or destruction. Local owners and
 owning temporary/factory operands retain their separate allocation and lifetime
 source. Unevaluated queries preserve both pointers and invoke no operand,
 default, allocation, construction, deletion or cleanup. Ordinary comparisons
-evaluate both operands once in an unspecified C++17 order. Missing result-query
-bodies, different unmaterialized pairs/specializations, source comparison or
-selected-getter replacements and independent function addresses remain rejected.
+evaluate both operands once in an unspecified C++17 order. Pure equality/inequality signature queries need no instantiated bodies. Such
+queries require the authenticated function declaration chain, exact owner and
+deleter template arguments, const-reference parameters, checked operand layouts
+and resolved bool/potentially throwing metadata. Both operand sources, aliases
+and explicit template arguments retain independent checks; SDK wrapper pointees
+keep authenticated layout completion. Source comparison or getter replacements
+and independent function addresses remain rejected. Ordering and null-comparison
+queries keep their separate existing boundaries.
 
 Already materialized pinned owner-to-owner `<`, `>`, `<=` and `>=` also admit
 result-source queries. The scalar/array, common unqualified element, qualified

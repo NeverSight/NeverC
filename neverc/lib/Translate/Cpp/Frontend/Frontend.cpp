@@ -7054,6 +7054,63 @@ static QualType utilityUniquePtrSwapQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Function->getReturnType());
 }
 
+static QualType utilityUniquePtrEqualityQuerySource(Adapter &A,
+                                                    const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      Call ? directFunctionReference(Call) : nullptr);
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!A.S.coreV2() || !Function || isa<CXXMethodDecl>(Function) ||
+      (Function->getOverloadedOperator() != OO_EqualEqual &&
+       Function->getOverloadedOperator() != OO_ExclaimEqual) ||
+      !Function->getPrimaryTemplate() || !Function->isInlined() || !Reference ||
+      Reference->getDecl() != Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) || !Prototype ||
+      Prototype->getExceptionSpecType() != EST_None ||
+      Prototype->getNoexceptExpr() || Call->getNumArgs() != 2 ||
+      Function->getNumParams() != 2 ||
+      !A.Context.hasSameType(Function->getReturnType(), A.Context.BoolTy) ||
+      !A.Context.hasSameType(Call->getType(), A.Context.BoolTy) ||
+      !Call->isPRValue() || !Arguments || Arguments->size() != 4 ||
+      !utilitySDKFunctionSource(A, Function, "__memory/unique_ptr.h", false))
+    return {};
+  const auto Left = utilityUniquePtrSource(
+      A, Call->getArg(0)->getType()->getAsCXXRecordDecl(), false);
+  const auto Right = utilityUniquePtrSource(
+      A, Call->getArg(1)->getType()->getAsCXXRecordDecl(), false);
+  if (!Left || !Right || Left->Deleter.Array != Right->Deleter.Array ||
+      !A.Context.hasSameUnqualifiedType(Left->ElementType, Right->ElementType))
+    return {};
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Owner = I ? *Right : *Left;
+    const auto *Specialization =
+        dyn_cast<ClassTemplateSpecializationDecl>(Owner.Record);
+    if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
+        Arguments->get(2 * I).getKind() != TemplateArgument::Type ||
+        Arguments->get(2 * I + 1).getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(
+            Arguments->get(2 * I).getAsType(),
+            Specialization->getTemplateArgs().get(0).getAsType()) ||
+        !A.Context.hasSameType(Arguments->get(2 * I + 1).getAsType(),
+                               A.Context.getRecordType(Owner.Deleter.Record)) ||
+        !A.Context.hasSameType(
+            Function->getParamDecl(I)->getType(),
+            A.Context.getLValueReferenceType(A.Context.getConstType(
+                A.Context.getRecordType(Owner.Record)))) ||
+        !A.Context.hasSameType(
+            Call->getArg(I)->getType(),
+            A.Context.getConstType(A.Context.getRecordType(Owner.Record))) ||
+        !utilityUniquePtrElementQueryLayout(A, Owner, Call->getExprLoc()))
+      return {};
+  }
+  // A query consumes these exact SDK signatures, not a getter or comparison
+  // body. Each original operand and any selected lifetime remains independent.
+  return A.Context.getCanonicalType(Function->getReturnType());
+}
+
 static bool utilityUniquePtrSwapSource(Adapter &A, const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
@@ -14373,6 +14430,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityUniquePtrSwapQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result =
+                     utilityUniquePtrEqualityQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Info =
