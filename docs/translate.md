@@ -43,6 +43,8 @@ captured storage without a runtime call. Direct allocation-function calls,
 nothrow objects, function addresses and default heap operations remain excluded.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#new-header-from-new).
 
+Pure `std::launder` type and `noexcept` queries now prepare exact qualified, nested and source-record `std::reference_wrapper` layouts, including source function pointer parameters, without reading pointers or selecting SDK bodies or lifetimes. Original operands, aliases, template arguments, defaults and source bodies remain checked; source replacements and independent SDK function addresses remain rejected. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#new-header-from-new).
+
 Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 `pointer_traits`, `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` identities, nested aliases, rebinds

@@ -3229,6 +3229,21 @@ pointees. The result has the exact input pointer type and value. Its argument is
 captured once, and the portable pointer model then observes the lifetime chosen
 by the authenticated C++ call without a libc++ runtime operation.
 
+Pure `std::launder` type and `noexcept` queries authenticate the exact direct
+SDK template, its pointer parameter and result, one matching type argument,
+fixed nonthrowing metadata and full function and primary-template declaration
+chains. The signature proof can complete qualified, nested and source-record
+`std::reference_wrapper` element layouts before checking source function pointer
+parameters and results. It does not require an instantiated laundering body,
+read a pointer, construct a wrapper or select any object lifetime.
+
+Original operands, aliases, written template arguments, selected defaults and
+source function bodies remain separate dependencies. Source specializations or
+primary-template redeclarations, casted callees, independent SDK function
+addresses and unsupported scalar or referent layouts remain rejected. The
+permission belongs to the exact unevaluated call; evaluated laundering retains
+its existing operation checks.
+
 The exact global `operator new(size_t, void *)` and `operator new[](size_t,
 void *)` definitions from the pinned placement component are admitted only when
 Clang selects them for a new expression. Single objects and constant-bound
@@ -14405,8 +14420,8 @@ a separate generated header belongs to project mode.
 
 128-bit and extended integers, `long double` and complex types,
 exception unwinding, other template forms,
-exceptions, STL headers
-and library mappings are not implemented by core v2. Project translation
+and additional STL headers and library mappings beyond the bounded surfaces
+described above are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2
 does not implicitly combine their capabilities.
 

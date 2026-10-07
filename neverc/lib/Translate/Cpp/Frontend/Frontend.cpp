@@ -7535,6 +7535,37 @@ static QualType utilityAddressofQuerySource(Adapter &A, const CallExpr *Call) {
   return A.Context.getCanonicalType(Result);
 }
 
+static QualType utilityLaunderQuerySource(Adapter &A, const CallExpr *Call) {
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!A.S.coreV2() || !Reference || !Function || !Prototype ||
+      !Function->getPrimaryTemplate() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
+          UtilityOperation::NewLaunder ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() ||
+      operationCalleePrototype(Call) != Prototype ||
+      Function->getParamDecl(0)->hasDefaultArg() ||
+      !utilitySDKFunctionSource(A, Function, "__new/launder.h", false))
+    return {};
+  const auto Result = Function->getReturnType();
+  if (!A.Context.hasSameType(Arguments->get(0).getAsType(),
+                             Result->getPointeeType()) ||
+      !utilityMemoryElementQueryLayout(A, Result->getPointeeType(),
+                                       Call->getExprLoc()) ||
+      A.type(Result, Call->getExprLoc(), false).empty())
+    return {};
+  // The pinned public pointer signature carries this query. Complete only its
+  // element layout; no pointer read, laundering body or lifetime is selected.
+  return A.Context.getCanonicalType(Result);
+}
+
 static bool utilityWrapperReferenceCastQueryLayout(Adapter &A,
                                                    const CallExpr *Call) {
   const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
@@ -7587,6 +7618,7 @@ static void prepareBorrowedQueryLayouts(Adapter &A) {
       // per-call query permission and checks every original source dependency.
       (void)utilityPointerTraitsQuerySource(A, Call);
       (void)utilityAddressofQuerySource(A, Call);
+      (void)utilityLaunderQuerySource(A, Call);
       (void)utilityWrapperReferenceCastQueryLayout(A, Call);
       return true;
     }
@@ -15030,6 +15062,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAddressofQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityLaunderQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);

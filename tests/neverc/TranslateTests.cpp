@@ -174512,3 +174512,300 @@ using F=int(int)noexcept;int target(int n)noexcept{long double hidden=0;return n
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQueryNestedWrapper) {
+  const auto Source = tmpFile("launder-wrapper-signature-nested-wrapper.cpp");
+  const auto Output = tmpFile("launder-wrapper-signature-nested-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using E=std::reference_wrapper<W>;
+static_assert(std::is_same<decltype(std::launder(std::declval<E*>())),E*>::value,"result");
+static_assert(noexcept(std::launder(std::declval<E*>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("launder-wrapper-signature-nested-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQueryQualifiedWrapper) {
+  const auto Source =
+      tmpFile("launder-wrapper-signature-qualified-wrapper.cpp");
+  const auto Output = tmpFile("launder-wrapper-signature-qualified-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=const std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::launder(std::declval<E*>())),E*>::value,"result");
+static_assert(noexcept(std::launder(std::declval<E*>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("launder-wrapper-signature-qualified-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("launder-wrapper-signature-query-effects.cpp");
+  const auto Output = tmpFile("launder-wrapper-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+int effects=0;E*operand()noexcept{++effects;return nullptr;}
+using P=decltype(std::launder(operand()));static_assert(std::is_same<P,E*>::value,"result");static_assert(noexcept(std::launder(operand())),"nothrow");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("launder-wrapper-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("launder-wrapper-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("launder-wrapper-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+int inspect(E*value){using P=decltype(std::launder(value));static_assert(std::is_same<P,E*>::value,"result");return noexcept(std::launder(value))?0:1;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "launder-wrapper-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQueryScalar) {
+  const auto Source = tmpFile("launder-wrapper-signature-scalar.cpp");
+  const auto Output = tmpFile("launder-wrapper-signature-scalar.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=int;
+static_assert(std::is_same<decltype(std::launder(std::declval<E*>())),E*>::value,"result");
+static_assert(noexcept(std::launder(std::declval<E*>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("launder-wrapper-signature-scalar" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQuerySourceRecordWrapper) {
+  const auto Source =
+      tmpFile("launder-wrapper-signature-source-record-wrapper.cpp");
+  const auto Output =
+      tmpFile("launder-wrapper-signature-source-record-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int value;R()=delete;~R()=delete;};using E=std::reference_wrapper<R>;
+static_assert(std::is_same<decltype(std::launder(std::declval<E*>())),E*>::value,"result");static_assert(noexcept(std::launder(std::declval<E*>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "launder-wrapper-signature-source-record-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LaunderWrapperSignatureQueryWrapper) {
+  const auto Source = tmpFile("launder-wrapper-signature-wrapper.cpp");
+  const auto Output = tmpFile("launder-wrapper-signature-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::launder(std::declval<E*>())),E*>::value,"result");
+static_assert(noexcept(std::launder(std::declval<E*>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("launder-wrapper-signature-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2LaunderWrapperSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using F=E*(*)(E*)noexcept;
+using P=decltype(static_cast<F>(std::launder<E>)(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using F=E*(*)(E*)noexcept;
+using P=decltype(std::launder(std::declval<E*>()));static_assert(sizeof(static_cast<F>(&std::launder<E>))>0,"address");int main(){return 0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+using E=long double;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+template<int>using W=std::reference_wrapper<int>;using E=W<sizeof(long double)>;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+E*operand(){return (E*)nullptr+sizeof(long double);}using P=decltype(std::launder(operand()));int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+E*operand(int=sizeof(long double)){return nullptr;}using P=decltype(std::launder(operand()));int main(){return 0;}
+)cpp"},
+      {"source-primary-redeclaration", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr T*launder(T*)noexcept;}}
+using E=std::reference_wrapper<int>;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"source-referent-layout", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+struct R{long double value;};using E=std::reference_wrapper<R>;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"source-scalar-specialization", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<>constexpr int*launder<int>(int*p)noexcept{return p;}}}
+using E=int;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<>constexpr reference_wrapper<int>*launder<reference_wrapper<int>>(reference_wrapper<int>*p)noexcept{return p;}}}
+using E=std::reference_wrapper<int>;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+      {"wrapper-long-double-referent", R"cpp(
+#include <new>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<long double>;
+using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("launder-wrapper-signature-") +
+                                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("launder-wrapper-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
