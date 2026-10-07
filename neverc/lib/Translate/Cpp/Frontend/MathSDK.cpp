@@ -17286,6 +17286,666 @@ static bool utilityWrapperFillRange(const State &S, const SourceManager &SM,
   return utilityWrapperFillN(S, SM, Fill->getDirectCallee(), Type, Context);
 }
 
+// Prove the selected raw-pointer copy chain before replacing its optimized
+// memmove with element stores. Each adapter retains its selected SDK origins,
+// pointer identities and pair fields; no other record range uses this proof.
+class UtilityWrapperCopyProof {
+  const State &S;
+  const SourceManager &SM;
+  const ASTContext &Context;
+  QualType Element;
+  QualType Input;
+  QualType Output;
+
+  static const Expr *strip(const Expr *E) {
+    return E ? functionalInvokeStrippedExpression(E) : nullptr;
+  }
+  bool same(QualType A, QualType B) const {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  }
+  bool origin(const Decl *D, llvm::StringRef Path) const {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  }
+  bool reference(const Expr *E, const ValueDecl *D) const {
+    const auto *R = dyn_cast_or_null<DeclRefExpr>(strip(E));
+    return R && R->isLValue() && R->getDecl() == D;
+  }
+  static const Expr *result(const FunctionDecl *F) {
+    const auto *B = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
+    const auto *R =
+        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
+    return R ? strip(R->getRetValue()) : nullptr;
+  }
+  static const VarDecl *local(const Stmt *Statement,
+                              const FunctionDecl *Function) {
+    const auto *D = dyn_cast_or_null<DeclStmt>(Statement);
+    const auto *V = D && D->isSingleDecl()
+                        ? dyn_cast<VarDecl>(D->getSingleDecl())
+                        : nullptr;
+    return V && V->hasLocalStorage() && V->getDeclContext() == Function &&
+                   V->hasInit() && !V->isImplicit()
+               ? V
+               : nullptr;
+  }
+  static const BinaryOperator *binary(const Expr *E,
+                                      BinaryOperatorKind Opcode) {
+    const auto *B = dyn_cast_or_null<BinaryOperator>(strip(E));
+    return B && B->getOpcode() == Opcode ? B : nullptr;
+  }
+  static bool integer(const Expr *E, uint64_t Value) {
+    const auto *I = dyn_cast_or_null<IntegerLiteral>(strip(E));
+    return I && I->getValue() == Value;
+  }
+  bool templates(const FunctionDecl *F, llvm::ArrayRef<QualType> Types,
+                 bool Zero = false) const {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!A || A->size() != Types.size() + Zero)
+      return false;
+    for (unsigned I = 0; I != Types.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !same(A->get(I).getAsType(), Types[I]))
+        return false;
+    return !Zero ||
+           (A->get(Types.size()).getKind() == TemplateArgument::Integral &&
+            A->get(Types.size()).getAsIntegral().isZero());
+  }
+  bool signature(const FunctionDecl *F, QualType Return,
+                 llvm::ArrayRef<QualType> Parameters) const {
+    if (!F || F->getNumParams() != Parameters.size() ||
+        !same(F->getReturnType(), Return))
+      return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    return true;
+  }
+  const Expr *adapt(const Expr *E, QualType Type, bool Forward = false,
+                    QualType Argument = QualType()) const {
+    const auto *C = dyn_cast_or_null<CallExpr>(strip(E));
+    const auto *F = C ? C->getDirectCallee() : nullptr;
+    if (Argument.isNull())
+      Argument = Context.getLValueReferenceType(Type);
+    const auto Return = Forward && Argument->isLValueReferenceType()
+                            ? Context.getLValueReferenceType(Type)
+                            : Context.getRValueReferenceType(Type);
+    if (!utilitySwapSDKFunction(S, SM, F, Forward ? "forward" : "move",
+                                Forward ? "__utility/forward.h"
+                                        : "__utility/move.h") ||
+        C->getNumArgs() != 1 || !templates(F, {Argument}) ||
+        !signature(F, Return, {Context.getLValueReferenceType(Type)}) ||
+        !same(C->getType(), Type) ||
+        (Return->isLValueReferenceType() ? !C->isLValue() : !C->isXValue()))
+      return nullptr;
+    return strip(C->getArg(0));
+  }
+  bool moved(const Expr *E, const ValueDecl *D, QualType Type) const {
+    return reference(adapt(E, Type), D);
+  }
+  bool record(const CXXRecordDecl *R, llvm::StringRef Name,
+              llvm::StringRef Path) const {
+    if (!R || !R->isCompleteDefinition() || !R->getIdentifier() ||
+        R->getName() != Name || !R->isEmpty() || !R->isTrivial() ||
+        R->getNumBases())
+      return false;
+    for (const auto *D : R->redecls())
+      if (!origin(D, Path))
+        return false;
+    if (const auto *Specialization =
+            dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      if (Specialization->getSpecializationKind() != TSK_ImplicitInstantiation)
+        return false;
+      const auto *Primary = Specialization->getSpecializedTemplate();
+      for (const auto *D : Primary->redecls())
+        if (!origin(D, Path) || !origin(D->getTemplatedDecl(), Path))
+          return false;
+      if (const auto *Partial =
+              Specialization->getSpecializedTemplateOrPartial()
+                  .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+        for (const auto *D : Partial->redecls())
+          if (!origin(D, Path))
+            return false;
+    }
+    return true;
+  }
+  std::optional<UtilityPairRecord> pair(QualType Type, QualType First,
+                                        QualType Second) const {
+    auto P =
+        approvedUtilityPairRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+    return P && same(P->First->getType(), First) &&
+                   same(P->Second->getType(), Second)
+               ? P
+               : std::nullopt;
+  }
+  bool member(const Expr *E, const ValueDecl *Base,
+              const FieldDecl *Field) const {
+    const auto *M = dyn_cast_or_null<MemberExpr>(strip(E));
+    return M && !M->isArrow() && M->getMemberDecl() == Field &&
+           reference(M->getBase(), Base);
+  }
+  const CallExpr *makePair(const Expr *E, QualType First,
+                           QualType Second) const {
+    const auto *C = dyn_cast_or_null<CallExpr>(strip(E));
+    const auto *F = C ? C->getDirectCallee() : nullptr;
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    auto P = C ? pair(C->getType(), First, Second) : std::nullopt;
+    if (!P ||
+        !utilitySwapSDKFunction(S, SM, F, "make_pair", "__utility/pair.h") ||
+        C->getNumArgs() != 2 || F->getNumParams() != 2 || !A ||
+        A->size() != 2 || !same(F->getReturnType(), C->getType()))
+      return nullptr;
+    const auto *Construct = dyn_cast_or_null<CXXConstructExpr>(result(F));
+    const auto *Constructor = Construct ? Construct->getConstructor() : nullptr;
+    if (!Constructor || Construct->getNumArgs() != 2 ||
+        !same(Construct->getType(), C->getType()) ||
+        !approvedUtilityPairConstruction(S, SM, Construct, Context) ||
+        !utilityCompositeSwapMethod(S, SM, Constructor, "",
+                                    "__utility/pair.h") ||
+        Constructor->getNumCtorInitializers() != 2)
+      return nullptr;
+    const auto *Body = dyn_cast<CompoundStmt>(Constructor->getBody());
+    if (!Body || !Body->body_empty())
+      return nullptr;
+    auto Init = Constructor->init_begin();
+    for (unsigned I = 0; I != 2; ++I, ++Init) {
+      const auto T = I ? Second : First;
+      if (A->get(I).getKind() != TemplateArgument::Type)
+        return nullptr;
+      const auto Argument = A->get(I).getAsType();
+      if (!same(Argument.getNonReferenceType(), T) ||
+          !same(F->getParamDecl(I)->getType(),
+                Argument->isLValueReferenceType()
+                    ? Context.getLValueReferenceType(T)
+                    : Context.getRValueReferenceType(T)) ||
+          !reference(adapt(Construct->getArg(I), T, true, Argument),
+                     F->getParamDecl(I)) ||
+          !(*Init)->isMemberInitializer() ||
+          (*Init)->getMember() != (I ? P->Second : P->First) ||
+          !reference(adapt((*Init)->getInit(), T, true, Argument),
+                     Constructor->getParamDecl(I)))
+        return nullptr;
+    }
+    return C;
+  }
+  bool address(const Expr *E, const ValueDecl *V, QualType Pointer) const {
+    const auto *C = dyn_cast_or_null<CallExpr>(strip(E));
+    const auto *F = C ? C->getDirectCallee() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, "__to_address",
+                                "__memory/pointer_traits.h") ||
+        C->getNumArgs() != 1 || !reference(C->getArg(0), V) ||
+        !templates(F, {Pointer->getPointeeType()}) ||
+        !signature(F, Pointer, {Pointer}))
+      return false;
+    const auto *B = dyn_cast_or_null<CompoundStmt>(F->getBody());
+    if (!B || B->size() != 2)
+      return false;
+    auto It = B->body_begin();
+    const auto *D = dyn_cast<DeclStmt>(*It++);
+    const auto *Assert = D && D->isSingleDecl()
+                             ? dyn_cast<StaticAssertDecl>(D->getSingleDecl())
+                             : nullptr;
+    const auto *R = dyn_cast<ReturnStmt>(*It);
+    return Assert && !Assert->isFailed() && R &&
+           reference(R->getRetValue(), F->getParamDecl(0));
+  }
+  bool iterator(const FunctionDecl *F, QualType Pointer, bool Rewrap) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/unwrap_iter.h";
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(
+            S, SM, F, Rewrap ? "__rewrap_iter" : "__unwrap_iter", Path) ||
+        !A || A->size() != 3 || A->get(0).getKind() != TemplateArgument::Type ||
+        !same(A->get(0).getAsType(), Pointer) ||
+        A->get(Rewrap ? 2 : 1).getKind() != TemplateArgument::Type ||
+        (Rewrap ? (A->get(1).getKind() != TemplateArgument::Type ||
+                   !same(A->get(1).getAsType(), Pointer))
+                : (A->get(2).getKind() != TemplateArgument::Integral ||
+                   !A->get(2).getAsIntegral().isZero())) ||
+        !(Rewrap ? signature(F, Pointer, {Pointer, Pointer})
+                 : signature(F, Pointer, {Pointer})))
+      return false;
+    const auto *Implementation =
+        dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+            A->get(Rewrap ? 2 : 1).getAsType()->getAsCXXRecordDecl());
+    if (!record(Implementation, "__unwrap_iter_impl", Path) ||
+        Implementation->getTemplateArgs().size() != 2 ||
+        Implementation->getTemplateArgs().get(0).getKind() !=
+            TemplateArgument::Type ||
+        !same(Implementation->getTemplateArgs().get(0).getAsType(), Pointer) ||
+        Implementation->getTemplateArgs().get(1).getKind() !=
+            TemplateArgument::Integral ||
+        Implementation->getTemplateArgs().get(1).getAsIntegral() != 1)
+      return false;
+    const auto *C = dyn_cast_or_null<CallExpr>(result(F));
+    const auto *M =
+        C ? dyn_cast_or_null<CXXMethodDecl>(C->getDirectCallee()) : nullptr;
+    if (!M || !C || C->getNumArgs() != (Rewrap ? 2u : 1u) || !M->isStatic() ||
+        M->getParent()->getCanonicalDecl() !=
+            Implementation->getCanonicalDecl() ||
+        !utilityCompositeSwapMethod(S, SM, M, Rewrap ? "__rewrap" : "__unwrap",
+                                    Path) ||
+        !(Rewrap ? signature(M, Pointer, {Pointer, Pointer})
+                 : signature(M, Pointer, {Pointer})))
+      return false;
+    for (unsigned I = 0; I != C->getNumArgs(); ++I)
+      if (Rewrap ? !moved(C->getArg(I), F->getParamDecl(I), Pointer)
+                 : !reference(C->getArg(I), F->getParamDecl(I)))
+        return false;
+    if (!Rewrap)
+      return address(result(M), M->getParamDecl(0), Pointer);
+    const auto *Add = binary(result(M), BO_Add);
+    const auto *Difference = Add ? binary(Add->getRHS(), BO_Sub) : nullptr;
+    return Add && reference(Add->getLHS(), M->getParamDecl(0)) && Difference &&
+           same(Difference->getType(), Context.getPointerDiffType()) &&
+           reference(Difference->getLHS(), M->getParamDecl(1)) &&
+           address(Difference->getRHS(), M->getParamDecl(0), Pointer);
+  }
+  bool range(const FunctionDecl *F, QualType Pointer, bool Rewrap) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/unwrap_range.h";
+    if (!utilitySwapSDKFunction(
+            S, SM, F, Rewrap ? "__rewrap_range" : "__unwrap_range", Path) ||
+        !templates(F, {Pointer, Pointer}) || F->getNumParams() != 2 ||
+        !same(F->getParamDecl(0)->getType(), Pointer) ||
+        !same(F->getParamDecl(1)->getType(), Pointer))
+      return false;
+    const auto *C = Rewrap ? dyn_cast_or_null<CallExpr>(result(F))
+                           : makePair(result(F), Pointer, Pointer);
+    if (!C || C->getNumArgs() != 2)
+      return false;
+    if (Rewrap) {
+      if (!same(F->getReturnType(), Pointer) ||
+          !iterator(C->getDirectCallee(), Pointer, true))
+        return false;
+      for (unsigned I = 0; I != 2; ++I)
+        if (!moved(C->getArg(I), F->getParamDecl(I), Pointer))
+          return false;
+    } else {
+      if (!pair(F->getReturnType(), Pointer, Pointer))
+        return false;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Unwrap = dyn_cast_or_null<CallExpr>(strip(C->getArg(I)));
+        if (!Unwrap || Unwrap->getNumArgs() != 1 ||
+            !iterator(Unwrap->getDirectCallee(), Pointer, false) ||
+            !moved(Unwrap->getArg(0), F->getParamDecl(I), Pointer))
+          return false;
+      }
+    }
+    return true;
+  }
+  bool builtin(const FunctionDecl *F, llvm::StringRef Name) const {
+    if (!F || !F->getIdentifier() || F->getName() != Name ||
+        !F->getBuiltinID() || F->isVariadic())
+      return false;
+    if (Name == "__builtin_memmove"
+            ? !signature(F, Context.VoidPtrTy,
+                         {Context.VoidPtrTy,
+                          Context.getPointerType(Context.VoidTy.withConst()),
+                          Context.getSizeType()})
+            : !signature(F, Context.BoolTy, {}))
+      return false;
+    for (const auto *D : F->redecls())
+      if (!D->isImplicit() || S.owns(SM, D->getLocation()))
+        return false;
+    return true;
+  }
+  bool constantEvaluation(const FunctionDecl *F) const {
+    constexpr llvm::StringLiteral Path =
+        "__type_traits/is_constant_evaluated.h";
+    if (!F || !F->getIdentifier() ||
+        F->getName() != "__libcpp_is_constant_evaluated" ||
+        !signature(F, Context.BoolTy, {}) || F->isVariadic() ||
+        !F->isInlineSpecified())
+      return false;
+    for (const auto *D : F->redecls())
+      if (!origin(D, Path))
+        return false;
+    const auto *C = dyn_cast_or_null<CallExpr>(result(F));
+    return C && !C->getNumArgs() &&
+           builtin(C->getDirectCallee(), "__builtin_is_constant_evaluated");
+  }
+  bool dataSize(const Expr *E) const {
+    const auto *D = dyn_cast_or_null<DeclRefExpr>(strip(E));
+    const auto *V =
+        D ? dyn_cast<VarTemplateSpecializationDecl>(D->getDecl()) : nullptr;
+    constexpr llvm::StringLiteral Path = "__type_traits/datasizeof.h";
+    if (!V || V->getName() != "__datasizeof_v" ||
+        V->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        !V->hasInit() ||
+        !same(V->getType(), Context.getSizeType().withConst()) ||
+        V->getTemplateArgs().size() != 1 ||
+        V->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !same(V->getTemplateArgs().get(0).getAsType(), Element))
+      return false;
+    for (const auto *R : V->redecls())
+      if (!origin(R, Path))
+        return false;
+    for (const auto *R : V->getSpecializedTemplate()->redecls())
+      if (!origin(R, Path) || !origin(R->getTemplatedDecl(), Path))
+        return false;
+    Expr::EvalResult Value;
+    return V->getInit()->EvaluateAsInt(Value, Context) &&
+           Value.Val.getInt() ==
+               Context.getTypeSizeInChars(Element).getQuantity();
+  }
+  bool assignment(const FunctionDecl *F) const {
+    if (!utilitySwapSDKFunction(S, SM, F, "__assign_trivially_copyable",
+                                "__string/constexpr_c_functions.h") ||
+        !templates(F, {Element, Element}, true) ||
+        !signature(F, Context.getLValueReferenceType(Element),
+                   {Context.getLValueReferenceType(Element),
+                    Context.getLValueReferenceType(Element.withConst())}))
+      return false;
+    const auto *B = dyn_cast_or_null<CompoundStmt>(F->getBody());
+    if (!B || B->size() != 2)
+      return false;
+    auto It = B->body_begin();
+    const auto *C = dyn_cast<CXXOperatorCallExpr>(*It++);
+    const auto *M =
+        C ? dyn_cast_or_null<CXXMethodDecl>(C->getDirectCallee()) : nullptr;
+    const auto *R = dyn_cast<ReturnStmt>(*It);
+    if (!C || C->getOperator() != OO_Equal || C->getNumArgs() != 2 || !M ||
+        !M->isCopyAssignmentOperator() || !M->isImplicit() || !M->isTrivial() ||
+        M->getParent()->getCanonicalDecl() !=
+            Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
+        !signature(M, Context.getLValueReferenceType(Element),
+                   {Context.getLValueReferenceType(Element.withConst())}) ||
+        !reference(C->getArg(0), F->getParamDecl(0)) ||
+        !reference(C->getArg(1), F->getParamDecl(1)) || !R ||
+        !reference(R->getRetValue(), F->getParamDecl(0)))
+      return false;
+    for (const auto *D : M->redecls())
+      if (!origin(D, "__functional/reference_wrapper.h"))
+        return false;
+    return true;
+  }
+  // Runtime lowering never evaluates the constexpr branch. Still retain the
+  // selected helpers' provenance, including its wrapper assignment, so source
+  // replacements in that instantiated branch cannot disappear unnoticed.
+  bool constexprDependencies(const Stmt *Statement) const {
+    if (!Statement)
+      return false;
+    if (const auto *C = dyn_cast<CallExpr>(Statement)) {
+      const auto *F = C->getDirectCallee();
+      if (!F || !F->getIdentifier())
+        return false;
+      const auto Name = F->getName();
+      if (Name == "__builtin_memmove") {
+        if (!builtin(F, Name))
+          return false;
+      } else if (Name == "__assign_trivially_copyable") {
+        if (!assignment(F))
+          return false;
+      } else if (Name == "__is_pointer_in_range") {
+        if (!utilitySwapSDKFunction(S, SM, F, Name,
+                                    "__utility/is_pointer_in_range.h"))
+          return false;
+      } else {
+        return false;
+      }
+    }
+    for (const auto *Child : Statement->children())
+      if (Child && !constexprDependencies(Child))
+        return false;
+    return true;
+  }
+  bool memmove(const FunctionDecl *F) const {
+    constexpr llvm::StringLiteral Path = "__string/constexpr_c_functions.h";
+    if (!utilitySwapSDKFunction(S, SM, F, "__constexpr_memmove", Path) ||
+        !templates(F, {Element, Input->getPointeeType()}, true) ||
+        F->getNumParams() != 3 || !same(F->getReturnType(), Output) ||
+        !same(F->getParamDecl(0)->getType(), Output) ||
+        !same(F->getParamDecl(1)->getType(), Input))
+      return false;
+    const auto CountType = F->getParamDecl(2)->getType();
+    const auto *Enum = CountType->getAs<EnumType>();
+    if (!Enum || !Enum->getDecl()->isScoped() || !Enum->getDecl()->isFixed() ||
+        Enum->getDecl()->getName() != "__element_count" ||
+        !same(Enum->getDecl()->getIntegerType(), Context.getSizeType()))
+      return false;
+    for (const auto *D : Enum->getDecl()->redecls())
+      if (!origin(D, "__utility/element_count.h"))
+        return false;
+    const auto *B = dyn_cast_or_null<CompoundStmt>(F->getBody());
+    if (!B || B->size() != 3)
+      return false;
+    auto It = B->body_begin();
+    const auto *Count = local(*It++, F);
+    const auto *Cast =
+        Count ? dyn_cast<CXXStaticCastExpr>(strip(Count->getInit())) : nullptr;
+    const auto *If = dyn_cast<IfStmt>(*It++);
+    const auto *R = dyn_cast<ReturnStmt>(*It);
+    if (!Count || !same(Count->getType(), Context.getSizeType()) || !Cast ||
+        Cast->getCastKind() != CK_IntegralCast ||
+        !same(Cast->getTypeAsWritten(), Context.getSizeType()) ||
+        !reference(Cast->getSubExpr(), F->getParamDecl(2)) || !If ||
+        If->getInit() || If->getConditionVariable() || !R ||
+        !reference(R->getRetValue(), F->getParamDecl(0)))
+      return false;
+    const auto *Predicate = dyn_cast_or_null<CallExpr>(strip(If->getCond()));
+    if (!Predicate || Predicate->getNumArgs() ||
+        !constantEvaluation(Predicate->getDirectCallee()) ||
+        !constexprDependencies(If->getThen()))
+      return false;
+    const auto *Runtime = dyn_cast_or_null<IfStmt>(If->getElse());
+    const auto *Positive =
+        Runtime ? binary(Runtime->getCond(), BO_GT) : nullptr;
+    const auto *CopyBody =
+        Runtime ? dyn_cast<CompoundStmt>(Runtime->getThen()) : nullptr;
+    const auto *Copy = CopyBody && CopyBody->size() == 1
+                           ? dyn_cast<CallExpr>(*CopyBody->body_begin())
+                           : nullptr;
+    if (!Runtime || Runtime->getInit() || Runtime->getConditionVariable() ||
+        Runtime->getElse() || !Positive ||
+        !reference(Positive->getLHS(), Count) ||
+        !integer(Positive->getRHS(), 0) || !Copy || Copy->getNumArgs() != 3 ||
+        !builtin(Copy->getDirectCallee(), "__builtin_memmove") ||
+        !reference(Copy->getArg(0), F->getParamDecl(0)) ||
+        !reference(Copy->getArg(1), F->getParamDecl(1)))
+      return false;
+    const auto *Bytes = binary(Copy->getArg(2), BO_Add);
+    const auto *Product = Bytes ? binary(Bytes->getLHS(), BO_Mul) : nullptr;
+    const auto *Minus = Product ? binary(Product->getLHS(), BO_Sub) : nullptr;
+    const auto *Size = Product ? dyn_cast_or_null<UnaryExprOrTypeTraitExpr>(
+                                     strip(Product->getRHS()))
+                               : nullptr;
+    return Bytes && Product && Minus && reference(Minus->getLHS(), Count) &&
+           integer(Minus->getRHS(), 1) && Size &&
+           Size->getKind() == UETT_SizeOf && Size->isArgumentType() &&
+           same(Size->getArgumentType(), Element) && dataSize(Bytes->getRHS());
+  }
+  bool trivialCopy(const FunctionDecl *F) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/copy_move_common.h";
+    if (!utilitySwapSDKFunction(S, SM, F, "__copy_trivial_impl", Path) ||
+        !templates(F, {Input->getPointeeType(), Element}) ||
+        F->getNumParams() != 3 || !same(F->getParamDecl(0)->getType(), Input) ||
+        !same(F->getParamDecl(1)->getType(), Input) ||
+        !same(F->getParamDecl(2)->getType(), Output) ||
+        !pair(F->getReturnType(), Input, Output))
+      return false;
+    const auto *B = dyn_cast_or_null<CompoundStmt>(F->getBody());
+    if (!B || B->size() != 3)
+      return false;
+    auto It = B->body_begin();
+    const auto *Count = local(*It++, F);
+    const auto *Cast =
+        Count ? dyn_cast<CXXStaticCastExpr>(strip(Count->getInit())) : nullptr;
+    const auto *Difference =
+        Cast ? binary(Cast->getSubExpr(), BO_Sub) : nullptr;
+    const auto *Copy = dyn_cast<CallExpr>(*It++);
+    const auto *R = dyn_cast<ReturnStmt>(*It);
+    if (!Count || !same(Count->getType(), Context.getSizeType().withConst()) ||
+        !Cast || !same(Cast->getTypeAsWritten(), Context.getSizeType()) ||
+        !Difference ||
+        !same(Difference->getType(), Context.getPointerDiffType()) ||
+        !reference(Difference->getLHS(), F->getParamDecl(1)) ||
+        !reference(Difference->getRHS(), F->getParamDecl(0)) || !Copy ||
+        Copy->getNumArgs() != 3 || !memmove(Copy->getDirectCallee()) ||
+        !reference(Copy->getArg(0), F->getParamDecl(2)) ||
+        !reference(Copy->getArg(1), F->getParamDecl(0)) || !R)
+      return false;
+    const auto *Elements =
+        dyn_cast_or_null<CXXFunctionalCastExpr>(strip(Copy->getArg(2)));
+    const auto *Make = makePair(R->getRetValue(), Input, Output);
+    const auto *End = Make ? binary(Make->getArg(1), BO_Add) : nullptr;
+    return Elements && Elements->getCastKind() == CK_IntegralCast &&
+           same(Elements->getType(),
+                Copy->getDirectCallee()->getParamDecl(2)->getType()) &&
+           reference(Elements->getSubExpr(), Count) && Make &&
+           reference(Make->getArg(0), F->getParamDecl(1)) && End &&
+           reference(End->getLHS(), F->getParamDecl(2)) &&
+           reference(End->getRHS(), Count);
+  }
+  bool copyOperator(const CXXMethodDecl *M) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/copy.h";
+    const auto *Primary = M ? M->getPrimaryTemplate() : nullptr;
+    if (!Primary || M->isVariadic() ||
+        M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !origin(M->getDefinition(), Path))
+      return false;
+    for (const auto *D : M->redecls())
+      if (!origin(D, Path))
+        return false;
+    for (const auto *T = Primary; T;
+         T = T->getInstantiatedFromMemberTemplate()) {
+      for (const auto *D : T->redecls())
+        if (!origin(D, Path) || !origin(D->getTemplatedDecl(), Path))
+          return false;
+      for (const auto *D : T->getTemplatedDecl()->redecls())
+        if (!origin(D, Path))
+          return false;
+      if (!T->getInstantiatedFromMemberTemplate())
+        return origin(T->getTemplatedDecl()->getDefinition(), Path);
+    }
+    return false;
+  }
+  bool implementation(const CXXOperatorCallExpr *Call) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/copy.h";
+    const auto *M =
+        Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())
+             : nullptr;
+    if (!M || Call->getOperator() != OO_Call || Call->getNumArgs() != 4 ||
+        M->getOverloadedOperator() != OO_Call || !M->isConst() ||
+        M->isVolatile() || M->isStatic() ||
+        !record(M->getParent(), "__copy_impl", Path) || !copyOperator(M) ||
+        !templates(M, {Input->getPointeeType(), Element}, true) ||
+        !signature(M, Call->getType(), {Input, Input, Output}) ||
+        !pair(M->getReturnType(), Input, Output))
+      return false;
+    const auto *Construct =
+        dyn_cast_or_null<CXXConstructExpr>(strip(Call->getArg(0)));
+    const auto *Constructor = Construct ? Construct->getConstructor() : nullptr;
+    if (!Constructor || Construct->getNumArgs() ||
+        Constructor->getNumParams() || !Constructor->isDefaultConstructor() ||
+        !Constructor->isImplicit() || !Constructor->isTrivial() ||
+        Constructor->getParent() != M->getParent())
+      return false;
+    const auto *C = dyn_cast_or_null<CallExpr>(result(M));
+    if (!C || C->getNumArgs() != 3 || !trivialCopy(C->getDirectCallee()))
+      return false;
+    for (unsigned I = 0; I != 3; ++I)
+      if (!reference(C->getArg(I), M->getParamDecl(I)))
+        return false;
+    return true;
+  }
+  bool unwrapped(const FunctionDecl *F) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/copy_move_common.h";
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, "__copy_move_unwrap_iters", Path) ||
+        !A || A->size() != 5 || A->get(0).getKind() != TemplateArgument::Type ||
+        !record(A->get(0).getAsType()->getAsCXXRecordDecl(), "__copy_impl",
+                "__algorithm/copy.h") ||
+        A->get(4).getKind() != TemplateArgument::Integral ||
+        !A->get(4).getAsIntegral().isZero() ||
+        !signature(F, F->getReturnType(), {Input, Input, Output}) ||
+        !pair(F->getReturnType(), Input, Output))
+      return false;
+    for (unsigned I = 0; I != 3; ++I)
+      if (A->get(I + 1).getKind() != TemplateArgument::Type ||
+          !same(A->get(I + 1).getAsType(), I == 2 ? Output : Input))
+        return false;
+    const auto *B = dyn_cast_or_null<CompoundStmt>(F->getBody());
+    if (!B || B->size() != 3)
+      return false;
+    auto It = B->body_begin();
+    const auto *Range = local(*It++, F);
+    const auto *Result = local(*It++, F);
+    const auto *R = dyn_cast<ReturnStmt>(*It);
+    const auto *Unwrap =
+        Range ? dyn_cast_or_null<CallExpr>(strip(Range->getInit())) : nullptr;
+    auto RangePair =
+        Range ? pair(Range->getType(), Input, Input) : std::nullopt;
+    auto ResultPair =
+        Result ? pair(Result->getType(), Input, Output) : std::nullopt;
+    const auto *Copy =
+        Result ? dyn_cast_or_null<CXXOperatorCallExpr>(strip(Result->getInit()))
+               : nullptr;
+    if (!RangePair || !ResultPair || !Unwrap || Unwrap->getNumArgs() != 2 ||
+        !range(Unwrap->getDirectCallee(), Input, false) ||
+        !reference(Unwrap->getArg(0), F->getParamDecl(0)) ||
+        !moved(Unwrap->getArg(1), F->getParamDecl(1), Input) ||
+        !implementation(Copy) || !R ||
+        !member(adapt(Copy->getArg(1), Input), Range, RangePair->First) ||
+        !member(adapt(Copy->getArg(2), Input), Range, RangePair->Second))
+      return false;
+    const auto *Out = dyn_cast_or_null<CallExpr>(strip(Copy->getArg(3)));
+    const auto *Make = makePair(R->getRetValue(), Input, Output);
+    if (!Out || Out->getNumArgs() != 1 ||
+        !iterator(Out->getDirectCallee(), Output, false) ||
+        !reference(Out->getArg(0), F->getParamDecl(2)) || !Make)
+      return false;
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto Pointer = I ? Output : Input;
+      const auto *Rewrap = dyn_cast_or_null<CallExpr>(strip(Make->getArg(I)));
+      if (!Rewrap || Rewrap->getNumArgs() != 2 ||
+          !(I ? iterator(Rewrap->getDirectCallee(), Pointer, true)
+              : range(Rewrap->getDirectCallee(), Pointer, true)) ||
+          !moved(Rewrap->getArg(0), F->getParamDecl(I ? 2 : 0), Pointer) ||
+          !member(adapt(Rewrap->getArg(1), Pointer), Result,
+                  I ? ResultPair->Second : ResultPair->First))
+        return false;
+    }
+    return true;
+  }
+
+public:
+  UtilityWrapperCopyProof(const State &S, const SourceManager &SM,
+                          const ASTContext &Context, QualType Input,
+                          QualType Output)
+      : S(S), SM(SM), Context(Context), Element(Output->getPointeeType()),
+        Input(Input), Output(Output) {}
+
+  bool prove(const FunctionDecl *F) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/copy.h";
+    if (!utilitySwapSDKFunction(S, SM, F, "copy", Path) ||
+        !templates(F, {Input, Output}) ||
+        !signature(F, Output, {Input, Input, Output}) ||
+        !approvedFunctionalReferenceRecord(S, SM, Element->getAsCXXRecordDecl(),
+                                           Context))
+      return false;
+    const auto *Second = dyn_cast_or_null<MemberExpr>(result(F));
+    const auto *C =
+        Second ? dyn_cast_or_null<CallExpr>(strip(Second->getBase())) : nullptr;
+    auto P = C ? pair(C->getType(), Input, Output) : std::nullopt;
+    const auto *Inner = C ? C->getDirectCallee() : nullptr;
+    if (!P || Second->isArrow() || Second->getMemberDecl() != P->Second || !C ||
+        C->getNumArgs() != 3 ||
+        !utilitySwapSDKFunction(S, SM, Inner, "__copy", Path) ||
+        !templates(Inner, {Input, Input, Output}) ||
+        !signature(Inner, C->getType(), {Input, Input, Output}))
+      return false;
+    const auto *Unwrap = dyn_cast_or_null<CallExpr>(result(Inner));
+    if (!Unwrap || Unwrap->getNumArgs() != 3 ||
+        !unwrapped(Unwrap->getDirectCallee()))
+      return false;
+    for (unsigned I = 0; I != 3; ++I) {
+      const auto Type = I == 2 ? Output : Input;
+      if (!reference(C->getArg(I), F->getParamDecl(I)) ||
+          !moved(Unwrap->getArg(I), Inner->getParamDecl(I), Type))
+        return false;
+    }
+    return true;
+  }
+};
+
 static bool utilitySwapArrayData(const State &S, const SourceManager &SM,
                                  const Expr *Expression,
                                  const UtilityArrayRecord &Array,
@@ -30050,7 +30710,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
                                     (*CallbackOutput)->getPointeeType());
-    if (!Scalar && !Record && !Callback)
+    const auto Input = Function->getParamDecl(0)->getType();
+    const auto Output = Function->getParamDecl(2)->getType();
+    const bool Wrapper =
+        Name == "copy" && Origin->Path == "__algorithm/copy.h" &&
+        Input->isPointerType() && Output->isPointerType() &&
+        !Output->getPointeeType().hasQualifiers() &&
+        !Input->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(Input->getPointeeType(),
+                                       Output->getPointeeType()) &&
+        Output->getPointeeType()->isRecordType() &&
+        Same(Call->getArg(0)->getType(), Input) &&
+        Same(Call->getArg(1)->getType(), Input) &&
+        Same(Call->getArg(2)->getType(), Output) &&
+        UtilityWrapperCopyProof(S, SM, Context, Input, Output).prove(Function);
+    if (!Scalar && !Record && !Callback && !Wrapper)
       return std::nullopt;
     if (Origin->Path == "__algorithm/copy.h" && Name == "copy")
       return UtilityOperation::AlgorithmCopy;

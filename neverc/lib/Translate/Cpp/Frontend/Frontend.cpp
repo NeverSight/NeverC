@@ -14581,6 +14581,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/fill_n.h";
       else if (Name->getName() == "fill")
         ExpectedPath = "__algorithm/fill.h";
+      else if (Name->getName() == "copy")
+        ExpectedPath = "__algorithm/copy.h";
       else if (Name->getName() == "invoke")
         ExpectedPath = "__functional/invoke.h";
       else if (Name->getName() == "make_pair")
