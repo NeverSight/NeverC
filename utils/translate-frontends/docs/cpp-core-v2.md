@@ -352,6 +352,18 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::replace`, `std::remove_copy` and `std::replace_copy` also borrow
+exact checked wrapper values materialized for the enclosing full expression.
+Supported `ref`/`cref` factories and wrapper construction retain their existing
+proofs. The temporary must have full-expression storage, no extending declaration,
+a prvalue initializer and the exact carrier type. It retains its own binding
+until the call completes; copying an output wrapper into a temporary fixes that
+binding even if later output stores rebind the original. Lvalue wrappers keep
+live aliases. Each original argument, construction and temporary cleanup retains
+source behavior, and the selected SDK loop, conversion and assignment proofs
+remain required. Unmaterialized xvalues, source SDK replacements, indirect/casted
+callees and unsupported original dependencies remain rejected.
+
 Direct `std::replace_copy` admits raw pointer ranges of the same exact checked
 SDK `std::reference_wrapper<T>` carrier, with optional const input, mutable
 output and same-type old/new lvalue wrappers. Supported built-in scalar equality

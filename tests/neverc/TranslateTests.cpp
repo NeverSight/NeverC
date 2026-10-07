@@ -187782,3 +187782,707 @@ void selected(P a,P b){using std::replace_copy;replace_copy(a,a+1,b,*a,*b);}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+struct R{int n;bool operator==(const R&x)const{return n==x.n;}};int main(){R x[]={{3},{9},{3}},old{3},next{4};std::replace(x,x+3,old,next);return x[0].n!=4||x[1].n!=9||x[2].n!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueRemoveCopyCarrier) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-carrier.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-carrier.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3;W x[]={a,b,c},y[]={a,a,a};auto*r=std::remove_copy(x,x+3,y,W(a));return r!=y+1||&y[0].get()!=&b||&y[1].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-remove-copy-carrier" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTemporaryFilterValueRemoveCopyFactoryCleanup) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-factory-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-factory-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int effects=0,cleanups=0;struct R{int*p;R(int&q):p(&q){++effects;}~R(){++cleanups;}int&get(){return *p;}};int main(){int a=3,b=9,c=3;W x[]={a,b,c},y[]={a,a,a};auto*r=std::remove_copy(x,x+3,y,std::ref(R(a).get()));return effects!=1||cleanups!=1||r!=y+1||&y[0].get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-remove-copy-factory-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueRemoveCopyFactory) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-factory.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-factory.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3;W x[]={a,b,c},y[]={a,a,a};auto*r=std::remove_copy(x,x+3,y,std::ref(a));return r!=y+1||&y[0].get()!=&b||&y[1].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-remove-copy-factory" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTemporaryFilterValueRemoveCopySnapshotOutput) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-snapshot-output.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-remove-copy-snapshot-output.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3;W x[]={a,b,c},y[]={a,a,a};auto*r=std::remove_copy(x,x+3,y,W(y[0]));return r!=y+1||&y[0].get()!=&b||&y[1].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-remove-copy-snapshot-output" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceCarriers) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-carriers.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-carriers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c};std::replace(x,x+3,W(a),W(d));return &x[0].get()!=&d||&x[1].get()!=&b||&x[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-replace-carriers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceCopyCarriers) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-copy-carriers.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-copy-carriers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::replace_copy(x,x+3,y,W(a),W(d));return r!=y+3||&y[0].get()!=&d||&y[1].get()!=&b||&y[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-replace-copy-carriers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceCopyFactories) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-copy-factories.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-copy-factories.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::replace_copy(x,x+3,y,std::ref(a),std::ref(d));return r!=y+3||&y[0].get()!=&d||&y[1].get()!=&b||&y[2].get()!=&d||&x[0].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-replace-copy-factories" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTemporaryFilterValueReplaceCopyFactoryCleanup) {
+  const auto Source = tmpFile(
+      "wrapper-temporary-filter-value-replace-copy-factory-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-copy-factory-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int effects=0,cleanups=0;struct R{int*p;R(int&q):p(&q){++effects;}~R(){++cleanups;}int&get(){return *p;}};int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::replace_copy(x,x+3,y,std::ref(R(a).get()),std::ref(R(d).get()));return effects!=2||cleanups!=2||r!=y+3||&y[0].get()!=&d||&y[1].get()!=&b||&y[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-replace-copy-factory-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTemporaryFilterValueReplaceCopySnapshotNewOutput) {
+  const auto Source = tmpFile(
+      "wrapper-temporary-filter-value-replace-copy-snapshot-new-output.cpp");
+  const auto Output = tmpFile(
+      "wrapper-temporary-filter-value-replace-copy-snapshot-new-output.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3,d=4;W x[]={b,a,c},y[]={d,a,a};auto*r=std::replace_copy(x,x+3,y,W(a),W(y[0]));return r!=y+3||&y[0].get()!=&b||&y[1].get()!=&d||&y[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-replace-copy-snapshot-new-output" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTemporaryFilterValueReplaceCopySnapshotOldOutput) {
+  const auto Source = tmpFile(
+      "wrapper-temporary-filter-value-replace-copy-snapshot-old-output.cpp");
+  const auto Output = tmpFile(
+      "wrapper-temporary-filter-value-replace-copy-snapshot-old-output.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=3,d=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::replace_copy(x,x+3,y,W(y[0]),W(d));return r!=y+3||&y[0].get()!=&d||&y[1].get()!=&d||&y[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-replace-copy-snapshot-old-output" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceFactories) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-factories.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-factories.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c};std::replace(x,x+3,std::ref(a),std::ref(d));return &x[0].get()!=&d||&x[1].get()!=&b||&x[2].get()!=&d||a!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-replace-factories" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceFactoryCleanup) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-factory-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-factory-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int effects=0,cleanups=0;struct R{int*p;R(int&q):p(&q){++effects;}~R(){++cleanups;}int&get(){return *p;}};int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c};std::replace(x,x+3,std::ref(R(a).get()),std::ref(R(d).get()));return effects!=2||cleanups!=2||&x[0].get()!=&d||&x[1].get()!=&b||&x[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-replace-factory-cleanup" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceFactoryEffects) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-factory-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-factory-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int effects=0;int&get(int&v){++effects;return v;}int main(){int a=3,b=9,c=3,d=4;W x[]={a,b,c};std::replace(x,x+3,std::ref(get(a)),std::ref(get(d)));return effects!=2||&x[0].get()!=&d||&x[1].get()!=&b||&x[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-replace-factory-effects" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceMixedNewLvalue) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-mixed-new-lvalue.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-mixed-new-lvalue.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=3;W x[]={a,b,c};std::replace(x,x+3,W(a),x[1]);return &x[0].get()!=&b||&x[1].get()!=&b||&x[2].get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-replace-mixed-new-lvalue" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueReplaceMixedOldLvalue) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-replace-mixed-old-lvalue.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-replace-mixed-old-lvalue.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=3,d=4;W x[]={a,b,c};std::replace(x,x+3,x[0],W(d));return &x[0].get()!=&d||&x[1].get()!=&b||&x[2].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-replace-mixed-old-lvalue" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int x[]={3,9,3};std::replace(x,x+3,3,4);return x[0]!=4||x[1]!=9||x[2]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-temporary-filter-value-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperTemporaryFilterValueRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,const W&,const W&);P selected(P a,P b){return static_cast<F>(&std::replace_copy<P,P,W>)(a,a+1,b,*a,*b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;void selected(W*a,W&old,W&next){std::replace_copy(a,a+1,&next,old,next);}
+)cpp"},
+      {"heterogeneous-values", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;using P=W*;void selected(P a,P b,int old,int next){std::replace_copy(a,a+1,b,old,next);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,const W&,const W&);P selected(P a,P b){F f=&std::replace_copy<P,P,W>;return f(a,a+1,b,*a,*b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator==(const W&a,const W&b){return a.get().get()==b.get().get();}}}
+void selected(W*a,W&old,W&next){std::replace_copy(a,a+1,&next,old,next);}
+)cpp"},
+      {"remove-copy-xvalue", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+void selected(W*a,W*b,W&value){std::remove_copy(a,a+1,b,std::move(value));}
+)cpp"},
+      {"replace-copy-xvalue", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+void selected(W*a,W*b,W&old,W&next){std::replace_copy(a,a+1,b,std::move(old),std::move(next));}
+)cpp"},
+      {"replace-xvalue", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+void selected(W*a,W&old,W&next){std::replace(a,a+1,std::move(old),std::move(next));}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;void selected(W&a,W&b){std::replace_copy(&a,&a+1,&b,a,b);}int main(){return 0;}
+
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::replace_copy(&source(a),&a+1,&b,a,b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w){auto hidden=sizeof(long double);return w;}void selected(W&a,W&b){std::replace_copy(&source(a),&a+1,&b,a,b);}int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::replace_copy(&source(a),&a+1,&b,a,b);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;void selected(W*a,W&old,W&next){std::replace_copy(a,a+1,&next,old,next);}
+)cpp"},
+      {"source-ref-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>reference_wrapper<T>ref(T&)noexcept;}}
+void selected(W*a,int&old,int&next){std::replace(a,a+1,std::ref(old),std::ref(next));}
+)cpp"},
+      {"source-ref-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>reference_wrapper<int>ref<int>(int&)noexcept;}}
+void selected(W*a,int&old,int&next){std::replace(a,a+1,std::ref(old),std::ref(next));}
+)cpp"},
+      {"source-ref-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>reference_wrapper<int>ref<int>(int&x)noexcept{return W(x);}}}
+void selected(W*a,int&old,int&next){std::replace(a,a+1,std::ref(old),std::ref(next));}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+void selected(P a,W&b){std::replace_copy(a,a+1,&b,*a,b);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+void selected(P a,W&b){std::replace_copy(a,a+1,&b,*a,b);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;void selected(W*a,W&old,W&next){std::replace_copy(a,a+1,&next,old,next);}
+)cpp"},
+      {"source-replace-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B,class T>B replace_copy(A,A,B,const T&,const T&);}}
+void selected(P a,P b){std::replace_copy(a,a+1,b,*a,*b);}
+)cpp"},
+      {"source-replace-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P replace_copy<P,P,W>(P,P,P,const W&,const W&);}}
+void selected(P a,P b){std::replace_copy(a,a+1,b,*a,*b);}
+)cpp"},
+      {"source-replace-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P replace_copy<P,P,W>(P,P,P out,const W&,const W&){return out;}}}
+void selected(P a,P b){std::replace_copy(a,a+1,b,*a,*b);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::replace_copy(&a,&a+1,&b,a,b);}int main(){return 0;}
+
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+int main(){using std::replace_copy;auto f=&replace_copy<P,P,W>;return f==nullptr;}
+)cpp"},
+      {"using-source-replace-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B,class T>B replace_copy(A,A,B,const T&,const T&);}}
+void selected(P a,P b){using std::replace_copy;replace_copy(a,a+1,b,*a,*b);}
+)cpp"},
+      {"using-source-replace-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P replace_copy<P,P,W>(P,P,P out,const W&,const W&){return out;}}}
+void selected(P a,P b){using std::replace_copy;replace_copy(a,a+1,b,*a,*b);}
+)cpp"},
+      {"source-cref-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+namespace std{inline namespace __1{template<>reference_wrapper<const int>cref<int>(const int&x)noexcept{return W(x);}}}
+void selected(W*a,const int&old,const int&next){std::replace(a,a+1,std::cref(old),std::cref(next));}
+)cpp"},
+      {"source-cref-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+namespace std{inline namespace __1{template<>reference_wrapper<const int>cref<int>(const int&)noexcept;}}
+void selected(W*a,const int&old,const int&next){std::replace(a,a+1,std::cref(old),std::cref(next));}
+)cpp"},
+      {"source-cref-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+namespace std{inline namespace __1{template<class T>reference_wrapper<const T>cref(const T&)noexcept;}}
+void selected(W*a,const int&old,const int&next){std::replace(a,a+1,std::cref(old),std::cref(next));}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-temporary-filter-value-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-temporary-filter-value-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperTemporaryFilterValueConstFactories) {
+  const auto Source =
+      tmpFile("wrapper-temporary-filter-value-const-factories.cpp");
+  const auto Output =
+      tmpFile("wrapper-temporary-filter-value-const-factories.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+int main(){const int a=3,b=9,c=3,d=4;W x[]={a,b,c};std::replace(x,x+3,std::cref(a),std::cref(d));if(&x[0].get()!=&d||&x[1].get()!=&b||&x[2].get()!=&d)return 1;W in[]={a,b,c},out[]={a,a,a};auto*r=std::remove_copy(in,in+3,out,std::cref(a));if(r!=out+1||&out[0].get()!=&b||&out[1].get()!=&a)return 2;W y[]={a,a,a};auto*q=std::replace_copy(in,in+3,y,std::cref(a),std::cref(d));return q!=y+3||&y[0].get()!=&d||&y[1].get()!=&b||&y[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-temporary-filter-value-const-factories" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
