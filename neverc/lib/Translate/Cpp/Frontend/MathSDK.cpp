@@ -16048,11 +16048,9 @@ static bool utilityArrayPointerQualification(QualType Destination,
 
 // The pinned exchange body selects move and forward independently; prove both
 // instantiated calls before replacing them with a direct pointer-value write.
-static bool approvedUtilityPointerExchange(const State &S,
-                                           const SourceManager &SM,
-                                           const FunctionDecl *Function,
-                                           QualType Type,
-                                           const ASTContext &Context) {
+static bool approvedUtilityPointerExchange(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function,
+    QualType Type, const ASTContext &Context, bool RequireBody = true) {
   if (!Function || Type.isNull() || !Type->isPointerType() ||
       !utilitySwapSDKFunction(S, SM, Function, "exchange",
                               "__utility/exchange.h") ||
@@ -16060,9 +16058,8 @@ static bool approvedUtilityPointerExchange(const State &S,
       !Context.hasSameType(Function->getReturnType(), Type))
     return false;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
-  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
   const auto Reference = Context.getLValueReferenceType(Type);
-  if (!Arguments || Arguments->size() != 2 || !Body || Body->size() != 3 ||
+  if (!Arguments || Arguments->size() != 2 ||
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       Arguments->get(1).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
@@ -16127,6 +16124,13 @@ static bool approvedUtilityPointerExchange(const State &S,
           : Context.getRValueReferenceType(ReplacementType);
   if (!Context.hasSameType(Function->getParamDecl(1)->getType(),
                            ReplacementReference))
+    return false;
+  // Pure signature queries consume neither the SDK body nor its selected
+  // move/forward calls. Runtime lowering retains the complete body proof.
+  if (!RequireBody)
+    return true;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 3)
     return false;
   auto Statement = Body->body_begin();
   const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
@@ -16207,6 +16211,30 @@ static bool approvedUtilityPointerExchange(const State &S,
                                    ReplacementType, Replacement, true,
                                    Context) &&
          Returned && Returned->getDecl() == Old;
+}
+
+bool approvedUtilityPointerExchangeSignatureQuery(const State &S,
+                                                  const SourceManager &SM,
+                                                  const CallExpr *Call,
+                                                  const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Function || !Function->isInlined() ||
+      Function->isInvalidDecl() || Function->isDeleted() ||
+      Call->getNumArgs() != 2 || !Call->isPRValue() ||
+      Function->getNumParams() != 2 ||
+      Function->getParamDecl(0)->hasDefaultArg() ||
+      Function->getParamDecl(1)->hasDefaultArg() ||
+      !approvedUtilityPointerExchange(S, SM, Function, Call->getType(), Context,
+                                      /*RequireBody=*/false))
+    return false;
+  for (unsigned Index = 0; Index != 2; ++Index) {
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Parameter->isReferenceType() ||
+        !Context.hasSameType(Call->getArg(Index)->getType(),
+                             Parameter->getPointeeType()))
+      return false;
+  }
+  return Call->getArg(0)->isLValue();
 }
 
 static bool utilitySwapPointerTemplate(const FunctionDecl *Function,

@@ -4878,15 +4878,10 @@ static bool utilityValueAdapterSource(
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
-static bool utilityArrayExchangeSource(Adapter &A, const CallExpr *Call) {
+static bool utilityPointerExchangeExceptionSource(Adapter &A,
+                                                  const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-  if (!Function || !Function->getIdentifier() ||
-      Function->getName() != "exchange" || Call->getNumArgs() != 2 ||
-      !Call->getType()->isPointerType() ||
-      !A.Context.getAsConstantArrayType(Call->getArg(1)->getType()) ||
-      approvedUtilityOperation(A.S, A.Sources, Call, A.Context) !=
-          UtilityOperation::Exchange ||
-      !utilitySDKFunctionSource(A, Function, "__utility/exchange.h"))
+  if (!Function || Call->getNumArgs() != 2 || Function->getNumParams() != 2)
     return false;
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   const auto *Exception = Prototype && Prototype->getNoexceptExpr()
@@ -4897,8 +4892,8 @@ static bool utilityArrayExchangeSource(Adapter &A, const CallExpr *Call) {
       Prototype->getExceptionSpecType() != EST_NoexceptTrue ||
       operationCalleePrototype(Call) != Prototype)
     return false;
-  // The runtime descriptor proves pointer move/assignment and the selected
-  // array decay. Its exception source must still be the two exact pinned
+  // The checked signature or runtime descriptor proves pointer move/assignment
+  // and admitted array decay. Its exception source must be the two exact pinned
   // traits, not a user replacement that merely returns the same boolean.
   auto Trait = [&](const Expr *Expression, llvm::StringRef Name,
                    llvm::StringRef Path, llvm::ArrayRef<QualType> Types) {
@@ -4946,6 +4941,18 @@ static bool utilityArrayExchangeSource(Adapter &A, const CallExpr *Call) {
                "__type_traits/is_nothrow_assignable.h",
                {Function->getParamDecl(0)->getType(),
                 Arguments->get(1).getAsType()});
+}
+
+static bool utilityArrayExchangeSource(Adapter &A, const CallExpr *Call) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  return Function && Function->getIdentifier() &&
+         Function->getName() == "exchange" && Call->getNumArgs() == 2 &&
+         Call->getType()->isPointerType() &&
+         A.Context.getAsConstantArrayType(Call->getArg(1)->getType()) &&
+         approvedUtilityOperation(A.S, A.Sources, Call, A.Context) ==
+             UtilityOperation::Exchange &&
+         utilitySDKFunctionSource(A, Function, "__utility/exchange.h") &&
+         utilityPointerExchangeExceptionSource(A, Call);
 }
 
 static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
@@ -7566,6 +7573,27 @@ static QualType utilityLaunderQuerySource(Adapter &A, const CallExpr *Call) {
   return A.Context.getCanonicalType(Result);
 }
 
+static QualType utilityPointerExchangeQuerySource(Adapter &A,
+                                                  const CallExpr *Call) {
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!A.S.coreV2() || !Reference || !Function ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !approvedUtilityPointerExchangeSignatureQuery(A.S, A.Sources, Call,
+                                                    A.Context) ||
+      !utilitySDKFunctionSource(A, Function, "__utility/exchange.h", false) ||
+      !utilityPointerExchangeExceptionSource(A, Call))
+    return {};
+  const auto Result = Function->getReturnType();
+  if (!utilityMemoryElementQueryLayout(A, Result->getPointeeType(),
+                                       Call->getExprLoc()) ||
+      A.type(Result, Call->getExprLoc(), false).empty())
+    return {};
+  // The exact pointer/array signature and resolved SDK traits prove a query.
+  // No SDK move, forward, pointer read, assignment or owning lifetime executes.
+  return A.Context.getCanonicalType(Result);
+}
+
 static bool utilityWrapperReferenceCastQueryLayout(Adapter &A,
                                                    const CallExpr *Call) {
   const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
@@ -7619,6 +7647,7 @@ static void prepareBorrowedQueryLayouts(Adapter &A) {
       (void)utilityPointerTraitsQuerySource(A, Call);
       (void)utilityAddressofQuerySource(A, Call);
       (void)utilityLaunderQuerySource(A, Call);
+      (void)utilityPointerExchangeQuerySource(A, Call);
       (void)utilityWrapperReferenceCastQueryLayout(A, Call);
       return true;
     }
@@ -15065,6 +15094,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityLaunderQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityPointerExchangeQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);

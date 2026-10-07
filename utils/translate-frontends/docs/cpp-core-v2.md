@@ -303,13 +303,27 @@ and [array-to-pointer conversion](https://timsong-cpp.github.io/cppwp/n4659/conv
 Both argument expressions are evaluated once before reading the old pointer.
 The array is bound and decayed without copying, moving or reading its elements;
 the old pointer is returned and the destination points at the first element.
-Array storage and temporary cleanup retain their original lifetimes. Result,
-size and exception queries use an already completed selected body without
-evaluating either operand. They authenticate the exact resolved pointer-move
-and array-assignment trait sources in its exception specification; substituted
-traits do not gain an exemption for returning the same boolean. Unknown-bound
-arrays, other pointee conversions (including derived-to-base pointers) and
-uncompleted query-only exchange bodies retain their separate requirements.
+Array storage and temporary cleanup retain their original lifetimes. Runtime
+exchange continues to require the completed selected body and its exact
+move/forward and conversion evidence.
+
+Pure callback-pointer and fixed-array result and exception queries can instead
+use the exact SDK pointer/reference signature and resolved exception traits
+without requiring an instantiated exchange body. This proves the same checked
+pointer qualification, function-reference decay, null replacement, noexcept
+removal and admitted array conversion types. Function and primary-template
+chains, actual operand types and the two pinned move/assignment trait chains
+remain authenticated; substituted or source-redeclared traits cannot gain an
+exemption by yielding the same boolean.
+
+Neither operand executes, and its original exception state remains part of a
+`noexcept` result. Original aliases, template arguments, selected defaults,
+function signatures, referent layouts and source bodies retain their separate
+checks. Only the exact direct unevaluated call receives this signature proof;
+casted callees and independent SDK function addresses remain rejected. No SDK
+move, forward, pointer read, write, object construction or lifetime is selected.
+Unknown-bound arrays and other pointee conversions, including derived-to-base
+pointers, retain their separate requirements.
 Volatile or unsupported element types, indirect
 callees and hidden unsupported source remain rejected.
 

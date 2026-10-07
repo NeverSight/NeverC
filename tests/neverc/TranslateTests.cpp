@@ -27249,12 +27249,10 @@ extern int values[];int*f(int*&p){return std::exchange<int*,int(&&)[]>(p,std::mo
       {"unsupported-callback", R"cpp(#include <utility>
 using F=long double(*)();F f(F&p,F&r){return std::exchange<F,F&&>(p,std::move(r));}
 )cpp", "TR0201"},
-      {"uninstantiated-query", R"cpp(#include <utility>
-using Row=int[2];int f(int*&p,Row&r){static_assert(__is_same(decltype(std::exchange<int*,Row&&>(p,std::move(r))),int*));return 0;}
-)cpp", "TR0201"},
-      {"rvalue-function-reference", R"cpp(#include <utility>
-using F=int();using P=int(*)();P f(P&p,F&r){return std::exchange<P,F&&>(p,r);}
-)cpp", "TR0201"},
+      {"query-selected-default-source", R"cpp(#include <utility>
+using Row=int[2];int*& selected(int*& p,int n=sizeof(long double)){return p;}int f(int*&p,Row&r){static_assert(__is_same(decltype(std::exchange<int*,Row&&>(selected(p),std::move(r))),int*));return 0;})cpp", "TR0201"},
+      {"rvalue-function-original-exception", R"cpp(#include <utility>
+using F=int()noexcept(sizeof(long double)>0);using P=int(*)()noexcept;P f(P&p,F&r){return std::exchange<P,F&&>(p,r);})cpp", "TR0201"},
       {"volatile-callback", R"cpp(#include <utility>
 using F=int(*)();F f(F&p,volatile F&r){return std::exchange<F,volatile F&&>(p,std::move(r));}
 )cpp", "TR0201"},
@@ -45491,9 +45489,8 @@ extern int*values[];using View=const int*const*;View f(View&p){return std::excha
       {"base-pointer-conversion", R"cpp(#include <utility>
 struct Base{};struct Derived:Base{};Base*f(Base*&p,Derived(&r)[2]){return std::exchange(p,r);}
 )cpp", "TR0201"},
-      {"uninstantiated-result-query", R"cpp(#include <utility>
-using Row=int*[2];using View=const int*const*;int f(View&p,Row&r){static_assert(__is_same(decltype(std::exchange(p,r)),View));return 0;}
-)cpp", "TR0201"},
+      {"query-selected-default-source", R"cpp(#include <utility>
+using Row=int*[2];using View=const int*const*;View& selected(View& p,int n=sizeof(long double)){return p;}int f(View&p,Row&r){static_assert(__is_same(decltype(std::exchange(selected(p),r)),View));return 0;})cpp", "TR0201"},
       {"missing-intermediate-const", R"cpp(#include <utility>
 using Row=int*[2];using View=const int**;View f(View&p,Row&r){return std::exchange(p,r);}
 )cpp", "TR0202"},
@@ -45700,9 +45697,8 @@ extern int values[];void*f(void*&p){return std::exchange(p,values);}
       {"base-pointer-conversion", R"cpp(#include <utility>
 struct Base{};struct Derived:Base{};Base*f(Base*&p,Derived(&r)[2]){return std::exchange(p,r);}
 )cpp", "TR0201"},
-      {"uninstantiated-result-query", R"cpp(#include <utility>
-int f(void*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(p,r)),void*));return 0;}
-)cpp", "TR0201"},
+      {"query-selected-default-source", R"cpp(#include <utility>
+void*& selected(void*& p,int n=sizeof(long double)){return p;}int f(void*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(selected(p),r)),void*));return 0;})cpp", "TR0201"},
       {"drop-const", R"cpp(#include <utility>
 void*f(void*&p,const int(&r)[2]){return std::exchange(p,r);}
 )cpp", "TR0202"},
@@ -45883,9 +45879,8 @@ extern int values[];int*f(int*&p){return std::exchange(p,values);}
       {"base-pointer-conversion", R"cpp(#include <utility>
 struct Base{};struct Derived:Base{};Base*f(Base*&p,Derived(&r)[2]){return std::exchange(p,r);}
 )cpp", "TR0201"},
-      {"uninstantiated-result-query", R"cpp(#include <utility>
-int f(int*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(p,r)),int*));return 0;}
-)cpp", "TR0201"},
+      {"query-selected-default-source", R"cpp(#include <utility>
+int*& selected(int*& p,int n=sizeof(long double)){return p;}int f(int*&p,int(&r)[2]){static_assert(__is_same(decltype(std::exchange(selected(p),r)),int*));return 0;})cpp", "TR0201"},
       {"drop-const", R"cpp(#include <utility>
 int*f(int*&p,const int(&r)[2]){return std::exchange(p,r);}
 )cpp", "TR0202"},
@@ -174807,5 +174802,534 @@ using P=decltype(std::launder(std::declval<E*>()));int main(){return 0;}
                 Result.err.find("TR0203") != std::string::npos)
         << Result.out << Result.err;
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryCallbackConstPointer) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-callback-const-pointer.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-callback-const-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=const P&;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "exchange-pointer-signature-callback-const-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangePointerSignatureQueryCallbackFunctionReference) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-callback-function-reference.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-callback-function-reference.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=int(&)(int)noexcept;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-callback-function-reference" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangePointerSignatureQueryCallbackLvalueReplacement) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-callback-lvalue-replacement.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-callback-lvalue-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P&;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-callback-lvalue-replacement" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangePointerSignatureQueryCallbackNoexceptRemoval) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-callback-noexcept-removal.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-callback-noexcept-removal.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int);using V=int(*)(int)noexcept;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "exchange-pointer-signature-callback-noexcept-removal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryCallbackNullptr) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-callback-nullptr.cpp");
+  const auto Output = tmpFile("exchange-pointer-signature-callback-nullptr.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=decltype(nullptr);
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-callback-nullptr" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryCallbackPointer) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-callback-pointer.cpp");
+  const auto Output = tmpFile("exchange-pointer-signature-callback-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-callback-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryConstObjectArray) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-const-object-array.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-const-object-array.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=const int*;using V=const int(&)[3];
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-const-object-array" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryObjectArrayVoid) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-object-array-void.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-object-array-void.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=void*;using V=int(&)[3];
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-object-array-void" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryObjectArray) {
+  const auto Source = tmpFile("exchange-pointer-signature-object-array.cpp");
+  const auto Output = tmpFile("exchange-pointer-signature-object-array.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int*;using V=int(&)[3];
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-object-array" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("exchange-pointer-signature-query-effects.cpp");
+  const auto Output = tmpFile("exchange-pointer-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;P current=nullptr;int effects=0;P&destination()noexcept{++effects;return current;}P replacement()noexcept{++effects;return nullptr;}using Result=decltype(std::exchange(destination(),replacement()));static_assert(std::is_same<Result,P>::value,"result");static_assert(noexcept(std::exchange(destination(),replacement())),"nothrow");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;int inspect(P&destination,P replacement){using Result=decltype(std::exchange(destination,replacement));static_assert(std::is_same<Result,P>::value,"result");return noexcept(std::exchange(destination,replacement))?0:1;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "exchange-pointer-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangePointerSignatureQueryQueryThrowingOperands) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-query-throwing-operands.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-query-throwing-operands.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;P current=nullptr;int effects=0;P&destination(){++effects;return current;}P replacement(){++effects;return nullptr;}using Result=decltype(std::exchange(destination(),replacement()));static_assert(std::is_same<Result,P>::value,"result");static_assert(!noexcept(std::exchange(destination(),replacement())),"operand exception");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "exchange-pointer-signature-query-throwing-operands" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQueryScalarControl) {
+  const auto Source = tmpFile("exchange-pointer-signature-scalar-control.cpp");
+  const auto Output = tmpFile("exchange-pointer-signature-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int;using V=int;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-signature-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExchangePointerSignatureQuerySourceRecordArray) {
+  const auto Source =
+      tmpFile("exchange-pointer-signature-source-record-array.cpp");
+  const auto Output =
+      tmpFile("exchange-pointer-signature-source-record-array.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+struct R{int value;R()=delete;~R()=delete;};using P=R*;using V=R(&)[2];static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "exchange-pointer-signature-source-record-array" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangePointerSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+using F=P(P&,P&&)noexcept;using Result=decltype(static_cast<F*>(&std::exchange<P,P>)(std::declval<P&>(),std::declval<P>()));int main(){return 0;}
+)cpp"},
+      {"extended-array-element", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=long double*;using V=long double(&)[2];
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"extended-callback-signature", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(long double)noexcept;using V=P;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+using F=P(P&,P&&)noexcept;F*address=&std::exchange<P,P>;int main(){return address==nullptr;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;template<int N>using Alias=P;using V=Alias<sizeof(long double)>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-array-specialization", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int*;using V=int(&)[3];namespace std{inline namespace __1{template<>P exchange<P,V>(P&,V)noexcept{return nullptr;}}}
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-assignment-trait-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+namespace std{inline namespace __1{template<class T,class U>struct is_nothrow_assignable;}}
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-callback-specialization", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+namespace std{inline namespace __1{template<>P exchange<P,P>(P&,P&&)noexcept{return nullptr;}}}
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept(sizeof(long double)>0);using V=P;
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-move-trait-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+P current=nullptr;P&destination()noexcept{(void)sizeof(long double);return current;}using Result=decltype(std::exchange(destination(),std::declval<P>()));int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+P current=nullptr;P&destination(int n=sizeof(long double))noexcept{return current;}using Result=decltype(std::exchange(destination(),std::declval<P>()));int main(){return 0;}
+)cpp"},
+      {"source-primary-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;using V=P;
+namespace std{inline namespace __1{template<class T,class U>T exchange(T&,U&&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_assignable<T&,U>::value);}}
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <utility>
+#include <type_traits>
+struct R{long double value;};using P=R*;using V=R(&)[2];
+static_assert(std::is_same<decltype(std::exchange(std::declval<P&>(),std::declval<V>())),P>::value,"result");static_assert(noexcept(std::exchange(std::declval<P&>(),std::declval<V>())),"nothrow");int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("exchange-pointer-signature-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("exchange-pointer-signature-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangePointerTypeOnlyQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile(
+      "exchange-pointer-type-only-queries-run-at-both-optimizations.cpp");
+  const auto Output = tmpFile(
+      "exchange-pointer-type-only-queries-run-at-both-optimizations.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+using Callback=int(*)(int)noexcept;using Row=int[2];using Deep=const int*const*;
+void inspect(Callback&callback,Callback replacement,int*&pointer,Row&row,void*&erased,Deep&deep,int*(&pointers)[2]){
+static_assert(__is_same(decltype(std::exchange(callback,replacement)),Callback));
+static_assert(sizeof(std::exchange(callback,replacement))==sizeof(Callback));
+static_assert(__is_same(decltype(std::exchange(pointer,row)),int*));
+static_assert(__is_same(decltype(std::exchange<int*,Row&&>(pointer,std::move(row))),int*));
+static_assert(__is_same(decltype(std::exchange(erased,row)),void*));
+static_assert(__is_same(decltype(std::exchange(deep,pointers)),Deep));
+}
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("exchange-pointer-type-only-queries-run-at-both-optimizations" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ExchangeFunctionRvalueReferenceRunsAtBothOptimizations) {
+  const auto Source = tmpFile(
+      "exchange-function-rvalue-reference-runs-at-both-optimizations.cpp");
+  const auto Output = tmpFile(
+      "exchange-function-rvalue-reference-runs-at-both-optimizations.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+using F=int();using P=int(*)();P f(P&p,F&r){return std::exchange<P,F&&>(p,r);}
+int first(){return 3;}int second(){return 9;}int main(){P value=first;auto old=f(value,second);return old()!=3||value()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "exchange-function-rvalue-reference-runs-at-both-optimizations" +
+        Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }

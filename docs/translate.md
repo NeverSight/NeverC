@@ -202,6 +202,8 @@ user ADL swaps and source operation specializations remain rejected.
 Comparisons with wrapper-valued leaves remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
+Pure callback-pointer and fixed-array `std::exchange` queries can now use exact pointer/reference signatures and resolved pinned move/assignment traits without instantiating an SDK body. Pointer qualification, `noexcept` removal, function-reference decay, null replacements and admitted array conversions retain their checked identities. Operands remain unevaluated with their original exception state and source dependencies; evaluated exchange retains its selected-body proof. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
+
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including
 construction, assignment, factories, swaps, comparisons and `get`. `std::tie`
 and `std::forward_as_tuple` create authenticated reference tuples whose `get`

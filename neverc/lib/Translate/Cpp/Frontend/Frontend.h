@@ -593,6 +593,9 @@ bool approvedUtilityMakeUniqueSignatureQuery(const State &S,
                                              const clang::SourceManager &SM,
                                              const clang::CallExpr *Call,
                                              const clang::ASTContext &Context);
+bool approvedUtilityPointerExchangeSignatureQuery(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 enum class UtilityUniquePtrConstruction {
   Default,
   Null,
