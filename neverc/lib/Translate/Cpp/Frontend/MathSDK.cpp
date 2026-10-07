@@ -17301,12 +17301,12 @@ class UtilityWrapperTransferProof {
 
   llvm::StringRef path() const {
     if (Moving)
-      return "__algorithm/move.h";
+      return Backward ? "__algorithm/move_backward.h" : "__algorithm/move.h";
     return Backward ? "__algorithm/copy_backward.h" : "__algorithm/copy.h";
   }
   llvm::StringRef implementationName() const {
     if (Moving)
-      return "__move_impl";
+      return Backward ? "__move_backward_impl" : "__move_impl";
     return Backward ? "__copy_backward_impl" : "__copy_impl";
   }
   bool algorithmRecord(const CXXRecordDecl *R) const {
@@ -17993,27 +17993,11 @@ class UtilityWrapperTransferProof {
     const auto V = approvedSDKIntegerConstant(S, SM, Value, Context);
     return V && *V == 1;
   }
-  const Expr *publicResult(const FunctionDecl *Function) const {
-    if (!Backward && !Moving)
-      return result(Function);
+  const Expr *conjoinedInputTraitResult(const FunctionDecl *Function) const {
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
-    if (!Body || Body->size() != (Moving ? 3u : 2u))
+    if (!Body || Body->size() != 2)
       return nullptr;
     auto It = Body->body_begin();
-    if (Moving) {
-      for (const auto Pointer : {Input, Output}) {
-        const auto *Declaration = dyn_cast<DeclStmt>(*It++);
-        const auto *Assert =
-            Declaration && Declaration->isSingleDecl()
-                ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
-                : nullptr;
-        if (!Assert || Assert->isFailed() || !origin(Assert, path()) ||
-            !pointerCopyTrait(Assert->getAssertExpr(), Pointer))
-          return nullptr;
-      }
-      const auto *Return = dyn_cast<ReturnStmt>(*It);
-      return Return ? strip(Return->getRetValue()) : nullptr;
-    }
     const auto *Declaration = dyn_cast<DeclStmt>(*It++);
     const auto *Assert =
         Declaration && Declaration->isSingleDecl()
@@ -18027,6 +18011,32 @@ class UtilityWrapperTransferProof {
         !pointerCopyTrait(Both->getRHS(), Input) || !Return)
       return nullptr;
     return strip(Return->getRetValue());
+  }
+  const Expr *publicResult(const FunctionDecl *Function) const {
+    if ((!Backward && !Moving) || (Backward && Moving))
+      return result(Function);
+    if (Backward)
+      return conjoinedInputTraitResult(Function);
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+    if (!Body || Body->size() != 3)
+      return nullptr;
+    auto It = Body->body_begin();
+    for (const auto Pointer : {Input, Output}) {
+      const auto *Declaration = dyn_cast<DeclStmt>(*It++);
+      const auto *Assert =
+          Declaration && Declaration->isSingleDecl()
+              ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
+              : nullptr;
+      if (!Assert || Assert->isFailed() || !origin(Assert, path()) ||
+          !pointerCopyTrait(Assert->getAssertExpr(), Pointer))
+        return nullptr;
+    }
+    const auto *Return = dyn_cast<ReturnStmt>(*It);
+    return Return ? strip(Return->getRetValue()) : nullptr;
+  }
+  const Expr *innerResult(const FunctionDecl *Function) const {
+    return Moving && Backward ? conjoinedInputTraitResult(Function)
+                              : result(Function);
   }
   bool innerTemplate(const FunctionDecl *Function) const {
     if (!Backward && !Moving)
@@ -18050,7 +18060,7 @@ public:
   bool prove(const FunctionDecl *F) const {
     const auto Path = path();
     if (!utilitySwapSDKFunction(S, SM, F,
-                                Moving     ? "move"
+                                Moving ? (Backward ? "move_backward" : "move")
                                 : Backward ? "copy_backward"
                                            : "copy",
                                 Path) ||
@@ -18067,14 +18077,15 @@ public:
     if (!P || Second->isArrow() || Second->getMemberDecl() != P->Second || !C ||
         C->getNumArgs() != 3 ||
         !utilitySwapSDKFunction(S, SM, Inner,
-                                Moving     ? "__move"
+                                Moving
+                                    ? (Backward ? "__move_backward" : "__move")
                                 : Backward ? "__copy_backward"
                                            : "__copy",
                                 Path) ||
         !innerTemplate(Inner) ||
         !signature(Inner, C->getType(), {Input, Input, Output}))
       return false;
-    const auto *Unwrap = dyn_cast_or_null<CallExpr>(result(Inner));
+    const auto *Unwrap = dyn_cast_or_null<CallExpr>(innerResult(Inner));
     if (!Unwrap || Unwrap->getNumArgs() != 3 ||
         !unwrapped(Unwrap->getDirectCallee()))
       return false;
@@ -30860,7 +30871,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         ((Name == "copy" && Origin->Path == "__algorithm/copy.h") ||
          (Name == "copy_backward" &&
           Origin->Path == "__algorithm/copy_backward.h") ||
-         (Name == "move" && Origin->Path == "__algorithm/move.h")) &&
+         (Name == "move" && Origin->Path == "__algorithm/move.h") ||
+         (Name == "move_backward" &&
+          Origin->Path == "__algorithm/move_backward.h")) &&
         Input->isPointerType() && Output->isPointerType() &&
         !Output->getPointeeType().hasQualifiers() &&
         !Input->getPointeeType().isVolatileQualified() &&
@@ -30871,7 +30884,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Input) &&
         Same(Call->getArg(2)->getType(), Output) &&
         UtilityWrapperTransferProof(S, SM, Context, Input, Output,
-                                    Name == "copy_backward", Name == "move")
+                                    Name == "copy_backward" ||
+                                        Name == "move_backward",
+                                    Name == "move" || Name == "move_backward")
             .prove(Function);
     if (!Scalar && !Record && !Callback && !Wrapper)
       return std::nullopt;

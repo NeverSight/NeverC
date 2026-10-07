@@ -352,6 +352,19 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::move_backward` admits raw pointer ranges of the same exact checked
+SDK `std::reference_wrapper<T>` carrier; input may be const and output must be
+mutable. The public entry authenticates its classic-policy specialization and
+all three SDK move adapters. The inner entry separately verifies its pointer
+copy-constructibility assertion and move layer before entering the proven
+unwrap/rewrap and backward trivial-copy path. The output retreats by exactly
+`last - first`; binding stores proceed backward and the destination beginning
+is returned. Empty input writes nothing and returns the original output pointer.
+Valid right overlap preserves order. Each original argument is evaluated once,
+referents are neither assigned nor destroyed, and temporary cleanup retains
+source behavior. Source SDK or trait replacements, indirect/casted callees and
+unsupported original dependencies remain rejected.
+
 Direct three-argument `std::move` admits raw pointer input and output ranges
 of the same exact checked SDK `std::reference_wrapper<T>` carrier; input may
 be const and output must be mutable. It authenticates the classic policy,
@@ -12893,13 +12906,15 @@ Ordinary resolved using-declarations may additionally import the pinned libc++
 free function names `move`, `forward`, `swap`, `get`, `as_const`, `addressof`,
 `move_if_noexcept`, `exchange`, `invoke`, `make_pair`, `ref`, `cref` and
 `iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `copy`, `copy_backward`,
-`fill_n` and `fill`, plus the six comparison names `operator==`, `operator!=`,
+`move_backward`, `fill_n` and `fill`, plus the six comparison names `operator==`, `operator!=`,
 `operator<`, `operator>`, `operator<=` and `operator>=` from `std` or its inline
 namespaces. The `iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `copy`,
-`copy_backward`, three-argument `move`, `fill_n` and `fill` overload sets must originate from the exact pinned
+`copy_backward`, three-argument `move`, `move_backward`, `fill_n` and `fill`
+overload sets must originate from the exact pinned
 `__algorithm/iter_swap.h`, `__algorithm/swap_ranges.h`, `__algorithm/reverse.h`,
 `__algorithm/reverse_copy.h`, `__algorithm/copy.h`, `__algorithm/copy_backward.h`,
-`__algorithm/move.h`, `__algorithm/fill_n.h` and `__algorithm/fill.h`
+`__algorithm/move.h`, `__algorithm/move_backward.h`, `__algorithm/fill_n.h`
+and `__algorithm/fill.h`
 headers respectively; importing them grants lookup metadata only.
 Namespace and nondependent block imports, repeated/comma imports and
 source-owned namespace reexports preserve the overload set selected by Clang.
