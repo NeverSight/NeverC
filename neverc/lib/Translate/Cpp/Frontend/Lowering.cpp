@@ -5506,6 +5506,25 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
+      const auto FirstWrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      const auto SecondWrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          SecondRange.second->getPointeeType()->getAsCXXRecordDecl(),
+          A.Context);
+      auto ComparedValue = [&](Expression Pointer, const auto &Wrapper) {
+        auto Value = dereference(std::move(Pointer), L);
+        if (Wrapper)
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        return Value;
+      };
       const auto SourceComparison =
           !Predicate && A.Context.hasSameUnqualifiedType(
                             FirstRange.second->getPointeeType(),
@@ -5549,10 +5568,13 @@ class FunctionLowering {
                        SourceComparison->Friend ? SourceComparison->Friend
                                                 : SourceComparison->Namespace,
                        L)
-                 : CompareUtilityValues("==", dereference(First, L),
-                                        FirstRange.second->getPointeeType(),
-                                        dereference(Second, L),
-                                        SecondRange.second->getPointeeType()),
+                 : CompareUtilityValues(
+                       "==", ComparedValue(json::Object(First), FirstWrapper),
+                       FirstWrapper ? FirstWrapper->ReferentType
+                                    : FirstRange.second->getPointeeType(),
+                       ComparedValue(json::Object(Second), SecondWrapper),
+                       SecondWrapper ? SecondWrapper->ReferentType
+                                     : SecondRange.second->getPointeeType()),
              Next, False, L);
       label(Next, L);
       assign(First,

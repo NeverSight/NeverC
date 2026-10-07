@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct three-iterator `std::equal` admits raw pointer ranges of the same exact
+checked SDK `std::reference_wrapper<T>` carrier with optional const inputs.
+The selected SDK public delegation, trivial built-in predicate, all three
+iterator unwraps, pointer loop and both scalar reference conversions are proved.
+Equality reads the referent values, accepts an empty first range and stops at
+the first mismatch. Original arguments are evaluated once, receiver cleanup
+retains source behavior, and neither bindings nor referents are assigned.
+Source comparisons, enum or nested-wrapper referents, heterogeneous carriers,
+SDK replacements, indirect/casted calls and unsupported original dependencies
+remain rejected. Four-iterator default equality remains a separate increment.
+
 Direct `std::replace_copy` admits raw pointer ranges of the same exact checked
 SDK `std::reference_wrapper<T>` carrier, with optional const input, mutable
 output and same-type old/new lvalue wrappers. Supported built-in scalar equality
