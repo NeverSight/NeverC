@@ -14597,6 +14597,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/replace.h";
       else if (Name->getName() == "remove")
         ExpectedPath = "__algorithm/remove.h";
+      else if (Name->getName() == "mismatch")
+        ExpectedPath = "__algorithm/mismatch.h";
       else if (Name->getName() == "equal")
         ExpectedPath = "__algorithm/equal.h";
       else if (Name->getName() == "find")
