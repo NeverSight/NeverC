@@ -16854,6 +16854,105 @@ static bool utilityReverseRange(const State &S, const SourceManager &SM,
   return true;
 }
 
+// Reverse-copy copies wrapper bindings from a raw pointer range. Prove the
+// selected SDK loop and copy assignment, including their original operands.
+static bool utilityWrapperReverseCopy(const State &S, const SourceManager &SM,
+                                      const FunctionDecl *Function,
+                                      QualType Input, QualType Output,
+                                      const ASTContext &Context) {
+  if (!Input->isPointerType() || !Output->isPointerType())
+    return false;
+  const auto Source = Input->getPointeeType();
+  const auto Element = Output->getPointeeType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || Element.hasQualifiers() || Source.isVolatileQualified() ||
+      Source.isRestrictQualified() ||
+      Source.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameType(Source.getUnqualifiedType(), Element) ||
+      !utilitySwapSDKFunction(S, SM, Function, "reverse_copy",
+                              "__algorithm/reverse_copy.h") ||
+      Function->getNumParams() != 3 ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Input) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
+      !Context.hasSameType(Function->getParamDecl(2)->getType(), Output) ||
+      !Context.hasSameType(Function->getReturnType(), Output))
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Output))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  auto Statement = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Assignment =
+      Loop ? dyn_cast<CXXOperatorCallExpr>(Loop->getBody()) : nullptr;
+  const auto *Method =
+      Assignment
+          ? dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee())
+          : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !functionalInvokeParameterReference(Condition->getLHS(),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Condition->getRHS(),
+                                          Function->getParamDecl(1)) ||
+      !Increment || Increment->getOpcode() != UO_PreInc ||
+      !functionalInvokeParameterReference(Increment->getSubExpr(),
+                                          Function->getParamDecl(2)) ||
+      !Assignment || Assignment->getOperator() != OO_Equal ||
+      Assignment->getNumArgs() != 2 || !Assignment->isLValue() ||
+      !Context.hasSameType(Assignment->getType(), Element) || !Method ||
+      !Method->isCopyAssignmentOperator() || !Method->isImplicit() ||
+      !Method->isTrivial() || Method->isStatic() || Method->isVariadic() ||
+      Method->isInvalidDecl() || Method->isDeleted() ||
+      Method->getNumParams() != 1 ||
+      Method->getParent()->getCanonicalDecl() !=
+          Wrapper->Record->getCanonicalDecl() ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Context.getLValueReferenceType(Element)) ||
+      !Context.hasSameType(
+          Method->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Element.withConst())) ||
+      !Return ||
+      !functionalInvokeParameterReference(Return->getRetValue(),
+                                          Function->getParamDecl(2)))
+    return false;
+  for (const auto *D : Method->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  const auto *Destination = dyn_cast_or_null<UnaryOperator>(
+      functionalInvokeStrippedExpression(Assignment->getArg(0)));
+  const auto *Value = dyn_cast_or_null<UnaryOperator>(
+      functionalInvokeStrippedExpression(Assignment->getArg(1)));
+  const auto *Decrement =
+      Value ? dyn_cast_or_null<UnaryOperator>(
+                  functionalInvokeStrippedExpression(Value->getSubExpr()))
+            : nullptr;
+  return Destination && Destination->getOpcode() == UO_Deref &&
+         Destination->isLValue() &&
+         Context.hasSameType(Destination->getType(), Element) &&
+         functionalInvokeParameterReference(Destination->getSubExpr(),
+                                            Function->getParamDecl(2)) &&
+         Value && Value->getOpcode() == UO_Deref && Value->isLValue() &&
+         Context.hasSameType(Value->getType(), Source) && Decrement &&
+         Decrement->getOpcode() == UO_PreDec &&
+         functionalInvokeParameterReference(Decrement->getSubExpr(),
+                                            Function->getParamDecl(1));
+}
+
 static bool utilitySwapArrayData(const State &S, const SourceManager &SM,
                                  const Expr *Expression,
                                  const UtilityArrayRecord &Array,
@@ -29802,7 +29901,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
                                     (*CallbackOutput)->getPointeeType());
-    if (Scalar || Record || Callback)
+    const auto Input = Function->getParamDecl(0)->getType();
+    const auto Output = Function->getParamDecl(2)->getType();
+    const bool Wrapper =
+        Same(Call->getArg(0)->getType(), Input) &&
+        Same(Call->getArg(1)->getType(), Input) &&
+        Same(Call->getArg(2)->getType(), Output) &&
+        utilityWrapperReverseCopy(S, SM, Function, Input, Output, Context);
+    if (Scalar || Record || Callback || Wrapper)
       return UtilityOperation::AlgorithmReverseCopy;
   }
   if (((Origin->Path == "__algorithm/min_element.h" && Name == "min_element") ||
