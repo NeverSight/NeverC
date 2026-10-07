@@ -352,6 +352,19 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::remove_copy` admits raw pointer ranges of the same exact checked
+SDK `std::reference_wrapper<T>` carrier, with optional const input, mutable
+output and a same-type lvalue comparison wrapper. Supported built-in scalar
+equality reads live referent values. The selected SDK proof checks the pointer
+loop, both reference conversions, conditional trivial binding assignment and
+output advance. Nonmatching bindings copy forward in input order; the output
+end is returned. Each original argument is evaluated once. Aliases from the
+comparison wrapper to input or output elements remain live. Empty input or all
+matches write nothing. Referents are neither assigned nor destroyed, and
+temporary cleanup retains source behavior. Source comparisons, enum or nested
+wrapper referents, heterogeneous values, SDK replacements, indirect/casted
+callees and unsupported original dependencies remain rejected.
+
 Direct `std::replace` admits mutable raw pointer ranges of the same exact
 checked SDK `std::reference_wrapper<T>` carrier, with lvalue old/new wrappers
 of that exact type. Referents use supported built-in scalar equality; enum,

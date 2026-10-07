@@ -16953,9 +16953,98 @@ static bool utilityWrapperReverseCopy(const State &S, const SourceManager &SM,
                                             Function->getParamDecl(1));
 }
 
-// Replace compares the referents but copies only wrapper bindings. Authenticate
-// the selected conversions and assignment before using the finite loop
-// lowering.
+// Wrapper algorithms compare referents but copy only bindings. Authenticate
+// the selected conversions and assignment before using finite loop lowering.
+static bool utilityWrapperScalarEquality(
+    const State &S, const SourceManager &SM, const BinaryOperator *Equality,
+    const FunctionDecl *Function, const FunctionalReferenceRecord &Wrapper,
+    unsigned InputIndex, unsigned ValueIndex, const ASTContext &Context) {
+  if (!Equality || Equality->getOpcode() != BO_EQ ||
+      !Equality->getType()->isBooleanType() ||
+      Wrapper.ReferentType->isEnumeralType())
+    return false;
+  const auto Common = utilityScalarComparisonType(Context, Wrapper.ReferentType,
+                                                  Wrapper.ReferentType, false);
+  if (!Common || !Context.hasSameType(Equality->getLHS()->getType(), *Common) ||
+      !Context.hasSameType(Equality->getRHS()->getType(), *Common))
+    return false;
+  auto Conversion = [&](const Expr *Expression, unsigned Index,
+                        bool Dereference) {
+    const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+        functionalInvokeStrippedExpression(Expression));
+    const auto Access = Call ? approvedFunctionalReferenceAccessCallImpl(
+                                   S, SM, Call, Context, false)
+                             : std::nullopt;
+    const auto *Conversion =
+        Call ? dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())
+             : nullptr;
+    if (!Access || !Conversion || Access->ObjectIsArrow ||
+        Conversion->getTemplateSpecializationKind() !=
+            TSK_ImplicitInstantiation ||
+        Access->Wrapper.Record->getCanonicalDecl() !=
+            Wrapper.Record->getCanonicalDecl() ||
+        !functionalInvokeParameterReference(
+            Access->Object, Function->getParamDecl(Index), Dereference))
+      return false;
+    const auto *Pattern = Conversion->getInstantiatedFromMemberFunction();
+    if (!Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+        !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+    for (const auto *D : Conversion->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, D) ||
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__functional/reference_wrapper.h"))
+        return false;
+    for (const auto *D : Pattern->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, D) ||
+          !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__functional/reference_wrapper.h"))
+        return false;
+    return true;
+  };
+  return Conversion(Equality->getLHS(), InputIndex, true) &&
+         Conversion(Equality->getRHS(), ValueIndex, false);
+}
+
+static bool utilityWrapperBindingAssignment(
+    const State &S, const SourceManager &SM,
+    const CXXOperatorCallExpr *Assignment, const FunctionDecl *Function,
+    const FunctionalReferenceRecord &Wrapper, unsigned DestinationIndex,
+    unsigned SourceIndex, bool DereferenceSource, const ASTContext &Context) {
+  const auto Element = Context.getRecordType(Wrapper.Record);
+  const auto Reference = Context.getLValueReferenceType(Element.withConst());
+  const auto *Method =
+      Assignment
+          ? dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee())
+          : nullptr;
+  if (!Assignment || Assignment->getOperator() != OO_Equal ||
+      Assignment->getNumArgs() != 2 || !Assignment->isLValue() || !Method ||
+      !Method->isImplicit() || !Method->isTrivial() ||
+      !Method->isCopyAssignmentOperator() || Method->isStatic() ||
+      Method->isVariadic() || Method->isInvalidDecl() || Method->isDeleted() ||
+      Method->getNumParams() != 1 ||
+      Method->getParent()->getCanonicalDecl() !=
+          Wrapper.Record->getCanonicalDecl() ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Context.getLValueReferenceType(Element)) ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Reference) ||
+      !Context.hasSameType(Assignment->getType(), Element) ||
+      !functionalInvokeParameterReference(
+          Assignment->getArg(0), Function->getParamDecl(DestinationIndex),
+          true) ||
+      !functionalInvokeParameterReference(Assignment->getArg(1),
+                                          Function->getParamDecl(SourceIndex),
+                                          DereferenceSource))
+    return false;
+  for (const auto *D : Method->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  return true;
+}
+
 static bool utilityWrapperReplace(const State &S, const SourceManager &SM,
                                   const FunctionDecl *Function,
                                   QualType Element, const ASTContext &Context) {
@@ -16998,10 +17087,6 @@ static bool utilityWrapperReplace(const State &S, const SourceManager &SM,
       Branch ? dyn_cast<BinaryOperator>(Branch->getCond()) : nullptr;
   const auto *Assignment =
       Branch ? dyn_cast<CXXOperatorCallExpr>(Branch->getThen()) : nullptr;
-  const auto *Method =
-      Assignment
-          ? dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee())
-          : nullptr;
   if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
       Condition->getOpcode() != BO_NE ||
       !functionalInvokeParameterReference(Condition->getLHS(),
@@ -17013,70 +17098,94 @@ static bool utilityWrapperReplace(const State &S, const SourceManager &SM,
                                           Function->getParamDecl(0)) ||
       !Branch || Branch->getInit() || Branch->getConditionVariable() ||
       Branch->getElse() || !Equality || Equality->getOpcode() != BO_EQ ||
-      !Equality->getType()->isBooleanType() || !Assignment ||
-      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
-      !Assignment->isLValue() || !Method || !Method->isImplicit() ||
-      !Method->isTrivial() || !Method->isCopyAssignmentOperator() ||
-      Method->isStatic() || Method->isVariadic() || Method->isInvalidDecl() ||
-      Method->isDeleted() || Method->getNumParams() != 1 ||
-      Method->getParent()->getCanonicalDecl() !=
-          Wrapper->Record->getCanonicalDecl() ||
-      !Context.hasSameType(Method->getReturnType(),
-                           Context.getLValueReferenceType(Element)) ||
-      !Context.hasSameType(Method->getParamDecl(0)->getType(), Reference) ||
-      !Context.hasSameType(Assignment->getType(), Element) ||
-      !functionalInvokeParameterReference(Assignment->getArg(0),
-                                          Function->getParamDecl(0), true) ||
-      !functionalInvokeParameterReference(Assignment->getArg(1),
-                                          Function->getParamDecl(3)))
+      !Equality->getType()->isBooleanType() ||
+      !utilityWrapperBindingAssignment(S, SM, Assignment, Function, *Wrapper, 0,
+                                       3, false, Context))
     return false;
-  for (const auto *D : Method->redecls())
-    if (!approvedStandardSDKDeclaration(S, SM, D) ||
-        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                       "__functional/reference_wrapper.h"))
-      return false;
-  const auto Common = utilityScalarComparisonType(
-      Context, Wrapper->ReferentType, Wrapper->ReferentType, false);
-  if (!Common || !Context.hasSameType(Equality->getLHS()->getType(), *Common) ||
-      !Context.hasSameType(Equality->getRHS()->getType(), *Common))
+  return utilityWrapperScalarEquality(S, SM, Equality, Function, *Wrapper, 0, 2,
+                                      Context);
+}
+
+static bool utilityWrapperRemoveCopy(const State &S, const SourceManager &SM,
+                                     const FunctionDecl *Function,
+                                     QualType Input, QualType Output,
+                                     const ASTContext &Context) {
+  if (!Input->isPointerType() || !Output->isPointerType())
     return false;
-  auto Conversion = [&](const Expr *Expression, unsigned Index,
-                        bool Dereference) {
-    const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
-        functionalInvokeStrippedExpression(Expression));
-    const auto Access = Call ? approvedFunctionalReferenceAccessCallImpl(
-                                   S, SM, Call, Context, false)
-                             : std::nullopt;
-    const auto *Conversion =
-        Call ? dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())
-             : nullptr;
-    if (!Access || !Conversion || Access->ObjectIsArrow ||
-        Conversion->getTemplateSpecializationKind() !=
-            TSK_ImplicitInstantiation ||
-        Access->Wrapper.Record->getCanonicalDecl() !=
-            Wrapper->Record->getCanonicalDecl() ||
-        !functionalInvokeParameterReference(
-            Access->Object, Function->getParamDecl(Index), Dereference))
+  const auto Element = Output->getPointeeType();
+  const auto Source = Input->getPointeeType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || Element.hasQualifiers() || Source.isVolatileQualified() ||
+      Source.isRestrictQualified() ||
+      Source.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameType(Source.getUnqualifiedType(), Element) ||
+      !utilitySwapSDKFunction(S, SM, Function, "remove_copy",
+                              "__algorithm/remove_copy.h") ||
+      Function->getNumParams() != 4 ||
+      !Context.hasSameType(Function->getReturnType(), Output))
+    return false;
+  const auto Reference = Context.getLValueReferenceType(Element.withConst());
+  const QualType Parameters[] = {Input, Input, Output, Reference};
+  for (unsigned I = 0; I != 4; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                             Parameters[I]))
       return false;
-    const auto *Pattern = Conversion->getInstantiatedFromMemberFunction();
-    if (!Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
-        !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
-                       "__functional/reference_wrapper.h"))
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const QualType Types[] = {Input, Output, Element};
+  if (!Arguments || Arguments->size() != 3)
+    return false;
+  for (unsigned I = 0; I != 3; ++I)
+    if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(), Types[I]))
       return false;
-    for (const auto *D : Conversion->redecls())
-      if (!approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                         "__functional/reference_wrapper.h"))
-        return false;
-    for (const auto *D : Pattern->redecls())
-      if (!approvedStandardSDKDeclaration(S, SM, D) ||
-          !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                         "__functional/reference_wrapper.h"))
-        return false;
-    return true;
-  };
-  return Conversion(Equality->getLHS(), 0, true) &&
-         Conversion(Equality->getRHS(), 2, false);
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  auto It = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*It++);
+  const auto *Return = dyn_cast<ReturnStmt>(*It);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *LoopBody =
+      Loop ? dyn_cast<CompoundStmt>(Loop->getBody()) : nullptr;
+  const auto *Branch = LoopBody && LoopBody->size() == 1
+                           ? dyn_cast<IfStmt>(*LoopBody->body_begin())
+                           : nullptr;
+  const auto *Not =
+      Branch ? dyn_cast<UnaryOperator>(Branch->getCond()) : nullptr;
+  const auto *Equality =
+      Not ? dyn_cast<BinaryOperator>(Not->getSubExpr()->IgnoreParens())
+          : nullptr;
+  const auto *Transfer =
+      Branch ? dyn_cast<CompoundStmt>(Branch->getThen()) : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !functionalInvokeParameterReference(Condition->getLHS(),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Condition->getRHS(),
+                                          Function->getParamDecl(1)) ||
+      !Increment || Increment->getOpcode() != UO_PreInc ||
+      !functionalInvokeParameterReference(Increment->getSubExpr(),
+                                          Function->getParamDecl(0)) ||
+      !Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->getElse() || !Not || Not->getOpcode() != UO_LNot || !Transfer ||
+      Transfer->size() != 2 || !Return ||
+      !functionalInvokeParameterReference(Return->getRetValue(),
+                                          Function->getParamDecl(2)))
+    return false;
+  auto Part = Transfer->body_begin();
+  const auto *Assignment = dyn_cast<CXXOperatorCallExpr>(*Part++);
+  const auto *Advance = dyn_cast<UnaryOperator>(*Part);
+  return utilityWrapperScalarEquality(S, SM, Equality, Function, *Wrapper, 0, 3,
+                                      Context) &&
+         utilityWrapperBindingAssignment(S, SM, Assignment, Function, *Wrapper,
+                                         2, 0, true, Context) &&
+         Advance && Advance->getOpcode() == UO_PreInc &&
+         functionalInvokeParameterReference(Advance->getSubExpr(),
+                                            Function->getParamDecl(2));
 }
 
 // A wrapper fill uses the complete pinned count-conversion and assignment
@@ -31633,6 +31742,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemove;
+  if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = Function->getParamDecl(0)->getType();
+    const auto Output = Function->getParamDecl(2)->getType();
+    if (Input->isPointerType() && Output->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Input) &&
+        Same(Call->getArg(0)->getType(), Input) &&
+        Same(Call->getArg(1)->getType(), Input) &&
+        Same(Call->getArg(2)->getType(), Output) &&
+        Context.hasSameUnqualifiedType(Call->getArg(3)->getType(),
+                                       Output->getPointeeType()) &&
+        Call->getArg(3)->isLValue() &&
+        utilityWrapperRemoveCopy(S, SM, Function, Input, Output, Context))
+      return UtilityOperation::AlgorithmRemoveCopy;
+  }
   if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmRecordEqualityRangeParameter(0) &&
