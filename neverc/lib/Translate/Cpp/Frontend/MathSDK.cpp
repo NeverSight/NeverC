@@ -17942,6 +17942,115 @@ class UtilityWrapperTransferProof {
     return true;
   }
 
+  static const TypedefNameDecl *typeAlias(QualType Type) {
+    for (unsigned Depth = 0; Depth != 8 && !Type.isNull(); ++Depth) {
+      if (const auto *Elaborated =
+              dyn_cast<ElaboratedType>(Type.getTypePtr())) {
+        Type = Elaborated->getNamedType();
+        continue;
+      }
+      const auto *Alias = dyn_cast<TypedefType>(Type.getTypePtr());
+      return Alias ? Alias->getDecl() : nullptr;
+    }
+    return nullptr;
+  }
+  bool countDifference(const TypedefDecl *Local,
+                       const FunctionDecl *Function) const {
+    constexpr llvm::StringLiteral Path = "__iterator/iterator_traits.h";
+    if (!Local || Local->getName() != "difference_type" ||
+        Local->getDeclContext() != Function ||
+        !origin(Local, "__algorithm/copy_n.h") ||
+        !same(Local->getUnderlyingType(), Context.getPointerDiffType()))
+      return false;
+    const auto *Difference = typeAlias(Local->getUnderlyingType());
+    const auto *Traits = Difference ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                          Difference->getDeclContext())
+                                    : nullptr;
+    if (!Difference || Difference->getName() != "difference_type" ||
+        !record(Traits, "iterator_traits", Path) ||
+        Traits->getTemplateArgs().size() != 1 ||
+        Traits->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !same(Traits->getTemplateArgs().get(0).getAsType(), Input) ||
+        !Traits->getSpecializedTemplateOrPartial()
+             .dyn_cast<ClassTemplatePartialSpecializationDecl *>())
+      return false;
+    for (const auto *D : Difference->redecls())
+      if (!origin(D, Path))
+        return false;
+    // copy_n's SFINAE selects this specialization through its category tag.
+    // A source redeclaration anywhere in the inherited tag chain must remain
+    // visible even though the selected copy body uses only pointer arithmetic.
+    const auto Categories =
+        Traits->lookup(&Context.Idents.get("iterator_category"));
+    const auto *Category = Categories.isSingleResult()
+                               ? dyn_cast<TypedefNameDecl>(*Categories.begin())
+                               : nullptr;
+    if (!Category || Category->getDeclContext() != Traits)
+      return false;
+    for (const auto *D : Category->redecls())
+      if (!origin(D, Path))
+        return false;
+    const auto *Tag = Category->getUnderlyingType()->getAsCXXRecordDecl();
+    constexpr llvm::StringRef Names[] = {
+        "random_access_iterator_tag", "bidirectional_iterator_tag",
+        "forward_iterator_tag", "input_iterator_tag"};
+    for (unsigned I = 0; I != 4; ++I) {
+      if (!Tag || !Tag->isCompleteDefinition() || !Tag->getIdentifier() ||
+          Tag->getName() != Names[I] || !Tag->isTrivial() || !Tag->isEmpty() ||
+          isa<ClassTemplateSpecializationDecl>(Tag) ||
+          Tag->getNumBases() != (I == 3 ? 0u : 1u))
+        return false;
+      for (const auto *D : Tag->redecls())
+        if (!origin(D, Path))
+          return false;
+      if (I != 3) {
+        const auto &Base = *Tag->bases_begin();
+        if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public)
+          return false;
+        Tag = Base.getType()->getAsCXXRecordDecl();
+      }
+    }
+    const auto *Ptrdiff = typeAlias(Difference->getUnderlyingType());
+    if (!Ptrdiff || Ptrdiff->getName() != "ptrdiff_t" ||
+        !same(Ptrdiff->getUnderlyingType(), Context.getPointerDiffType()))
+      return false;
+    for (const auto *D : Ptrdiff->redecls())
+      if (!origin(D, "__cstddef/ptrdiff_t.h"))
+        return false;
+    return true;
+  }
+  bool countConversion(const TypedefDecl *Local, const FunctionDecl *Function,
+                       QualType Integral) const {
+    constexpr llvm::StringLiteral Path = "__utility/convert_to_integral.h";
+    if (!Local || Local->getName() != "_IntegralSize" ||
+        Local->getDeclContext() != Function ||
+        !origin(Local, "__algorithm/copy_n.h") ||
+        !same(Local->getUnderlyingType(), Integral) ||
+        !Integral->isBuiltinType() || !Integral->isIntegerType())
+      return false;
+    const auto *Type =
+        dyn_cast<DecltypeType>(Local->getUnderlyingType().getTypePtr());
+    const auto *Call =
+        Type ? dyn_cast<CallExpr>(Type->getUnderlyingExpr()) : nullptr;
+    const auto *Conversion = Call ? Call->getDirectCallee() : nullptr;
+    if (!Call || Call->getNumArgs() != 1 || !Conversion ||
+        !Conversion->getIdentifier() ||
+        Conversion->getName() != "__convert_to_integral" ||
+        Conversion->getPrimaryTemplate() || !Conversion->isInlined() ||
+        Conversion->isInvalidDecl() || Conversion->isDeleted() ||
+        Conversion->isVariadic() ||
+        !origin(Conversion->getDefinition(), Path) ||
+        !signature(Conversion, Integral, {Integral}) ||
+        !same(Call->getType(), Integral) ||
+        !reference(Call->getArg(0), Function->getParamDecl(1)) ||
+        !reference(result(Conversion), Conversion->getParamDecl(0)))
+      return false;
+    for (const auto *D : Conversion->redecls())
+      if (!origin(D, Path))
+        return false;
+    return true;
+  }
+
   bool pointerCopyTrait(const Expr *Expression, QualType Expected) const {
     const auto *Ref = dyn_cast_or_null<DeclRefExpr>(strip(Expression));
     const auto *Qualifier = Ref ? Ref->getQualifier() : nullptr;
@@ -18056,6 +18165,53 @@ public:
                               bool Moving = false)
       : S(S), SM(SM), Context(Context), Element(Output->getPointeeType()),
         Input(Input), Output(Output), Backward(Backward), Moving(Moving) {}
+
+  bool proveCounted(const FunctionDecl *Function) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/copy_n.h";
+    if (Backward || Moving || !Function || Function->getNumParams() != 3)
+      return false;
+    const auto CountType = Function->getParamDecl(1)->getType();
+    if (!CountType->isBuiltinType() || !CountType->isIntegerType() ||
+        !utilitySwapSDKFunction(S, SM, Function, "copy_n", Path) ||
+        !templates(Function, {Input, CountType, Output}, true) ||
+        !signature(Function, Output, {Input, CountType, Output}))
+      return false;
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+    if (!Body || Body->size() != 4)
+      return false;
+    auto It = Body->body_begin();
+    auto Alias = [&](const Stmt *Statement) {
+      const auto *Declaration = dyn_cast<DeclStmt>(Statement);
+      return Declaration && Declaration->isSingleDecl()
+                 ? dyn_cast<TypedefDecl>(Declaration->getSingleDecl())
+                 : nullptr;
+    };
+    const auto *Difference = Alias(*It++);
+    const auto *Integral = Alias(*It++);
+    const auto *Count = local(*It++, Function);
+    const auto *Return = dyn_cast<ReturnStmt>(*It);
+    const auto *Copy =
+        Return ? dyn_cast<CallExpr>(strip(Return->getRetValue())) : nullptr;
+    const auto *End = Copy && Copy->getNumArgs() == 3
+                          ? binary(Copy->getArg(1), BO_Add)
+                          : nullptr;
+    const auto *Cast =
+        End ? dyn_cast<CXXFunctionalCastExpr>(strip(End->getRHS())) : nullptr;
+    return Count && origin(Count, Path) && Integral &&
+           countDifference(Difference, Function) &&
+           countConversion(Integral, Function, Count->getType()) &&
+           typeAlias(Count->getType()) == Integral &&
+           reference(Count->getInit(), Function->getParamDecl(1)) && Copy &&
+           same(Copy->getType(), Output) && prove(Copy->getDirectCallee()) &&
+           reference(Copy->getArg(0), Function->getParamDecl(0)) &&
+           reference(Copy->getArg(2), Function->getParamDecl(2)) && End &&
+           same(End->getType(), Input) &&
+           reference(End->getLHS(), Function->getParamDecl(0)) && Cast &&
+           Cast->getCastKind() == CK_NoOp &&
+           same(Cast->getType(), Context.getPointerDiffType()) &&
+           typeAlias(Cast->getTypeAsWritten()) == Difference &&
+           reference(Cast->getSubExpr(), Count);
+  }
 
   bool prove(const FunctionDecl *F) const {
     const auto Path = path();
@@ -31786,7 +31942,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
                                     (*CallbackOutput)->getPointeeType());
-    if (Scalar || Record || Callback)
+    const auto Input = Function->getParamDecl(0)->getType();
+    const auto Output = Function->getParamDecl(2)->getType();
+    const auto Count = Function->getParamDecl(1)->getType();
+    auto NonnegativeCount = [&]() {
+      if (!Count->isBuiltinType() || !Count->isIntegerType())
+        return false;
+      if (Count->isUnsignedIntegerType())
+        return true;
+      Expr::EvalResult Value;
+      return Call->getArg(1)->EvaluateAsInt(Value, Context) &&
+             !Value.Val.getInt().isNegative();
+    };
+    const bool Wrapper =
+        Input->isPointerType() && Output->isPointerType() &&
+        !Output->getPointeeType().hasQualifiers() &&
+        !Input->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(Input->getPointeeType(),
+                                       Output->getPointeeType()) &&
+        Output->getPointeeType()->isRecordType() &&
+        Same(Call->getArg(0)->getType(), Input) &&
+        Same(Call->getArg(1)->getType(), Count) &&
+        Same(Call->getArg(2)->getType(), Output) && NonnegativeCount() &&
+        UtilityWrapperTransferProof(S, SM, Context, Input, Output)
+            .proveCounted(Function);
+    if (Scalar || Record || Callback || Wrapper)
       return UtilityOperation::AlgorithmCopyN;
   }
   if (Origin->Path == "__algorithm/iter_swap.h" && Name == "iter_swap" &&
