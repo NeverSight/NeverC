@@ -389,6 +389,18 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct four-iterator `std::equal` also admits raw pointer ranges of the same
+exact checked SDK `std::reference_wrapper<T>` carrier, including independently
+const inputs and built-in scalar referents. Unequal lengths return false before
+reading elements; two empty ranges are equal. Equal-length ranges compare live
+referent values and stop at the first mismatch. Each of the four source operands
+is evaluated once and receiver cleanup is preserved. The selected public and
+delegated SDK bodies, iterator-traits aliases, category and inherited tag chain,
+true trait values, distance subtraction, raw-pointer unwrap helpers, identity
+projections, invocation forwarding and built-in equality predicate are verified.
+Source replacements, custom comparisons, enum or nested-wrapper referents,
+heterogeneous carriers and indirect or casted callees remain rejected.
+
 Direct three-iterator `std::equal` admits raw pointer ranges of the same exact
 checked SDK `std::reference_wrapper<T>` carrier with optional const inputs.
 The selected SDK public delegation, trivial built-in predicate, all three
