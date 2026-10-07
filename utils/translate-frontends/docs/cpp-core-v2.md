@@ -389,6 +389,18 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::unique_copy` admits raw pointer input ranges of a checked
+SDK `std::reference_wrapper<T>` and mutable output pointers of the same wrapper
+type, including const input wrappers, const referents and built-in scalar
+referents. It compares live referent values, copies the first binding of each
+equal adjacent run and returns the original output-end iterator. Input bindings
+and referent objects are preserved; empty input performs no write. All three
+arguments are evaluated once and receiver cleanup is preserved. Selected SDK
+equality, iterator traits and tag dispatch, the input reread loop, trivial wrapper
+copy assignment and pointer-pair return paths are verified. Source replacements,
+custom comparisons, heterogeneous wrapper types, enum or nested-wrapper referents
+and indirect or casted callees remain rejected.
+
 Direct default `std::unique` admits mutable raw pointer ranges of a checked
 SDK `std::reference_wrapper<T>`, including const referents and built-in scalar
 referents. It compares live referent values, retains the first binding of each

@@ -197942,3 +197942,985 @@ using F=P(*)(P,P);F selected(){using std::unique;return &unique<P>;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-unique-copy-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=7,u=0,v=0,z=0;W x[]={a,a,b,b,a};W y[]={u,v,z};return std::unique_copy(x,x+5,y)!=y+3||&y[0].get()!=&a||&y[1].get()!=&b||&y[2].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeAllEqual) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-all-equal.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-all-equal.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=3,u=0,v=0,z=0;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+1||&y[0].get()!=&a||&y[1].get()!=&v||&y[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-all-equal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeBoolReferents) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<bool>;int main(){bool a=true,b=true,c=false,u=false,v=false,z=false;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c||u||v||z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-unique-copy-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+int main(){const int a=3,b=3,c=7,u=0,v=0,z=0;const W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7,u=0,v=0,z=0;const W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c||&x[1].get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-unique-copy-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*const>;int main(){int vals[]={3,7};int*const a=vals;int*const b=vals;int*const c=vals+1;int*const u=nullptr;int*const v=nullptr;int*const z=nullptr;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-unique-copy-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+int main(){const int a=3,b=3,c=7,u=0,v=0,z=0;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeDoubleReferents) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<double>;int main(){double a=2.5,b=2.5,c=7.5,u=0,v=0,z=0;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c||u!=0||v!=0||z!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeEmptyRange) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,u=0;W x[]={a};W y[]={u};return std::unique_copy(x,x,y)!=y||&y[0].get()!=&u;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeLastDuplicate) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-last-duplicate.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-last-duplicate.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=7,c=7,u=0,v=0,z=0;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&b||&y[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-last-duplicate" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeLateDuplicate) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-late-duplicate.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-late-duplicate.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=7,c=7,d=9,u=0,v=0,z=0,q=0;W x[]={a,b,c,d};W y[]={u,v,z,q};return std::unique_copy(x,x+4,y)!=y+3||&y[0].get()!=&a||&y[1].get()!=&b||&y[2].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-late-duplicate" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeMultipleRuns) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-multiple-runs.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-multiple-runs.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7,d=7,e=9,f=9,u=0,v=0,z=0;W x[]={a,b,c,d,e,f};W y[]={u,v,z};return std::unique_copy(x,x+6,y)!=y+3||&y[0].get()!=&a||&y[1].get()!=&c||&y[2].get()!=&e;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-multiple-runs" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeNone) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-none.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-none.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=7,c=9,u=0,v=0,z=0;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+3||&y[0].get()!=&a||&y[1].get()!=&b||&y[2].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-none" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,u=0;W x[]={a};W y[]={u};return std::unique_copy(x,x+1,y)!=y+1||&y[0].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int calls=0,destroys=0;struct Range{W*p;Range(W*v):p(v){++calls;}~Range(){++destroys;}W*get(){return p;}};int main(){int a=3,b=3,c=7,u=0,v=0;W x[]={a,b,c};W y[]={u,v};W*r=std::unique_copy(Range(x).get(),Range(x+3).get(),Range(y).get());return r!=y+2||calls!=3||destroys!=3||&y[1].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int calls=0;W*mark(W*p){++calls;return p;}int main(){int a=3,b=3,c=7,u=0,v=0;W x[]={a,b,c};W y[]={u,v};W*r=std::unique_copy(mark(x),mark(x+3),mark(y));return r!=y+2||calls!=3||&y[0].get()!=&a||&y[1].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=9,b=3,c=3,d=7,e=8,u=0,v=0,z=0,q=0;W x[]={a,b,c,d,e};W y[]={u,v,z,q};return std::unique_copy(x+1,x+4,y+1)!=y+3||&y[0].get()!=&u||&y[1].get()!=&b||&y[2].get()!=&d||&y[3].get()!=&q||&x[2].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimePointerReferents) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*>;int main(){int vals[]={3,7};int*a=vals,*b=vals,*c=vals+1,*u=nullptr,*v=nullptr,*z=nullptr;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c||u||v||z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct R{int value;bool operator==(const R&r)const{return value==r.value;}};int main(){R x[]={{3},{3},{7},{7}},y[]={{0},{0},{0}};return std::unique_copy(x,x+4,y)!=y+2||y[0].value!=3||y[1].value!=7||x[1].value!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeReturnedIterator) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-returned-iterator.cpp");
+  const auto Output =
+      tmpFile("wrapper-unique-copy-runtime-returned-iterator.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7,u=0,v=0,z=0,e=9;W x[]={a,b,c};W y[]={u,v,z};W*r=std::unique_copy(x,x+3,y);*r=e;return r!=y+2||&y[0].get()!=&a||&y[1].get()!=&c||&y[2].get()!=&e||u!=0||v!=0||z!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-returned-iterator" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int x[]={3,3,7,7},y[]={0,0,0};return std::unique_copy(x,x+4,y)!=y+2||y[0]!=3||y[1]!=7||x[1]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeSeparatedRepeat) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-separated-repeat.cpp");
+  const auto Output =
+      tmpFile("wrapper-unique-copy-runtime-separated-repeat.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=7,c=3,d=3,u=0,v=0,z=0;W x[]={a,b,c,d};W y[]={u,v,z};return std::unique_copy(x,x+4,y)!=y+3||&y[0].get()!=&a||&y[1].get()!=&b||&y[2].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-separated-repeat" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeSmallIntegerReferents) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<unsigned short>;int main(){unsigned short a=3,b=3,c=7,u=0,v=0,z=0;W x[]={a,b,c};W y[]={u,v,z};return std::unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c||u!=0||v!=0||z!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeUniqueCopy) {
+  const auto Source = tmpFile("wrapper-unique-copy-runtime-unique-copy.cpp");
+  const auto Output = tmpFile("wrapper-unique-copy-runtime-unique-copy.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7,d=7,e=3,u=0,v=0,z=0,q=0;W x[]={a,b,c,d,e};W y[]={u,v,z,q};W*r=std::unique_copy(x,x+5,y);return r!=y+3||&y[0].get()!=&a||&y[1].get()!=&c||&y[2].get()!=&e||&x[1].get()!=&b||u!=0||v!=0||z!=0||q!=0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-unique-copy" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperUniqueCopyRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-unique-copy-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-unique-copy-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7,u=0,v=0;W x[]={a,b,c};W y[]={u,v};using std::unique_copy;return unique_copy(x,x+3,y)!=y+2||&y[0].get()!=&a||&y[1].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-unique-copy-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperUniqueCopyRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P);auto selected(P a,P b){return static_cast<F>(&std::unique_copy<P,P>)(a,a+1,b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"heterogeneous-carriers", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using C=std::reference_wrapper<const int>;auto selected(P a,C*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P);auto selected(P a,P b){F f=&std::unique_copy<P,P>;return f(a,a+1,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator==(const W&a,const W&b){return a.get().get()==b.get().get();}}}
+auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-base-trait-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct is_base_of;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-classic-policy-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct _ClassicAlgPolicy;}}auto selected(P a,P b){return std::unique_copy(a,b,a);}
+)cpp"},
+      {"source-conditional-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<bool B,class T,class F>using __conditional_t=typename conditional<B,T,F>::type;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-conditional-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<bool B,class T,class F>struct conditional;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const{return false;}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-equal-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __equal_to;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::unique_copy(&source(a),&a+1,&b);}
+)cpp"},
+      {"source-forward-pointer-rvalue-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P&& forward<P>(P&p)noexcept{return static_cast<P&&>(p);}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-forward-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct forward_iterator_tag;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-input-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{namespace __unique_copy_tags{struct __reread_from_input_tag;}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}auto selected(P a,P b){return std::unique_copy(a,b,a);}
+)cpp"},
+      {"source-iterator-traits-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct iterator_traits<P>{using difference_type=ptrdiff_t;using value_type=W;using pointer=P;using reference=W&;using iterator_category=random_access_iterator_tag;};}}auto selected(P a,P b){return std::unique_copy(a,b,a);}
+)cpp"},
+      {"source-move-pointer-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P&&move<P&>(P&p)noexcept;}}
+auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-move-pointer-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P&&move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::unique_copy(&source(a),&a+1,&b);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::unique_copy(&source(a),&a+1,&b);}int main(){return 0;}
+)cpp"},
+      {"source-output-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{namespace __unique_copy_tags{struct __reread_from_output_tag;}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-pair-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct pair;}}auto selected(P a,P b){return std::unique_copy(a,b,a);}
+)cpp"},
+      {"source-random-access-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct random_access_iterator_tag;}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-same-trait-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct is_same;}}auto selected(P a,P b){return std::unique_copy(a,b,a);}
+)cpp"},
+      {"source-temporary-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{namespace __unique_copy_tags{struct __read_from_tmp_value_tag;}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B,class I,class S,class O>pair<I,O> __unique_copy(I,S,O,B&&,__unique_copy_tags::__reread_from_input_tag);}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __unique_copy<_ClassicAlgPolicy,__equal_to&,P,P,P>(P,P,P,__equal_to&,__unique_copy_tags::__reread_from_input_tag);}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __unique_copy<_ClassicAlgPolicy,__equal_to&,P,P,P>(P a,P,P r,__equal_to&,__unique_copy_tags::__reread_from_input_tag){return {a,r};}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class O,class B>O unique_copy(I,I,O,B);}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P unique_copy<P,P,__equal_to>(P,P,P,__equal_to);}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P unique_copy<P,P,__equal_to>(P,P,P r,__equal_to){return r;}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class O>O unique_copy(I,I,O);}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P unique_copy<P,P>(P,P,P);}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-unique-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P unique_copy<P,P>(P,P,P r){return r;}}}auto selected(P a,P b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::unique_copy(a,a+1,b);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P);F selected(){using std::unique_copy;return &unique_copy<P,P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-unique-copy-runtime-guard-") + Case.first +
+                ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-unique-copy-runtime-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

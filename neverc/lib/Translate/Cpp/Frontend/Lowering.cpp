@@ -6524,6 +6524,22 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 4)
         Predicate = snapshot(expression(Call->getArg(3)), L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          CurrentRange.second->getPointeeType()->getAsCXXRecordDecl(),
+          A.Context);
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        if (Wrapper)
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        return Value;
+      };
       const auto SourceComparison =
           !Predicate
               ? approvedUtilityTrivialSourceComparison(
@@ -6568,8 +6584,13 @@ class FunctionLowering {
                        SourceComparison->Friend ? SourceComparison->Friend
                                                 : SourceComparison->Namespace,
                        L)
-                 : binary("==", dereference(Previous, L),
-                          dereference(Current, L), "bool", L),
+                 : CompareUtilityValues(
+                       "==", ComparedValue(json::Object(Previous)),
+                       Wrapper ? Wrapper->ReferentType
+                               : CurrentRange.second->getPointeeType(),
+                       ComparedValue(json::Object(Current)),
+                       Wrapper ? Wrapper->ReferentType
+                               : CurrentRange.second->getPointeeType()),
              Next, Transfer, L);
       label(Transfer, L);
       assign(dereference(Output, L),

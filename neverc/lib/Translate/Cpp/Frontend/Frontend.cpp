@@ -14597,6 +14597,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/replace.h";
       else if (Name->getName() == "remove")
         ExpectedPath = "__algorithm/remove.h";
+      else if (Name->getName() == "unique_copy")
+        ExpectedPath = "__algorithm/unique_copy.h";
       else if (Name->getName() == "unique")
         ExpectedPath = "__algorithm/unique.h";
       else if (Name->getName() == "find_first_of")
