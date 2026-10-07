@@ -340,6 +340,18 @@ specializations, aliases, defaults, operand bodies, casted callees and independe
 SDK function addresses retain their ordinary checks. Evaluated wrapper exchange
 and replacement conversions from different wrapper/source types remain rejected.
 
+Direct evaluated `std::swap` also admits exact SDK `std::reference_wrapper<T>`
+carriers through the existing authenticated element-swap body. The selected
+SDK moves and trivial carrier construction/assignment remain checked; the
+lowering exchanges only stored referent pointers, without copying or moving
+the referent. Const, nested, source-record and supported function referents
+retain their original checked layouts and signatures. Each operand is bound
+once before the swap body, self-swap preserves the binding, and temporary
+receiver cleanup and referent lifetimes remain ordinary source operations.
+Source replacement/specialization/redeclaration of a selected swap or move,
+casted/indirect callees and unsupported original aliases, defaults, exception
+expressions, source bodies or layouts remain rejected.
+
 Both argument expressions are evaluated once before reading the old pointer.
 The array is bound and decayed without copying, moving or reading its elements;
 the old pointer is returned and the destination points at the first element.

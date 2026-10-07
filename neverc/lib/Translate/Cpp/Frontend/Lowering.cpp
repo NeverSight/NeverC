@@ -4436,7 +4436,7 @@ class FunctionLowering {
     }
     case UtilityOperation::Swap: {
       // Choose the left-to-right order permitted for C++17 call arguments,
-      // retaining both bound objects before executing swap's scalar body.
+      // retaining both bound objects before executing swap's value assignments.
       auto ObjectType = Call->getArg(0)->getType();
       auto LeftAddress = snapshot(
           address(lvalue(Call->getArg(0)), ObjectType, L), L);

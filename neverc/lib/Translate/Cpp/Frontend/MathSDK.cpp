@@ -32578,8 +32578,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Left->getPointeeType(), Right->getPointeeType()) &&
         Same(Call->getArg(0)->getType(), Left->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), Right->getPointeeType())) {
+      const bool Wrapper =
+          approvedFunctionalReferenceRecord(
+              S, SM, Left->getPointeeType()->getAsCXXRecordDecl(), Context) &&
+          approvedUtilityPairElementSwap(S, SM, Function,
+                                         Left->getPointeeType(), Context);
       if (Prototype->isNothrow() &&
-          (utilityScalar(Context, Left->getPointeeType()) ||
+          (Wrapper || utilityScalar(Context, Left->getPointeeType()) ||
            (Left->getPointeeType()->isFunctionPointerType() &&
             approvedUtilityNativeArrayAssociatedSwap(
                 S, SM, Function, Left->getPointeeType(), Context))))

@@ -176598,3 +176598,460 @@ static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declva
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){const int a=3,b=9;std::reference_wrapper<const int>x(a),y(b);std::swap(x,y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeFunctionReferents) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-function-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-swap-runtime-function-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int first(int n)noexcept{return n+3;}int second(int n)noexcept{return n+9;}int main(){std::reference_wrapper<int(int)noexcept>x(first),y(second);std::swap(x,y);return x(1)!=10||y(1)!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-swap-runtime-function-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeNestedWrappers) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-nested-wrappers.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-nested-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>ia(a),ib(b);std::reference_wrapper<std::reference_wrapper<int>>x(ia),y(ib);std::swap(x,y);return x.get().get()!=9||y.get().get()!=3||ia.get()!=3||ib.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-nested-wrappers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0,cleanup=0;struct Receiver{W*value;Receiver(W&w):value(&w){++effects;}~Receiver(){++cleanup;}W&get(){return*value;}};int main(){int a=3,b=9;W x(a),y(b);std::swap(Receiver(x).get(),Receiver(y).get());return effects!=2||cleanup!=2||x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W&pick(W&w){++effects;return w;}int main(){int a=3,b=9;W x(a),y(b);std::swap(pick(x),pick(y));return effects!=2||x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeReexport) {
+  const auto Source = tmpFile("wrapper-direct-swap-runtime-reexport.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-reexport.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+namespace Reexport{using std::swap;}int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);Reexport::swap(x,y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-reexport" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeReferentLifetime) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-referent-lifetime.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-swap-runtime-referent-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int construction=0,destruction=0;struct R{int n;R(int v):n(v){++construction;}R(const R&)=delete;R&operator=(const R&)=delete;~R(){++destruction;}};int main(){{R a(3),b(9);std::reference_wrapper<R>x(a),y(b);std::swap(x,y);if(construction!=2||destruction!=0||x.get().n!=9||y.get().n!=3)return 1;}return destruction!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-referent-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeSameObjectEffects) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-same-object-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-swap-runtime-same-object-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W&pick(W&w){++effects;return w;}int main(){int a=3;W x(a);std::swap(pick(x),pick(x));return effects!=2||x.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-swap-runtime-same-object-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-direct-swap-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int x=3,y=9;std::swap(x,y);return x!=9||y!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeSelfSwap) {
+  const auto Source = tmpFile("wrapper-direct-swap-runtime-self-swap.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-self-swap.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3;std::reference_wrapper<int>x(a);std::swap(x,x);return x.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-self-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeSourceRecordReferents) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-source-record-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-swap-runtime-source-record-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+struct R{int n;R(int v):n(v){}R(const R&)=delete;R&operator=(const R&)=delete;};int main(){R a(3),b(9);std::reference_wrapper<R>x(a),y(b);std::swap(x,y);return x.get().n!=9||y.get().n!=3||a.n!=3||b.n!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-swap-runtime-source-record-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeSwap) {
+  const auto Source = tmpFile("wrapper-direct-swap-runtime-swap.cpp");
+  const auto Output = tmpFile("wrapper-direct-swap-runtime-swap.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);std::swap(x,y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectSwapRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-direct-swap-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-swap-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using std::swap;int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);swap(x,y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-swap-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperDirectSwapRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+using F=void(W&,W&)noexcept;void selected(W&a,W&b){(static_cast<F*>(&std::swap<W>))(a,b);}int main(){return 0;}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+using F=void(W&,W&)noexcept;void selected(W&a,W&b){F*function=&std::swap<W>;function(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&& move(T&&)noexcept;}}
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W&& move<W&>(W&)noexcept;}}
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W&& move<W&>(W&v)noexcept{return static_cast<W&&>(v);}}}
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w){auto hidden=sizeof(long double);return w;}void selected(W&a,W&b){std::swap(source(a),b);}int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::swap(source(a),b);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using W=std::reference_wrapper<R>;void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-swap-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>__swap_result_t<T> swap(T&,T&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_move_assignable<T>::value);}}
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-swap-specialization-declaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept;}}
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-swap-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept{}}}
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using W=std::reference_wrapper<int*>;void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-direct-swap-runtime-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-direct-swap-runtime-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
