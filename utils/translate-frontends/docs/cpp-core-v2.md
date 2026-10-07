@@ -3229,6 +3229,20 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure pinned raw-pointer `pointer_traits::pointer_to` queries authenticate exact
+public static pointer/reference signatures, nonthrowing metadata, implicit SDK
+traits specializations and full class/member declaration chains. The one-byte
+traits layout, concrete pointer template argument and original lvalue operand
+remain checked. Method bodies and address reads are not required by the query.
+
+Exact SDK wrapper element layouts may be completed after this authentication,
+including qualified, nested and source-record wrappers. Source operands, aliases,
+template arguments, selected defaults and source-function dependencies remain
+independent. Queries invoke no operands, address reads, wrapper factories or
+cleanup. Unsupported referent layouts, source class/member replacements and
+independent function addresses remain rejected. Evaluated address operations
+retain their complete pinned body and borrowed operand proofs.
+
 Pure pinned `allocator_traits` allocation, deallocation, construction,
 destruction, `max_size` and copy-selection queries authenticate exact public
 static signatures and declaration chains without forwarding or fallback bodies.

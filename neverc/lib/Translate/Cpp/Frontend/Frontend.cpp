@@ -7463,6 +7463,102 @@ static QualType utilityDefaultDeleteQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Method->getReturnType());
 }
 
+static QualType utilityPointerTraitsQuerySource(Adapter &A,
+                                                const CallExpr *Call) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Record = Method ? Method->getParent()->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!A.S.coreV2() || !Method || !Method->getIdentifier() ||
+      Method->getName() != "pointer_to" || !Reference || !Prototype ||
+      !Record || !Specialization || !Method->isStatic() || Method->isConst() ||
+      Method->isVariadic() || Method->getPrimaryTemplate() ||
+      Method->getTemplateSpecializationArgs() ||
+      Method->getRefQualifier() != RQ_None || !Method->isInlined() ||
+      !Call->isPRValue() || Call->getNumArgs() != 1 ||
+      Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Prototype->getNoexceptExpr() || !Call->getArg(0)->isLValue() ||
+      Record->isInvalidDecl() || Record->isUnion() || !Record->field_empty() ||
+      Record->getNumBases() || Record->isDynamicClass() || !Record->isEmpty() ||
+      approvedMemoryTemplateMetadata(A.S, A.Sources, Record) !=
+          MemoryTemplateMetadata::PointerTraits ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !utilityUniquePtrSDKRecordSource(A, Record, "pointer_traits",
+                                       "__memory/pointer_traits.h") ||
+      !utilitySDKFunctionSource(A, Method, "__memory/pointer_traits.h", false))
+    return {};
+  const auto &Arguments = Specialization->getTemplateArgs();
+  const auto Result = Method->getReturnType();
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      !Result->isPointerType() || Result->getPointeeType()->isVoidType() ||
+      !A.Context.hasSameType(Arguments.get(0).getAsType(), Result) ||
+      !A.Context.hasSameType(Call->getType(), Result) ||
+      !Parameter->isLValueReferenceType() ||
+      !A.Context.hasSameType(Parameter->getPointeeType(),
+                             Result->getPointeeType()) ||
+      !A.Context.hasSameType(Call->getArg(0)->getType(),
+                             Result->getPointeeType()))
+    return {};
+  const auto &Layout = A.Context.getASTRecordLayout(Record);
+  if (Layout.getSize().getQuantity() != 1 ||
+      Layout.getAlignment().getQuantity() != 1 ||
+      !utilityMemoryElementQueryLayout(A, Result->getPointeeType(),
+                                       Call->getExprLoc()) ||
+      A.type(Result, Call->getExprLoc(), false).empty())
+    return {};
+  // The public pointer/reference signature carries this borrowed query. Only
+  // the element layout is completed; no address read or member body is
+  // selected.
+  return A.Context.getCanonicalType(Result);
+}
+
+static void preparePointerTraitsQueryLayouts(Adapter &A) {
+  struct Calls : RecursiveASTVisitor<Calls> {
+    Adapter &A;
+    explicit Calls(Adapter &A) : A(A) {}
+    bool VisitCallExpr(CallExpr *Call) {
+      // Prepare only an authenticated layout. Normal traversal still grants
+      // per-call query permission and checks every original source dependency.
+      (void)utilityPointerTraitsQuerySource(A, Call);
+      return true;
+    }
+  };
+  struct Queries : RecursiveASTVisitor<Queries> {
+    Adapter &A;
+    explicit Queries(Adapter &A) : A(A) {}
+    bool shouldVisitTemplateInstantiations() const { return true; }
+    bool TraverseDecl(Decl *Declaration) {
+      if (Declaration && !isa<TranslationUnitDecl>(Declaration) &&
+          !A.S.owns(A.Sources, Declaration->getLocation()))
+        return true;
+      return RecursiveASTVisitor<Queries>::TraverseDecl(Declaration);
+    }
+    bool VisitTypeLoc(TypeLoc Location) {
+      if (const auto Decltype = Location.getAs<DecltypeTypeLoc>())
+        Calls(A).TraverseStmt(Decltype.getTypePtr()->getUnderlyingExpr());
+      return true;
+    }
+    bool VisitCXXNoexceptExpr(CXXNoexceptExpr *Query) {
+      Calls(A).TraverseStmt(Query->getOperand());
+      return true;
+    }
+    bool VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *Query) {
+      if (!Query->isArgumentType())
+        Calls(A).TraverseStmt(Query->getArgumentExpr());
+      return true;
+    }
+  };
+  if (A.S.coreV2())
+    Queries(A).TraverseDecl(A.Context.getTranslationUnitDecl());
+}
+
 static bool utilityAllocatorConstructQuerySignature(
     Adapter &A, const CallExpr *Call, const CXXMethodDecl *Method,
     QualType Element, llvm::ArrayRef<TemplateArgument> Pack,
@@ -14867,6 +14963,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityDefaultDeleteQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityPointerTraitsQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);
@@ -23852,6 +23951,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     Check.checkExplicitStaticDataInstantiation(Directive);
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
+  preparePointerTraitsQueryLayouts(*this);
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishGeneratedMethods();

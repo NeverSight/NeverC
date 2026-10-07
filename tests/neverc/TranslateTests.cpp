@@ -172987,3 +172987,375 @@ using R=decltype(T::deallocate(std::declval<A&>(),(int*)nullptr,3));int main(){r
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryDeletedLifetime) {
+  const auto Source = tmpFile("pointer-traits-signature-deleted-lifetime.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-deleted-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+struct E{int value;E()=delete;~E()=delete;};
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-deleted-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryNestedWrapper) {
+  const auto Source = tmpFile("pointer-traits-signature-nested-wrapper.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-nested-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;using E=std::reference_wrapper<W>;
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-nested-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryQualifiedWrapper) {
+  const auto Source = tmpFile("pointer-traits-signature-qualified-wrapper.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-qualified-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;using E=const W;
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-qualified-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryQualified) {
+  const auto Source = tmpFile("pointer-traits-signature-qualified.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-qualified.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=const int;
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-qualified" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("pointer-traits-signature-query-effects.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+int effects=0;
+E& operand()noexcept{++effects;return *(E*)nullptr;}
+using P=decltype(T::pointer_to(operand()));
+static_assert(std::is_same<P,E*>::value,"result");
+static_assert(noexcept(T::pointer_to(operand())),"nothrow");
+int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("pointer-traits-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("pointer-traits-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+int inspect(E& value){
+ using P=decltype(T::pointer_to(value));
+ static_assert(std::is_same<P,E*>::value,"result");
+ return noexcept(T::pointer_to(value)) ? 0 : 1;
+}
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "pointer-traits-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryScalar) {
+  const auto Source = tmpFile("pointer-traits-signature-scalar.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-scalar.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=int;
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-scalar" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQuerySourceRecordWrapper) {
+  const auto Source =
+      tmpFile("pointer-traits-signature-source-record-wrapper.cpp");
+  const auto Output =
+      tmpFile("pointer-traits-signature-source-record-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+struct R{int value;R()=delete;~R()=delete;};using E=std::reference_wrapper<R>;
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "pointer-traits-signature-source-record-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerTraitsSignatureQueryWrapper) {
+  const auto Source = tmpFile("pointer-traits-signature-wrapper.cpp");
+  const auto Output = tmpFile("pointer-traits-signature-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=std::reference_wrapper<int>;
+using T=std::pointer_traits<E*>;
+static_assert(std::is_same<decltype(T::pointer_to(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(T::pointer_to(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-traits-signature-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2PointerTraitsSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"source-pointer-partial-forward", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<class P>struct pointer_traits<P*>;}}
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));
+int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+static_assert(sizeof(&T::pointer_to)>0,"address");int main(){return 0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=long double;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+template<int>using W=std::reference_wrapper<int>;using E=W<sizeof(long double)>;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+E& operand(){return *((E*)nullptr+sizeof(long double));}using P=decltype(T::pointer_to(operand()));int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+E& operand(int=sizeof(long double)){return *(E*)nullptr;}using P=decltype(T::pointer_to(operand()));int main(){return 0;}
+)cpp"},
+      {"source-referent-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+struct R{long double value;};using E=std::reference_wrapper<R>;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-scalar-member-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<> int* pointer_traits<int*>::pointer_to(int&v)noexcept{return &v;}}}
+using E=int;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-traits-forward-declaration", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<class P>struct pointer_traits;}}
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-wrapper-member-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<> reference_wrapper<int>* pointer_traits<reference_wrapper<int>*>::pointer_to(reference_wrapper<int>&v)noexcept{return &v;}}}
+using E=std::reference_wrapper<int>;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"wrapper-long-double-referent", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<long double>;using T=std::pointer_traits<E*>;
+using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("pointer-traits-signature-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pointer-traits-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
