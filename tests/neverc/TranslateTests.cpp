@@ -174188,3 +174188,327 @@ using P=decltype(std::as_const(std::declval<E&>()));int main(){return 0;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringArrowStaticReference) {
+  const auto Source =
+      tmpFile("function-reference-lowering-arrow-static-reference.cpp");
+  const auto Output =
+      tmpFile("function-reference-lowering-arrow-static-reference.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+struct Box{static F&reference;int tag;};F&Box::reference=target;
+Box box{3};Box*select()noexcept{++effects;return &box;}int main(){return std::ref(select()->reference)(4)!=5||effects!=11;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-reference-lowering-arrow-static-reference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringBracedBinding) {
+  const auto Source = tmpFile("function-reference-lowering-braced-binding.cpp");
+  const auto Output = tmpFile("function-reference-lowering-braced-binding.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+int main(){F&local{target};return std::ref(local)(4)!=5||effects!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-reference-lowering-braced-binding" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringBracedCopy) {
+  const auto Source = tmpFile("function-reference-lowering-braced-copy.cpp");
+  const auto Output = tmpFile("function-reference-lowering-braced-copy.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+int main(){F&first=target;F&copied{first};return std::ref(copied)(4)!=5||effects!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-reference-lowering-braced-copy" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringBracedEffects) {
+  const auto Source = tmpFile("function-reference-lowering-braced-effects.cpp");
+  const auto Output = tmpFile("function-reference-lowering-braced-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+int main(){F&local{(++effects,target)};return std::ref(local)(4)!=5||effects!=11;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-reference-lowering-braced-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringBracedField) {
+  const auto Source = tmpFile("function-reference-lowering-braced-field.cpp");
+  const auto Output = tmpFile("function-reference-lowering-braced-field.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+struct Holder{F&reference;};int main(){Holder h{{target}};return std::ref(h.reference)(4)!=5||effects!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-reference-lowering-braced-field" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringBracedRvalueReference) {
+  const auto Source =
+      tmpFile("function-reference-lowering-braced-rvalue-reference.cpp");
+  const auto Output =
+      tmpFile("function-reference-lowering-braced-rvalue-reference.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+int main(){F&&local{std::move(target)};return std::ref(local)(4)!=5||effects!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-reference-lowering-braced-rvalue-reference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringObjectStaticReference) {
+  const auto Source =
+      tmpFile("function-reference-lowering-object-static-reference.cpp");
+  const auto Output =
+      tmpFile("function-reference-lowering-object-static-reference.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+struct Box{static F&reference;int tag;};F&Box::reference=target;Box make(){++effects;return Box{3};}int main(){return std::ref(make().reference)(4)!=5||effects!=11;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-reference-lowering-object-static-reference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringPlainBindingControl) {
+  const auto Source =
+      tmpFile("function-reference-lowering-plain-binding-control.cpp");
+  const auto Output =
+      tmpFile("function-reference-lowering-plain-binding-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+int main(){F&local=target;return std::ref(local)(4)!=5||effects!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-reference-lowering-plain-binding-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringQualifiedStaticControl) {
+  const auto Source =
+      tmpFile("function-reference-lowering-qualified-static-control.cpp");
+  const auto Output =
+      tmpFile("function-reference-lowering-qualified-static-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects=0;int target(int n)noexcept{effects+=10;return n+1;}
+struct Box{static F&reference;int tag;};F&Box::reference=target;Box make(){++effects;return Box{3};}int main(){return std::ref(Box::reference)(4)!=5||effects!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "function-reference-lowering-qualified-static-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionReferenceLoweringReceiverCleanup) {
+  const auto Source =
+      tmpFile("function-reference-lowering-receiver-cleanup.cpp");
+  const auto Output =
+      tmpFile("function-reference-lowering-receiver-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int effects,created,destroyed,bad;int target(int n)noexcept{effects+=10;if(destroyed)bad=1;return n+1;}
+struct Box{static F&reference;int tag;Box(int n)noexcept:tag(n){++created;}~Box()noexcept{++destroyed;}};F&Box::reference=target;Box make()noexcept{++effects;return Box{3};}int argument()noexcept{if(destroyed)bad=1;return 4;}int main(){int n=std::ref(make().reference)(argument());return n!=5||effects!=11||created!=1||destroyed!=1||bad;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-reference-lowering-receiver-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionReferenceLoweringRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"braced-erased-alias", R"cpp(
+#include <functional>
+#include <utility>
+template<class>using Alias=int(int)noexcept;using F=Alias<long double>;int target(int n)noexcept{return n+1;}int main(){F&local{target};return std::ref(local)(0);}
+)cpp"},
+      {"braced-original-exception", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept(sizeof(long double)>0);int target(int n)noexcept{return n+1;}int main(){F&local{target};return std::ref(local)(0);}
+)cpp"},
+      {"braced-source-body", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{long double hidden=0;return n;}int main(){F&local{target};return std::ref(local)(0);}
+)cpp"},
+      {"braced-source-default", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{return n+1;}F&source(int=sizeof(long double))noexcept{return target;}int main(){F&local{source()};return std::ref(local)(0);}
+)cpp"},
+      {"static-reference-erased-alias", R"cpp(
+#include <functional>
+#include <utility>
+template<class>using Alias=int(int)noexcept;using F=Alias<long double>;int target(int n)noexcept{return n+1;}struct Box{static F&reference;int tag;};F&Box::reference=target;int main(){Box b{3};return std::ref(b.reference)(0);}
+)cpp"},
+      {"static-reference-missing-target", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int target(int)noexcept;struct Box{static F&reference;int tag;};F&Box::reference=target;int main(){Box b{3};return std::ref(b.reference)(0);}
+)cpp"},
+      {"static-reference-receiver-body", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{return n+1;}struct Box{static F&reference;int tag;};F&Box::reference=target;Box make(){long double hidden=0;return Box{3};}int main(){return std::ref(make().reference)(0);}
+)cpp"},
+      {"static-reference-receiver-layout", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{return n+1;}struct Box{static F&reference;long double tag;};F&Box::reference=target;int main(){Box b{0};return std::ref(b.reference)(0);}
+)cpp"},
+      {"static-reference-sdk-target", R"cpp(
+#include <functional>
+#include <utility>
+using F=int&(int&)noexcept;struct Box{static F&reference;int tag;};F&Box::reference=std::forward<int&>;int main(){Box b{3};int n=0;return std::ref(b.reference)(n);}
+)cpp"},
+      {"static-reference-source-body", R"cpp(
+#include <functional>
+#include <utility>
+using F=int(int)noexcept;int target(int n)noexcept{long double hidden=0;return n;}struct Box{static F&reference;int tag;};F&Box::reference=target;int main(){Box b{3};return std::ref(b.reference)(0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("function-reference-lowering-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("function-reference-lowering-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

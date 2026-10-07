@@ -139,6 +139,8 @@ tuple 中經過驗證的函式指標 trait 物件也支援成員 `swap` 和 `std
 
 透過 `std::move`、`std::forward`、`std::as_const` 以及使用參照模板引數的 `std::move_if_noexcept` 進行純包裝器參照查詢時，可在驗證內建函式身分、簽章與宣告鏈後準備精確的 SDK 配置。帶限定符、巢狀和參照原始碼記錄的包裝器、匯入的被呼叫函式，以及原始碼函式的參數與結果，保留精確的參照類別及 const 檢視。配置準備不會授予呼叫許可或選用被參照物件的生命週期；運算元副作用不會執行，原始碼、別名、預設引數和模板檢查仍然保留。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
+執行期函式參照現在可降級已檢查的透明單元素大括號繫結，包括參照成員及對已儲存回呼的繫結。透過物件或箭頭存取靜態函式參照資料成員時，使用已檢查的靜態儲存路徑。接收者副作用只發生一次，暫存接收者在完整運算式結束後清理，`std::ref` 呼叫也保留此時機。原始目標定義、別名、例外宣告、預設引數和接收者配置仍需檢查；SDK 目標位址及不支援的原始碼相依項仍會被拒絕。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#runtime-function-references).
+
 經驗證的函式指標 trait 包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的 trait 傳值參數，包括 const 參考目標和右值包裝器。固定 SDK 的 trait 複製與包裝器轉換仍須通過認證。每個參數使用獨立的一位元組儲存；可呼叫物件及引數的副作用只發生一次，原始碼函式目標仍須檢查。其他 trait 域和 SDK `value` 儲存別名保留原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 經驗證的原始碼自有標準布局記錄包裝器也可透過 `invoke`、`apply` 和直接包裝呼叫提供精確型別的傳值參數。選中的原始碼複製建構、預設參數及相依性仍須通過檢查。參數使用獨立儲存，在複製前觀察後續引數的修改；預設參數副作用和參數清理保留呼叫中的生命週期。右值包裝器仍提供左值參考目標。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

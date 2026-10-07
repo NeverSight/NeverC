@@ -9288,6 +9288,22 @@ remain unfinished.
 
 ## Runtime function references
 
+Checked transparent single-element braced function-reference bindings use the
+same initializer authentication as ordinary reference bindings. Function-value
+lowering unwraps only the checked semantic glvalue element, including bindings
+to stored callbacks, rvalue function references and function-reference members.
+Original target, alias, template, exception and selected default sources remain
+independent dependencies.
+
+Object-qualified and arrow accesses to static function-reference data members
+use the existing checked static storage path. The receiver is evaluated exactly
+once and its temporary cleanup remains at the full-expression boundary, after
+callee selection, argument evaluation and invocation, including through
+`std::ref`. This consumes the stored callback; it does not classify the static
+data member as a function declaration. Source target definitions and receiver
+layouts and bodies remain checked, and SDK target addresses or unsupported
+source dependencies remain rejected.
+
 Core v2 encodes an ordinary function reference with the existing checked
 callback value. A direct `F&` or `F&&` uses the same bounded default-ABI
 prototype, code-pointer layout and address-space proof as `F*`; it does not

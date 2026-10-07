@@ -620,6 +620,14 @@ class FunctionLowering {
       return functionValue(C->getSubExpr());
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return functionValue(W->getSubExpr());
+    if (A.S.coreV2())
+      if (const auto *List = dyn_cast<InitListExpr>(E)) {
+        const auto *Init = referenceListInitializer(List, A.Context);
+        if (!Init)
+          reject(L, "reference initializer",
+                 "A transparent single-element reference list is required.");
+        return functionValue(Init);
+      }
     if (const auto *C = dyn_cast<CastExpr>(E);
         functionReferenceCast(C, A.Context))
       return functionValue(C->getSubExpr());
@@ -659,6 +667,12 @@ class FunctionLowering {
           Field && Field->getType()->isReferenceType() &&
           Field->getType()->getPointeeType()->isFunctionType())
         return snapshot(lvalue(M), L);
+      if (A.S.coreV2())
+        if (const auto *Variable = dyn_cast<VarDecl>(M->getMemberDecl());
+            Variable && Variable->isStaticDataMember() &&
+            Variable->getType()->isReferenceType() &&
+            Variable->getType()->getPointeeType()->isFunctionType())
+          return snapshot(lvalue(M), L);
       // Static member access evaluates the source base, including its cleanup.
       discard(M->getBase());
       return A.functionAddress(dyn_cast<FunctionDecl>(M->getMemberDecl()), L);
