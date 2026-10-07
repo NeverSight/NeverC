@@ -1,5 +1,95 @@
 # NeverC Progress
 
+## Current snapshot — 2026-10-07
+
+- Snapshot: **2026-10-07 01:01 UTC** / **2026-10-07 09:01 Asia/Shanghai (UTC+08:00)**
+- Source branch: `dev`; reviewed source revision: [8e7b469a92c20d9f7d95dea2b52360c1f6be9864](https://github.com/NeverSight/NeverC/commit/8e7b469a92c20d9f7d95dea2b52360c1f6be9864)
+- Since the last published October 5 snapshot: [165dea40…8e7b469a](https://github.com/NeverSight/NeverC/compare/165dea4057d631b254a2f31f91ffc1b65704f035...8e7b469a92c20d9f7d95dea2b52360c1f6be9864), **79 commits and 28 changed files**, including intervening report/fix history
+- Since the October 6 bounded static review: [91c2119a…8e7b469a](https://github.com/NeverSight/NeverC/compare/91c2119a75e7f1cf35acfde5d4f7193506a8a2d3...8e7b469a92c20d9f7d95dea2b52360c1f6be9864), **54 commits and 17 changed files**
+- Result: **two previously confirmed function-reference lowering defects remain present in the reviewed head**. They are not patched; code publication is blocked. No new code or test change was authored for this snapshot
+- Method: static source, diff, caller/interface, regression-source and existing-CI inspection only. No project execution, build, test, benchmark, repository script, manual workflow trigger or rerun was performed
+
+### Repository and activity status
+
+The complete open-issue inventory contains **9 issues**, #7–#12 and #16–#18, unchanged. All have zero comments, no assignee and no milestone. There are **0 open PRs**. The full PR inventory contains eight historical PRs; the latest, [#20](https://github.com/NeverSight/NeverC/pull/20), remains merged with zero submitted reviews, inline review comments and conversation comments. Paginated collections were exhausted; no issue/PR updates or issue conversation comments were returned for the interval beginning October 6 00:00 UTC. No owner, deadline or completion percentage is inferred.
+
+The UI architecture/API/HAL/host proposals (#7–#12), source-translation roadmap (#16), Studio RFC (#17), and Engine RFC (#18) remain open. [#16](https://github.com/NeverSight/NeverC/issues/16) still requires evidence-backed P0–P3 acceptance before its bounded C++ baseline closes; E Language is the first subsequent adapter. Current implementation growth does not itself satisfy the installed-package, differential-runtime and platform gates.
+
+### Incoming changes and exact coverage
+
+The 17 changed paths since the October 6 review are:
+
+- `neverc/lib/Translate/Cpp/Frontend/{Frontend.cpp,Frontend.h,Lowering.cpp,MathSDK.cpp}`
+- `tests/neverc/TranslateTests.cpp`
+- `utils/translate-frontends/docs/cpp-core-v2.md`
+- `docs/translate.md` and `docs/{ar,de,es,fr,it,ja,ko,ru,zh-CN,zh-TW}/translate.md`
+
+The 54 commit subjects and aggregate file metadata were enumerated. They describe checked function-pointer traits in object/container storage, reference-wrapper invocation and ownership, nested vector emplacement, zero-argument optional emplacement, and lazy memory/allocator/pointer-traits signature queries. These are source/author descriptions, not independently executed feature certification.
+
+Read root `AGENTS.md`, local-development and CI scheduling guidance, and the compiler-development skill and pipeline reference. Direct ancestor checks found no applicable nested `AGENTS.md` on the inspected compiler, test, documentation and utility paths; root, .github and docs contributing-guide checks found no separate `CONTRIBUTING.md`.
+
+This is a **targeted review**, not a complete audit of all 54 commits:
+
+- Re-traced [function-reference binding and functionValue](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L146-L166) through [all functionValue alternatives](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L606-L690), and the frontend's transparent-list/source-function checks
+- Inspected the latest commit's complete Frontend.cpp patch and 372-line regression-source addition: pure pointer_traits queries; nested, qualified and source-record wrappers; unevaluated effects; source/default/template dependencies; unsupported layouts; source replacement and independent function-address rejection
+- Inspected selected aggregate frontend query-source/default permission changes, SDK function-constant identity and lazy trait metadata, plus the exact [nested-vector admission](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/MathSDK.cpp#L7317-L7409), [nested-vector construction](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L20927-L21110), and [wrapper argument/value lowering](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L22727-L22864)
+- Rechecked the unchanged COFF isolation verifier and pinned LLVM 20.1.8 writer behavior, and independently read current documentation CI logs and Windows ARM64 Clang/LTO step results
+
+**Uncovered:** remaining frontend/SDK/lowering changes, full empty-base/lifetime compositions, the complete multilingual prose and the full test-file delta are not exhaustively audited. GitHub reports 128,376 additions and 105,194 deletions in TranslateTests.cpp, a net 23,182 lines; this churn must not be described as 233,570 newly added tests or lines. LLVM/DynCode, std/runtime, packaging and unrelated modules were not newly audited end-to-end. Aggregate MathSDK/test patches were omitted by GitHub due to size; exact relevant source blobs and the latest commit's bounded test patch were used instead.
+
+### Confirmed defects and conditional blocker
+
+1. **Braced function-reference initialization remains unhandled in functionValue.** The frontend authenticates a transparent single-element glvalue list in [referenceListInitializer](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L1600-L1614) and its initializer traversal. Binding a function reference selects functionValue, whose alternatives lack InitListExpr unwrapping, ending in the function-designator rejection. A form such as `F &r{target}` therefore has an admission/lowering mismatch. The ordinary lvalue path already uses the checked helper. This is statically confirmed; no reproducer was executed.
+
+2. **Object-qualified static function-reference data members are misclassified.** [functionValue's MemberExpr branch](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Lowering.cpp#L657-L665) handles reference FieldDecls, then treats every remaining member as FunctionDecl. A static function-reference data member is a VarDecl, so its cast is null and [functionAddressTarget](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/Frontend.cpp#L10178-L10216) rejects it. The existing lvalue path can preserve static storage and receiver effects. This is statically confirmed; no runtime/crash claim is made.
+
+Both findings were identified in the October 6 review and reconfirmed at this SHA. They remain **confirmed, not patched in the reviewed head; publication blocked**. No passing regression result or unpublished patch is presented as repository state.
+
+3. **Conditional COFF format-preservation blocker remains.** [verify_pair](https://github.com/NeverSight/NeverC/blob/8e7b469a92c20d9f7d95dea2b52360c1f6be9864/neverc/lib/Translate/Cpp/Frontend/IsolateMathCoffSymbols.py#L67-L96) requires identical bigobj/header and symbol identities. The [pinned LLVM 20.1.8 writer](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/ObjCopy/COFF/COFFWriter.cpp#L458-L464) chooses bigobj solely from output section count; an input bigobj below the threshold is emitted as ordinary COFF. That combination conflicts with the verifier. [FILE auxiliary-slot sizing](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/ObjCopy/COFF/COFFWriter.cpp#L160-L171) also depends on output symbol width and needs preservation analysis. This is a conditional compatibility problem, **not an observed failure of the current workflow**. Merely relaxing the bigobj check would leave symbol/auxiliary/index invariants unresolved.
+
+### Exact-source CI snapshot
+
+Observed at **2026-10-07 01:01 UTC**, for `8e7b469a92c20d9f7d95dea2b52360c1f6be9864`, before this report-only publication.
+
+| Workflow | Observed state |
+| --- | --- |
+| [cpp-frontend-tools](https://github.com/NeverSight/NeverC/actions/runs/37552980421) | queued |
+| [windows-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37552980422) | queued |
+| [macos-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37552980432) | queued |
+| [windows-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37552980455) | in progress |
+| [windows-x64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/37552980474) | in progress |
+| [linux-x64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37552980669) | in progress |
+| [VBS enclave differential CI](https://github.com/NeverSight/NeverC/actions/runs/37552980420) | in progress |
+| [python-plugin-bindings](https://github.com/NeverSight/NeverC/actions/runs/37552980401) | queued |
+| [lint-docs](https://github.com/NeverSight/NeverC/actions/runs/37552980483) | success |
+| [windows-arm64-neverc-build-clang-lto](https://github.com/NeverSight/NeverC/actions/runs/37552980437) | in progress |
+| [linux-arm64-neverc-build](https://github.com/NeverSight/NeverC/actions/runs/37552980435) | in progress |
+
+Totals: **11 workflows: 1 successful, 6 in progress, 4 queued**. **22 check runs: 6 successful, 9 in progress, 7 queued**. No failed checks were observed at this sample; running/queued work has no final result. There are zero legacy status contexts; the legacy API's empty `pending` aggregate is not a failed check.
+
+The [current documentation-navigation log](https://github.com/NeverSight/NeverC/actions/runs/37552980483/job/112572585552) independently shows **16 layout tests passed**, 736 pages navigable across 11 locales, 1,201 resolving reference definitions and **82 unfinished translations**. [Documentation facts](https://github.com/NeverSight/NeverC/actions/runs/37552980483/job/112572585888) passed for 132 plugin pages, 11 release locales, 130 schema phases and 1,893 distinct citations.
+
+The [Windows ARM64 Clang/LTO job](https://github.com/NeverSight/NeverC/actions/runs/37552980437/job/112572774407) passed “Verify builtin C++ audit with real COFF archives” at **00:57:43 UTC**, then passed witness-manifest/upload steps. Its compiler build began at 00:57:47 and was still running; compiler tests, runtime, packaging and relocation remained pending. This narrow witness success is not whole-job success and does not disprove the conditional bigobj input problem.
+
+The latest [author commit](https://github.com/NeverSight/NeverC/commit/8e7b469a92c20d9f7d95dea2b52360c1f6be9864) reports 20 focused tests, 13 O0/O2 native runtime comparisons, 11 rejection guards, nine protocol fixtures and 36 pinned-SDK cross-target syntax checks. Those are **author-reported validation claims**, separate from the independently observed CI above; this review did not execute them. Historical failures in archived snapshots are not automatically failures of this SHA.
+
+### Suggested priorities
+
+1. **Close the two function-reference lowering gaps.** Dependency: resolve the blocked code publication and rebase the smallest change against current source. Acceptance: reuse checked transparent-list/static-storage handling, preserve receiver side effects/cleanup, add focused positive and rejection regression source, verify the exact remote diff, then obtain separately authorized execution evidence. Owner unassigned.
+2. **Resolve COFF bigobj preservation without weakening provenance.** Dependency: an actual low-section bigobj input and the pinned writer/reader/index contract. Acceptance: preserve member format, sections, relocations, symbol indices and FILE auxiliaries together, with authorized native evidence; distinguish it from the now-passing witness stage. Owner unassigned.
+3. **Reconcile #16's acceptance matrix with exact-revision evidence.** Dependency: completion of relevant compiler/runtime/relocation CI and a bounded support inventory. Acceptance: map implemented features to source, positive/negative fixture coverage, observed native results and installed-package evidence; keep unfinished platform gates and the 82 untranslated pages explicit. Owner unassigned.
+
+### Daily log — 2026-10-07
+
+- Refreshed the 9-issue/0-open-PR inventory and verified no new issue/PR discussion activity
+- Distinguished 79 commits/28 files since the published October 5 source from 54 commits/17 files since the October 6 static review
+- Reconfirmed both unpatched function-reference defects; performed no code mutation and authored no new test
+- Recorded passing exact-source documentation checks and Windows ARM64 real-COFF witness stage, without claiming overall compiler CI success
+- Preserved all prior snapshot/history text below. Only PROGRESS.md is maintained by this report; no builds, tests, scripts, manual CI actions, issue mutations, dependency/security changes, merges or deployments
+
+<details>
+<summary>Previous published snapshot and complete history (through 2026-10-05)</summary>
+
 ## Current snapshot — 2026-10-05
 
 - Snapshot: **2026-10-05 01:13 UTC** / **2026-10-05 09:13 Asia/Shanghai (UTC+08:00)**
@@ -499,3 +589,5 @@ Running/queued states have no final result. Branch `dev` was writable and unprot
 - Exact reviewed-source CI is now complete: 3 successful / 8 failed workflows and 15 successful / 8 failed / 1 skipped checks. Failure-stage evidence and unavailable root-cause logs are distinguished.
 - Independently reconfirmed the current Windows SDK witness failure and passing documentation navigation/layout checks; 82 translations remain unfinished.
 - Preserved previous snapshots and contributor text. No execution or manual CI actions, CI-skip markers, dependencies/security changes, issue mutation, merge or deployment.
+
+</details>
