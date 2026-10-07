@@ -17135,6 +17135,157 @@ static bool utilityWrapperFillN(const State &S, const SourceManager &SM,
   return true;
 }
 
+// The raw-range fill dispatch authenticates its category metadata and then
+// reuses the full checked wrapper counted-fill proof.
+static bool utilityWrapperFillRange(const State &S, const SourceManager &SM,
+                                    const FunctionDecl *Function, QualType Type,
+                                    const ASTContext &Context) {
+  if (Type.isNull() || Type.hasQualifiers() ||
+      !approvedFunctionalReferenceRecord(S, SM, Type->getAsCXXRecordDecl(),
+                                         Context) ||
+      !utilitySwapSDKFunction(S, SM, Function, "fill", "__algorithm/fill.h") ||
+      Function->getNumParams() != 3 || !Function->getReturnType()->isVoidType())
+    return false;
+  const auto Pointer = Context.getPointerType(Type);
+  const auto Reference = Context.getLValueReferenceType(Type.withConst());
+  if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(2)->getType(), Reference))
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Type))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Call = Body && Body->size() == 1
+                         ? dyn_cast<CallExpr>(*Body->body_begin())
+                         : nullptr;
+  const auto *Adapter = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Tag = Call && Call->getNumArgs() == 4
+                        ? dyn_cast<CXXTemporaryObjectExpr>(Call->getArg(3))
+                        : nullptr;
+  if (!Call || Call->getNumArgs() != 4 ||
+      !utilitySwapSDKFunction(S, SM, Adapter, "__fill", "__algorithm/fill.h") ||
+      Adapter->getNumParams() != 4 || !Adapter->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Adapter->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(Adapter->getParamDecl(1)->getType(), Pointer) ||
+      !Context.hasSameType(Adapter->getParamDecl(2)->getType(), Reference) ||
+      !functionalInvokeParameterReference(Call->getArg(0),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Call->getArg(1),
+                                          Function->getParamDecl(1)) ||
+      !functionalInvokeParameterReference(Call->getArg(2),
+                                          Function->getParamDecl(2)) ||
+      !Tag || Tag->getNumArgs() || !Tag->getConstructor() ||
+      !Tag->getConstructor()->isTrivial() ||
+      !Context.hasSameType(Tag->getType(), Adapter->getParamDecl(3)->getType()))
+    return false;
+
+  // A source specialization of iterator_traits<T*> can alter the selected
+  // tag construction even when the SDK fill body itself is unchanged.
+  QualType CategoryType = Tag->getType();
+  if (const auto *Elaborated =
+          dyn_cast<ElaboratedType>(CategoryType.getTypePtr()))
+    CategoryType = Elaborated->getNamedType();
+  const auto *CategoryAlias = dyn_cast<TypedefType>(CategoryType.getTypePtr());
+  const auto *Category = CategoryAlias ? CategoryAlias->getDecl() : nullptr;
+  const auto *Traits = Category ? dyn_cast<ClassTemplateSpecializationDecl>(
+                                      Category->getDeclContext())
+                                : nullptr;
+  const auto *Primary = Traits ? Traits->getSpecializedTemplate() : nullptr;
+  const auto *Partial =
+      Traits ? Traits->getSpecializedTemplateOrPartial()
+                   .dyn_cast<ClassTemplatePartialSpecializationDecl *>()
+             : nullptr;
+  const auto *TagRecord = Tag->getType()->getAsCXXRecordDecl();
+  auto Origin = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__iterator/iterator_traits.h");
+  };
+  if (!Category || Category->getName() != "iterator_category" ||
+      !Origin(Category) || !Traits || !Traits->isCompleteDefinition() ||
+      !Traits->getIdentifier() || Traits->getName() != "iterator_traits" ||
+      Traits->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Traits->getTemplateArgs().size() != 1 ||
+      Traits->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Traits->getTemplateArgs().get(0).getAsType(),
+                           Pointer) ||
+      !Primary || !Partial || !Origin(Traits) || !Origin(Partial) ||
+      !Origin(Primary) || !Origin(Primary->getTemplatedDecl()) || !TagRecord ||
+      TagRecord->getName() != "random_access_iterator_tag" ||
+      !Origin(TagRecord) || !TagRecord->isTrivial() ||
+      !Context.hasSameType(Category->getUnderlyingType(), Tag->getType()))
+    return false;
+  for (const auto *D : Traits->redecls())
+    if (!Origin(D))
+      return false;
+  for (const auto *D : Partial->redecls())
+    if (!Origin(D))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return false;
+
+  const auto *Constructor = Tag->getConstructor();
+  if (!Constructor->isImplicit() || !Constructor->isDefaultConstructor() ||
+      Constructor->getNumParams() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          TagRecord->getCanonicalDecl())
+    return false;
+  const llvm::StringRef Tags[] = {"random_access_iterator_tag",
+                                  "bidirectional_iterator_tag",
+                                  "forward_iterator_tag", "input_iterator_tag"};
+  const auto *Current = TagRecord;
+  for (unsigned I = 0; I != 4; ++I) {
+    if (!Current || !Current->isCompleteDefinition() ||
+        !Current->getIdentifier() || Current->getName() != Tags[I] ||
+        !Current->isTrivial() || !Current->isEmpty() ||
+        isa<ClassTemplateSpecializationDecl>(Current) ||
+        Current->getNumBases() != (I == 3 ? 0u : 1u))
+      return false;
+    for (const auto *D : Current->redecls())
+      if (!Origin(D))
+        return false;
+    if (I != 3) {
+      const auto &Base = *Current->bases_begin();
+      if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public)
+        return false;
+      Current = Base.getType()->getAsCXXRecordDecl();
+    }
+  }
+  const auto *AdapterArguments = Adapter->getTemplateSpecializationArgs();
+  if (!AdapterArguments || AdapterArguments->size() != 2 ||
+      AdapterArguments->get(0).getKind() != TemplateArgument::Type ||
+      AdapterArguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(AdapterArguments->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(AdapterArguments->get(1).getAsType(), Type))
+    return false;
+
+  const auto *AdapterBody = dyn_cast_or_null<CompoundStmt>(Adapter->getBody());
+  const auto *Fill = AdapterBody && AdapterBody->size() == 1
+                         ? dyn_cast<CallExpr>(*AdapterBody->body_begin())
+                         : nullptr;
+  const auto *Count = Fill && Fill->getNumArgs() == 3
+                          ? dyn_cast<BinaryOperator>(Fill->getArg(1))
+                          : nullptr;
+  if (!Fill || Fill->getNumArgs() != 3 || !Count ||
+      Count->getOpcode() != BO_Sub ||
+      !functionalInvokeParameterReference(Fill->getArg(0),
+                                          Adapter->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Count->getLHS(),
+                                          Adapter->getParamDecl(1)) ||
+      !functionalInvokeParameterReference(Count->getRHS(),
+                                          Adapter->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Fill->getArg(2),
+                                          Adapter->getParamDecl(2)))
+    return false;
+  return utilityWrapperFillN(S, SM, Fill->getDirectCallee(), Type, Context);
+}
+
 static bool utilitySwapArrayData(const State &S, const SourceManager &SM,
                                  const Expr *Expression,
                                  const UtilityArrayRecord &Array,
@@ -29946,6 +30097,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         approvedUtilityOwnedFill(S, SM, Function, Pointer->getPointeeType(),
                                  Context))
       return UtilityOperation::AlgorithmOwnedFill;
+  }
+  if (Origin->Path == "__algorithm/fill.h" && Name == "fill" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Function->getReturnType()->isVoidType() &&
+      Call->getType()->isVoidType()) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    if (Pointer->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Pointer->getPointeeType()) &&
+        utilityWrapperFillRange(S, SM, Function, Pointer->getPointeeType(),
+                                Context))
+      return UtilityOperation::AlgorithmFill;
   }
   if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
