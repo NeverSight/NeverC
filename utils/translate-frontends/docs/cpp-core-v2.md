@@ -300,6 +300,21 @@ pointer conversion; source replacements of any selected helper are rejected.
 This follows C++17's [exchange operation](https://timsong-cpp.github.io/cppwp/n4659/utility.exchange)
 and [array-to-pointer conversion](https://timsong-cpp.github.io/cppwp/n4659/conv.array).
 
+Pure pointer `std::swap` type and `noexcept` queries use the exact pinned
+void-returning reference signature, matching pointer template argument and
+lvalue operands. Result aliases and their exact `enable_if`, move-construction
+and move-assignment constraints retain SDK declaration-chain checks, including
+the pinned swap forward declarations. Resolved nonthrowing move/assignment
+traits require the exact SDK records, arguments and constant identities.
+
+Queries do not require an instantiated swap body, read or write pointers,
+execute SDK move/assignment helpers or select pointee lifetimes. Callback
+signatures, source-record layouts, original operand exceptions, aliases,
+template arguments, selected defaults and source bodies retain their checks.
+Source replacements or redeclarations of any consumed function, alias,
+constraint or trait, casted callees and independent SDK function addresses
+remain rejected. Evaluated swap keeps its existing complete body proof.
+
 Both argument expressions are evaluated once before reading the old pointer.
 The array is bound and decayed without copying, moving or reading its elements;
 the old pointer is returned and the destination points at the first element.

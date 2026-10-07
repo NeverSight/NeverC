@@ -175333,3 +175333,335 @@ int first(){return 3;}int second(){return 9;}int main(){P value=first;auto old=f
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryCallbackPointer) {
+  const auto Source = tmpFile("pointer-swap-signature-callback-pointer.cpp");
+  const auto Output = tmpFile("pointer-swap-signature-callback-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-swap-signature-callback-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryCallbackSourceRecord) {
+  const auto Source =
+      tmpFile("pointer-swap-signature-callback-source-record.cpp");
+  const auto Output =
+      tmpFile("pointer-swap-signature-callback-source-record.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+struct R{int value;R()=delete;~R()=delete;};using P=int(*)(R&)noexcept;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-swap-signature-callback-source-record" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryCallbackThrowingFunction) {
+  const auto Source =
+      tmpFile("pointer-swap-signature-callback-throwing-function.cpp");
+  const auto Output =
+      tmpFile("pointer-swap-signature-callback-throwing-function.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int);
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "pointer-swap-signature-callback-throwing-function" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryObjectPointer) {
+  const auto Source = tmpFile("pointer-swap-signature-object-pointer.cpp");
+  const auto Output = tmpFile("pointer-swap-signature-object-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int*;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-swap-signature-object-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("pointer-swap-signature-query-effects.cpp");
+  const auto Output = tmpFile("pointer-swap-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+P left=nullptr,right=nullptr;int effects=0;P&first()noexcept{++effects;return left;}P&second()noexcept{++effects;return right;}using Result=decltype(std::swap(first(),second()));static_assert(std::is_same<Result,void>::value,"result");static_assert(noexcept(std::swap(first(),second())),"nothrow");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-swap-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("pointer-swap-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("pointer-swap-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+int inspect(P&left,P&right){using Result=decltype(std::swap(left,right));static_assert(std::is_same<Result,void>::value,"result");return noexcept(std::swap(left,right))?0:1;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-swap-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryQueryThrowingOperands) {
+  const auto Source =
+      tmpFile("pointer-swap-signature-query-throwing-operands.cpp");
+  const auto Output =
+      tmpFile("pointer-swap-signature-query-throwing-operands.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+P left=nullptr,right=nullptr;int effects=0;P&first(){++effects;return left;}P&second(){++effects;return right;}using Result=decltype(std::swap(first(),second()));static_assert(std::is_same<Result,void>::value,"result");static_assert(!noexcept(std::swap(first(),second())),"operand exception");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "pointer-swap-signature-query-throwing-operands" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerSwapSignatureQueryScalarControl) {
+  const auto Source = tmpFile("pointer-swap-signature-scalar-control.cpp");
+  const auto Output = tmpFile("pointer-swap-signature-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pointer-swap-signature-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2PointerSwapSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+using F=void(P&,P&)noexcept;using Result=decltype(static_cast<F*>(&std::swap<P>)(std::declval<P&>(),std::declval<P&>()));int main(){return 0;}
+)cpp"},
+      {"extended-callback-signature", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(long double)noexcept;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+using F=void(P&,P&)noexcept;F*address=&std::swap<P>;int main(){return address==nullptr;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=int(*)(int)noexcept;using P=Alias<sizeof(long double)>;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-assignment-constraint-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<class T>struct is_move_assignable;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-assignment-trait-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<class T>struct is_nothrow_move_assignable;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-callback-specialization", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<>void swap<P>(P&,P&)noexcept{}}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept(sizeof(long double)>0);
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-move-constraint-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<class T>struct is_move_constructible;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-move-trait-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+P left=nullptr,right=nullptr;P&first()noexcept{(void)sizeof(long double);return left;}using Result=decltype(std::swap(first(),right));int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+P left=nullptr,right=nullptr;P&first(int n=sizeof(long double))noexcept{return left;}using Result=decltype(std::swap(first(),right));int main(){return 0;}
+)cpp"},
+      {"source-primary-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<class T>__swap_result_t<T> swap(T&,T&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_move_assignable<T>::value);}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <utility>
+#include <type_traits>
+struct R{long double value;};using P=int(*)(R&)noexcept;
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-result-alias-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<class T>using __swap_result_t=__enable_if_t<is_move_constructible<T>::value&&is_move_assignable<T>::value>;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-enable-if-class-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<bool B,class T>struct enable_if;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-enable-if-alias-redeclaration", R"cpp(
+#include <utility>
+#include <type_traits>
+using P=int(*)(int)noexcept;
+namespace std{inline namespace __1{template<bool B,class T>using __enable_if_t=typename enable_if<B,T>::type;}}
+static_assert(std::is_same<decltype(std::swap(std::declval<P&>(),std::declval<P&>())),void>::value,"result");static_assert(noexcept(std::swap(std::declval<P&>(),std::declval<P&>())),"nothrow");int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("pointer-swap-signature-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pointer-swap-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

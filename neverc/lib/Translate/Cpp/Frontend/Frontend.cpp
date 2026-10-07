@@ -7594,6 +7594,189 @@ static QualType utilityPointerExchangeQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Result);
 }
 
+static bool utilityPointerSwapResultSource(Adapter &A,
+                                           const FunctionDecl *Function,
+                                           QualType Pointer) {
+  const auto *Result =
+      Function->getReturnType()->getAs<TemplateSpecializationType>();
+  const auto *Alias = Result
+                          ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+                                Result->getTemplateName().getAsTemplateDecl())
+                          : nullptr;
+  if (!Alias || Alias->getName() != "__swap_result_t" ||
+      Result->template_arguments().size() != 1 ||
+      Result->template_arguments()[0].getKind() != TemplateArgument::Type ||
+      !A.Context.hasSameType(Result->template_arguments()[0].getAsType(),
+                             Pointer))
+    return false;
+  auto Pinned = [&](const Decl *Declaration, llvm::StringRef Path,
+                    bool AllowSwapForward = false) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto Origin = A.S.sdkFile(A.Sources, Declaration->getLocation());
+    return approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
+           Origin && Origin->Root == "libcxx" &&
+           (Origin->Path == Path ||
+            (AllowSwapForward &&
+             Origin->Path == "__type_traits/is_swappable.h"));
+  };
+  auto AliasSource = [&](const TypeAliasTemplateDecl *Template,
+                         llvm::StringRef Path, bool AllowSwapForward = false) {
+    for (const auto *Declaration : Template->redecls())
+      if (!Pinned(Declaration, Path, AllowSwapForward) ||
+          !Pinned(Declaration->getTemplatedDecl(), Path, AllowSwapForward))
+        return false;
+    return true;
+  };
+  if (!AliasSource(Alias, "__utility/swap.h", true) ||
+      Alias->getTemplateParameters()->size() != 1)
+    return false;
+  const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
+      Alias->getTemplateParameters()->getParam(0));
+  const auto *Enable = Alias->getTemplatedDecl()
+                           ->getUnderlyingType()
+                           ->getAs<TemplateSpecializationType>();
+  const auto *EnableAlias =
+      Enable ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+                   Enable->getTemplateName().getAsTemplateDecl())
+             : nullptr;
+  if (!Parameter || Parameter->isParameterPack() ||
+      Parameter->hasDefaultArgument() || !EnableAlias ||
+      EnableAlias->getName() != "__enable_if_t" ||
+      !AliasSource(EnableAlias, "__type_traits/enable_if.h") ||
+      Enable->template_arguments().size() != 1 ||
+      Enable->template_arguments()[0].getKind() != TemplateArgument::Expression)
+    return false;
+  const auto *Enabled = EnableAlias->getTemplatedDecl()
+                            ->getUnderlyingType()
+                            ->getAs<DependentNameType>();
+  const auto *EnabledQualifier = Enabled ? Enabled->getQualifier() : nullptr;
+  const auto *EnabledType =
+      EnabledQualifier ? EnabledQualifier->getAsType() : nullptr;
+  const auto *EnabledSpecialization =
+      EnabledType ? EnabledType->getAs<TemplateSpecializationType>() : nullptr;
+  const auto *EnableTemplate =
+      EnabledSpecialization
+          ? dyn_cast_or_null<ClassTemplateDecl>(
+                EnabledSpecialization->getTemplateName().getAsTemplateDecl())
+          : nullptr;
+  if (!EnableTemplate || EnableTemplate->getName() != "enable_if")
+    return false;
+  for (const auto *Declaration : EnableTemplate->redecls())
+    if (!Pinned(Declaration, "__type_traits/enable_if.h") ||
+        !Pinned(Declaration->getTemplatedDecl(), "__type_traits/enable_if.h"))
+      return false;
+  const auto *Condition = dyn_cast<BinaryOperator>(
+      Enable->template_arguments()[0].getAsExpr()->IgnoreParenImpCasts());
+  if (!Condition || Condition->getOpcode() != BO_LAnd)
+    return false;
+  auto Trait = [&](const Expr *Expression, llvm::StringRef Name,
+                   llvm::StringRef Path) {
+    const auto *Reference =
+        dyn_cast<DependentScopeDeclRefExpr>(Expression->IgnoreParenImpCasts());
+    const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Specialization =
+        Type ? Type->getAs<TemplateSpecializationType>() : nullptr;
+    const auto *Template =
+        Specialization
+            ? dyn_cast_or_null<ClassTemplateDecl>(
+                  Specialization->getTemplateName().getAsTemplateDecl())
+            : nullptr;
+    if (!Reference || Reference->getDeclName().getAsString() != "value" ||
+        !Template || Template->getName() != Name ||
+        Specialization->template_arguments().size() != 1 ||
+        Specialization->template_arguments()[0].getKind() !=
+            TemplateArgument::Type ||
+        !A.Context.hasSameType(
+            Specialization->template_arguments()[0].getAsType(),
+            A.Context.getTypeDeclType(Parameter)))
+      return false;
+    for (const auto *Declaration : Template->redecls())
+      if (!Pinned(Declaration, Path) ||
+          !Pinned(Declaration->getTemplatedDecl(), Path))
+        return false;
+    return true;
+  };
+  return Trait(Condition->getLHS(), "is_move_constructible",
+               "__type_traits/is_constructible.h") &&
+         Trait(Condition->getRHS(), "is_move_assignable",
+               "__type_traits/is_assignable.h");
+}
+
+static QualType utilityPointerSwapQuerySource(Adapter &A,
+                                              const CallExpr *Call) {
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Prototype =
+      Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Exception =
+      Prototype && Prototype->getNoexceptExpr()
+          ? dyn_cast<BinaryOperator>(
+                Prototype->getNoexceptExpr()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!A.S.coreV2() || !Reference || !Function || !Function->getIdentifier() ||
+      Function->getName() != "swap" || !Function->isInlined() ||
+      !Function->getPrimaryTemplate() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Call->getNumArgs() != 2 || Function->getNumParams() != 2 ||
+      Function->getParamDecl(0)->hasDefaultArg() ||
+      Function->getParamDecl(1)->hasDefaultArg() ||
+      !Call->getType()->isVoidType() ||
+      !Function->getReturnType()->isVoidType() || !Call->isPRValue() ||
+      !Exception || Exception->getOpcode() != BO_LAnd ||
+      Prototype->getExceptionSpecType() != EST_NoexceptTrue ||
+      operationCalleePrototype(Call) != Prototype ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !utilitySDKFunctionSource(A, Function, "__utility/swap.h", false))
+    return {};
+  const auto Pointer = Arguments->get(0).getAsType();
+  if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
+      !utilityPointerSwapResultSource(A, Function, Pointer))
+    return {};
+  const auto Parameter = A.Context.getLValueReferenceType(Pointer);
+  for (unsigned Index = 0; Index != 2; ++Index)
+    if (!A.Context.hasSameType(Function->getParamDecl(Index)->getType(),
+                               Parameter) ||
+        !A.Context.hasSameType(Call->getArg(Index)->getType(), Pointer) ||
+        !Call->getArg(Index)->isLValue())
+      return {};
+  auto Trait = [&](const Expr *Expression, llvm::StringRef Name,
+                   llvm::StringRef Path) {
+    const auto *ValueReference =
+        dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts());
+    const auto *Qualifier =
+        ValueReference ? ValueReference->getQualifier() : nullptr;
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Record =
+        Type ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                   Type->getAsCXXRecordDecl())
+             : nullptr;
+    const auto *Variable =
+        ValueReference ? dyn_cast<VarDecl>(ValueReference->getDecl()) : nullptr;
+    if (!Record || !Variable || Record->getName() != Name ||
+        Record->getTemplateArgs().size() != 1 ||
+        Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !A.Context.hasSameType(Record->getTemplateArgs().get(0).getAsType(),
+                               Pointer) ||
+        !utilityUniquePtrSDKRecordSource(A, Record, Name, Path))
+      return false;
+    const auto Value =
+        approvedSDKIntegerConstant(A.S, A.Sources, Variable, A.Context);
+    return Variable->getName() == "value" && Value && *Value == 1;
+  };
+  if (!Trait(Exception->getLHS(), "is_nothrow_move_constructible",
+             "__type_traits/is_nothrow_constructible.h") ||
+      !Trait(Exception->getRHS(), "is_nothrow_move_assignable",
+             "__type_traits/is_nothrow_assignable.h") ||
+      A.type(Pointer, Call->getExprLoc(), false).empty())
+    return {};
+  // Only the exact void/nothrow pointer signature and pinned constraint traits
+  // participate. No SDK move/assignment body, pointer access or lifetime runs.
+  return A.Context.getCanonicalType(Function->getReturnType());
+}
+
 static bool utilityWrapperReferenceCastQueryLayout(Adapter &A,
                                                    const CallExpr *Call) {
   const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
@@ -7648,6 +7831,7 @@ static void prepareBorrowedQueryLayouts(Adapter &A) {
       (void)utilityAddressofQuerySource(A, Call);
       (void)utilityLaunderQuerySource(A, Call);
       (void)utilityPointerExchangeQuerySource(A, Call);
+      (void)utilityPointerSwapQuerySource(A, Call);
       (void)utilityWrapperReferenceCastQueryLayout(A, Call);
       return true;
     }
@@ -15097,6 +15281,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityPointerExchangeQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityPointerSwapQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);
