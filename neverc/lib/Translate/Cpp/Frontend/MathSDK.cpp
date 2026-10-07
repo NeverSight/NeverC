@@ -18495,6 +18495,39 @@ public:
     return makePair(Expression, Input, Output);
   }
 
+  const CXXConstructExpr *provePairConstruction(const Expr *Expression) const {
+    const auto *C = dyn_cast_or_null<CXXConstructExpr>(strip(Expression));
+    const auto P = C ? pair(C->getType(), Input, Output) : std::nullopt;
+    const auto *Constructor = C ? C->getConstructor() : nullptr;
+    const auto *A =
+        Constructor ? Constructor->getTemplateSpecializationArgs() : nullptr;
+    if (!P || !Constructor || C->getNumArgs() != 2 ||
+        !approvedUtilityPairConstruction(S, SM, C, Context) ||
+        !utilityCompositeSwapMethod(S, SM, Constructor, "",
+                                    "__utility/pair.h") ||
+        Constructor->getNumParams() != 2 ||
+        Constructor->getNumCtorInitializers() != 2 || !A || A->size() < 2)
+      return nullptr;
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+    if (!Body || !Body->body_empty())
+      return nullptr;
+    auto Init = Constructor->init_begin();
+    for (unsigned I = 0; I != 2; ++I, ++Init) {
+      const auto Type = I ? Output : Input;
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !same(A->get(I).getAsType(), Type) ||
+          !same(Constructor->getParamDecl(I)->getType(),
+                Context.getRValueReferenceType(Type)) ||
+          !same(C->getArg(I)->getType(), Type) ||
+          !(*Init)->isMemberInitializer() ||
+          (*Init)->getMember() != (I ? P->Second : P->First) ||
+          !reference(adapt((*Init)->getInit(), Type, true, Type),
+                     Constructor->getParamDecl(I)))
+        return nullptr;
+    }
+    return C;
+  }
+
   bool proveIterator(const FunctionDecl *Function, QualType Pointer,
                      bool Rewrap) const {
     return iterator(Function, Pointer, Rewrap);
@@ -21233,10 +21266,159 @@ static bool utilityWrapperEqual(const State &S, const SourceManager &SM,
                                       Context);
 }
 
+// Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
+static bool utilityWrapperMismatchMinimum(const State &S,
+                                          const SourceManager &SM,
+                                          const CallExpr *Call,
+                                          const ASTContext &Context) {
+  const auto Type = Context.getPointerDiffType();
+  const auto ConstType = Type.withConst();
+  const auto Reference = Context.getLValueReferenceType(ConstType);
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/comp.h");
+  };
+  auto Function = [&](const FunctionDecl *F, llvm::ArrayRef<QualType> Arguments,
+                      llvm::ArrayRef<QualType> Parameters) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, "min", "__algorithm/min.h") ||
+        !Same(F->getReturnType(), Reference) || !A ||
+        A->size() != Arguments.size() || F->getNumParams() != Parameters.size())
+      return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    return true;
+  };
+  auto Result = [&](const FunctionDecl *F) -> const Expr * {
+    const auto *D = F ? F->getDefinition() : nullptr;
+    const auto *B = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
+    const auto *R =
+        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
+    return R ? R->getRetValue() : nullptr;
+  };
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!Call || Call->getNumArgs() != 2 || !Call->isLValue() ||
+      !Same(Call->getType(), ConstType) ||
+      !Function(F, {Type}, {Reference, Reference}) ||
+      !utilityAlgorithmSDKReference(S, SM, Call, F))
+    return false;
+  const auto *Inner = dyn_cast_or_null<CallExpr>(Result(F));
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  const auto *Construction =
+      Inner && Inner->getNumArgs() == 3
+          ? dyn_cast<CXXTemporaryObjectExpr>(Inner->getArg(2))
+          : nullptr;
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Comparator = Construction ? Construction->getType() : QualType();
+  const auto *Record = Comparator.isNull()
+                           ? nullptr
+                           : dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                                 Comparator->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Inner || !Inner->isLValue() || !Same(Inner->getType(), ConstType) ||
+      !Function(Helper, {Type, Comparator},
+                {Reference, Reference, Comparator}) ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) || !Construction ||
+      Construction->getNumArgs() || !Ctor || !Ctor->isImplicit() ||
+      !Ctor->isDefaultConstructor() || !Ctor->isTrivial() ||
+      Comparator.hasQualifiers() || !Record || !Primary ||
+      Record->getName() != "__less" || !Record->isCompleteDefinition() ||
+      !Record->isEmpty() || !Record->isTrivial() || !Record->field_empty() ||
+      Record->getNumBases() ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Record->getTemplateArgs().size() != 2 ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  for (const auto &A : Record->getTemplateArgs().asArray())
+    if (A.getKind() != TemplateArgument::Type || !A.getAsType()->isVoidType())
+      return false;
+  for (const auto *D : Record->redecls())
+    if (!Origin(D))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return false;
+  for (const auto *D : Ctor->redecls())
+    if (!Origin(D))
+      return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilityAlgorithmReference(
+            Inner->getArg(I), F->getDefinition()->getParamDecl(I), Context))
+      return false;
+  const auto *Conditional =
+      dyn_cast_or_null<ConditionalOperator>(Result(Helper));
+  const auto *Invoke =
+      Conditional ? dyn_cast<CXXOperatorCallExpr>(Conditional->getCond())
+                  : nullptr;
+  const auto *Method =
+      Invoke ? dyn_cast_or_null<CXXMethodDecl>(Invoke->getDirectCallee())
+             : nullptr;
+  const auto *MethodPrimary = Method ? Method->getPrimaryTemplate() : nullptr;
+  const auto *Pattern =
+      MethodPrimary ? MethodPrimary->getTemplatedDecl() : nullptr;
+  const auto *A = Method ? Method->getTemplateSpecializationArgs() : nullptr;
+  const auto *D = Helper->getDefinition();
+  if (!Conditional || !Conditional->isLValue() ||
+      !Same(Conditional->getType(), ConstType) || !Invoke ||
+      Invoke->getOperator() != OO_Call || Invoke->getNumArgs() != 3 ||
+      !Invoke->isPRValue() || !Invoke->getType()->isBooleanType() || !Method ||
+      !Method->isOverloadedOperator() ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      Method->getNumParams() != 2 ||
+      !Method->getReturnType()->isBooleanType() ||
+      !Same(Method->getParamDecl(0)->getType(), Reference) ||
+      !Same(Method->getParamDecl(1)->getType(), Reference) || !A ||
+      A->size() != 2 || !Pattern || !Origin(Pattern->getDefinition()) ||
+      !utilityAlgorithmSDKReference(S, SM, Invoke, Method) ||
+      !utilityAlgorithmReference(Invoke->getArg(0), D->getParamDecl(2),
+                                 Context) ||
+      !utilityAlgorithmReference(Invoke->getArg(1), D->getParamDecl(1),
+                                 Context) ||
+      !utilityAlgorithmReference(Invoke->getArg(2), D->getParamDecl(0),
+                                 Context) ||
+      !utilityAlgorithmReference(Conditional->getTrueExpr(), D->getParamDecl(1),
+                                 Context) ||
+      !utilityAlgorithmReference(Conditional->getFalseExpr(),
+                                 D->getParamDecl(0), Context))
+    return false;
+  for (const auto &Argument : A->asArray())
+    if (Argument.getKind() != TemplateArgument::Type ||
+        !Same(Argument.getAsType(), Type))
+      return false;
+  for (const auto *R : Method->redecls())
+    if (!Origin(R))
+      return false;
+  for (const auto *R : MethodPrimary->redecls())
+    if (!Origin(R) || !Origin(R->getTemplatedDecl()))
+      return false;
+  const auto *Less = dyn_cast_or_null<BinaryOperator>(Result(Method));
+  const auto *MD = Method->getDefinition();
+  return Less && Less->getOpcode() == BO_LT &&
+         Less->getType()->isBooleanType() &&
+         utilityAlgorithmReference(Less->getLHS(), MD->getParamDecl(0),
+                                   Context) &&
+         utilityAlgorithmReference(Less->getRHS(), MD->getParamDecl(1),
+                                   Context);
+}
+
 static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
                                    const FunctionDecl *Function, QualType First,
                                    QualType Second, const ASTContext &Context) {
-  const unsigned Count = 3;
+  const bool Four = Function && Function->getNumParams() == 4;
+  const unsigned Count = Four ? 4 : 3;
+  const bool PointerBound = Four && Context.hasSameType(First, Second);
   if (!First->isPointerType() || !Second->isPointerType())
     return false;
   const auto Element = First->getPointeeType().getUnqualifiedType();
@@ -21331,9 +21513,9 @@ static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
     if (!PredicateOrigin(D))
       return false;
   const QualType DelegateArgs[] = {First, Second, Predicate};
-  const QualType DelegateParameterTypes[] = {First, First, Second, Predicate};
-  const llvm::ArrayRef<QualType> DelegateParameters(DelegateParameterTypes,
-                                                    Count + 1);
+  llvm::SmallVector<QualType, 5> DelegateParameters(Pointers.begin(),
+                                                    Pointers.end());
+  DelegateParameters.push_back(Predicate);
   if (!Signature(Delegated, DelegateParameters, DelegateArgs))
     return false;
   const auto *Definition = Function->getDefinition();
@@ -21382,27 +21564,31 @@ static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
   const auto *Inner =
       Result ? dyn_cast_or_null<CallExpr>(Result->getInit()) : nullptr;
   const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
-  const QualType Args[] = {First,     First,          Second,
-                           Predicate, ProjectionType, ProjectionType};
+  llvm::SmallVector<QualType, 7> Args;
+  if (PointerBound)
+    Args.push_back(First->getPointeeType());
+  else
+    Args.append(Pointers.begin(), Pointers.end());
+  Args.append({Predicate, ProjectionType, ProjectionType});
   const auto ProjectionRef = Context.getLValueReferenceType(ProjectionType);
-  const QualType Parameters[] = {
-      First,         First,
-      Second,        Context.getLValueReferenceType(Predicate),
-      ProjectionRef, ProjectionRef};
+  llvm::SmallVector<QualType, 7> Parameters(Pointers.begin(), Pointers.end());
+  Parameters.append({Context.getLValueReferenceType(Predicate), ProjectionRef,
+                     ProjectionRef});
   if (!Result || !Result->hasLocalStorage() || Result->isImplicit() ||
-      Result->getDeclContext() != DD || !Inner || Inner->getNumArgs() != 6 ||
-      !Inner->isPRValue() ||
+      Result->getDeclContext() != DD || !Inner ||
+      Inner->getNumArgs() != Count + 3 || !Inner->isPRValue() ||
       !Context.hasSameType(Result->getType(), Inner->getType()) ||
       !utilitySwapSDKFunction(S, SM, Helper, "__mismatch",
                               "__algorithm/mismatch.h") ||
       !utilityAlgorithmSDKReference(S, SM, Inner, Helper) ||
       !Signature(Helper, Parameters, Args) ||
-      !utilityAlgorithmReference(Inner->getArg(3), DD->getParamDecl(3),
+      !utilityAlgorithmReference(Inner->getArg(Count), DD->getParamDecl(Count),
                                  Context) ||
-      !utilityAlgorithmReference(Inner->getArg(4), Projection, Context) ||
-      !utilityAlgorithmReference(Inner->getArg(5), Projection, Context))
+      !utilityAlgorithmReference(Inner->getArg(Count + 1), Projection,
+                                 Context) ||
+      !utilityAlgorithmReference(Inner->getArg(Count + 2), Projection, Context))
     return false;
-  for (unsigned I = 0; I != 3; ++I) {
+  for (unsigned I = 0; I != Count; ++I) {
     const auto *Unwrap = dyn_cast<CallExpr>(Inner->getArg(I));
     if (!Unwrap || Unwrap->getNumArgs() != 1 ||
         !Context.hasSameType(Unwrap->getType(), Pointers[I]) ||
@@ -21418,15 +21604,31 @@ static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
       S, SM, Result->getType()->getAsCXXRecordDecl(), Context);
   UtilityWrapperTransferProof PairProof(S, SM, Context, First, Second);
   const auto *Return = dyn_cast<ReturnStmt>(DB->body_begin()[2]);
-  const auto *Make =
-      Return ? PairProof.proveMakePair(Return->getRetValue()) : nullptr;
-  if (!Pair || !Make ||
-      !utilityAlgorithmSDKReference(S, SM, Make, Make->getDirectCallee()))
+  auto PairArguments = [&](const Expr *E, bool Constructed,
+                           const Expr **Arguments) {
+    if (Constructed) {
+      const auto *C = PairProof.provePairConstruction(E);
+      if (!C)
+        return false;
+      for (unsigned I = 0; I != 2; ++I)
+        Arguments[I] = C->getArg(I);
+      return true;
+    }
+    const auto *C = PairProof.proveMakePair(E);
+    if (!C || !utilityAlgorithmSDKReference(S, SM, C, C->getDirectCallee()))
+      return false;
+    for (unsigned I = 0; I != 2; ++I)
+      Arguments[I] = C->getArg(I);
+    return true;
+  };
+  const Expr *ReturnArguments[2] = {nullptr, nullptr};
+  if (!Pair || !Return ||
+      !PairArguments(Return->getRetValue(), Four, ReturnArguments))
     return false;
   for (unsigned I = 0; I != 2; ++I) {
     const auto Pointer = I ? Second : First;
-    const auto *Rewrap =
-        dyn_cast<CallExpr>(functionalInvokeStrippedExpression(Make->getArg(I)));
+    const auto *Rewrap = dyn_cast<CallExpr>(
+        functionalInvokeStrippedExpression(ReturnArguments[I]));
     const auto *Member =
         Rewrap && Rewrap->getNumArgs() == 2
             ? dyn_cast<MemberExpr>(
@@ -21445,20 +21647,90 @@ static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
         !utilityAlgorithmReference(Member->getBase(), Result, Context))
       return false;
   }
-  const auto *LoopCall = ReturnCall(Helper);
-  const auto *LoopFunction = LoopCall ? LoopCall->getDirectCallee() : nullptr;
-  const auto *D = LoopFunction ? LoopFunction->getDefinition() : nullptr;
-  if (!LoopCall || LoopCall->getNumArgs() != 6 || !D ||
-      !utilitySwapSDKFunction(S, SM, LoopFunction, "__mismatch_loop",
-                              "__algorithm/mismatch.h") ||
-      !utilityAlgorithmSDKReference(S, SM, LoopCall, LoopFunction) ||
-      !Signature(LoopFunction, Parameters, Args))
-    return false;
-  for (unsigned I = 0; I != 6; ++I)
-    if (!utilityAlgorithmReference(LoopCall->getArg(I),
-                                   Helper->getDefinition()->getParamDecl(I),
-                                   Context))
+  const FunctionDecl *LoopFunction = Helper;
+  unsigned LoopCount = Count;
+  if (!Four || PointerBound) {
+    const FunctionDecl *ThreeHelper = Helper;
+    const QualType ThreeParameters[] = {
+        First,         First,
+        Second,        Context.getLValueReferenceType(Predicate),
+        ProjectionRef, ProjectionRef};
+    const QualType ThreeArgs[] = {First,     First,          Second,
+                                  Predicate, ProjectionType, ProjectionType};
+    if (PointerBound) {
+      const auto *HD = Helper->getDefinition();
+      const auto *HB =
+          HD ? dyn_cast_or_null<CompoundStmt>(HD->getBody()) : nullptr;
+      const auto *LS = HB && HB->size() == 2
+                           ? dyn_cast<DeclStmt>(*HB->body_begin())
+                           : nullptr;
+      const auto *Length = LS && LS->isSingleDecl()
+                               ? dyn_cast<VarDecl>(LS->getSingleDecl())
+                               : nullptr;
+      const auto *Minimum =
+          Length ? dyn_cast_or_null<CallExpr>(
+                       functionalInvokeStrippedExpression(Length->getInit()))
+                 : nullptr;
+      const auto *HR = HB && HB->size() == 2
+                           ? dyn_cast<ReturnStmt>(HB->body_begin()[1])
+                           : nullptr;
+      const auto *Bound = HR ? dyn_cast<CallExpr>(HR->getRetValue()) : nullptr;
+      const auto *Add = Bound && Bound->getNumArgs() == 6
+                            ? dyn_cast<BinaryOperator>(Bound->getArg(1))
+                            : nullptr;
+      if (!Length || !Length->hasLocalStorage() || Length->isImplicit() ||
+          Length->getDeclContext() != HD ||
+          !Context.hasSameType(Length->getType(),
+                               Context.getPointerDiffType()) ||
+          !utilityWrapperMismatchMinimum(S, SM, Minimum, Context) || !Bound ||
+          !Bound->isPRValue() || !Add || Add->getOpcode() != BO_Add ||
+          !Context.hasSameType(Add->getType(), First) ||
+          !utilityAlgorithmReference(Add->getLHS(), HD->getParamDecl(0),
+                                     Context) ||
+          !utilityAlgorithmReference(Add->getRHS(), Length, Context))
+        return false;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Difference = dyn_cast<BinaryOperator>(
+            functionalInvokeStrippedExpression(Minimum->getArg(I)));
+        if (!Difference || Difference->getOpcode() != BO_Sub ||
+            !Context.hasSameType(Difference->getType(),
+                                 Context.getPointerDiffType()) ||
+            !utilityAlgorithmReference(Difference->getLHS(),
+                                       HD->getParamDecl(2 * I + 1), Context) ||
+            !utilityAlgorithmReference(Difference->getRHS(),
+                                       HD->getParamDecl(2 * I), Context))
+          return false;
+      }
+      ThreeHelper = Bound->getDirectCallee();
+      if (!utilitySwapSDKFunction(S, SM, ThreeHelper, "__mismatch",
+                                  "__algorithm/mismatch.h") ||
+          !utilityAlgorithmSDKReference(S, SM, Bound, ThreeHelper) ||
+          !Signature(ThreeHelper, ThreeParameters, ThreeArgs))
+        return false;
+      for (unsigned I = 0; I != 6; ++I)
+        if (I != 1 &&
+            !utilityAlgorithmReference(
+                Bound->getArg(I), HD->getParamDecl(I < 3 ? I : I + 1), Context))
+          return false;
+    }
+    const auto *LoopCall = ReturnCall(ThreeHelper);
+    LoopFunction = LoopCall ? LoopCall->getDirectCallee() : nullptr;
+    if (!LoopCall || LoopCall->getNumArgs() != 6 ||
+        !utilitySwapSDKFunction(S, SM, LoopFunction, "__mismatch_loop",
+                                "__algorithm/mismatch.h") ||
+        !utilityAlgorithmSDKReference(S, SM, LoopCall, LoopFunction) ||
+        !Signature(LoopFunction, ThreeParameters, ThreeArgs))
       return false;
+    for (unsigned I = 0; I != 6; ++I)
+      if (!utilityAlgorithmReference(
+              LoopCall->getArg(I),
+              ThreeHelper->getDefinition()->getParamDecl(I), Context))
+        return false;
+    LoopCount = 3;
+  }
+  const auto *D = LoopFunction ? LoopFunction->getDefinition() : nullptr;
+  if (!D)
+    return false;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(D->getBody());
   const auto *Loop = Body && Body->size() == 2
                          ? dyn_cast<WhileStmt>(*Body->body_begin())
@@ -21475,22 +21747,29 @@ static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
       Branch ? dyn_cast<UnaryOperator>(Branch->getCond()) : nullptr;
   const auto *Call = Not ? dyn_cast<CallExpr>(Not->getSubExpr()) : nullptr;
   const auto *Break = Branch ? dyn_cast<BreakStmt>(Branch->getThen()) : nullptr;
-  const auto *Finish =
-      End ? PairProof.proveMakePair(End->getRetValue()) : nullptr;
+  const Expr *FinishArguments[2] = {nullptr, nullptr};
+  auto RangeCondition = [&](const Expr *E, unsigned Index) {
+    const auto *Comparison = dyn_cast_or_null<BinaryOperator>(E);
+    return Comparison && Comparison->getOpcode() == BO_NE &&
+           Comparison->getType()->isBooleanType() &&
+           utilityAlgorithmReference(Comparison->getLHS(),
+                                     D->getParamDecl(Index), Context) &&
+           utilityAlgorithmReference(Comparison->getRHS(),
+                                     D->getParamDecl(Index + 1), Context);
+  };
   if (!Loop || Loop->getConditionVariable() || !Condition ||
-      Condition->getOpcode() != BO_NE ||
-      !Condition->getType()->isBooleanType() ||
-      !utilityAlgorithmReference(Condition->getLHS(), D->getParamDecl(0),
-                                 Context) ||
-      !utilityAlgorithmReference(Condition->getRHS(), D->getParamDecl(1),
-                                 Context) ||
+      (LoopCount == 3 ? !RangeCondition(Condition, 0)
+                      : (Condition->getOpcode() != BO_LAnd ||
+                         !Condition->getType()->isBooleanType() ||
+                         !RangeCondition(Condition->getLHS(), 0) ||
+                         !RangeCondition(Condition->getRHS(), 2))) ||
       !Branch || Branch->getInit() || Branch->getConditionVariable() ||
       Branch->getElse() || !Not || Not->getOpcode() != UO_LNot || !Call ||
       Call->getNumArgs() != 3 || !Break ||
-      !utilityAlgorithmReference(Call->getArg(0), D->getParamDecl(3),
+      !utilityAlgorithmReference(Call->getArg(0), D->getParamDecl(LoopCount),
                                  Context) ||
-      !Finish ||
-      !utilityAlgorithmSDKReference(S, SM, Finish, Finish->getDirectCallee()))
+      !End ||
+      !PairArguments(End->getRetValue(), LoopCount == 4, FinishArguments))
     return false;
   for (unsigned I = 0; I != 2; ++I) {
     const auto Pointer = I ? Second : First;
@@ -21509,14 +21788,14 @@ static bool utilityWrapperMismatch(const State &S, const SourceManager &SM,
         !Identity ||
         !utilityAlgorithmIdentity(S, SM, Identity, ProjectionType, InputElement,
                                   Context) ||
-        !utilityAlgorithmReference(Project->getArg(0), D->getParamDecl(4 + I),
-                                   Context) ||
+        !utilityAlgorithmReference(
+            Project->getArg(0), D->getParamDecl(LoopCount + 1 + I), Context) ||
         !Read || Read->getOpcode() != UO_Deref || !Read->isLValue() ||
         !Context.hasSameType(Read->getType(), InputElement) ||
         !utilityAlgorithmReference(Read->getSubExpr(), D->getParamDecl(Index),
                                    Context) ||
         !utilitySwapPointerAdapter(
-            S, SM, Finish->getArg(I), D->getParamDecl(Index), Pointer,
+            S, SM, FinishArguments[I], D->getParamDecl(Index), Pointer,
             Context.getLValueReferenceType(Pointer), false, Context))
       return false;
   }
@@ -33949,15 +34228,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
   }
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && Same(Call->getType(), Function->getReturnType())) {
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      Same(Call->getType(), Function->getReturnType())) {
     const auto First = Function->getParamDecl(0)->getType();
     const auto Second = Function->getParamDecl(2)->getType();
+    const bool Four = Call->getNumArgs() == 4;
     if (First->isPointerType() && Second->isPointerType() &&
         Same(Function->getParamDecl(1)->getType(), First) &&
         Same(Call->getArg(0)->getType(), First) &&
         Same(Call->getArg(1)->getType(), First) &&
         Same(Call->getArg(2)->getType(), Second) &&
+        (!Four || (Same(Function->getParamDecl(3)->getType(), Second) &&
+                   Same(Call->getArg(3)->getType(), Second))) &&
         utilityWrapperMismatch(S, SM, Function, First, Second, Context))
       return UtilityOperation::AlgorithmMismatch;
   }

@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct four-iterator `std::mismatch` admits the same checked SDK wrapper
+pointer ranges, independently const inputs and built-in scalar referents. The
+original iterator pair stops at the first unequal referent values or the end of
+the shorter range, including either empty range. All four arguments are
+evaluated once and receiver cleanup is preserved. The selected bounded-pointer
+helper, SDK minimum and built-in difference comparison, or mixed-const loop,
+are verified together with unwrap, identity, invocation forwarding, equality,
+pair construction, pointer moves and rewrap. Source replacements, custom
+comparisons, enum or nested-wrapper referents, heterogeneous carriers and
+indirect or casted callees remain rejected.
+
 Direct three-iterator `std::mismatch` admits raw pointer ranges of the same
 exact checked SDK `std::reference_wrapper<T>` carrier, including independently
 const inputs and built-in scalar referents. A checked `std::pair` contains the
