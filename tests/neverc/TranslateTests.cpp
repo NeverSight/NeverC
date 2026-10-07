@@ -184990,3 +184990,765 @@ void selected(W&a,W&b){using std::copy_n;copy_n(&a,1,&b);}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;const W x[]={a,b};W y[]={b,b};auto*r=std::rotate_copy(x,x+1,x+2,y);return r!=y+2||&y[0].get()!=&b||&y[1].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-rotate-copy-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9,c=4;using W=std::reference_wrapper<int>;W x[]={a,b,c},y[]={a,a,a};auto*const p=x;auto*const q=x+1;auto*const t=x+3;auto*const o=y;auto*r=std::rotate_copy(p,q,t,o);return p!=x||q!=x+1||t!=x+3||o!=y||r!=y+3||&y[0].get()!=&b||&y[1].get()!=&c||&y[2].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-rotate-copy-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){const int a=3,b=9,c=4;using W=std::reference_wrapper<const int>;W x[]={a,b,c},y[]={a,a,a};auto*r=std::rotate_copy(x,x+1,x+3,y);return r!=y+3||&y[0].get()!=&b||&y[1].get()!=&c||&y[2].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeEmptyRange) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;W x[]={a,b},y[]={b,b};auto*r=std::rotate_copy(x,x,x,y);return r!=y||&y[0].get()!=&b||&y[1].get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeFunctionReferents) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-function-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-rotate-copy-runtime-function-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int a(int n)noexcept{return n+3;}int b(int n)noexcept{return n+9;}int main(){using F=int(int)noexcept;using W=std::reference_wrapper<F>;W x[]={a,b},y[]={a,a};auto*r=std::rotate_copy(x,x+1,x+2,y);return r!=y+2||&y[0].get()!=&b||&y[1].get()!=&a||y[0](1)!=10||y[1](1)!=4||x[0](1)!=4||x[1](1)!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-rotate-copy-runtime-function-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeMiddleFirst) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-middle-first.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-middle-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;W x[]={a,b},y[]={b,b};auto*r=std::rotate_copy(x,x,x+2,y);return r!=y+2||&y[0].get()!=&a||&y[1].get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-middle-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeMiddleLast) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-middle-last.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-middle-last.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;W x[]={a,b},y[]={b,b};auto*r=std::rotate_copy(x,x+2,x+2,y);return r!=y+2||&y[0].get()!=&a||&y[1].get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-middle-last" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeNestedWrappers) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-nested-wrappers.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-nested-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;using I=std::reference_wrapper<int>;I p=a,q=b;using W=std::reference_wrapper<I>;W x[]={p,q},y[]={p,p};auto*r=std::rotate_copy(x,x+1,x+2,y);return r!=y+2||&y[0].get()!=&q||&y[1].get()!=&p||&p.get()!=&a||&q.get()!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-nested-wrappers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;using W=std::reference_wrapper<int>;W x[]={a},y[]={b};auto*r=std::rotate_copy(x,x+1,x+1,y);return r!=y+1||&y[0].get()!=&a||a!=3||b!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0,cleanups=0;struct Receiver{W*p;Receiver(W*q):p(q){++effects;}~Receiver(){++cleanups;}W*get(){return p;}};int main(){int a=3,b=9,c=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::rotate_copy(Receiver(x).get(),Receiver(x+1).get(),Receiver(x+3).get(),Receiver(y).get());return effects!=4||cleanups!=4||r!=y+3||&y[0].get()!=&b||&y[1].get()!=&c||&y[2].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W*pick(W*p){++effects;return p;}int main(){int a=3,b=9,c=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::rotate_copy(pick(x),pick(x+1),pick(x+3),pick(y));return effects!=4||r!=y+3||&y[0].get()!=&b||&y[1].get()!=&c||&y[2].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9,c=4,d=7;using W=std::reference_wrapper<int>;W x[]={a,b,c,d},y[]={a,a,a,a};auto*r=std::rotate_copy(x+1,x+2,x+3,y+1);return r!=y+3||&y[0].get()!=&a||&y[1].get()!=&c||&y[2].get()!=&b||&y[3].get()!=&a||&x[0].get()!=&a||&x[3].get()!=&d;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+struct R{int n;};int main(){R x[]={{3},{9},{4}},y[]={{0},{0},{0}};auto*r=std::rotate_copy(x,x+1,x+3,y);return r!=y+3||y[0].n!=9||y[1].n!=4||y[2].n!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeReferentLifetime) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-referent-lifetime.cpp");
+  const auto Output =
+      tmpFile("wrapper-rotate-copy-runtime-referent-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int made=0,dropped=0;struct R{int n;explicit R(int v):n(v){++made;}R(const R&)=delete;R&operator=(const R&)=delete;~R(){++dropped;}};int main(){int bad=0;{R a(3),b(9);using W=std::reference_wrapper<R>;W x[]={a,b},y[]={a,a};auto*r=std::rotate_copy(x,x+1,x+2,y);bad=r!=y+2||&y[0].get()!=&b||&y[1].get()!=&a||a.n!=3||b.n!=9||made!=2||dropped!=0;}return bad||made!=2||dropped!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-referent-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeRotateCopy) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-rotate-copy.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-rotate-copy.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=4;W x[]={a,b,c},y[]={a,a,a};auto*r=std::rotate_copy(x,x+1,x+3,y);return r!=y+3||&y[0].get()!=&b||&y[1].get()!=&c||&y[2].get()!=&a||&x[0].get()!=&a||&x[1].get()!=&b||&x[2].get()!=&c;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-rotate-copy" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-rotate-copy-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-rotate-copy-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int x[]={3,9,4},y[]={0,0,0};auto*r=std::rotate_copy(x,x+1,x+3,y);return r!=y+3||y[0]!=9||y[1]!=4||y[2]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperRotateCopyRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-rotate-copy-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-rotate-copy-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;using W=std::reference_wrapper<int>;W x[]={a,b},y[]={a,a};using std::rotate_copy;auto*r=rotate_copy(x,x+1,x+2,y);return r!=y+2||&y[0].get()!=&b||&y[1].get()!=&a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-rotate-copy-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperRotateCopyRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=W*(*)(W*,W*,W*,W*);W*selected(W*a,W*b){return static_cast<F>(&std::rotate_copy<W*,W*>)(a,a,a+1,b);}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=W*(*)(W*,W*,W*,W*);W*selected(W*a,W*b){F f=&std::rotate_copy<W*,W*>;return f(a,a,a+1,b);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-assign-trivially-copyable-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> W& __assign_trivially_copyable<W,W,0>(W&,const W&);}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-constant-evaluated-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{constexpr bool __libcpp_is_constant_evaluated() noexcept;}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-constexpr-memmove-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __constexpr_memmove<W,W>(P,P,__element_count);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-datasizeof-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>inline constexpr size_t __datasizeof_v<W> = sizeof(W);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-element-count-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{enum class __element_count:size_t;}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-inner-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P>__copy<P,P,P>(P,P,P);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-make-pair-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> pair<P,P> make_pair<P,P>(P&&,P&&);}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-nested-copy-impl-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __copy_impl;}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-nested-copy-move-unwrap-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> pair<P,P> __copy_move_unwrap_iters<__copy_impl,P,P,P,0>(P,P,P);}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-nested-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B>B copy(A,A,B);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-nested-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*copy<W*,W*>(W*,W*,W*);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-nested-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*copy<W*,W*>(W*first,W*,W*result){return result;}}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-nested-copy-trivial-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P>__copy_trivial_impl<W,W>(P,P,P);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w){auto hidden=sizeof(long double);return w;}void selected(W&a,W&b){std::rotate_copy(&source(a),&source(a),&a+1,&b);}int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::rotate_copy(&source(a),&source(a),&a+1,&b);}int main(){return 0;}
+)cpp"},
+      {"source-pointer-forward-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> P&& forward<P>(P&) noexcept;}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-pointer-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> P&& move<P&>(P&) noexcept;}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using W=std::reference_wrapper<R>;void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-rewrap-iter-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __rewrap_iter<P,P>(P,P)noexcept;}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-rewrap-range-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __rewrap_range<P,P>(P,P);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-rotate-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B>B rotate_copy(A,A,A,B);}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-rotate-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P rotate_copy<P,P>(P,P,P,P);}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-rotate-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P rotate_copy<P,P>(P,P,P,P out){return out;}}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-to-address-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<> P __to_address(P) noexcept;}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-unwrap-impl-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,bool B> struct __unwrap_iter_impl;}}
+void selected(P a,P b){std::rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"source-unwrap-iter-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __unwrap_iter<P>(P)noexcept;}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-unwrap-range-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P>__unwrap_range<P,P>(P,P);}}
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using W=std::reference_wrapper<int*>;void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::rotate_copy(&a,&a,&a+1,&b);}int main(){return 0;}
+
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=W*(*)(W*,W*,W*,W*);F selected(){using std::rotate_copy;return &rotate_copy<W*,W*>;}
+)cpp"},
+      {"using-source-nested-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B>B copy(A,A,B);}}
+void selected(W&a,W&b){using std::rotate_copy;rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"using-source-nested-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*copy<W*,W*>(W*first,W*,W*result){return result;}}}
+void selected(W&a,W&b){using std::rotate_copy;rotate_copy(&a,&a,&a+1,&b);}
+)cpp"},
+      {"using-source-rotate-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B>B rotate_copy(A,A,A,B);}}
+void selected(P a,P b){using std::rotate_copy;rotate_copy(a,a,a+1,b);}
+)cpp"},
+      {"using-source-rotate-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P rotate_copy<P,P>(P,P,P,P out){return out;}}}
+void selected(P a,P b){using std::rotate_copy;rotate_copy(a,a,a+1,b);}
+)cpp"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-rotate-copy-guard-") +
+                                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-rotate-copy-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

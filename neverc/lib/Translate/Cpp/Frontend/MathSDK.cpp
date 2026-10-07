@@ -18166,6 +18166,28 @@ public:
       : S(S), SM(SM), Context(Context), Element(Output->getPointeeType()),
         Input(Input), Output(Output), Backward(Backward), Moving(Moving) {}
 
+  bool proveRotated(const FunctionDecl *Function) const {
+    constexpr llvm::StringLiteral Path = "__algorithm/rotate_copy.h";
+    if (Backward || Moving || !Function ||
+        !utilitySwapSDKFunction(S, SM, Function, "rotate_copy", Path) ||
+        !templates(Function, {Input, Output}) ||
+        !signature(Function, Output, {Input, Input, Input, Output}))
+      return false;
+    const auto *Copy = dyn_cast_or_null<CallExpr>(result(Function));
+    const auto *Tail = Copy && Copy->getNumArgs() == 3
+                           ? dyn_cast<CallExpr>(strip(Copy->getArg(2)))
+                           : nullptr;
+    return Copy && same(Copy->getType(), Output) &&
+           prove(Copy->getDirectCallee()) &&
+           reference(Copy->getArg(0), Function->getParamDecl(0)) &&
+           reference(Copy->getArg(1), Function->getParamDecl(1)) && Tail &&
+           Tail->getNumArgs() == 3 && same(Tail->getType(), Output) &&
+           prove(Tail->getDirectCallee()) &&
+           reference(Tail->getArg(0), Function->getParamDecl(1)) &&
+           reference(Tail->getArg(1), Function->getParamDecl(2)) &&
+           reference(Tail->getArg(2), Function->getParamDecl(3));
+  }
+
   bool proveCounted(const FunctionDecl *Function) const {
     constexpr llvm::StringLiteral Path = "__algorithm/copy_n.h";
     if (Backward || Moving || !Function || Function->getNumParams() != 3)
@@ -32060,7 +32082,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackOutput)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackInput)->getPointeeType(),
                                     (*CallbackOutput)->getPointeeType());
-    if (Scalar || Record || Callback)
+    const auto Input = Function->getParamDecl(0)->getType();
+    const auto Output = Function->getParamDecl(3)->getType();
+    const bool Wrapper =
+        Input->isPointerType() && Output->isPointerType() &&
+        !Output->getPointeeType().hasQualifiers() &&
+        !Input->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(Input->getPointeeType(),
+                                       Output->getPointeeType()) &&
+        Output->getPointeeType()->isRecordType() &&
+        Same(Call->getArg(0)->getType(), Input) &&
+        Same(Call->getArg(1)->getType(), Input) &&
+        Same(Call->getArg(2)->getType(), Input) &&
+        Same(Call->getArg(3)->getType(), Output) &&
+        UtilityWrapperTransferProof(S, SM, Context, Input, Output)
+            .proveRotated(Function);
+    if (Scalar || Record || Callback || Wrapper)
       return UtilityOperation::AlgorithmRotateCopy;
   }
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&

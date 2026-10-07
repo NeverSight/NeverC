@@ -352,6 +352,18 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::rotate_copy` admits raw pointer ranges of the same exact checked
+SDK `std::reference_wrapper<T>` carrier; input may be const and output must be
+mutable. Its one-return SDK body must contain exactly the two selected nested
+`std::copy` calls, each authenticated by the complete transfer proof. The inner
+call copies `[middle, last)` to the original output; the outer call copies
+`[first, middle)` to the returned output position. All four original arguments
+are evaluated once. Binding stores preserve this order and return the final
+output position. Empty input writes nothing, and a middle at either endpoint
+preserves input order. Referents are neither assigned nor destroyed, and
+temporary cleanup retains source behavior. Source SDK or metadata replacements,
+indirect/casted callees and unsupported original dependencies remain rejected.
+
 Direct `std::copy_n` admits raw pointer input and output of the same exact
 checked SDK `std::reference_wrapper<T>` carrier; input may be const and output
 must be mutable. Counts are built-in unsigned integers or nonnegative constant
