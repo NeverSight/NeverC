@@ -7519,7 +7519,23 @@ static QualType utilityPointerTraitsQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Result);
 }
 
-static void preparePointerTraitsQueryLayouts(Adapter &A) {
+static QualType utilityAddressofQuerySource(Adapter &A, const CallExpr *Call) {
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  if (!A.S.coreV2() || !Reference ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !utilityAddressofSource(A, Call))
+    return {};
+  const auto Result = Call->getDirectCallee()->getReturnType();
+  if (!utilityMemoryElementQueryLayout(A, Result->getPointeeType(),
+                                       Call->getExprLoc()) ||
+      A.type(Result, Call->getExprLoc(), false).empty())
+    return {};
+  // The authenticated builtin signature needs only the borrowed element
+  // layout. Queries do not read its address or select wrapper lifetimes.
+  return A.Context.getCanonicalType(Result);
+}
+
+static void prepareMemoryQueryLayouts(Adapter &A) {
   struct Calls : RecursiveASTVisitor<Calls> {
     Adapter &A;
     explicit Calls(Adapter &A) : A(A) {}
@@ -7527,6 +7543,7 @@ static void preparePointerTraitsQueryLayouts(Adapter &A) {
       // Prepare only an authenticated layout. Normal traversal still grants
       // per-call query permission and checks every original source dependency.
       (void)utilityPointerTraitsQuerySource(A, Call);
+      (void)utilityAddressofQuerySource(A, Call);
       return true;
     }
   };
@@ -14966,6 +14983,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityPointerTraitsQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityAddressofQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);
@@ -23951,7 +23971,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     Check.checkExplicitStaticDataInstantiation(Directive);
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
-  preparePointerTraitsQueryLayouts(*this);
+  prepareMemoryQueryLayouts(*this);
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishGeneratedMethods();

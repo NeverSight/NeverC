@@ -3229,6 +3229,19 @@ allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
 
+Pure pinned `std::addressof` queries retain the exact builtin identity, direct
+callee, pointer/reference types, fixed nonthrowing metadata and full SDK function
+and primary-template declaration chains. This authentication may complete exact
+SDK wrapper layouts, including qualified, nested and source-record wrappers,
+before checking source function parameter and result types. No SDK body, address
+read, wrapper factory or cleanup is selected by a query.
+
+Original operands, alias and template arguments, selected defaults and source
+functions remain independent source dependencies. Operand effects do not run.
+Unsupported referent layouts, source replacements, casted callees and independent
+function addresses remain rejected. Evaluated borrowed address operations retain
+the existing builtin and operand proofs.
+
 Pure pinned raw-pointer `pointer_traits::pointer_to` queries authenticate exact
 public static pointer/reference signatures, nonthrowing metadata, implicit SDK
 traits specializations and full class/member declaration chains. The one-byte

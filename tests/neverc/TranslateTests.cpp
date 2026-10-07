@@ -80386,77 +80386,101 @@ TEST_F(TranslateTest, CoreV2FunctionAddressofRetainsSourceBoundaries) {
   const Case Cases[] = {
       {"specialization", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&v)noexcept{return &v;}}}auto f(){return std::addressof(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"query-specialization", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&v)noexcept{return &v;}}}static_assert(__is_same(decltype(std::addressof(one)),F*));int main(){return 0;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"redeclaration", R"cpp(#include <memory>
 namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}int one(int v){return v;}auto f(){return std::addressof(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"source-overload", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{F*addressof(F&v)noexcept{return &v;}}}auto f(){return std::addressof(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"indirect-adapter", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}auto f(){using A=F*(*)(F&)noexcept;A adapter=&std::addressof<F>;return adapter(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"casted-callee", R"cpp(#include <memory>
 using F=int(int);using A=F*(*)(F&);int one(int v){return v;}auto f(){return static_cast<A>(std::addressof<F>)(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"long-double-signature", R"cpp(#include <memory>
 long double one(long double v){return v;}auto f(){return std::addressof(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"variadic-signature", R"cpp(#include <memory>
 int one(int v,...){return v;}auto f(){return std::addressof(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"hidden-query-operand", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}static_assert(__is_same(decltype(std::addressof((sizeof(long double),one))),F*));int main(){return 0;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"hidden-exception-source", R"cpp(#include <memory>
 int one(int v)noexcept{return v;}static_assert(__is_same(decltype(std::addressof<int(int)noexcept(sizeof(long double)>0)>(one)),int(*)(int)noexcept));int main(){return 0;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"erased-template-argument", R"cpp(#include <memory>
 template<class>using F=int(int);int one(int v){return v;}auto f(){return std::addressof<F<long double>>(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"missing-target", R"cpp(#include <memory>
 int one(int);auto f(){return std::addressof(one);}
-)cpp", "TR0203"},
-      {"reference-storage", R"cpp(#include <memory>
-int one(int v){return v;}int main(){auto&ref=one;return std::addressof(ref)(0);}
-)cpp", "TR0201"},
-      {"reference-parameter", R"cpp(#include <memory>
-using F=int(int);F*address(F&ref){return std::addressof(ref);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0203"},
+      {"reference-storage-source", R"cpp(#include <memory>
+int one(int v){return v+sizeof(long double);}int main(){auto&ref=one;return std::addressof(ref)(0);}
+)cpp",
+       "TR0201"},
+      {"reference-parameter-default", R"cpp(#include <memory>
+using F=int(int);F*address(F&ref,int=sizeof(long double)){return std::addressof(ref);}
+)cpp",
+       "TR0201"},
       {"receiver-source", R"cpp(#include <memory>
 struct T{long double hidden;static int call(int v){return v;}};auto f(){return std::addressof(T{}.call);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"move-specialization", R"cpp(#include <memory>
 #include <utility>
 using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F&&move<F&>(F&v)noexcept{return static_cast<F&&>(v);}}}auto f(){return std::addressof(std::move(one));}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"explicit-lvalue-reference", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}auto f(){return std::addressof<F&>(one);}
-)cpp", "TR0202"},
+)cpp",
+       "TR0202"},
       {"explicit-rvalue-reference", R"cpp(#include <memory>
 using F=int(int);int one(int v){return v;}auto f(){return std::addressof<F&&>(one);}
-)cpp", "TR0202"},
+)cpp",
+       "TR0202"},
       {"deleted-object-rvalue", R"cpp(#include <memory>
 int main(){return *std::addressof(3);}
-)cpp", "TR0202"},
+)cpp",
+       "TR0202"},
       {"imported-primary-redeclaration", R"cpp(#include <memory>
 namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}namespace Imported{using std::addressof;}int main(){return 0;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"imported-deleted-redeclaration", R"cpp(#include <memory>
 namespace std{inline namespace __1{template<class T>T*addressof(const T&&)noexcept;}}namespace Imported{using std::addressof;}int main(){return 0;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"imported-query-specialization", R"cpp(#include <memory>
 namespace Imported{using std::addressof;}using F=int(int);int one(int v){return v;}namespace std{inline namespace __1{template<>constexpr F*addressof<F>(F&v)noexcept{return &v;}}}static_assert(__is_same(decltype(Imported::addressof(one)),F*));int main(){return 0;}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"imported-indirect-adapter", R"cpp(#include <memory>
 namespace Imported{using std::addressof;}using F=int(int);int one(int v){return v;}auto f(){using A=F*(*)(F&)noexcept;A adapter=&Imported::addressof<F>;return adapter(one);}
-)cpp", "TR0201"},
+)cpp",
+       "TR0201"},
       {"imported-deleted-rvalue", R"cpp(#include <memory>
 namespace Imported{using std::addressof;}int main(){return *Imported::addressof(3);}
-)cpp", "TR0202"},
+)cpp",
+       "TR0202"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -173349,6 +173373,311 @@ using P=decltype(T::pointer_to(std::declval<E&>()));int main(){return 0;}
         tmpFile(std::string("pointer-traits-signature-") + Case.first + ".cpp");
     const auto Output =
         tmpFile(std::string("pointer-traits-signature-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQueryNestedWrapper) {
+  const auto Source = tmpFile("addressof-wrapper-signature-nested-wrapper.cpp");
+  const auto Output = tmpFile("addressof-wrapper-signature-nested-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using W=std::reference_wrapper<int>;using E=std::reference_wrapper<W>;
+static_assert(std::is_same<decltype(std::addressof(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(std::addressof(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("addressof-wrapper-signature-nested-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQueryQualifiedWrapper) {
+  const auto Source =
+      tmpFile("addressof-wrapper-signature-qualified-wrapper.cpp");
+  const auto Output =
+      tmpFile("addressof-wrapper-signature-qualified-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=const std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::addressof(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(std::addressof(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("addressof-wrapper-signature-qualified-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("addressof-wrapper-signature-query-effects.cpp");
+  const auto Output = tmpFile("addressof-wrapper-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=std::reference_wrapper<int>;
+int effects=0;
+E& operand()noexcept{++effects;return *(E*)nullptr;}
+using P=decltype(std::addressof(operand()));
+static_assert(std::is_same<P,E*>::value,"result");
+static_assert(noexcept(std::addressof(operand())),"nothrow");
+int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("addressof-wrapper-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("addressof-wrapper-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("addressof-wrapper-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=std::reference_wrapper<int>;
+int inspect(E&value){using P=decltype(std::addressof(value));static_assert(std::is_same<P,E*>::value,"result");return noexcept(std::addressof(value))?0:1;}
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "addressof-wrapper-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQueryScalar) {
+  const auto Source = tmpFile("addressof-wrapper-signature-scalar.cpp");
+  const auto Output = tmpFile("addressof-wrapper-signature-scalar.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=int;
+static_assert(std::is_same<decltype(std::addressof(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(std::addressof(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("addressof-wrapper-signature-scalar" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQuerySourceRecordWrapper) {
+  const auto Source =
+      tmpFile("addressof-wrapper-signature-source-record-wrapper.cpp");
+  const auto Output =
+      tmpFile("addressof-wrapper-signature-source-record-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+struct R{int value;R()=delete;~R()=delete;};using E=std::reference_wrapper<R>;
+static_assert(std::is_same<decltype(std::addressof(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(std::addressof(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "addressof-wrapper-signature-source-record-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AddressofWrapperSignatureQueryWrapper) {
+  const auto Source = tmpFile("addressof-wrapper-signature-wrapper.cpp");
+  const auto Output = tmpFile("addressof-wrapper-signature-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+#include <functional>
+#include <type_traits>
+#include <utility>
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::addressof(std::declval<E&>())),E*>::value,"result");
+static_assert(noexcept(std::addressof(std::declval<E&>())),"nothrow");
+int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("addressof-wrapper-signature-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AddressofWrapperSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using F=E*(*)(E&)noexcept;
+using P=decltype(static_cast<F>(std::addressof<E>)(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;using F=E*(*)(E&)noexcept;
+using P=decltype(std::addressof(std::declval<E&>()));static_assert(sizeof(static_cast<F>(&std::addressof<E>))>0,"address");int main(){return 0;}
+)cpp"},
+      {"long-double-element", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=long double;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+template<int>using W=std::reference_wrapper<int>;using E=W<sizeof(long double)>;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+E&operand(){return *((E*)nullptr+sizeof(long double));}using P=decltype(std::addressof(operand()));int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+E&operand(int=sizeof(long double)){return *(E*)nullptr;}using P=decltype(std::addressof(operand()));int main(){return 0;}
+)cpp"},
+      {"source-primary-redeclaration", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<class T>constexpr T*addressof(T&)noexcept;}}
+using E=std::reference_wrapper<int>;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-referent-layout", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+struct R{long double value;};using E=std::reference_wrapper<R>;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-scalar-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<>constexpr int*addressof<int>(int&v)noexcept{return &v;}}}
+using E=int;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+namespace std{inline namespace __1{template<>constexpr reference_wrapper<int>*addressof<reference_wrapper<int>>(reference_wrapper<int>&v)noexcept{return &v;}}}
+using E=std::reference_wrapper<int>;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+      {"wrapper-long-double-referent", R"cpp(
+#include <memory>
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<long double>;
+using P=decltype(std::addressof(std::declval<E&>()));int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("addressof-wrapper-signature-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("addressof-wrapper-signature-") +
+                                Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
