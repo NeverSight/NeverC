@@ -17286,10 +17286,10 @@ static bool utilityWrapperFillRange(const State &S, const SourceManager &SM,
   return utilityWrapperFillN(S, SM, Fill->getDirectCallee(), Type, Context);
 }
 
-// Prove the selected raw-pointer copy chain before replacing its optimized
+// Prove the selected raw-pointer transfer chain before replacing its optimized
 // memmove with element stores. Each adapter retains its selected SDK origins,
 // pointer identities and pair fields; no other record range uses this proof.
-class UtilityWrapperCopyProof {
+class UtilityWrapperTransferProof {
   const State &S;
   const SourceManager &SM;
   const ASTContext &Context;
@@ -17297,18 +17297,23 @@ class UtilityWrapperCopyProof {
   QualType Input;
   QualType Output;
   bool Backward;
+  bool Moving;
 
   llvm::StringRef path() const {
+    if (Moving)
+      return "__algorithm/move.h";
     return Backward ? "__algorithm/copy_backward.h" : "__algorithm/copy.h";
   }
   llvm::StringRef implementationName() const {
+    if (Moving)
+      return "__move_impl";
     return Backward ? "__copy_backward_impl" : "__copy_impl";
   }
   bool algorithmRecord(const CXXRecordDecl *R) const {
     if (!record(R, implementationName(), path()))
       return false;
     const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(R);
-    if (!Backward)
+    if (!Backward && !Moving)
       return !Specialization;
     return Specialization && Specialization->getTemplateArgs().size() == 1 &&
            Specialization->getTemplateArgs().get(0).getKind() ==
@@ -17937,7 +17942,7 @@ class UtilityWrapperCopyProof {
     return true;
   }
 
-  bool pointerCopyTrait(const Expr *Expression) const {
+  bool pointerCopyTrait(const Expr *Expression, QualType Expected) const {
     const auto *Ref = dyn_cast_or_null<DeclRefExpr>(strip(Expression));
     const auto *Qualifier = Ref ? Ref->getQualifier() : nullptr;
     const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
@@ -17953,8 +17958,8 @@ class UtilityWrapperCopyProof {
         Trait->getSpecializationKind() != TSK_ImplicitInstantiation ||
         Trait->getNumBases() != 1 || Trait->getTemplateArgs().size() != 1 ||
         Trait->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
-        !same(Trait->getTemplateArgs().get(0).getAsType(), Input) || !Value ||
-        Value->getName() != "value" ||
+        !same(Trait->getTemplateArgs().get(0).getAsType(), Expected) ||
+        !Value || Value->getName() != "value" ||
         !same(Value->getType(), Context.BoolTy.withConst()))
       return false;
     const auto *Primary = Trait->getSpecializedTemplate();
@@ -17989,12 +17994,26 @@ class UtilityWrapperCopyProof {
     return V && *V == 1;
   }
   const Expr *publicResult(const FunctionDecl *Function) const {
-    if (!Backward)
+    if (!Backward && !Moving)
       return result(Function);
     const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
-    if (!Body || Body->size() != 2)
+    if (!Body || Body->size() != (Moving ? 3u : 2u))
       return nullptr;
     auto It = Body->body_begin();
+    if (Moving) {
+      for (const auto Pointer : {Input, Output}) {
+        const auto *Declaration = dyn_cast<DeclStmt>(*It++);
+        const auto *Assert =
+            Declaration && Declaration->isSingleDecl()
+                ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
+                : nullptr;
+        if (!Assert || Assert->isFailed() || !origin(Assert, path()) ||
+            !pointerCopyTrait(Assert->getAssertExpr(), Pointer))
+          return nullptr;
+      }
+      const auto *Return = dyn_cast<ReturnStmt>(*It);
+      return Return ? strip(Return->getRetValue()) : nullptr;
+    }
     const auto *Declaration = dyn_cast<DeclStmt>(*It++);
     const auto *Assert =
         Declaration && Declaration->isSingleDecl()
@@ -18004,13 +18023,13 @@ class UtilityWrapperCopyProof {
         Assert ? binary(Assert->getAssertExpr(), BO_LAnd) : nullptr;
     const auto *Return = dyn_cast<ReturnStmt>(*It);
     if (!Assert || Assert->isFailed() || !origin(Assert, path()) || !Both ||
-        !pointerCopyTrait(Both->getLHS()) ||
-        !pointerCopyTrait(Both->getRHS()) || !Return)
+        !pointerCopyTrait(Both->getLHS(), Input) ||
+        !pointerCopyTrait(Both->getRHS(), Input) || !Return)
       return nullptr;
     return strip(Return->getRetValue());
   }
   bool innerTemplate(const FunctionDecl *Function) const {
-    if (!Backward)
+    if (!Backward && !Moving)
       return templates(Function, {Input, Input, Output});
     const auto *Args = Function->getTemplateSpecializationArgs();
     return Args && Args->size() == 4 &&
@@ -18021,15 +18040,19 @@ class UtilityWrapperCopyProof {
   }
 
 public:
-  UtilityWrapperCopyProof(const State &S, const SourceManager &SM,
-                          const ASTContext &Context, QualType Input,
-                          QualType Output, bool Backward = false)
+  UtilityWrapperTransferProof(const State &S, const SourceManager &SM,
+                              const ASTContext &Context, QualType Input,
+                              QualType Output, bool Backward = false,
+                              bool Moving = false)
       : S(S), SM(SM), Context(Context), Element(Output->getPointeeType()),
-        Input(Input), Output(Output), Backward(Backward) {}
+        Input(Input), Output(Output), Backward(Backward), Moving(Moving) {}
 
   bool prove(const FunctionDecl *F) const {
     const auto Path = path();
-    if (!utilitySwapSDKFunction(S, SM, F, Backward ? "copy_backward" : "copy",
+    if (!utilitySwapSDKFunction(S, SM, F,
+                                Moving     ? "move"
+                                : Backward ? "copy_backward"
+                                           : "copy",
                                 Path) ||
         !templates(F, {Input, Output}) ||
         !signature(F, Output, {Input, Input, Output}) ||
@@ -18043,8 +18066,11 @@ public:
     const auto *Inner = C ? C->getDirectCallee() : nullptr;
     if (!P || Second->isArrow() || Second->getMemberDecl() != P->Second || !C ||
         C->getNumArgs() != 3 ||
-        !utilitySwapSDKFunction(
-            S, SM, Inner, Backward ? "__copy_backward" : "__copy", Path) ||
+        !utilitySwapSDKFunction(S, SM, Inner,
+                                Moving     ? "__move"
+                                : Backward ? "__copy_backward"
+                                           : "__copy",
+                                Path) ||
         !innerTemplate(Inner) ||
         !signature(Inner, C->getType(), {Input, Input, Output}))
       return false;
@@ -18054,8 +18080,9 @@ public:
       return false;
     for (unsigned I = 0; I != 3; ++I) {
       const auto Type = I == 2 ? Output : Input;
-      if ((Backward ? !moved(C->getArg(I), F->getParamDecl(I), Type)
-                    : !reference(C->getArg(I), F->getParamDecl(I))) ||
+      if (((Backward || Moving)
+               ? !moved(C->getArg(I), F->getParamDecl(I), Type)
+               : !reference(C->getArg(I), F->getParamDecl(I))) ||
           !moved(Unwrap->getArg(I), Inner->getParamDecl(I), Type))
         return false;
     }
@@ -30832,7 +30859,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool Wrapper =
         ((Name == "copy" && Origin->Path == "__algorithm/copy.h") ||
          (Name == "copy_backward" &&
-          Origin->Path == "__algorithm/copy_backward.h")) &&
+          Origin->Path == "__algorithm/copy_backward.h") ||
+         (Name == "move" && Origin->Path == "__algorithm/move.h")) &&
         Input->isPointerType() && Output->isPointerType() &&
         !Output->getPointeeType().hasQualifiers() &&
         !Input->getPointeeType().isVolatileQualified() &&
@@ -30842,8 +30870,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(0)->getType(), Input) &&
         Same(Call->getArg(1)->getType(), Input) &&
         Same(Call->getArg(2)->getType(), Output) &&
-        UtilityWrapperCopyProof(S, SM, Context, Input, Output,
-                                Name == "copy_backward")
+        UtilityWrapperTransferProof(S, SM, Context, Input, Output,
+                                    Name == "copy_backward", Name == "move")
             .prove(Function);
     if (!Scalar && !Record && !Callback && !Wrapper)
       return std::nullopt;
