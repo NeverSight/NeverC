@@ -29487,7 +29487,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(*CallbackSecond)->getPointeeType().isConstQualified() &&
         utilityCallbackEqualityType(Context, (*CallbackFirst)->getPointeeType(),
                                     (*CallbackSecond)->getPointeeType());
-    if (Scalar || Record || Callback)
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    const bool Wrapper =
+        Pointer->isPointerType() &&
+        !Pointer->getPointeeType().hasQualifiers() &&
+        approvedFunctionalReferenceRecord(
+            S, SM, Pointer->getPointeeType()->getAsCXXRecordDecl(), Context) &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Same(Function->getParamDecl(2)->getType(), Pointer) &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        Same(Call->getArg(2)->getType(), Pointer) &&
+        utilitySwapRanges(S, SM, Function, Pointer->getPointeeType(), Context,
+                          0, nullptr);
+    if (Scalar || Record || Callback || Wrapper)
       return UtilityOperation::AlgorithmSwapRanges;
   }
   if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
