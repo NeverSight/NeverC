@@ -315,6 +315,16 @@ Source replacements or redeclarations of any consumed function, alias,
 constraint or trait, casted callees and independent SDK function addresses
 remain rejected. Evaluated swap keeps its existing complete body proof.
 
+The same pure swap proof also admits exact SDK `std::reference_wrapper`
+carriers, including const referents, nested wrappers, source-record referents
+and function referents. The borrowed layout and trivial wrapper lifetime remain
+separate checked evidence. A query constructs no wrapper and selects no
+referent construction, invocation or destruction, including deleted referent
+constructors and destructors. SDK function, result-alias, constraint and
+exception-trait declaration checks remain unchanged, and original referent
+types, aliases, operands, defaults, exception expressions and source bodies
+still close independently.
+
 Both argument expressions are evaluated once before reading the old pointer.
 The array is bound and decayed without copying, moving or reading its elements;
 the old pointer is returned and the destination points at the first element.

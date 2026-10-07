@@ -7594,9 +7594,9 @@ static QualType utilityPointerExchangeQuerySource(Adapter &A,
   return A.Context.getCanonicalType(Result);
 }
 
-static bool utilityPointerSwapResultSource(Adapter &A,
-                                           const FunctionDecl *Function,
-                                           QualType Pointer) {
+static bool utilityBorrowedSwapResultSource(Adapter &A,
+                                            const FunctionDecl *Function,
+                                            QualType ValueType) {
   const auto *Result =
       Function->getReturnType()->getAs<TemplateSpecializationType>();
   const auto *Alias = Result
@@ -7607,7 +7607,7 @@ static bool utilityPointerSwapResultSource(Adapter &A,
       Result->template_arguments().size() != 1 ||
       Result->template_arguments()[0].getKind() != TemplateArgument::Type ||
       !A.Context.hasSameType(Result->template_arguments()[0].getAsType(),
-                             Pointer))
+                             ValueType))
     return false;
   auto Pinned = [&](const Decl *Declaration, llvm::StringRef Path,
                     bool AllowSwapForward = false) {
@@ -7703,8 +7703,8 @@ static bool utilityPointerSwapResultSource(Adapter &A,
                "__type_traits/is_assignable.h");
 }
 
-static QualType utilityPointerSwapQuerySource(Adapter &A,
-                                              const CallExpr *Call) {
+static QualType utilityBorrowedSwapQuerySource(Adapter &A,
+                                               const CallExpr *Call) {
   const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Prototype =
@@ -7731,15 +7731,23 @@ static QualType utilityPointerSwapQuerySource(Adapter &A,
       !A.S.owns(A.Sources, Reference->getExprLoc()) ||
       !utilitySDKFunctionSource(A, Function, "__utility/swap.h", false))
     return {};
-  const auto Pointer = Arguments->get(0).getAsType();
-  if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
-      !utilityPointerSwapResultSource(A, Function, Pointer))
+  const auto ValueType = Arguments->get(0).getAsType();
+  const auto *Wrapper = ValueType->getAsCXXRecordDecl();
+  const bool ReferenceWrapper =
+      approvedFunctionalReferenceMetadata(A.S, A.Sources, Wrapper) ||
+      approvedFunctionalReferenceRecord(A.S, A.Sources, Wrapper, A.Context);
+  if ((!ValueType->isPointerType() && !ReferenceWrapper) ||
+      ValueType.hasQualifiers() ||
+      !utilityBorrowedSwapResultSource(A, Function, ValueType) ||
+      (ReferenceWrapper &&
+       (!utilityMemoryElementQueryLayout(A, ValueType, Call->getExprLoc()) ||
+        !functionalReferenceDestructionSource(A, Wrapper))))
     return {};
-  const auto Parameter = A.Context.getLValueReferenceType(Pointer);
+  const auto Parameter = A.Context.getLValueReferenceType(ValueType);
   for (unsigned Index = 0; Index != 2; ++Index)
     if (!A.Context.hasSameType(Function->getParamDecl(Index)->getType(),
                                Parameter) ||
-        !A.Context.hasSameType(Call->getArg(Index)->getType(), Pointer) ||
+        !A.Context.hasSameType(Call->getArg(Index)->getType(), ValueType) ||
         !Call->getArg(Index)->isLValue())
       return {};
   auto Trait = [&](const Expr *Expression, llvm::StringRef Name,
@@ -7759,7 +7767,7 @@ static QualType utilityPointerSwapQuerySource(Adapter &A,
         Record->getTemplateArgs().size() != 1 ||
         Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
         !A.Context.hasSameType(Record->getTemplateArgs().get(0).getAsType(),
-                               Pointer) ||
+                               ValueType) ||
         !utilityUniquePtrSDKRecordSource(A, Record, Name, Path))
       return false;
     const auto Value =
@@ -7770,9 +7778,9 @@ static QualType utilityPointerSwapQuerySource(Adapter &A,
              "__type_traits/is_nothrow_constructible.h") ||
       !Trait(Exception->getRHS(), "is_nothrow_move_assignable",
              "__type_traits/is_nothrow_assignable.h") ||
-      A.type(Pointer, Call->getExprLoc(), false).empty())
+      A.type(ValueType, Call->getExprLoc(), false).empty())
     return {};
-  // Only the exact void/nothrow pointer signature and pinned constraint traits
+  // Only exact void/nothrow borrowed signatures and pinned constraint traits
   // participate. No SDK move/assignment body, pointer access or lifetime runs.
   return A.Context.getCanonicalType(Function->getReturnType());
 }
@@ -7831,7 +7839,7 @@ static void prepareBorrowedQueryLayouts(Adapter &A) {
       (void)utilityAddressofQuerySource(A, Call);
       (void)utilityLaunderQuerySource(A, Call);
       (void)utilityPointerExchangeQuerySource(A, Call);
-      (void)utilityPointerSwapQuerySource(A, Call);
+      (void)utilityBorrowedSwapQuerySource(A, Call);
       (void)utilityWrapperReferenceCastQueryLayout(A, Call);
       return true;
     }
@@ -15283,7 +15291,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         else if (const auto Result = utilityPointerExchangeQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
-        else if (const auto Result = utilityPointerSwapQuerySource(A, Call);
+        else if (const auto Result = utilityBorrowedSwapQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityAllocatorQuerySource(A, Call);
