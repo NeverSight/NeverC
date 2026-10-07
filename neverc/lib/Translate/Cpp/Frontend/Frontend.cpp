@@ -4878,8 +4878,8 @@ static bool utilityValueAdapterSource(
          utilitySDKValueAdapterSource(A, Call, *Operation);
 }
 
-static bool utilityPointerExchangeExceptionSource(Adapter &A,
-                                                  const CallExpr *Call) {
+static bool utilityBorrowedExchangeExceptionSource(Adapter &A,
+                                                   const CallExpr *Call) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!Function || Call->getNumArgs() != 2 || Function->getNumParams() != 2)
     return false;
@@ -4892,9 +4892,9 @@ static bool utilityPointerExchangeExceptionSource(Adapter &A,
       Prototype->getExceptionSpecType() != EST_NoexceptTrue ||
       operationCalleePrototype(Call) != Prototype)
     return false;
-  // The checked signature or runtime descriptor proves pointer move/assignment
-  // and admitted array decay. Its exception source must be the two exact pinned
-  // traits, not a user replacement that merely returns the same boolean.
+  // A separate checked signature or runtime descriptor proves the admitted
+  // move/assignment. Its exception source must be the two exact pinned traits,
+  // not a source replacement that merely returns the same boolean.
   auto Trait = [&](const Expr *Expression, llvm::StringRef Name,
                    llvm::StringRef Path, llvm::ArrayRef<QualType> Types) {
     const auto *Reference =
@@ -4952,7 +4952,7 @@ static bool utilityArrayExchangeSource(Adapter &A, const CallExpr *Call) {
          approvedUtilityOperation(A.S, A.Sources, Call, A.Context) ==
              UtilityOperation::Exchange &&
          utilitySDKFunctionSource(A, Function, "__utility/exchange.h") &&
-         utilityPointerExchangeExceptionSource(A, Call);
+         utilityBorrowedExchangeExceptionSource(A, Call);
 }
 
 static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
@@ -7582,7 +7582,7 @@ static QualType utilityPointerExchangeQuerySource(Adapter &A,
       !approvedUtilityPointerExchangeSignatureQuery(A.S, A.Sources, Call,
                                                     A.Context) ||
       !utilitySDKFunctionSource(A, Function, "__utility/exchange.h", false) ||
-      !utilityPointerExchangeExceptionSource(A, Call))
+      !utilityBorrowedExchangeExceptionSource(A, Call))
     return {};
   const auto Result = Function->getReturnType();
   if (!utilityMemoryElementQueryLayout(A, Result->getPointeeType(),
@@ -7592,6 +7592,61 @@ static QualType utilityPointerExchangeQuerySource(Adapter &A,
   // The exact pointer/array signature and resolved SDK traits prove a query.
   // No SDK move, forward, pointer read, assignment or owning lifetime executes.
   return A.Context.getCanonicalType(Result);
+}
+
+static QualType utilityWrapperExchangeQuerySource(Adapter &A,
+                                                  const CallExpr *Call) {
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!A.S.coreV2() || !Reference || !Function || !Function->getIdentifier() ||
+      Function->getName() != "exchange" || !Function->isInlined() ||
+      !Function->getPrimaryTemplate() || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      Call->getNumArgs() != 2 || Function->getNumParams() != 2 ||
+      Function->getParamDecl(0)->hasDefaultArg() ||
+      Function->getParamDecl(1)->hasDefaultArg() || !Call->isPRValue() ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !utilitySDKFunctionSource(A, Function, "__utility/exchange.h", false))
+    return {};
+  const auto ValueType = Arguments->get(0).getAsType();
+  const auto Replacement = Arguments->get(1).getAsType();
+  const auto ReplacementValue = Replacement.getNonReferenceType();
+  const auto ReplacementReference =
+      Replacement->isLValueReferenceType()
+          ? A.Context.getLValueReferenceType(ReplacementValue)
+          : A.Context.getRValueReferenceType(ReplacementValue);
+  const auto *Wrapper = ValueType->getAsCXXRecordDecl();
+  if (ValueType.hasQualifiers() ||
+      (!approvedFunctionalReferenceMetadata(A.S, A.Sources, Wrapper) &&
+       !approvedFunctionalReferenceRecord(A.S, A.Sources, Wrapper,
+                                          A.Context)) ||
+      ReplacementValue.isVolatileQualified() ||
+      ReplacementValue.isRestrictQualified() ||
+      ReplacementValue.getAddressSpace() != LangAS::Default ||
+      !A.Context.hasSameType(ReplacementValue.getUnqualifiedType(),
+                             ValueType) ||
+      !A.Context.hasSameType(Function->getReturnType(), ValueType) ||
+      !A.Context.hasSameType(Call->getType(), ValueType) ||
+      !A.Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             A.Context.getLValueReferenceType(ValueType)) ||
+      !A.Context.hasSameType(Function->getParamDecl(1)->getType(),
+                             ReplacementReference) ||
+      !A.Context.hasSameType(Call->getArg(0)->getType(), ValueType) ||
+      !Call->getArg(0)->isLValue() ||
+      !A.Context.hasSameType(Call->getArg(1)->getType(), ReplacementValue) ||
+      (Replacement->isLValueReferenceType() ? !Call->getArg(1)->isLValue()
+                                            : Call->getArg(1)->isLValue()) ||
+      !utilityMemoryElementQueryLayout(A, ValueType, Call->getExprLoc()) ||
+      !functionalReferenceDestructionSource(A, Wrapper) ||
+      !utilityBorrowedExchangeExceptionSource(A, Call) ||
+      A.type(ValueType, Call->getExprLoc(), false).empty())
+    return {};
+  // The exact SDK signature borrows only checked carrier storage and traits.
+  // No exchange body, carrier assignment or referent lifetime is selected.
+  return A.Context.getCanonicalType(ValueType);
 }
 
 static bool utilityBorrowedSwapResultSource(Adapter &A,
@@ -7839,6 +7894,7 @@ static void prepareBorrowedQueryLayouts(Adapter &A) {
       (void)utilityAddressofQuerySource(A, Call);
       (void)utilityLaunderQuerySource(A, Call);
       (void)utilityPointerExchangeQuerySource(A, Call);
+      (void)utilityWrapperExchangeQuerySource(A, Call);
       (void)utilityBorrowedSwapQuerySource(A, Call);
       (void)utilityWrapperReferenceCastQueryLayout(A, Call);
       return true;
@@ -15289,6 +15345,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityPointerExchangeQuerySource(A, Call);
+                 !Result.isNull())
+          A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
+        else if (const auto Result = utilityWrapperExchangeQuerySource(A, Call);
                  !Result.isNull())
           A.S.UnevaluatedMemoryCalls.emplace(Call, Result);
         else if (const auto Result = utilityBorrowedSwapQuerySource(A, Call);

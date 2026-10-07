@@ -325,6 +325,21 @@ exception-trait declaration checks remain unchanged, and original referent
 types, aliases, operands, defaults, exception expressions and source bodies
 still close independently.
 
+Pure wrapper `std::exchange` queries authenticate an exact pinned
+`std::reference_wrapper<T>` result and destination, with a replacement of the
+same wrapper type. Const replacement views and lvalue/rvalue references retain
+their exact deduced argument and collapsed parameter types. Const, nested,
+source-record and supported function referents keep their checked layouts and
+original signatures, including deleted referent construction/destruction.
+The public SDK function and both resolved nothrow traits close independently of
+the complete carrier layout and trivial wrapper lifetime. `decltype`, `sizeof`
+and `noexcept` do not select an exchange body, carrier assignment or referent
+construction, invocation or destruction; operand side effects remain
+unevaluated and retain their original exception state. Source redeclarations,
+specializations, aliases, defaults, operand bodies, casted callees and independent
+SDK function addresses retain their ordinary checks. Evaluated wrapper exchange
+and replacement conversions from different wrapper/source types remain rejected.
+
 Both argument expressions are evaluated once before reading the old pointer.
 The array is bound and decayed without copying, moving or reading its elements;
 the old pointer is returned and the destination points at the first element.

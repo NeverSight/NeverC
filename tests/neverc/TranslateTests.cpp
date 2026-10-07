@@ -176069,3 +176069,532 @@ static_assert(std::is_same<decltype(std::swap(std::declval<E&>(),std::declval<E&
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryConstReferent) {
+  const auto Source = tmpFile("wrapper-exchange-signature-const-referent.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-const-referent.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<const int>;using U=E;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<U>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<U>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-const-referent" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExchangeSignatureQueryExplicitRvalueReference) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-explicit-rvalue-reference.cpp");
+  const auto Output =
+      tmpFile("wrapper-exchange-signature-explicit-rvalue-reference.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange<E,E&&>(std::declval<E&>(),std::declval<E>())),E>::value,"result");static_assert(noexcept(std::exchange<E,E&&>(std::declval<E&>(),std::declval<E>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exchange-signature-explicit-rvalue-reference" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryFunctionWrapper) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-function-wrapper.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-function-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept;using E=std::reference_wrapper<F>;using U=E;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<U>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<U>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-function-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryNestedWrapper) {
+  const auto Source = tmpFile("wrapper-exchange-signature-nested-wrapper.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-nested-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<std::reference_wrapper<int>>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-nested-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryQueryEffects) {
+  const auto Source = tmpFile("wrapper-exchange-signature-query-effects.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-query-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;E*left=nullptr;E*right=nullptr;int effects=0;E&first()noexcept{++effects;return*left;}E&second()noexcept{++effects;return*right;}
+static_assert(std::is_same<decltype(std::exchange(first(),second())),E>::value,"result");static_assert(noexcept(std::exchange(first(),second())),"exception");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-query-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryQueryOnlyParameters) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-query-only-parameters.cpp");
+  const auto Output =
+      tmpFile("wrapper-exchange-signature-query-only-parameters.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+int inspect(E&a,E&b){using P=decltype(std::exchange(a,b));static_assert(std::is_same<P,E>::value,"result");return noexcept(std::exchange(a,b))?0:1;}int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exchange-signature-query-only-parameters" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExchangeSignatureQueryQueryThrowingOperands) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-query-throwing-operands.cpp");
+  const auto Output =
+      tmpFile("wrapper-exchange-signature-query-throwing-operands.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;E*left=nullptr;E*right=nullptr;int effects=0;E&first(){++effects;return*left;}E&second(){++effects;return*right;}
+static_assert(std::is_same<decltype(std::exchange(first(),second())),E>::value,"result");static_assert(!noexcept(std::exchange(first(),second())),"exception");int main(){return effects;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exchange-signature-query-throwing-operands" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryScalarControl) {
+  const auto Source = tmpFile("wrapper-exchange-signature-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=int;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQuerySourceRecordWrapper) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-source-record-wrapper.cpp");
+  const auto Output =
+      tmpFile("wrapper-exchange-signature-source-record-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct R{int n;R()=delete;~R()=delete;};using E=std::reference_wrapper<R>;using U=E;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<U>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<U>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exchange-signature-source-record-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryTypeOnly) {
+  const auto Source = tmpFile("wrapper-exchange-signature-type-only.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-type-only.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+using Result=decltype(std::exchange(std::declval<E&>(),std::declval<E>()));static_assert(std::is_same<Result,E>::value,"result");static_assert(sizeof(std::exchange(std::declval<E&>(),std::declval<E>()))==sizeof(E),"layout");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-type-only" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryWrapperConstRef) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-wrapper-const-ref.cpp");
+  const auto Output =
+      tmpFile("wrapper-exchange-signature-wrapper-const-ref.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;using U=const E&;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<U>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<U>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-wrapper-const-ref" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryWrapperConstValue) {
+  const auto Source =
+      tmpFile("wrapper-exchange-signature-wrapper-const-value.cpp");
+  const auto Output =
+      tmpFile("wrapper-exchange-signature-wrapper-const-value.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;using U=const E;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<U>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<U>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-exchange-signature-wrapper-const-value" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryWrapperRef) {
+  const auto Source = tmpFile("wrapper-exchange-signature-wrapper-ref.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-wrapper-ref.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-wrapper-ref" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExchangeSignatureQueryWrapper) {
+  const auto Source = tmpFile("wrapper-exchange-signature-wrapper.cpp");
+  const auto Output = tmpFile("wrapper-exchange-signature-wrapper.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E>())),"nothrow");int main(){return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-exchange-signature-wrapper" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExchangeSignatureQueryRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+using F=E(E&,E&)noexcept;using R=decltype((static_cast<F*>(&std::exchange<E,E&>))(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"different-wrapper-replacement", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<const int>;using U=std::reference_wrapper<int>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<U&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"evaluated-wrapper-exchange", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using E=std::reference_wrapper<F>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+using F=E(E&,E&)noexcept;F*address=&std::exchange<E,E&>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using E=Alias<sizeof(long double)>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-assignment-trait-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T,class U>struct is_nothrow_assignable;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using E=std::reference_wrapper<F>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-function-reference-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>E exchange<E,E&>(E&,E&)noexcept;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-function-value-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>E exchange<E,E>(E&,E&&)noexcept;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-move-trait-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+E*left=nullptr;E&first()noexcept{auto hidden=sizeof(long double);return*left;}using R=decltype(std::exchange(first(),*left));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+E*left=nullptr;E&first(int n=sizeof(long double))noexcept{return*left;}using R=decltype(std::exchange(first(),*left));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T,class U>T exchange(T&,U&&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_assignable<T&,U>::value);}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct Source{long double n;};using E=std::reference_wrapper<Source>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-user-conversion-reference", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+struct X{operator E()const noexcept;};using R=decltype(std::exchange(std::declval<E&>(),std::declval<X&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-user-conversion-value", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+struct X{operator E()const noexcept;};using R=decltype(std::exchange(std::declval<E&>(),std::declval<X>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using E=std::reference_wrapper<int*>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-exchange-signature-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-exchange-signature-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
