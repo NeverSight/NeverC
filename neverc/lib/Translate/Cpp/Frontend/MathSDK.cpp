@@ -16213,6 +16213,106 @@ static bool approvedUtilityPointerExchange(
          Returned && Returned->getDecl() == Old;
 }
 
+// The pinned exchange body moves a checked wrapper carrier, assigns another
+// carrier and returns the old binding. Every selected operation closes here;
+// the lowering never performs a referent lifetime operation.
+static bool approvedUtilityWrapperExchange(const State &S,
+                                           const SourceManager &SM,
+                                           const FunctionDecl *Function,
+                                           QualType Type,
+                                           const ASTContext &Context) {
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || Type.hasQualifiers() ||
+      !utilitySwapSDKFunction(S, SM, Function, "exchange",
+                              "__utility/exchange.h") ||
+      Function->getNumParams() != 2 ||
+      !Context.hasSameType(Function->getReturnType(), Type))
+    return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const auto Reference = Context.getLValueReferenceType(Type);
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference))
+    return false;
+  const auto Replacement = Arguments->get(1).getAsType();
+  const auto ReplacementValue = Replacement.getNonReferenceType();
+  const auto ReplacementReference =
+      Replacement->isLValueReferenceType()
+          ? Context.getLValueReferenceType(ReplacementValue)
+          : Context.getRValueReferenceType(ReplacementValue);
+  if (ReplacementValue.isVolatileQualified() ||
+      ReplacementValue.isRestrictQualified() ||
+      ReplacementValue.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameType(ReplacementValue.getUnqualifiedType(), Type) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(),
+                           ReplacementReference))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 3)
+    return false;
+  auto Statement = Body->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Old = Declaration && Declaration->isSingleDecl()
+                        ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
+                        : nullptr;
+  const auto *Construction =
+      Old && Old->getInit()
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Old->getInit()))
+          : nullptr;
+  const auto *Assignment = dyn_cast<CXXOperatorCallExpr>(*Statement++);
+  const auto *Method =
+      Assignment
+          ? dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee())
+          : nullptr;
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Result =
+      Return ? dyn_cast_or_null<CXXConstructExpr>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  if (!Old || !Context.hasSameType(Old->getType(), Type) || !Construction ||
+      approvedFunctionalReferenceConstruction(S, SM, Construction, Context) !=
+          FunctionalReferenceConstruction::CopyOrMove ||
+      !utilitySwapPointerAdapter(S, SM, Construction->getArg(0),
+                                 Function->getParamDecl(0), Type, Reference,
+                                 false, Context) ||
+      !Assignment || Assignment->getOperator() != OO_Equal ||
+      Assignment->getNumArgs() != 2 || !Assignment->isLValue() || !Method ||
+      !Method->isImplicit() || !Method->isTrivial() || Method->isStatic() ||
+      Method->isVariadic() || Method->isInvalidDecl() || Method->isDeleted() ||
+      Method->getNumParams() != 1 ||
+      (!Method->isCopyAssignmentOperator() &&
+       !Method->isMoveAssignmentOperator()) ||
+      Method->getParent()->getCanonicalDecl() !=
+          Wrapper->Record->getCanonicalDecl() ||
+      !Context.hasSameType(Method->getReturnType(), Reference) ||
+      !Context.hasSameType(Assignment->getType(), Type) ||
+      !functionalInvokeParameterReference(Assignment->getArg(0),
+                                          Function->getParamDecl(0)) ||
+      !utilitySwapPointerAdapter(S, SM, Assignment->getArg(1),
+                                 Function->getParamDecl(1), ReplacementValue,
+                                 Replacement, true, Context) ||
+      !Result ||
+      approvedFunctionalReferenceConstruction(S, SM, Result, Context) !=
+          FunctionalReferenceConstruction::CopyOrMove)
+    return false;
+  for (const auto *Redeclaration : Method->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
+        !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto *Returned = dyn_cast_or_null<DeclRefExpr>(
+      functionalInvokeStrippedExpression(Result->getArg(0)));
+  return Parameter->isReferenceType() &&
+         !Parameter->getPointeeType().isVolatileQualified() &&
+         Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Type) &&
+         Returned && Returned->getDecl() == Old;
+}
+
 bool approvedUtilityPointerExchangeSignatureQuery(const State &S,
                                                   const SourceManager &SM,
                                                   const CallExpr *Call,
@@ -32541,12 +32641,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Object->isLValueReferenceType() && Value->isReferenceType() &&
         !Object->getPointeeType().isConstQualified() &&
         !Object->getPointeeType().isVolatileQualified() &&
-        ((utilityScalar(Context, Object->getPointeeType()) &&
+        (approvedUtilityWrapperExchange(S, SM, Function,
+                                        Object->getPointeeType(), Context) ||
+         (utilityScalar(Context, Object->getPointeeType()) &&
           utilityScalar(Context, Value->getPointeeType())) ||
          (Object->getPointeeType()->isPointerType() &&
           Context.getAsConstantArrayType(Value->getPointeeType()) &&
-          approvedUtilityPointerExchange(
-              S, SM, Function, Object->getPointeeType(), Context)) ||
+          approvedUtilityPointerExchange(S, SM, Function,
+                                         Object->getPointeeType(), Context)) ||
          (Object->getPointeeType()->isFunctionPointerType() &&
           (Context.hasSameType(Object->getPointeeType(),
                                Value->getPointeeType()) ||
@@ -32560,8 +32662,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityNoexceptCallbackPointer(
                Object->getPointeeType(),
                Value->getPointeeType().getUnqualifiedType(), Context)) &&
-          approvedUtilityPointerExchange(
-              S, SM, Function, Object->getPointeeType(), Context))) &&
+          approvedUtilityPointerExchange(S, SM, Function,
+                                         Object->getPointeeType(), Context))) &&
         Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), Value->getPointeeType()) &&
         Same(Call->getType(), Object->getPointeeType()) &&

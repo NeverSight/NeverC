@@ -176451,11 +176451,11 @@ using F=E(E&,E&)noexcept;using R=decltype((static_cast<F*>(&std::exchange<E,E&>)
 #include <type_traits>
 using E=std::reference_wrapper<const int>;using U=std::reference_wrapper<int>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<U&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
 )cpp"},
-      {"evaluated-wrapper-exchange", R"cpp(
+      {"source-forward-specialization", R"cpp(
 #include <functional>
 #include <utility>
-#include <type_traits>
 using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr E&forward<E&>(E&x)noexcept{return x;}}}
 E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
 )cpp"},
       {"extended-function-referent", R"cpp(
@@ -177045,6 +177045,550 @@ void selected(W&a,W&b){std::swap(a,b);}int main(){return 0;}
                                 Case.first + ".cpp");
     const auto Output = tmpFile(std::string("wrapper-direct-swap-runtime-") +
                                 Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){const int a=3,b=9;std::reference_wrapper<const int>x(a),y(b);auto old=std::exchange(x,y);return old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeConstReplacement) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-const-replacement.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-const-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a);const std::reference_wrapper<int>y(b);auto old=std::exchange(x,y);return old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-const-replacement" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperDirectExchangeRuntimeConstRvalueReplacement) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-const-rvalue-replacement.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-const-rvalue-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a);const std::reference_wrapper<int>y(b);auto old=std::exchange(x,std::move(y));return old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-exchange-runtime-const-rvalue-replacement" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeFunctionReferents) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-function-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-function-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int first(int n)noexcept{return n+3;}int second(int n)noexcept{return n+9;}int main(){std::reference_wrapper<int(int)noexcept>x(first),y(second);auto old=std::exchange(x,y);return old(1)!=4||x(1)!=10||y(1)!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-function-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeFunctionReturn) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-function-return.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-function-return.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;E update(E&a,E&b){return std::exchange(a,b);}int main(){int a=3,b=9;E x(a),y(b);E old=update(x,y);return old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-function-return" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeLvalueReplacement) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-lvalue-replacement.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-lvalue-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);auto old=std::exchange(x,y);return old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-lvalue-replacement" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeNestedWrappers) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-nested-wrappers.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-nested-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>ia(a),ib(b);std::reference_wrapper<std::reference_wrapper<int>>x(ia),y(ib);auto old=std::exchange(x,y);return old.get().get()!=3||x.get().get()!=9||ia.get()!=3||ib.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-nested-wrappers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0,cleanup=0;struct Receiver{W*value;Receiver(W&w):value(&w){++effects;}~Receiver(){++cleanup;}W&get(){return*value;}};int main(){int a=3,b=9;W x(a),y(b);auto old=std::exchange(Receiver(x).get(),Receiver(y).get());return effects!=2||cleanup!=2||old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W&pick(W&w){++effects;return w;}int main(){int a=3,b=9;W x(a),y(b);auto old=std::exchange(pick(x),pick(y));return effects!=2||old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeReferentLifetime) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-referent-lifetime.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-referent-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int construction=0,destruction=0;struct R{int n;R(int v):n(v){++construction;}R(const R&)=delete;R&operator=(const R&)=delete;~R(){++destruction;}};int main(){{R a(3),b(9);std::reference_wrapper<R>x(a),y(b);auto old=std::exchange(x,y);if(construction!=2||destruction!=0||old.get().n!=3||x.get().n!=9||y.get().n!=9)return 1;}return destruction!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-referent-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeRvalueReplacement) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-rvalue-replacement.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-rvalue-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);auto old=std::exchange(x,std::move(y));return old.get()!=3||x.get()!=9||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-rvalue-replacement" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int x=3,y=9;auto old=std::exchange(x,y);return old!=3||x!=9||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeSelfExchange) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-self-exchange.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-self-exchange.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3;std::reference_wrapper<int>x(a);auto old=std::exchange(x,x);return old.get()!=3||x.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-direct-exchange-runtime-self-exchange" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperDirectExchangeRuntimeTemporaryReplacement) {
+  const auto Source =
+      tmpFile("wrapper-direct-exchange-runtime-temporary-replacement.cpp");
+  const auto Output =
+      tmpFile("wrapper-direct-exchange-runtime-temporary-replacement.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a);auto old=std::exchange(x,std::ref(b));return old.get()!=3||x.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-direct-exchange-runtime-temporary-replacement" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperDirectExchangeRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+using F=E(E&,E&)noexcept;using R=decltype((static_cast<F*>(&std::exchange<E,E&>))(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"different-wrapper-replacement", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<const int>;using U=std::reference_wrapper<int>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<U&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using E=std::reference_wrapper<F>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"independent-function-address", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+using F=E(E&,E&)noexcept;F*address=&std::exchange<E,E&>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using E=Alias<sizeof(long double)>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-assignment-trait-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T,class U>struct is_nothrow_assignable;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using E=std::reference_wrapper<F>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-forward-specialization-declaration", R"cpp(
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr E&forward<E&>(E&)noexcept;}}
+E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr E&forward<E&>(E&x)noexcept{return x;}}}
+E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-function-reference-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>E exchange<E,E&>(E&,E&)noexcept;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-function-value-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>E exchange<E,E>(E&,E&&)noexcept;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>E&&move<E&>(E&)noexcept;}}
+E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <utility>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>E&&move<E&>(E&x)noexcept{return static_cast<E&&>(x);}}}
+E update(E&a,E&b){return std::exchange(a,b);}int main(){return 0;}
+)cpp"},
+      {"source-move-trait-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>struct is_nothrow_move_constructible;}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+E*left=nullptr;E&first()noexcept{auto hidden=sizeof(long double);return*left;}using R=decltype(std::exchange(first(),*left));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+E*left=nullptr;E&first(int n=sizeof(long double))noexcept{return*left;}using R=decltype(std::exchange(first(),*left));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T,class U>T exchange(T&,U&&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_assignable<T&,U>::value);}}
+using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+struct Source{long double n;};using E=std::reference_wrapper<Source>;using R=decltype(std::exchange(std::declval<E&>(),std::declval<E&>()));static_assert(std::is_same<R,E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-user-conversion-reference", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+struct X{operator E()const noexcept;};using R=decltype(std::exchange(std::declval<E&>(),std::declval<X&>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-user-conversion-value", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+using E=std::reference_wrapper<int>;
+struct X{operator E()const noexcept;};using R=decltype(std::exchange(std::declval<E&>(),std::declval<X>()));static_assert(std::is_same<R,E>::value,"result");int main(){return 0;}
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using E=std::reference_wrapper<int*>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using E=std::reference_wrapper<int>;
+static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declval<E&>())),E>::value,"result");static_assert(noexcept(std::exchange(std::declval<E&>(),std::declval<E&>())),"nothrow");int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-direct-exchange-runtime-") + Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-direct-exchange-runtime-") + Case.first + ".nc");
     writeFile(Source, Case.second);
     const auto Result =
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});

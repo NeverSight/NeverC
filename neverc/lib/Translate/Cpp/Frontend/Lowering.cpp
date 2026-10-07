@@ -4414,7 +4414,7 @@ class FunctionLowering {
     }
     case UtilityOperation::Exchange: {
       // Function arguments are bound before exchange reads the old value.
-      // Capture the destination address and converted new scalar first, then
+      // Capture the destination address and converted new value first, then
       // perform the header's move/read, assignment and value return directly.
       auto ObjectType = Call->getArg(0)->getType();
       auto ObjectAddress = snapshot(
@@ -4430,8 +4430,24 @@ class FunctionLowering {
           L);
       auto Object = dereference(std::move(ObjectAddress), L);
       auto OldValue = snapshot(Object, L);
+      const bool Wrapper =
+          approvedFunctionalReferenceRecord(
+              A.S, A.Sources, ObjectType->getAsCXXRecordDecl(), A.Context)
+              .has_value();
+      // Checked wrapper replacements already have the carrier record type.
+      // Copy that value directly; scalar conversions keep their existing cast.
       assign(Object,
-             cast(std::move(NewValue), type(ObjectType, L), L), L);
+             Wrapper ? std::move(NewValue)
+                     : cast(std::move(NewValue), type(ObjectType, L), L),
+             L);
+      if (Wrapper && Destination) {
+        auto Place = std::move(*Destination);
+        if (Place.getString("type") != type(ObjectType, L))
+          reject(L, "utility exchange result",
+                 "The wrapper result destination type differs from its value.");
+        assign(Place, std::move(OldValue), L);
+        return Place;
+      }
       return OldValue;
     }
     case UtilityOperation::Swap: {

@@ -337,8 +337,8 @@ and `noexcept` do not select an exchange body, carrier assignment or referent
 construction, invocation or destruction; operand side effects remain
 unevaluated and retain their original exception state. Source redeclarations,
 specializations, aliases, defaults, operand bodies, casted callees and independent
-SDK function addresses retain their ordinary checks. Evaluated wrapper exchange
-and replacement conversions from different wrapper/source types remain rejected.
+SDK function addresses retain their ordinary checks. Evaluated wrapper exchange requires its own complete SDK body proof.
+Replacement conversions from different wrapper/source types remain rejected.
 
 Direct evaluated `std::swap` also admits exact SDK `std::reference_wrapper<T>`
 carriers through the existing authenticated element-swap body. The selected
@@ -351,6 +351,20 @@ receiver cleanup and referent lifetimes remain ordinary source operations.
 Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
+
+Evaluated direct `std::exchange` admits the same exact wrapper destination and
+replacement views with a separate complete SDK body proof. Authenticate the
+selected wrapper move construction, copy/move assignment, return construction
+and pinned move/forward calls before lowering them to carrier pointer copies.
+Both argument expressions are evaluated once before reading the old binding.
+Return the old wrapper and install the replacement binding in the destination;
+self-exchange preserves that binding. Const and nested wrapper views, source
+record referents and supported function referents keep their checked layouts
+and original signatures. No referent construction, move, assignment, invocation
+or destruction is introduced by exchange; actual source referent lifetimes and
+temporary receiver/replacement cleanup retain their ordinary boundaries.
+Source replacements and redeclarations of any selected SDK operation and
+unsupported replacement conversions remain rejected.
 
 Both argument expressions are evaluated once before reading the old pointer.
 The array is bound and decayed without copying, moving or reading its elements;
