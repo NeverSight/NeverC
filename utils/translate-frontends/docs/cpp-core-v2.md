@@ -377,6 +377,18 @@ Source comparisons, enum or nested-wrapper referents, heterogeneous values,
 SDK replacements, indirect/casted callees and unsupported original dependencies
 remain rejected.
 
+Direct `std::find` admits raw pointer ranges of the same exact checked
+SDK `std::reference_wrapper<T>` carrier, including optional const input and
+same-type lvalue or supported full-expression temporary comparison wrappers.
+Built-in scalar equality reads live referents and returns the first matching
+original iterator, or the original end. Its selected SDK proof checks both
+iterator unwraps, result rewrapping, the pointer loop, identity/invoke/forward
+projection and both reference conversions. Each original argument is evaluated
+once; construction and cleanup retain source behavior. Neither bindings nor
+referents are assigned. Source comparisons, enum or nested-wrapper referents,
+heterogeneous values, SDK replacements, indirect/casted callees and unsupported
+original dependencies remain rejected.
+
 Direct `std::replace_copy` admits raw pointer ranges of the same exact checked
 SDK `std::reference_wrapper<T>` carrier, with optional const input, mutable
 output and same-type old/new lvalue wrappers. Supported built-in scalar equality
