@@ -400,6 +400,19 @@ Source comparisons, enum or nested-wrapper referents, heterogeneous carriers,
 SDK replacements, indirect/casted calls and unsupported original dependencies
 remain rejected. Four-iterator default equality remains a separate increment.
 
+Direct `std::remove` admits mutable raw pointer ranges of the same exact
+checked SDK `std::reference_wrapper<T>` carrier, including built-in scalar
+referents and same-type lvalue or supported full-expression temporary values.
+Its selected SDK proof authenticates find and its iterator adapters, the local
+pointer scan, both scalar reference conversions, SDK move and the implicit
+trivial move assignment. Survivors retain their order and carrier bindings;
+the returned pointer is the logical end. Input-alias comparison values stay
+live, while temporary values preserve their initial binding snapshot. Each
+original argument is evaluated once and receiver cleanup is preserved.
+Referents are not assigned. Source comparisons, enum or nested-wrapper
+referents, heterogeneous values, SDK replacements, indirect/casted calls and
+unsupported original dependencies remain rejected.
+
 Direct `std::replace_copy` admits raw pointer ranges of the same exact checked
 SDK `std::reference_wrapper<T>` carrier, with optional const input, mutable
 output and same-type old/new lvalue wrappers. Supported built-in scalar equality
