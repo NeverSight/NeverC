@@ -352,6 +352,21 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::iter_swap` also admits two raw pointers to the same exact checked
+SDK `std::reference_wrapper<T>` carrier. Its complete selected SDK body must
+contain exactly one element-swap call on dereferences of the original iterator
+parameters. Both concrete pointer template arguments, parameter types and
+source argument types must match. The selected element swap retains its full
+SDK move and trivial carrier construction/assignment proof; user ADL swaps
+and selected source redeclarations or specializations are rejected.
+The lowering binds both pointer expressions once before reading either carrier,
+then exchanges only their stored referent pointers. Const, nested, source-record
+and supported function referents keep their checked layouts and signatures.
+Self-swap preserves the binding; actual referent lifetimes and temporary
+receiver cleanup retain their ordinary source boundaries. Casted/indirect
+callees and unsupported original aliases, defaults, bodies and signatures
+remain rejected. Other iterator families require their own operation proof.
+
 Evaluated direct `std::exchange` admits the same exact wrapper destination and
 replacement views with a separate complete SDK body proof. Authenticate the
 selected wrapper move construction, copy/move assignment, return construction
@@ -12761,9 +12776,12 @@ retain those resolved meanings. The producer never repeats lookup against the
 final namespace contents or creates alias wrapper functions.
 
 Ordinary resolved using-declarations may additionally import the pinned libc++
-free function names `move` and `forward` and the six comparison names
-`operator==`, `operator!=`, `operator<`, `operator>`, `operator<=` and
-`operator>=` from `std` or its inline namespaces.
+free function names `move`, `forward`, `swap`, `get`, `as_const`, `addressof`,
+`move_if_noexcept`, `exchange`, `invoke`, `make_pair`, `ref`, `cref` and
+`iter_swap`, plus the six comparison names `operator==`, `operator!=`,
+`operator<`, `operator>`, `operator<=` and `operator>=` from `std` or its inline
+namespaces. The `iter_swap` overload set must originate from the exact pinned
+`__algorithm/iter_swap.h` header; importing it grants lookup metadata only.
 Namespace and nondependent block imports, repeated/comma imports and
 source-owned namespace reexports preserve the overload set selected by Clang.
 An owned namespace alias or using-directive may refer to such a reexport

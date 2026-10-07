@@ -14569,6 +14569,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__utility/move.h";
       else if (Name->getName() == "exchange")
         ExpectedPath = "__utility/exchange.h";
+      else if (Name->getName() == "iter_swap")
+        ExpectedPath = "__algorithm/iter_swap.h";
       else if (Name->getName() == "invoke")
         ExpectedPath = "__functional/invoke.h";
       else if (Name->getName() == "make_pair")

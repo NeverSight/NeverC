@@ -177599,3 +177599,561 @@ static_assert(std::is_same<decltype(std::exchange(std::declval<E&>(),std::declva
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeArrayElements) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-array-elements.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-array-elements.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,b};std::iter_swap(x,x+1);return x[0].get()!=9||x[1].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-array-elements" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-iter-swap-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-iter-swap-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);auto*const p=&x;auto*const q=&y;std::iter_swap(p,q);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-iter-swap-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){const int a=3,b=9;std::reference_wrapper<const int>x(a),y(b);std::iter_swap(&x,&y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeFunctionReferents) {
+  const auto Source =
+      tmpFile("wrapper-iter-swap-runtime-function-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-iter-swap-runtime-function-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int first(int x)noexcept{return x+3;}int second(int x)noexcept{return x+9;}int main(){std::reference_wrapper<int(int)noexcept>x(first),y(second);std::iter_swap(&x,&y);return x(1)!=10||y(1)!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-function-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeIterSwap) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-iter-swap.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-iter-swap.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);std::iter_swap(&x,&y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-iter-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeNestedWrappers) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-nested-wrappers.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-nested-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);std::reference_wrapper<std::reference_wrapper<int>>u(x),v(y);std::iter_swap(&u,&v);return u.get().get()!=9||v.get().get()!=3||x.get()!=3||y.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-nested-wrappers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0,cleanups=0;struct Receiver{W*p;Receiver(W&x):p(&x){++effects;}~Receiver(){++cleanups;}W*get(){return p;}};int main(){int a=3,b=9;W x(a),y(b);std::iter_swap(Receiver(x).get(),Receiver(y).get());return effects!=2||cleanups!=2||x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W*pick(W&x){++effects;return &x;}int main(){int a=3,b=9;W x(a),y(b);std::iter_swap(pick(x),pick(y));return effects!=2||x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimePointerValues) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-pointer-values.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);auto*p=&x;auto*q=&y;std::iter_swap(p,q);return p!=&x||q!=&y||x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct R{int value;};int main(){R a{3},b{9};std::iter_swap(&a,&b);return a.value!=9||b.value!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeReferentLifetime) {
+  const auto Source =
+      tmpFile("wrapper-iter-swap-runtime-referent-lifetime.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-referent-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int made=0,destroyed=0;struct R{int value;R(int x):value(x){++made;}~R(){++destroyed;}R(const R&)=delete;R&operator=(const R&)=delete;};int main(){int failed=0;{R a(3),b(9);std::reference_wrapper<R>x(a),y(b);std::iter_swap(&x,&y);failed=made!=2||destroyed!=0||x.get().value!=9||y.get().value!=3;}return failed||made!=2||destroyed!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-referent-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::iter_swap(&a,&b);return a!=9||b!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeSelfSwap) {
+  const auto Source = tmpFile("wrapper-iter-swap-runtime-self-swap.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-self-swap.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3;std::reference_wrapper<int>x(a);std::iter_swap(&x,&x);return x.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-self-swap" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperIterSwapRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-iter-swap-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-iter-swap-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x(a),y(b);using std::iter_swap;iter_swap(&x,&y);return x.get()!=9||y.get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-iter-swap-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperIterSwapRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=void(W*,W*)noexcept;void selected(W&a,W&b){(static_cast<F*>(&std::iter_swap<W*,W*>))(&a,&b);}int main(){return 0;}
+)cpp"},
+      {"custom-adl-swap", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace user{struct R{int value;};void swap(std::reference_wrapper<R>&a,std::reference_wrapper<R>&b)noexcept{}}using RWrap=std::reference_wrapper<user::R>;void selected(RWrap&a,RWrap&b){std::iter_swap(&a,&b);}int main(){return 0;}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=void(W*,W*)noexcept;void selected(W&a,W&b){F*fn=&std::iter_swap<W*,W*>;fn(&a,&b);}int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-iter-swap-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void iter_swap<W*,W*>(W*,W*)noexcept;}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+)cpp"},
+      {"source-iter-swap-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void iter_swap<W*,W*>(W*,W*)noexcept{}}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&& move(T&&)noexcept;}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W&& move<W&>(W&)noexcept;}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W&& move<W&>(W&v)noexcept{return static_cast<W&&>(v);}}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w){auto hidden=sizeof(long double);return w;}void selected(W&a,W&b){std::iter_swap(&source(a),&b);}int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::iter_swap(&source(a),&b);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using W=std::reference_wrapper<R>;void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-swap-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>__swap_result_t<T> swap(T&,T&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_move_assignable<T>::value);}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-swap-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept;}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-swap-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept{}}}
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using W=std::reference_wrapper<int*>;void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::iter_swap(&a,&b);}int main(){return 0;}
+
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=void(W*,W*)noexcept;F*selected(){using std::iter_swap;return &iter_swap<W*,W*>;}int main(){return 0;}
+)cpp"},
+      {"using-source-iter-swap-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B>void iter_swap(A,B)noexcept(noexcept(swap(*std::declval<A>(),*std::declval<B>())));}}
+void selected(W&a,W&b){using std::iter_swap;iter_swap(&a,&b);}int main(){return 0;}
+)cpp"},
+      {"using-source-iter-swap-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void iter_swap<W*,W*>(W*,W*)noexcept{}}}
+void selected(W&a,W&b){using std::iter_swap;iter_swap(&a,&b);}int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-iter-swap-runtime-") +
+                                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-iter-swap-runtime-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
