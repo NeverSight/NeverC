@@ -16953,6 +16953,188 @@ static bool utilityWrapperReverseCopy(const State &S, const SourceManager &SM,
                                             Function->getParamDecl(1));
 }
 
+// A wrapper fill uses the complete pinned count-conversion and assignment
+// loop proof, while the referent lifetime remains owned by the source.
+static bool utilityWrapperFillN(const State &S, const SourceManager &SM,
+                                const FunctionDecl *Function, QualType Type,
+                                const ASTContext &Context) {
+  const auto Wrapper = Type.isNull() || Type.hasQualifiers()
+                           ? std::nullopt
+                           : approvedFunctionalReferenceRecord(
+                                 S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Wrapper ||
+      !utilitySwapSDKFunction(S, SM, Function, "fill_n",
+                              "__algorithm/fill_n.h") ||
+      Function->getNumParams() != 3)
+    return false;
+  const auto Pointer = Context.getPointerType(Type);
+  const auto Reference = Context.getLValueReferenceType(Type.withConst());
+  if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(2)->getType(), Reference) ||
+      !Context.hasSameType(Function->getReturnType(), Pointer))
+    return false;
+  const auto Count = Function->getParamDecl(1)->getType();
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Count->isIntegerType() || !Arguments || Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      Arguments->get(2).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Count) ||
+      !Context.hasSameType(Arguments->get(2).getAsType(), Type))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Result = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Call =
+      Result ? dyn_cast_or_null<CallExpr>(
+                   functionalInvokeStrippedExpression(Result->getRetValue()))
+             : nullptr;
+  const auto *Implementation = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Convert =
+      Call && Call->getNumArgs() == 3
+          ? dyn_cast_or_null<CallExpr>(
+                functionalInvokeStrippedExpression(Call->getArg(1)))
+          : nullptr;
+  const auto *Conversion = Convert ? Convert->getDirectCallee() : nullptr;
+  if (!Call || Call->getNumArgs() != 3 ||
+      !utilitySwapSDKFunction(S, SM, Implementation, "__fill_n",
+                              "__algorithm/fill_n.h") ||
+      Implementation->getNumParams() != 3 ||
+      !Context.hasSameType(Call->getType(), Pointer) ||
+      !functionalInvokeParameterReference(Call->getArg(0),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Call->getArg(2),
+                                          Function->getParamDecl(2)) ||
+      !Convert || Convert->getNumArgs() != 1 || !Conversion ||
+      !Conversion->getIdentifier() ||
+      Conversion->getName() != "__convert_to_integral" ||
+      !approvedStandardSDKDeclaration(S, SM, Conversion) ||
+      !cstddefOrigin(S, SM, Conversion->getLocation(), "libcxx",
+                     "__utility/convert_to_integral.h") ||
+      !functionalInvokeParameterReference(Convert->getArg(0),
+                                          Function->getParamDecl(1)) ||
+      !Context.hasSameType(Convert->getType(),
+                           Implementation->getParamDecl(1)->getType()) ||
+      !Context.hasSameType(Implementation->getParamDecl(0)->getType(),
+                           Pointer) ||
+      !Context.hasSameType(Implementation->getParamDecl(2)->getType(),
+                           Reference) ||
+      !Context.hasSameType(Implementation->getReturnType(), Pointer))
+    return false;
+
+  // The selected count conversion is an SDK identity integral overload.
+  // Reject source redeclarations and erased user conversions before the loop.
+  auto ConversionOrigin = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__utility/convert_to_integral.h");
+  };
+  if (Conversion->getPrimaryTemplate() || !Conversion->isInlined() ||
+      Conversion->isInvalidDecl() || Conversion->isDeleted() ||
+      Conversion->isVariadic() || Conversion->getNumParams() != 1 ||
+      !Conversion->getParamDecl(0)->getType()->isIntegerType() ||
+      !Conversion->getReturnType()->isIntegerType() ||
+      !Context.hasSameType(Conversion->getParamDecl(0)->getType(),
+                           Conversion->getReturnType()) ||
+      !ConversionOrigin(Conversion->getDefinition()))
+    return false;
+  for (const auto *D : Conversion->redecls())
+    if (!ConversionOrigin(D))
+      return false;
+  const auto *ConversionBody =
+      dyn_cast_or_null<CompoundStmt>(Conversion->getBody());
+  const auto *ConversionReturn =
+      ConversionBody && ConversionBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*ConversionBody->body_begin())
+          : nullptr;
+  if (!ConversionReturn ||
+      !functionalInvokeParameterReference(ConversionReturn->getRetValue(),
+                                          Conversion->getParamDecl(0)))
+    return false;
+  const auto *ImplementationArguments =
+      Implementation->getTemplateSpecializationArgs();
+  if (!ImplementationArguments || ImplementationArguments->size() != 3 ||
+      ImplementationArguments->get(0).getKind() != TemplateArgument::Type ||
+      ImplementationArguments->get(1).getKind() != TemplateArgument::Type ||
+      ImplementationArguments->get(2).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(ImplementationArguments->get(0).getAsType(),
+                           Pointer) ||
+      !Context.hasSameType(ImplementationArguments->get(1).getAsType(),
+                           Conversion->getReturnType()) ||
+      !Context.hasSameType(ImplementationArguments->get(2).getAsType(), Type))
+    return false;
+
+  const auto *ImplementationBody =
+      dyn_cast_or_null<CompoundStmt>(Implementation->getBody());
+  if (!ImplementationBody || ImplementationBody->size() != 2)
+    return false;
+  auto Statement = ImplementationBody->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Statement++);
+  const auto *End = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Zero =
+      Condition
+          ? dyn_cast<IntegerLiteral>(Condition->getRHS()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Next =
+      Increment ? dyn_cast<UnaryOperator>(Increment->getLHS()) : nullptr;
+  const auto *Discard =
+      Increment ? dyn_cast<CStyleCastExpr>(Increment->getRHS()) : nullptr;
+  const auto *Decrement =
+      Discard ? dyn_cast<UnaryOperator>(Discard->getSubExpr()) : nullptr;
+  const auto *Assignment =
+      Loop ? dyn_cast<CXXOperatorCallExpr>(Loop->getBody()) : nullptr;
+  const auto *Selected =
+      Assignment
+          ? dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee())
+          : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_GT || !Zero || !Zero->getValue().isZero() ||
+      !functionalInvokeParameterReference(Condition->getLHS(),
+                                          Implementation->getParamDecl(1)) ||
+      !Increment || Increment->getOpcode() != BO_Comma || !Next ||
+      Next->getOpcode() != UO_PreInc ||
+      !functionalInvokeParameterReference(Next->getSubExpr(),
+                                          Implementation->getParamDecl(0)) ||
+      !Discard || Discard->getCastKind() != CK_ToVoid || !Decrement ||
+      Decrement->getOpcode() != UO_PreDec ||
+      !functionalInvokeParameterReference(Decrement->getSubExpr(),
+                                          Implementation->getParamDecl(1)) ||
+      !End ||
+      !functionalInvokeParameterReference(End->getRetValue(),
+                                          Implementation->getParamDecl(0)) ||
+      !Assignment || Assignment->getOperator() != OO_Equal ||
+      Assignment->getNumArgs() != 2 || !Selected ||
+      !functionalInvokeParameterReference(
+          Assignment->getArg(0), Implementation->getParamDecl(0), true) ||
+      !functionalInvokeParameterReference(Assignment->getArg(1),
+                                          Implementation->getParamDecl(2)) ||
+      !Assignment->isLValue() ||
+      !Context.hasSameType(Assignment->getType(), Type) ||
+      !Selected->isCopyAssignmentOperator() || !Selected->isImplicit() ||
+      !Selected->isTrivial() || Selected->isStatic() ||
+      Selected->isVariadic() || Selected->isInvalidDecl() ||
+      Selected->isDeleted() ||
+      !Context.hasSameType(Selected->getReturnType(),
+                           Context.getLValueReferenceType(Type)) ||
+      Selected->getParent()->getCanonicalDecl() !=
+          Type->getAsCXXRecordDecl()->getCanonicalDecl() ||
+      Selected->getNumParams() != 1 ||
+      !Context.hasSameType(Selected->getParamDecl(0)->getType(), Reference))
+    return false;
+  for (const auto *D : Selected->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  return true;
+}
+
 static bool utilitySwapArrayData(const State &S, const SourceManager &SM,
                                  const Expr *Expression,
                                  const UtilityArrayRecord &Array,
@@ -29802,6 +29984,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         approvedUtilityOwnedFillN(S, SM, Function, Pointer->getPointeeType(),
                                   Context))
       return UtilityOperation::AlgorithmOwnedFillN;
+  }
+  if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmCountParameter(1)) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    if (Pointer->isPointerType() && Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Function->getReturnType(), Pointer) &&
+        Same(Call->getType(), Pointer) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Pointer->getPointeeType()) &&
+        utilityWrapperFillN(S, SM, Function, Pointer->getPointeeType(),
+                            Context))
+      return UtilityOperation::AlgorithmFillN;
   }
   if (Origin->Path == "__algorithm/swap_ranges.h" && Name == "swap_ranges" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&

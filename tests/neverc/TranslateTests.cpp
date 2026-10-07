@@ -180034,3 +180034,570 @@ void selected(W&a,W&b){using std::reverse_copy;reverse_copy(&a,&a+1,&b);}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeAliasValue) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-alias-value.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-alias-value.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,b};auto*r=std::fill_n(x,2,x[1]);return r!=x+2||x[0].get()!=9||x[1].get()!=9||a!=3||b!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-alias-value" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){const int a=3,b=9;std::reference_wrapper<const int>x[]={a,a},v=b;auto*r=std::fill_n(x,2,v);return r!=x+2||x[0].get()!=9||x[1].get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeConstValue) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-const-value.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-const-value.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,a};const std::reference_wrapper<int>v=b;auto*r=std::fill_n(x,2,v);return r!=x+2||x[0].get()!=9||x[1].get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-const-value" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeCountTypes) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-count-types.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-count-types.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,a,a,a},v=b;long n=2;unsigned u=2;auto*r=std::fill_n(x,n,v);auto*s=std::fill_n(x+2,u,v);return r!=x+2||s!=x+4||x[0].get()!=9||x[3].get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-count-types" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeFillN) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-fill-n.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-fill-n.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,a,a};std::reference_wrapper<int>v=b;auto*r=std::fill_n(x,2,v);return r!=x+2||x[0].get()!=9||x[1].get()!=9||x[2].get()!=3||a!=3||b!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-fill-n" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeFunctionReferents) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-function-referents.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-function-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int first(int x)noexcept{return x+3;}int second(int x)noexcept{return x+9;}int main(){using W=std::reference_wrapper<int(int)noexcept>;W x[]={first,first},v=second;auto*r=std::fill_n(x,2,v);return r!=x+2||x[0](1)!=10||x[1](1)!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-function-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeNegativeCount) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-negative-count.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-negative-count.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a};std::reference_wrapper<int>v=b;auto*r=std::fill_n(x,-3,v);return r!=x||x[0].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-negative-count" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeNestedWrappers) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-nested-wrappers.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-nested-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>p=a,q=b;using W=std::reference_wrapper<std::reference_wrapper<int>>;W x[]={p,p},v=q;auto*r=std::fill_n(x,2,v);return r!=x+2||x[0].get().get()!=9||x[1].get().get()!=9||p.get()!=3||q.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-nested-wrappers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0,cleanups=0;struct Receiver{W*p;Receiver(W*q):p(q){++effects;}~Receiver(){++cleanups;}W*get(){return p;}};int main(){int a=3,b=9;W x[]={a,a},v=b;auto*r=std::fill_n(Receiver(x).get(),2,Receiver(&v).get()[0]);return effects!=2||cleanups!=2||r!=x+2||x[0].get()!=9||x[1].get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W*pick(W*p){++effects;return p;}int count(){++effects;return 2;}W&value(W&v){++effects;return v;}int main(){int a=3,b=9;W x[]={a,a},v=b;auto*r=std::fill_n(pick(x),count(),value(v));return effects!=3||r!=x+2||x[0].get()!=9||x[1].get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,a,a,a},v=b;auto*r=std::fill_n(x+1,2,v);return r!=x+3||x[0].get()!=3||x[1].get()!=9||x[2].get()!=9||x[3].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+struct SourceR{int value;SourceR&operator=(const SourceR&o){value=o.value;return *this;}};int main(){SourceR x[]={{3},{3}},v{9};auto*r=std::fill_n(x,2,v);return r!=x+2||x[0].value!=9||x[1].value!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeReferentLifetime) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-referent-lifetime.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-referent-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int made=0,dropped=0;struct SourceR{int value;SourceR(int v):value(v){++made;}SourceR(const SourceR&)=delete;SourceR&operator=(const SourceR&)=delete;~SourceR(){++dropped;}};int main(){{SourceR a(3),b(9);using W=std::reference_wrapper<SourceR>;W x[]={a,a},v=b;auto*r=std::fill_n(x,2,v);if(r!=x+2||x[0].get().value!=9||x[1].get().value!=9||a.value!=3||b.value!=9||made!=2||dropped!=0)return 1;}return made!=2||dropped!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-referent-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int x[]={3,3,3};auto*r=std::fill_n(x,2,9);return r!=x+2||x[0]!=9||x[1]!=9||x[2]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,a},v=b;using std::fill_n;auto*r=fill_n(x,2,v);return r!=x+2||x[0].get()!=9||x[1].get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFillNRuntimeZeroCount) {
+  const auto Source = tmpFile("wrapper-fill-n-runtime-zero-count.cpp");
+  const auto Output = tmpFile("wrapper-fill-n-runtime-zero-count.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a},v=b;auto*r=std::fill_n(x,0,v);return r!=x||x[0].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-fill-n-runtime-zero-count" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperFillNRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=W*(*)(W*,int,const W&);W*selected(W*a,W&b){return static_cast<F>(&std::fill_n<W*,int,W>)(a,1,b);}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=W*(*)(W*,int,const W&);W*selected(W*a,W&b){F f=&std::fill_n<W*,int,W>;return f(a,1,b);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"source-fill-n-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B,class C>A fill_n(A,B,const C&);}}
+void selected(W&a,W&b){std::fill_n(&a,1,b);}
+)cpp"},
+      {"source-fill-n-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*fill_n<W*,int,W>(W*,int,const W&);}}
+void selected(W&a,W&b){std::fill_n(&a,1,b);}
+)cpp"},
+      {"source-fill-n-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*fill_n<W*,int,W>(W*first,int,const W&){return first;}}}
+void selected(W&a,W&b){std::fill_n(&a,1,b);}
+)cpp"},
+      {"source-inner-fill-n-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B,class C>A __fill_n(A,B,const C&);}}
+void selected(W&a,W&b){std::fill_n(&a,1,b);}
+)cpp"},
+      {"source-inner-fill-n-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*__fill_n<W*,int,W>(W*,int,const W&);}}
+void selected(W&a,W&b){std::fill_n(&a,1,b);}
+)cpp"},
+      {"source-integral-conversion-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{constexpr int __convert_to_integral(int);}}
+void selected(W&a,W&b){std::fill_n(&a,1,b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w){auto hidden=sizeof(long double);return w;}void selected(W&a,W&b){std::fill_n(&source(a),1,b);}int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::fill_n(&source(a),1,b);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using W=std::reference_wrapper<R>;void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using W=std::reference_wrapper<int*>;void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::fill_n(&a,1,b);}int main(){return 0;}
+
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+using F=W*(*)(W*,int,const W&);F selected(){using std::fill_n;return &fill_n<W*,int,W>;}
+)cpp"},
+      {"using-source-fill-n-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B,class C>A fill_n(A,B,const C&);}}
+void selected(W&a,W&b){using std::fill_n;fill_n(&a,1,b);}
+)cpp"},
+      {"using-source-fill-n-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<> W*fill_n<W*,int,W>(W*first,int,const W&){return first;}}}
+void selected(W&a,W&b){using std::fill_n;fill_n(&a,1,b);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-fill-n-runtime-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-fill-n-runtime-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

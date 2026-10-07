@@ -352,6 +352,20 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::fill_n` admits a raw pointer to an exact mutable checked SDK
+wrapper carrier, a supported builtin integer count and the same carrier value.
+Its separate complete selected-body proof authenticates the public and internal
+SDK specializations, the identity integral count-conversion overload and its
+redeclarations/body, the exact assignment loop and the implicit trivial wrapper
+copy-assignment method and signature. Each original argument is evaluated once;
+the value binding is read for each store, and the advanced output pointer is
+returned. Zero or negative counts perform no writes and return the original
+pointer. Const, nested and supported function referents retain checked types;
+referent lifetimes and temporary receiver cleanup preserve source behavior.
+Source SDK replacements, indirect/casted callees and unsupported original
+dependencies remain rejected. Other count, iterator or carrier families require
+their own proof.
+
 Direct `std::reverse_copy` admits raw pointer ranges of the same exact checked
 SDK wrapper carrier with optionally const input and mutable output. Its separate
 complete body proof authenticates the selected SDK specialization, the exact
@@ -12822,13 +12836,13 @@ final namespace contents or creates alias wrapper functions.
 Ordinary resolved using-declarations may additionally import the pinned libc++
 free function names `move`, `forward`, `swap`, `get`, `as_const`, `addressof`,
 `move_if_noexcept`, `exchange`, `invoke`, `make_pair`, `ref`, `cref` and
-`iter_swap`, `swap_ranges`, `reverse` and `reverse_copy`, plus the six comparison names `operator==`, `operator!=`,
+`iter_swap`, `swap_ranges`, `reverse`, `reverse_copy` and `fill_n`, plus the six comparison names `operator==`, `operator!=`,
 `operator<`, `operator>`, `operator<=` and `operator>=` from `std` or its inline
-namespaces. The `iter_swap`, `swap_ranges`, `reverse` and `reverse_copy` overload
-sets must originate from the exact pinned `__algorithm/iter_swap.h`,
-`__algorithm/swap_ranges.h`, `__algorithm/reverse.h` and
-`__algorithm/reverse_copy.h` headers respectively; importing them grants lookup
-metadata only.
+namespaces. The `iter_swap`, `swap_ranges`, `reverse`, `reverse_copy` and `fill_n`
+overload sets must originate from the exact pinned `__algorithm/iter_swap.h`,
+`__algorithm/swap_ranges.h`, `__algorithm/reverse.h`,
+`__algorithm/reverse_copy.h` and `__algorithm/fill_n.h` headers respectively;
+importing them grants lookup metadata only.
 Namespace and nondependent block imports, repeated/comma imports and
 source-owned namespace reexports preserve the overload set selected by Clang.
 An owned namespace alias or using-directive may refer to such a reexport
