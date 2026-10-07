@@ -137,6 +137,8 @@ tuple의 검증된 함수 포인터 trait 객체는 멤버 `swap`과 `std::swap`
 
 순수 `std::addressof` 쿼리는 내장 함수 서명과 선언 체인을 인증한 뒤 한정된 래퍼, 중첩 래퍼, 소스 레코드를 참조하는 래퍼를 포함한 정확한 SDK 래퍼 레이아웃을 완성합니다. 소스 함수의 매개변수와 결과는 쿼리 순회 전에 이 빌린 레이아웃을 사용할 수 있습니다. 원래 피연산자, 별칭, 기본 인수와 소스 함수는 계속 검사하며 피연산자의 부작용은 실행하지 않습니다. 지원하지 않는 참조 대상 레이아웃, 소스 대체, 캐스트된 호출 대상과 독립적인 함수 주소는 계속 거부합니다. 실제 주소 연산은 기존 검증을 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
+`std::move`, `std::forward`, `std::as_const` 및 참조 템플릿 인수를 사용하는 `std::move_if_noexcept`의 순수 래퍼 참조 쿼리는 내장 함수 식별자, 서명과 선언 체인을 인증한 뒤 정확한 SDK 레이아웃을 준비합니다. 한정된 래퍼, 중첩 래퍼, 소스 레코드를 참조하는 래퍼, 가져온 호출 대상과 소스 함수의 매개변수 및 결과는 정확한 참조 범주와 const 뷰를 유지합니다. 이 준비는 호출 권한을 부여하거나 참조 대상의 수명을 선택하지 않습니다. 피연산자의 부작용은 실행하지 않으며 원래 소스, 별칭, 기본 인수와 템플릿 검사는 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
+
 검증된 함수 포인터 trait 래퍼도 const 참조 대상과 xvalue 래퍼를 포함해 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 trait 형식의 값 매개변수를 제공합니다. 고정 SDK의 trait 복사와 래퍼 변환은 계속 검증합니다. 각 매개변수는 독립적인 1바이트 저장소를 사용하며 호출 가능 객체와 인수의 부작용은 한 번만 발생합니다. 원래 소스 함수 대상 검사와 다른 trait 영역 및 SDK `value` 저장소 별칭의 제한도 유지합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#function-pointer-trait-constants).
 
 검증된 소스 소유 표준 레이아웃 레코드 래퍼도 `invoke`, `apply` 및 직접 래퍼 호출에서 정확한 형식의 값 매개변수를 제공합니다. 선택된 소스 복사 생성자와 기본 인수 및 종속성은 계속 검사합니다. 매개변수는 독립 저장소를 사용하며 복사 전에 이후 인수의 변경을 읽습니다. 기본 인수의 부작용과 매개변수 정리는 호출 안의 수명을 유지하고 rvalue 래퍼도 lvalue 참조 대상을 전달합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#functional-header-from-functional).

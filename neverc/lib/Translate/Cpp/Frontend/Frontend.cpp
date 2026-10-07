@@ -7535,7 +7535,50 @@ static QualType utilityAddressofQuerySource(Adapter &A, const CallExpr *Call) {
   return A.Context.getCanonicalType(Result);
 }
 
-static void prepareMemoryQueryLayouts(Adapter &A) {
+static bool utilityWrapperReferenceCastQueryLayout(Adapter &A,
+                                                   const CallExpr *Call) {
+  const auto *Reference = Call ? directFunctionReference(Call) : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Builtin = Function ? Function->getAttr<BuiltinAttr>() : nullptr;
+  const auto Operation =
+      approvedUtilityOperation(A.S, A.Sources, Call, A.Context);
+  if (!A.S.coreV2() || !Reference || !Function || !Builtin ||
+      !Builtin->isImplicit() || !Operation ||
+      !A.S.owns(A.Sources, Reference->getExprLoc()) ||
+      !Function->getReturnType()->isReferenceType() ||
+      !approvedFunctionalReferenceMetadata(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl()))
+    return false;
+  unsigned BuiltinID;
+  switch (*Operation) {
+  case UtilityOperation::Move:
+    BuiltinID = Builtin::BImove;
+    break;
+  case UtilityOperation::Forward:
+    BuiltinID = Builtin::BIforward;
+    break;
+  case UtilityOperation::AsConst:
+    BuiltinID = Builtin::BIas_const;
+    break;
+  case UtilityOperation::MoveIfNoexcept:
+    if (!utilityConditionalMoveReferenceSource(A, Call))
+      return false;
+    BuiltinID = Builtin::BImove_if_noexcept;
+    break;
+  default:
+    return false;
+  }
+  if (Builtin->getID() != BuiltinID || Function->getBuiltinID() != BuiltinID ||
+      !utilitySDKValueAdapterSource(A, Call, *Operation) ||
+      !utilityMemoryElementQueryLayout(A, Call->getType(), Call->getExprLoc()))
+    return false;
+  // Reference casts borrow the exact wrapper layout without invoking its
+  // referent, factory or lifetime. Normal traversal retains the cast and all
+  // original sources; this preparation grants no call permission.
+  return !A.type(Function->getReturnType(), Call->getExprLoc(), false).empty();
+}
+
+static void prepareBorrowedQueryLayouts(Adapter &A) {
   struct Calls : RecursiveASTVisitor<Calls> {
     Adapter &A;
     explicit Calls(Adapter &A) : A(A) {}
@@ -7544,6 +7587,7 @@ static void prepareMemoryQueryLayouts(Adapter &A) {
       // per-call query permission and checks every original source dependency.
       (void)utilityPointerTraitsQuerySource(A, Call);
       (void)utilityAddressofQuerySource(A, Call);
+      (void)utilityWrapperReferenceCastQueryLayout(A, Call);
       return true;
     }
   };
@@ -23971,7 +24015,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     Check.checkExplicitStaticDataInstantiation(Directive);
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
-  prepareMemoryQueryLayouts(*this);
+  prepareBorrowedQueryLayouts(*this);
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishGeneratedMethods();

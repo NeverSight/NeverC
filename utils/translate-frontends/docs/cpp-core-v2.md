@@ -179,6 +179,22 @@ libc++ for these operations.
 
 ## Scalar utilities and pairs from `<utility>`
 
+Pure queries of wrapper references through pinned `std::move`, `std::forward`,
+`std::as_const` and `std::move_if_noexcept` with a reference template argument
+prepare exact SDK wrapper layouts after authenticating builtin identities, fixed
+signatures and complete declaration chains. Qualified, nested and source-record
+wrappers retain their precise reference category and const view. Imported and
+parenthesized direct callees remain checked by the same proof.
+
+This layout preparation runs before source function parameter and result checks,
+but grants no call permission and selects no SDK body, referent construction,
+move or cleanup. Normal traversal retains the existing cast and trivial carrier
+metadata checks, and all original operands, aliases, selected defaults, template
+arguments and source functions remain independent dependencies. Operand effects
+do not run. Source replacements, unsupported referent layouts, casted callees
+and independent function addresses remain rejected. An object template argument
+to `move_if_noexcept` retains its separate conditional move/copy proof.
+
 Core v2 accepts an exact top-level `#include <utility>` from the pinned embedded
 VFS. `std::move`, `std::forward`, `std::move_if_noexcept`, `std::as_const`,
 `std::exchange` and scalar `std::swap` lower to the existing typed value,
