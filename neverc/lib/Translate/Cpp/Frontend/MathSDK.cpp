@@ -16605,6 +16605,255 @@ static bool utilitySwapRanges(const State &S, const SourceManager &SM,
   return true;
 }
 
+// Raw-pointer reverse selects the SDK random-access loop. Its category alias
+// and tag construction are part of the proof, not just canonical type checks.
+static bool utilityReverseCategory(const State &S, const SourceManager &SM,
+                                   const TypeAliasDecl *Local,
+                                   const CXXConstructExpr *Construction,
+                                   const FunctionDecl *Function,
+                                   QualType Pointer, QualType Policy,
+                                   const ASTContext &Context) {
+  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  auto Record = [&](const ClassTemplateSpecializationDecl *R, bool Traits) {
+    const llvm::StringRef Path = Traits ? "__iterator/iterator_traits.h"
+                                        : "__algorithm/iterator_operations.h";
+    const auto *Primary = R ? R->getSpecializedTemplate() : nullptr;
+    if (!R || !R->isCompleteDefinition() || !R->getIdentifier() ||
+        R->getName() != (Traits ? "iterator_traits" : "_IterOps") || !Primary ||
+        R->getSpecializationKind() !=
+            (Traits ? TSK_ImplicitInstantiation : TSK_ExplicitSpecialization) ||
+        R->getTemplateArgs().size() != 1 ||
+        R->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(R->getTemplateArgs().get(0).getAsType(),
+                             Traits ? Pointer : Policy))
+      return false;
+    for (const auto *D : R->redecls())
+      if (!Origin(D, Path))
+        return false;
+    for (const auto *D : Primary->redecls())
+      if (!Origin(D, Path) || !Origin(D->getTemplatedDecl(), Path))
+        return false;
+    if (Traits) {
+      const auto *Partial =
+          R->getSpecializedTemplateOrPartial()
+              .dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+      if (!Partial)
+        return false;
+      for (const auto *D : Partial->redecls())
+        if (!Origin(D, Path))
+          return false;
+    }
+    return true;
+  };
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  if (!Local || Local->getName() != "_IterCategory" ||
+      Local->getDeclContext() != Function ||
+      !Origin(Local, "__algorithm/reverse.h") || !Constructor ||
+      Construction->getNumArgs() || Constructor->getNumParams() ||
+      !Constructor->isImplicit() || !Constructor->isTrivial() ||
+      !Constructor->isDefaultConstructor() ||
+      !Context.hasSameType(Construction->getType(), Local->getUnderlyingType()))
+    return false;
+  const auto *Tag = Construction->getType()->getAsCXXRecordDecl();
+  if (!Tag ||
+      Constructor->getParent()->getCanonicalDecl() != Tag->getCanonicalDecl())
+    return false;
+  // All four tag records have trivial empty SDK definitions. A source tag
+  // constructor or redeclaration must not disappear with dispatch.
+  const llvm::StringRef Tags[] = {"random_access_iterator_tag",
+                                  "bidirectional_iterator_tag",
+                                  "forward_iterator_tag", "input_iterator_tag"};
+  const auto *Current = Tag;
+  for (unsigned I = 0; I != 4; ++I) {
+    if (!Current || !Current->isCompleteDefinition() ||
+        !Current->getIdentifier() || Current->getName() != Tags[I] ||
+        !Current->isTrivial() || !Current->isEmpty() ||
+        isa<ClassTemplateSpecializationDecl>(Current) ||
+        Current->getNumBases() != (I == 3 ? 0u : 1u))
+      return false;
+    for (const auto *D : Current->redecls())
+      if (!Origin(D, "__iterator/iterator_traits.h"))
+        return false;
+    if (I != 3) {
+      const auto &Base = *Current->bases_begin();
+      if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public)
+        return false;
+      Current = Base.getType()->getAsCXXRecordDecl();
+    }
+  }
+  unsigned Seen = 0;
+  auto Walk = [&](auto &&Self, QualType T, unsigned Depth) -> bool {
+    if (T.isNull() || T.hasLocalQualifiers() || Depth > 12)
+      return false;
+    if (const auto *E = dyn_cast<ElaboratedType>(T.getTypePtr()))
+      return Self(Self, E->getNamedType(), Depth + 1);
+    if (const auto *Alias =
+            dyn_cast<TemplateSpecializationType>(T.getTypePtr())) {
+      const auto *Template = dyn_cast_or_null<TypeAliasTemplateDecl>(
+          Alias->getTemplateName().getAsTemplateDecl());
+      const auto *D = Template ? Template->getTemplatedDecl() : nullptr;
+      const auto Args = Alias->template_arguments();
+      constexpr llvm::StringLiteral Path = "__algorithm/iterator_operations.h";
+      if (!D || !Alias->isTypeAlias() || Seen != 1 ||
+          D->getName() != "__iterator_category" || Args.size() != 1 ||
+          Args[0].getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Args[0].getAsType(), Pointer) ||
+          !Record(
+              dyn_cast<ClassTemplateSpecializationDecl>(D->getDeclContext()),
+              false))
+        return false;
+      for (const auto *Redeclaration : Template->redecls())
+        if (!Origin(Redeclaration, Path) ||
+            !Origin(Redeclaration->getTemplatedDecl(), Path))
+          return false;
+      Seen |= 2;
+      return Self(Self, Alias->getAliasedType(), Depth + 1);
+    }
+    const auto *Alias = dyn_cast<TypedefType>(T.getTypePtr());
+    const auto *D = Alias ? Alias->getDecl() : nullptr;
+    if (D == Local && !Seen) {
+      Seen |= 1;
+      return Self(Self, D->getUnderlyingType(), Depth + 1);
+    }
+    if (!D || D->getName() != "iterator_category" || Seen != 3 ||
+        !Origin(D, "__iterator/iterator_traits.h") ||
+        !Record(dyn_cast<ClassTemplateSpecializationDecl>(D->getDeclContext()),
+                true) ||
+        !Context.hasSameType(D->getUnderlyingType(),
+                             Context.getRecordType(Tag)))
+      return false;
+    Seen |= 4;
+    return true;
+  };
+  return Walk(Walk, Construction->getType(), 0) && Seen == 7;
+}
+
+static bool utilityReverseLoop(const State &S, const SourceManager &SM,
+                               const FunctionDecl *Function, QualType Element,
+                               QualType Policy, QualType Category,
+                               const ASTContext &Context) {
+  const auto Pointer = Context.getPointerType(Element);
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!utilitySwapSDKFunction(S, SM, Function, "__reverse_impl",
+                              "__algorithm/reverse.h") ||
+      Function->getNumParams() != 3 ||
+      !Function->getReturnType()->isVoidType() || !Arguments ||
+      Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Policy) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(2)->getType(), Category))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Guard = Body && Body->size() == 1
+                          ? dyn_cast<IfStmt>(*Body->body_begin())
+                          : nullptr;
+  const auto *Nonempty =
+      Guard ? dyn_cast<BinaryOperator>(Guard->getCond()) : nullptr;
+  const auto *Loop = Guard ? dyn_cast<ForStmt>(Guard->getThen()) : nullptr;
+  const auto *Condition =
+      Loop ? dyn_cast<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Decrement =
+      Condition ? dyn_cast_or_null<UnaryOperator>(
+                      functionalInvokeStrippedExpression(Condition->getRHS()))
+                : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Call = Loop ? dyn_cast<CallExpr>(Loop->getBody()) : nullptr;
+  return Guard && !Guard->getInit() && !Guard->getConditionVariable() &&
+         !Guard->getElse() && Nonempty && Nonempty->getOpcode() == BO_NE &&
+         functionalInvokeParameterReference(Nonempty->getLHS(),
+                                            Function->getParamDecl(0)) &&
+         functionalInvokeParameterReference(Nonempty->getRHS(),
+                                            Function->getParamDecl(1)) &&
+         Loop && !Loop->getInit() && !Loop->getConditionVariable() &&
+         Condition && Condition->getOpcode() == BO_LT &&
+         functionalInvokeParameterReference(Condition->getLHS(),
+                                            Function->getParamDecl(0)) &&
+         Decrement && Decrement->getOpcode() == UO_PreDec &&
+         functionalInvokeParameterReference(Decrement->getSubExpr(),
+                                            Function->getParamDecl(1)) &&
+         Increment && Increment->getOpcode() == UO_PreInc &&
+         functionalInvokeParameterReference(Increment->getSubExpr(),
+                                            Function->getParamDecl(0)) &&
+         Call && Call->getNumArgs() == 2 &&
+         functionalInvokeParameterReference(Call->getArg(0),
+                                            Function->getParamDecl(0)) &&
+         functionalInvokeParameterReference(Call->getArg(1),
+                                            Function->getParamDecl(1)) &&
+         utilitySwapIteratorAdapter(
+             S, SM, dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()),
+             Element, Policy, Context, 0, nullptr);
+}
+
+static bool utilityReverseRange(const State &S, const SourceManager &SM,
+                                const FunctionDecl *Function, QualType Element,
+                                const ASTContext &Context) {
+  const auto Pointer = Context.getPointerType(Element);
+  if (!utilitySwapSDKFunction(S, SM, Function, "reverse",
+                              "__algorithm/reverse.h") ||
+      !utilitySwapPointerTemplate(Function, Pointer, 2, 1, Context) ||
+      !Function->getReturnType()->isVoidType())
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Call = Body && Body->size() == 1
+                         ? dyn_cast<CallExpr>(*Body->body_begin())
+                         : nullptr;
+  const auto *Helper = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Helper ? Helper->getTemplateSpecializationArgs() : nullptr;
+  if (!Call || Call->getNumArgs() != 2 ||
+      !utilitySwapSDKFunction(S, SM, Helper, "__reverse",
+                              "__algorithm/reverse.h") ||
+      Helper->getNumParams() != 2 || !Helper->getReturnType()->isVoidType() ||
+      !Arguments || Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !utilitySwapClassicPolicy(S, SM, Arguments->get(0).getAsType()))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (Arguments->get(I + 1).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I + 1).getAsType(), Pointer) ||
+        !Context.hasSameType(Helper->getParamDecl(I)->getType(), Pointer) ||
+        !utilitySwapPointerAdapter(
+            S, SM, Call->getArg(I), Function->getParamDecl(I), Pointer,
+            Context.getLValueReferenceType(Pointer), false, Context))
+      return false;
+  const auto *HelperBody = dyn_cast_or_null<CompoundStmt>(Helper->getBody());
+  if (!HelperBody || HelperBody->size() != 2)
+    return false;
+  auto Statement = HelperBody->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Local =
+      Declaration && Declaration->isSingleDecl()
+          ? dyn_cast<TypeAliasDecl>(Declaration->getSingleDecl())
+          : nullptr;
+  const auto *Dispatch = dyn_cast<CallExpr>(*Statement);
+  const auto *Tag = Dispatch && Dispatch->getNumArgs() == 3
+                        ? dyn_cast<CXXConstructExpr>(Dispatch->getArg(2))
+                        : nullptr;
+  const auto Policy = Arguments->get(0).getAsType();
+  if (!Dispatch || Dispatch->getNumArgs() != 3 ||
+      !utilityReverseCategory(S, SM, Local, Tag, Helper, Pointer, Policy,
+                              Context) ||
+      !utilityReverseLoop(S, SM, Dispatch->getDirectCallee(), Element, Policy,
+                          Tag->getType(), Context))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilitySwapPointerAdapter(
+            S, SM, Dispatch->getArg(I), Helper->getParamDecl(I), Pointer,
+            Context.getLValueReferenceType(Pointer), false, Context))
+      return false;
+  return true;
+}
+
 static bool utilitySwapArrayData(const State &S, const SourceManager &SM,
                                  const Expr *Expression,
                                  const UtilityArrayRecord &Array,
@@ -29513,7 +29762,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Last = AlgorithmRangePointerParameter(1);
     const auto CallbackFirst = AlgorithmCallbackRangeParameter(0);
     const auto CallbackLast = AlgorithmCallbackRangeParameter(1);
-    if ((First && Last &&
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    const bool Wrapper =
+        Pointer->isPointerType() &&
+        !Pointer->getPointeeType().hasQualifiers() &&
+        approvedFunctionalReferenceRecord(
+            S, SM, Pointer->getPointeeType()->getAsCXXRecordDecl(), Context) &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        utilityReverseRange(S, SM, Function, Pointer->getPointeeType(),
+                            Context);
+    if (Wrapper ||
+        (First && Last &&
          utilityAlgorithmWritableScalarPointer(Context, *First)) ||
         (AlgorithmWritableRecordRangeParameter(0) &&
          AlgorithmWritableRecordRangeParameter(1)) ||

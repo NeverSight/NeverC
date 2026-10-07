@@ -178763,3 +178763,713 @@ void selected(W&a,W&b){using std::swap_ranges;swap_ranges(&a,&a+1,&b);}int main(
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-reverse-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-reverse-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,b};auto*const p=x;auto*const q=x+2;std::reverse(p,q);return p!=x||q!=x+2||x[0].get()!=9||x[1].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){const int a=3,b=9;std::reference_wrapper<const int>x[]={a,b};std::reverse(x,x+2);return x[0].get()!=9||x[1].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeEmptyRange) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3;std::reference_wrapper<int>x[]={a};std::reverse(x,x);return x[0].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeEvenRange) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-even-range.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-even-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9,c=4,d=10;std::reference_wrapper<int>x[]={a,b,c,d};std::reverse(x,x+4);return x[0].get()!=10||x[1].get()!=4||x[2].get()!=9||x[3].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-even-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeFunctionReferents) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-function-referents.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-function-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int first(int x)noexcept{return x+3;}int second(int x)noexcept{return x+9;}int main(){std::reference_wrapper<int(int)noexcept>x[]={first,second};std::reverse(x,x+2);return x[0](1)!=10||x[1](1)!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-function-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeNestedWrappers) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-nested-wrappers.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-nested-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>u(a),v(b);std::reference_wrapper<std::reference_wrapper<int>>x[]={u,v};std::reverse(x,x+2);return x[0].get().get()!=9||x[1].get().get()!=3||u.get()!=3||v.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-nested-wrappers" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeOddRange) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-odd-range.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-odd-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9,c=4;std::reference_wrapper<int>x[]={a,b,c};std::reverse(x,x+3);return x[0].get()!=4||x[1].get()!=9||x[2].get()!=3||a!=3||b!=9||c!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-odd-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3;std::reference_wrapper<int>x[]={a};std::reverse(x,x+1);return x[0].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0,cleanups=0;struct Receiver{W*p;Receiver(W*q):p(q){++effects;}~Receiver(){++cleanups;}W*get(){return p;}};int main(){int a=3,b=9;W x[]={a,b};std::reverse(Receiver(x).get(),Receiver(x+2).get());return effects!=2||cleanups!=2||x[0].get()!=9||x[1].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;int effects=0;W*pick(W*p){++effects;return p;}int main(){int a=3,b=9;W x[]={a,b};std::reverse(pick(x),pick(x+2));return effects!=2||x[0].get()!=9||x[1].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9,c=4,d=10;std::reference_wrapper<int>x[]={a,b,c,d};std::reverse(x+1,x+3);return x[0].get()!=3||x[1].get()!=4||x[2].get()!=9||x[3].get()!=10;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+struct R{int value;};int main(){R x[]={{3},{9}};std::reverse(x,x+2);return x[0].value!=9||x[1].value!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeReferentLifetime) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-referent-lifetime.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-referent-lifetime.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int made=0,destroyed=0;struct R{int value;R(int x):value(x){++made;}~R(){++destroyed;}R(const R&)=delete;R&operator=(const R&)=delete;};int main(){int failed=0;{R a(3),b(9);std::reference_wrapper<R>x[]={a,b};std::reverse(x,x+2);failed=made!=2||destroyed!=0||x[0].get().value!=9||x[1].get().value!=3;}return failed||made!=2||destroyed!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-referent-lifetime" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int x[]={3,9,4};std::reverse(x,x+3);return x[0]!=4||x[1]!=9||x[2]!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperReverseRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-reverse-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-reverse-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+int main(){int a=3,b=9;std::reference_wrapper<int>x[]={a,b};using std::reverse;reverse(x,x+2);return x[0].get()!=9||x[1].get()!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-reverse-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperReverseRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+using F=void(W*,W*);void selected(W&a,W&b){(static_cast<F*>(&std::reverse<W*>))(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"custom-adl-swap", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace user{struct R{int value;};void swap(std::reference_wrapper<R>&a,std::reference_wrapper<R>&b)noexcept{}}using RWrap=std::reference_wrapper<user::R>;void selected(RWrap&a,RWrap&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"extended-function-referent", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(long double);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+using F=void(W*,W*);void selected(W&a,W&b){F*fn=&std::reverse<W*>;fn(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-classic-policy-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{struct _ClassicAlgPolicy;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using F=int(int)noexcept(sizeof(long double)>0);using W=std::reference_wrapper<F>;void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-inner-reverse-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void __reverse<_ClassicAlgPolicy,W*,W*>(W*,W*);}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iter-swap-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void iter_swap<W*,W*>(W*,W*)noexcept;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iter-swap-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void iter_swap<W*,W*>(W*,W*)noexcept{}}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iterator-category-construction", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+int effects=0;namespace user{struct Tag:std::random_access_iterator_tag{Tag(){++effects;}};}namespace std{inline namespace __1{template<>struct iterator_traits<W*>{using difference_type=ptrdiff_t;using value_type=W;using pointer=W*;using reference=W&;using iterator_category=user::Tag;};}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iterator-ops-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class Policy>struct _IterOps;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iterator-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{struct random_access_iterator_tag;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class Iterator>struct iterator_traits;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-iterator-traits-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>struct iterator_traits<W*>{using difference_type=ptrdiff_t;using value_type=W;using pointer=W*;using reference=W&;using iterator_category=random_access_iterator_tag;};}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&& move(T&&)noexcept;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W&& move<W&>(W&)noexcept;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W&& move<W&>(W&v)noexcept{return static_cast<W&&>(v);}}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w){auto hidden=sizeof(long double);return w;}void selected(W&a,W&b){std::reverse(&source(a),&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::reverse(&source(a),&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-pointer-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W*&forward<W*&>(W*&p)noexcept{return p;}}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-pointer-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>W*&&move<W*&>(W*&p)noexcept{return static_cast<W*&&>(p);}}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+struct R{long double n;};using W=std::reference_wrapper<R>;void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-reverse-impl-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void __reverse_impl<_ClassicAlgPolicy,W*>(W*,W*,random_access_iterator_tag);}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-reverse-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void reverse<W*>(W*,W*);}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-reverse-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void reverse<W*>(W*,W*){}}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-swap-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>__swap_result_t<T> swap(T&,T&)noexcept(is_nothrow_move_constructible<T>::value&&is_nothrow_move_assignable<T>::value);}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-swap-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept;}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-swap-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void swap<W>(W&,W&)noexcept{}}}
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-partial-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper<T*>{public:T**p;};}}
+using W=std::reference_wrapper<int*>;void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"source-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<>class reference_wrapper<int>{public:int*p;};}}
+using W=std::reference_wrapper<int>;
+void selected(W&a,W&b){std::reverse(&a,&a+1);}int main(){return 0;}
+
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+using F=void(W*,W*);F*selected(){using std::reverse;return &reverse<W*>;}int main(){return 0;}
+)cpp"},
+      {"using-source-reverse-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A>void reverse(A,A);}}
+void selected(W&a,W&b){using std::reverse;reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+      {"using-source-reverse-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+#include <cstddef>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>void reverse<W*>(W*,W*){}}}
+void selected(W&a,W&b){using std::reverse;reverse(&a,&a+1);}int main(){return 0;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-reverse-runtime-") + Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-reverse-runtime-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

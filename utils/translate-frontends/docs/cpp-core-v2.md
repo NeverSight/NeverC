@@ -352,6 +352,21 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::reverse` admits a raw pointer range of the same exact mutable
+SDK wrapper carrier through a separate complete selected-body proof.
+Authenticate both public and internal move layers, the classic policy, the
+local iterator-category alias, the iterator-operations alias and pointer-traits
+specialization, and the trivial SDK random-access tag hierarchy and constructor.
+The selected random-access loop must preserve its nonempty guard, decrement,
+comparison, increment and original-parameter iterator swap; the latter reuses
+the complete adapter and element-swap proof. Both original argument pointer
+types must equal the concrete parameter types. Each argument is evaluated once;
+only carrier bindings are reversed. Empty and one-element ranges perform no
+carrier writes. Referent lifetimes and temporary receiver cleanup retain their
+ordinary source behavior. Source SDK or iterator-traits replacements, user ADL
+swaps, indirect/casted callees and unsupported original dependencies remain
+rejected. Other iterator families require their own proof.
+
 The direct three-iterator `std::swap_ranges` form admits raw ranges of the same
 exact mutable SDK wrapper carrier through the existing full array-swap proof.
 Authenticate the public SDK move calls, the classic algorithm policy, the
@@ -12794,11 +12809,12 @@ final namespace contents or creates alias wrapper functions.
 Ordinary resolved using-declarations may additionally import the pinned libc++
 free function names `move`, `forward`, `swap`, `get`, `as_const`, `addressof`,
 `move_if_noexcept`, `exchange`, `invoke`, `make_pair`, `ref`, `cref` and
-`iter_swap` and `swap_ranges`, plus the six comparison names `operator==`, `operator!=`,
+`iter_swap`, `swap_ranges` and `reverse`, plus the six comparison names `operator==`, `operator!=`,
 `operator<`, `operator>`, `operator<=` and `operator>=` from `std` or its inline
-namespaces. The `iter_swap` and `swap_ranges` overload sets must originate from
-the exact pinned `__algorithm/iter_swap.h` and `__algorithm/swap_ranges.h`
-headers respectively; importing them grants lookup metadata only.
+namespaces. The `iter_swap`, `swap_ranges` and `reverse` overload sets must
+originate from the exact pinned `__algorithm/iter_swap.h`,
+`__algorithm/swap_ranges.h` and `__algorithm/reverse.h` headers respectively;
+importing them grants lookup metadata only.
 Namespace and nondependent block imports, repeated/comma imports and
 source-owned namespace reexports preserve the overload set selected by Clang.
 An owned namespace alias or using-directive may refer to such a reexport
