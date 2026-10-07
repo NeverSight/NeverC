@@ -6149,6 +6149,21 @@ class FunctionLowering {
           Predicate = snapshot(expression(Call->getArg(2)), L);
         }
       }
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        if (Wrapper)
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        return Value;
+      };
       const auto SourceComparison =
           !Predicate && !SourcePredicate
               ? approvedUtilityTrivialSourceComparison(
@@ -6186,8 +6201,13 @@ class FunctionLowering {
                        SourceComparison->Friend ? SourceComparison->Friend
                                                 : SourceComparison->Namespace,
                        L)
-                 : binary("==", dereference(First, L), dereference(Current, L),
-                          "bool", L),
+                 : CompareUtilityValues(
+                       "==", ComparedValue(json::Object(First)),
+                       Wrapper ? Wrapper->ReferentType
+                               : FirstRange.second->getPointeeType(),
+                       ComparedValue(json::Object(Current)),
+                       Wrapper ? Wrapper->ReferentType
+                               : FirstRange.second->getPointeeType()),
              End, Next, L);
       label(Next, L);
       assign(First, json::Object(Current), L);

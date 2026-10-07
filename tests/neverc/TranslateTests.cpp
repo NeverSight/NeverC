@@ -195312,3 +195312,839 @@ using F=std::pair<P,P>(*)(P,P,P,P);F selected(){using std::mismatch;return &mism
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeAdjacentFind) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-adjacent-find.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-adjacent-find.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-adjacent-find" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeAliasedRange) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-aliased-range.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-aliased-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=7;W x[]={a,a,b};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-aliased-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeAllEqual) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-all-equal.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-all-equal.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=3,c=3;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-all-equal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeBoolReferents) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<bool>;
+int main(){bool a=true,b=true,c=false;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7;const W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*const>;int main(){int a=3,b=7;int*const p=&a;int*const q=&a;int*const r=&b;W x[]={p,q,r};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-find-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;int main(){const int a=3,b=3,c=7;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeDoubleReferents) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<double>;
+int main(){double a=3,b=3,c=7;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeEmptyRange) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3;W x[]={a};return std::adjacent_find(x,x)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeLastMatch) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-last-match.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-last-match.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=9,c=7,d=7;W x[]={a,b,c,d};return std::adjacent_find(x,x+4)!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-last-match" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeLateMatch) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-late-match.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-late-match.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=9;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-late-match" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeNone) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-none.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-none.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-none" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3;W x[]={a};return std::adjacent_find(x,x+1)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int calls=0,cleanups=0;struct Range{W*p;int n;~Range(){++cleanups;}W*begin(){return p;}W*end(){return p+n;}};Range make(W*p,int n){++calls;return {p,n};}int main(){int a=3,b=3,c=7;W x[]={a,b,c};auto z=std::adjacent_find(make(x,3).begin(),make(x,3).end());return z!=x||calls!=2||cleanups!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int calls=0;W*pick(W*p){++calls;return p;}int main(){int a=3,b=3,c=7;W x[]={a,b,c};auto z=std::adjacent_find(pick(x),pick(x+3));return z!=x||calls!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=9,c=9,d=7;W x[]={a,b,c,d};return std::adjacent_find(x+1,x+4)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimePointerReferents) {
+  const auto Source = tmpFile("wrapper-adjacent-find-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*>;
+int main(){int a=3,b=7;int *p=&a,*q=&a,*r=&b;W x[]={p,q,r};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int value;bool operator==(const R&o)const{return value==o.value;}};int main(){R x[]={{3},{3},{7}};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeReturnedIterator) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-returned-iterator.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-returned-iterator.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=7;W x[]={a,b,c};auto z=std::adjacent_find(x,x+3);*z=c;return &x[0].get()!=&c||a!=3||b!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-find-runtime-returned-iterator" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+int main(){int x[]={3,3,7};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeSmallIntegerReferents) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-adjacent-find-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<short>;int main(){short a=3,b=3,c=7;W x[]={a,b,c};return std::adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-adjacent-find-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAdjacentFindRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-adjacent-find-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-adjacent-find-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using std::adjacent_find;int main(){int a=3,b=3,c=7;W x[]={a,b,c};return adjacent_find(x,x+3)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-adjacent-find-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAdjacentFindRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);auto selected(P a,P b){return static_cast<F>(&std::adjacent_find<P>)(a,b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);auto selected(P a,P b){F f=&std::adjacent_find<P>;return f(a,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator==(const W&a,const W&b){return a.get().get()==b.get().get();}}}
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-address-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr T*__to_address(T*)noexcept;}}
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-address-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __to_address(P)noexcept;}}
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-address-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __to_address(P p)noexcept{return p;}}}
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-adjacent-find-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class E,class B,class J>I __adjacent_find(I,E,B&,J&);}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-helper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __adjacent_find<P,P,__equal_to,__identity>(P,P,__equal_to&,__identity&);}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-helper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __adjacent_find<P,P,__equal_to,__identity>(P a,P,__equal_to&,__identity&){return a;}}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class B>I adjacent_find(I,I,B);}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P adjacent_find<P,__equal_to>(P,P,__equal_to);}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P adjacent_find<P,__equal_to>(P a,P,__equal_to){return a;}}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>I adjacent_find(I,I);}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P adjacent_find<P>(P,P);}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-adjacent-find-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P adjacent_find<P>(P a,P){return a;}}}auto selected(P a,P b){return std::adjacent_find(a,b);}
+
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const;}}auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const{return false;}}}auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-equal-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __equal_to;}}auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::adjacent_find(&source(a),&a+1);}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-identity-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-identity-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&)const noexcept;}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-identity-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&w)const noexcept{return w;}}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-invoke-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__invoke<__identity&,W&>(__identity&,W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-move-pointer-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P&&move<P&>(P&p)noexcept;}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-move-pointer-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P&&move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::adjacent_find(&source(a),&a+1);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::adjacent_find(&source(a),&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::adjacent_find(a,a+1);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);F selected(){using std::adjacent_find;return &adjacent_find<P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-adjacent-find-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-adjacent-find-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
