@@ -17188,6 +17188,91 @@ static bool utilityWrapperRemoveCopy(const State &S, const SourceManager &SM,
                                             Function->getParamDecl(2));
 }
 
+static bool utilityWrapperReplaceCopy(const State &S, const SourceManager &SM,
+                                      const FunctionDecl *Function,
+                                      QualType Input, QualType Output,
+                                      const ASTContext &Context) {
+  if (!Input->isPointerType() || !Output->isPointerType())
+    return false;
+  const auto Element = Output->getPointeeType();
+  const auto Source = Input->getPointeeType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || Element.hasQualifiers() || Source.isVolatileQualified() ||
+      Source.isRestrictQualified() ||
+      Source.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameType(Source.getUnqualifiedType(), Element) ||
+      !utilitySwapSDKFunction(S, SM, Function, "replace_copy",
+                              "__algorithm/replace_copy.h") ||
+      Function->getNumParams() != 5 ||
+      !Context.hasSameType(Function->getReturnType(), Output))
+    return false;
+  const auto Reference = Context.getLValueReferenceType(Element.withConst());
+  const QualType Parameters[] = {Input, Input, Output, Reference, Reference};
+  for (unsigned I = 0; I != 5; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                             Parameters[I]))
+      return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  const QualType Types[] = {Input, Output, Element};
+  if (!Arguments || Arguments->size() != 3)
+    return false;
+  for (unsigned I = 0; I != 3; ++I)
+    if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(), Types[I]))
+      return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  auto It = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*It++);
+  const auto *Return = dyn_cast<ReturnStmt>(*It);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getInc()) : nullptr;
+  const auto *InputAdvance =
+      Increment ? dyn_cast<UnaryOperator>(Increment->getLHS()) : nullptr;
+  const auto *Void =
+      Increment ? dyn_cast<CStyleCastExpr>(Increment->getRHS()) : nullptr;
+  const auto *OutputAdvance =
+      Void ? dyn_cast<UnaryOperator>(Void->getSubExpr()) : nullptr;
+  const auto *Branch = Loop ? dyn_cast<IfStmt>(Loop->getBody()) : nullptr;
+  const auto *Equality =
+      Branch ? dyn_cast<BinaryOperator>(Branch->getCond()) : nullptr;
+  const auto *Match =
+      Branch ? dyn_cast<CXXOperatorCallExpr>(Branch->getThen()) : nullptr;
+  const auto *Mismatch =
+      Branch ? dyn_cast_or_null<CXXOperatorCallExpr>(Branch->getElse())
+             : nullptr;
+  return Loop && !Loop->getInit() && !Loop->getConditionVariable() &&
+         Condition && Condition->getOpcode() == BO_NE &&
+         functionalInvokeParameterReference(Condition->getLHS(),
+                                            Function->getParamDecl(0)) &&
+         functionalInvokeParameterReference(Condition->getRHS(),
+                                            Function->getParamDecl(1)) &&
+         Increment && Increment->getOpcode() == BO_Comma &&
+         Increment->getType()->isVoidType() && InputAdvance &&
+         InputAdvance->getOpcode() == UO_PreInc &&
+         functionalInvokeParameterReference(InputAdvance->getSubExpr(),
+                                            Function->getParamDecl(0)) &&
+         Void && Void->getCastKind() == CK_ToVoid &&
+         Void->getType()->isVoidType() && OutputAdvance &&
+         OutputAdvance->getOpcode() == UO_PreInc &&
+         functionalInvokeParameterReference(OutputAdvance->getSubExpr(),
+                                            Function->getParamDecl(2)) &&
+         Branch && !Branch->getInit() && !Branch->getConditionVariable() &&
+         utilityWrapperScalarEquality(S, SM, Equality, Function, *Wrapper, 0, 3,
+                                      Context) &&
+         utilityWrapperBindingAssignment(S, SM, Match, Function, *Wrapper, 2, 4,
+                                         false, Context) &&
+         utilityWrapperBindingAssignment(S, SM, Mismatch, Function, *Wrapper, 2,
+                                         0, true, Context) &&
+         Return &&
+         functionalInvokeParameterReference(Return->getRetValue(),
+                                            Function->getParamDecl(2));
+}
+
 // A wrapper fill uses the complete pinned count-conversion and assignment
 // loop proof, while the referent lifetime remains owned by the source.
 static bool utilityWrapperFillN(const State &S, const SourceManager &SM,
@@ -31857,6 +31942,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplace;
+  if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
+      Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
+      Call->isPRValue() &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Input = Function->getParamDecl(0)->getType();
+    const auto Output = Function->getParamDecl(2)->getType();
+    if (Input->isPointerType() && Output->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Input) &&
+        Same(Call->getArg(0)->getType(), Input) &&
+        Same(Call->getArg(1)->getType(), Input) &&
+        Same(Call->getArg(2)->getType(), Output) &&
+        Context.hasSameUnqualifiedType(Call->getArg(3)->getType(),
+                                       Output->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Call->getArg(4)->getType(),
+                                       Output->getPointeeType()) &&
+        Call->getArg(3)->isLValue() && Call->getArg(4)->isLValue() &&
+        utilityWrapperReplaceCopy(S, SM, Function, Input, Output, Context))
+      return UtilityOperation::AlgorithmReplaceCopy;
+  }
   if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
       Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
       Call->isPRValue() && AlgorithmRecordEqualityRangeParameter(0) &&
