@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::find_first_of` admits two raw pointer ranges of the
+same checked SDK `std::reference_wrapper<T>`, including independently const
+inputs and built-in scalar referents. Live referent values determine the first
+element in the first range equal to any element in the second. The original
+first-range iterator is returned, or its end without a match, including empty
+ranges. All four arguments are evaluated once and receiver cleanup is
+preserved. Selected public and helper SDK bodies, the built-in equality
+predicate and both scan loops are verified. Source replacements, custom
+comparisons, enum or nested-wrapper referents, heterogeneous carriers and
+indirect or casted callees remain rejected.
+
 Direct default `std::adjacent_find` admits raw pointer ranges of a checked
 SDK `std::reference_wrapper<T>`, including const inputs and built-in scalar
 referents. Live referent values determine the first equal adjacent pair; the

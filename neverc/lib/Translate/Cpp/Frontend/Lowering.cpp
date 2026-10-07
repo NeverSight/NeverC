@@ -6662,6 +6662,21 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        if (Wrapper)
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        return Value;
+      };
       auto Choice = snapshot(json::Object(Choices), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(FirstRange.second, L);
@@ -6685,8 +6700,13 @@ class FunctionLowering {
                                        Call->getArg(4)->getType(),
                                        dereference(json::Object(Current), L),
                                        dereference(json::Object(Choice), L), L)
-                 : AlgorithmEqual(dereference(Current, L), 0,
-                                  dereference(Choice, L), 2),
+             : Wrapper ? CompareUtilityValues(
+                             "==", ComparedValue(json::Object(Current)),
+                             Wrapper->ReferentType,
+                             ComparedValue(json::Object(Choice)),
+                             Wrapper->ReferentType)
+                       : AlgorithmEqual(dereference(Current, L), 0,
+                                        dereference(Choice, L), 2),
              End, NextChoice, L);
       label(NextChoice, L);
       assign(Choice,

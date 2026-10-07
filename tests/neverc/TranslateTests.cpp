@@ -196148,3 +196148,795 @@ using F=P(*)(P,P);F selected(){using std::adjacent_find;return &adjacent_find<P>
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeAliasedRange) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-aliased-range.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-aliased-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;W x[]={a,b};return std::find_first_of(x,x+2,x,x+2)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-aliased-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeBoolReferents) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<bool>;int main(){bool a=false,b=true,c=false,d=true;W x[]={a,b},y[]={c,d};return std::find_first_of(x,x+2,y,y+2)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeConstFirst) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-const-first.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-const-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=5,e=9;const W x[]={a,b,c};W y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-const-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=5,e=9;const W x[]={a,b,c},y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*const>;int main(){int a=3,b=9;int*const p=&a;int*const q=&b;int*const r=&b;W x[]={p,q},y[]={r};return std::find_first_of(x,x+2,y,y+1)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-find-first-of-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;int main(){const int a=3,b=9,c=5,d=9;W x[]={a,b},y[]={c,d};return std::find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeConstSecond) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-const-second.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-const-second.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=5,e=9;W x[]={a,b,c};const W y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-const-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeDoubleReferents) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<double>;int main(){double a=3,b=9,c=5,d=9;W x[]={a,b},y[]={c,d};return std::find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeDuplicateSecond) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-duplicate-second.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-duplicate-second.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=9,c=9,d=9;W x[]={a,b},y[]={c,d};return std::find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-find-first-of-runtime-duplicate-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeEmptyFirst) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-empty-first.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-empty-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;W x[]={a},y[]={b};return std::find_first_of(x,x,y,y+1)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-empty-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeEmptySecond) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-empty-second.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-empty-second.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9;W x[]={a},y[]={b};return std::find_first_of(x,x+1,y,y)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-empty-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeFindFirstOf) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-find-first-of.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-find-first-of.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=5,e=9;W x[]={a,b,c},y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-find-first-of" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeFirstMatch) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-first-match.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-first-match.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=3,e=8;W x[]={a,b,c},y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-first-match" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeMultipleHits) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-multiple-hits.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-multiple-hits.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=9,c=7,d=7,e=9;W x[]={a,b,c},y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-multiple-hits" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeNone) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-none.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-none.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=5,e=8;W x[]={a,b,c},y[]={d,e};return std::find_first_of(x,x+3,y,y+2)!=x+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-none" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=3;W x[]={a},y[]={b};return std::find_first_of(x,x+1,y,y+1)!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int calls=0,cleanups=0;struct Range{W*p;int n;~Range(){++cleanups;}W*begin(){return p;}W*end(){return p+n;}};Range make(W*p,int n){++calls;return {p,n};}int main(){int a=3,b=9,c=5,d=9;W x[]={a,b},y[]={c,d};auto z=std::find_first_of(make(x,2).begin(),make(x,2).end(),make(y,2).begin(),make(y,2).end());return z!=x+1||calls!=4||cleanups!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int calls=0;W*pick(W*p){++calls;return p;}int main(){int a=3,b=9,c=5,d=9;W x[]={a,b},y[]={c,d};auto z=std::find_first_of(pick(x),pick(x+2),pick(y),pick(y+2));return z!=x+1||calls!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;int main(){int a=3,b=9,c=7,d=5,e=9;W x[]={a,b,c},y[]={d,e};return std::find_first_of(x+1,x+3,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimePointerReferents) {
+  const auto Source = tmpFile("wrapper-find-first-of-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*>;int main(){int a=3,b=9;int*p=&a,*q=&b,*r=&b;W x[]={p,q},y[]={r};return std::find_first_of(x,x+2,y,y+1)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int value;bool operator==(const R&o)const{return value==o.value;}};int main(){R x[]={{3},{9}},y[]={{5},{9}};return std::find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeReturnedIterator) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-returned-iterator.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-returned-iterator.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=9,c=7,d=5,e=9;W x[]={a,b,c},y[]={d,e};auto z=std::find_first_of(x,x+3,y,y+2);*z=c;return &x[1].get()!=&c||b!=9||e!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-find-first-of-runtime-returned-iterator" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+int main(){int x[]={3,9},y[]={5,9};return std::find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeSmallIntegerReferents) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-find-first-of-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<short>;int main(){short a=3,b=9,c=5,d=9;W x[]={a,b},y[]={c,d};return std::find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-find-first-of-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperFindFirstOfRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-find-first-of-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-find-first-of-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using std::find_first_of;int main(){int a=3,b=9,c=5,d=9;W x[]={a,b},y[]={c,d};return find_first_of(x,x+2,y,y+2)!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-find-first-of-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperFindFirstOfRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P);auto selected(P a,P b){return static_cast<F>(&std::find_first_of<P,P>)(a,a+1,b,b+1);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"heterogeneous-carriers", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using C=std::reference_wrapper<const int>;auto selected(P a,C*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P);auto selected(P a,P b){F f=&std::find_first_of<P,P>;return f(a,a+1,b,b+1);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator==(const W&a,const W&b){return a.get().get()==b.get().get();}}}
+auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const;}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-equal-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __equal_to::operator()<W,W>(const W&,const W&)const{return false;}}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-equal-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __equal_to;}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::find_first_of(&source(a),&a+1,&b,&b+1);}
+)cpp"},
+      {"source-find-first-of-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class B>constexpr I __find_first_of_ce(I,I,J,J,B&&);}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-find-first-of-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __find_first_of_ce<P,P,__equal_to>(P,P,P,P,__equal_to&&);}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-find-first-of-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __find_first_of_ce<P,P,__equal_to>(P a,P,P,P,__equal_to&&){return a;}}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-find-first-of-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J>I find_first_of(I,I,J,J);}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-find-first-of-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P find_first_of<P,P>(P,P,P,P);}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-find-first-of-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P find_first_of<P,P>(P a,P,P,P){return a;}}}auto selected(P a,P b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::find_first_of(&source(a),&a+1,&b,&b+1);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::find_first_of(&source(a),&a+1,&b,&b+1);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::find_first_of(a,a+1,b,b+1);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P);F selected(){using std::find_first_of;return &find_first_of<P,P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-find-first-of-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-find-first-of-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
