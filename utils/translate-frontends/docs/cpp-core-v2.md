@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::unique` admits mutable raw pointer ranges of a checked
+SDK `std::reference_wrapper<T>`, including const referents and built-in scalar
+referents. It compares live referent values, retains the first binding of each
+equal adjacent run, compacts later bindings and returns the original new-end
+iterator; referent objects are not assigned. Empty and single-element ranges
+keep their standard behavior. Both arguments are evaluated once and receiver
+cleanup is preserved. Selected SDK equality and adjacent scans, iterator
+movement and reference validation, trivial wrapper assignment and pointer-pair
+return paths are verified. Source replacements, custom comparisons, enum or
+nested-wrapper referents and indirect or casted callees remain rejected.
+
 Direct default `std::find_first_of` admits two raw pointer ranges of the
 same checked SDK `std::reference_wrapper<T>`, including independently const
 inputs and built-in scalar referents. Live referent values determine the first
