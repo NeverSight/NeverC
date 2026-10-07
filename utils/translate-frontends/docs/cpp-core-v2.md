@@ -389,6 +389,16 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::min_element` admits raw pointer ranges of a checked SDK
+`std::reference_wrapper<T>`, including const input wrappers, const referents and
+built-in scalar referents. It compares live referent values and returns the
+original iterator to the first minimum, preserving bindings and referent objects.
+Empty input returns its first iterator. Both arguments are evaluated once and
+receiver cleanup is preserved. Selected SDK less-than comparisons, iterator-category
+and callable assertions, comparator-reference aliases, identity dispatch and
+minimum scans are verified. Source replacements, custom comparisons, enum or
+nested-wrapper referents and indirect or casted callees remain rejected.
+
 Direct default `std::unique_copy` admits raw pointer input ranges of a checked
 SDK `std::reference_wrapper<T>` and mutable output pointers of the same wrapper
 type, including const input wrappers, const referents and built-in scalar

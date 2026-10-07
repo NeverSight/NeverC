@@ -16955,17 +16955,19 @@ static bool utilityWrapperReverseCopy(const State &S, const SourceManager &SM,
 
 // Wrapper algorithms compare referents but copy only bindings. Authenticate
 // the selected conversions and assignment before using finite loop lowering.
-static bool utilityWrapperScalarEquality(
+static bool utilityWrapperScalarComparison(
     const State &S, const SourceManager &SM, const BinaryOperator *Equality,
     const FunctionDecl *Function, const FunctionalReferenceRecord &Wrapper,
     unsigned InputIndex, unsigned ValueIndex, const ASTContext &Context,
-    const Expr *InputProjection = nullptr, bool DereferenceInput = true) {
-  if (!Equality || Equality->getOpcode() != BO_EQ ||
+    const Expr *InputProjection = nullptr, bool DereferenceInput = true,
+    BinaryOperatorKind Opcode = BO_EQ) {
+  if ((Opcode != BO_EQ && Opcode != BO_LT) || !Equality ||
+      Equality->getOpcode() != Opcode ||
       !Equality->getType()->isBooleanType() ||
       Wrapper.ReferentType->isEnumeralType())
     return false;
-  const auto Common = utilityScalarComparisonType(Context, Wrapper.ReferentType,
-                                                  Wrapper.ReferentType, false);
+  const auto Common = utilityScalarComparisonType(
+      Context, Wrapper.ReferentType, Wrapper.ReferentType, Opcode == BO_LT);
   if (!Common || !Context.hasSameType(Equality->getLHS()->getType(), *Common) ||
       !Context.hasSameType(Equality->getRHS()->getType(), *Common))
     return false;
@@ -17010,6 +17012,16 @@ static bool utilityWrapperScalarEquality(
   };
   return Conversion(Equality->getLHS(), InputIndex, DereferenceInput) &&
          Conversion(Equality->getRHS(), ValueIndex, false);
+}
+
+static bool utilityWrapperScalarEquality(
+    const State &S, const SourceManager &SM, const BinaryOperator *Equality,
+    const FunctionDecl *Function, const FunctionalReferenceRecord &Wrapper,
+    unsigned InputIndex, unsigned ValueIndex, const ASTContext &Context,
+    const Expr *InputProjection = nullptr, bool DereferenceInput = true) {
+  return utilityWrapperScalarComparison(
+      S, SM, Equality, Function, Wrapper, InputIndex, ValueIndex, Context,
+      InputProjection, DereferenceInput, BO_EQ);
 }
 
 static bool utilityWrapperBindingAssignment(
@@ -20801,7 +20813,70 @@ public:
                     V);
   }
 
-  bool randomAccess(const Expr *E, QualType Pointer) const {
+  bool callable(const Expr *E, QualType Comparator, QualType Element) const {
+    const auto *Ref =
+        dyn_cast_or_null<DeclRefExpr>(functionalInvokeStrippedExpression(E));
+    const auto *Q = Ref ? Ref->getQualifier() : nullptr;
+    const auto *R = Q && Q->getAsType()
+                        ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                              Q->getAsType()->getAsCXXRecordDecl())
+                        : nullptr;
+    const auto ComparatorRef = Context.getLValueReferenceType(Comparator);
+    const auto ElementRef = Context.getLValueReferenceType(Element);
+    auto Arguments = [&](const TemplateArgumentList *A, bool Helper) {
+      if (!A || A->size() != (Helper ? 3u : 2u) ||
+          A->get(0).getKind() != TemplateArgument::Type ||
+          !same(A->get(0).getAsType(), ComparatorRef) ||
+          A->get(1).getKind() != TemplateArgument::Pack ||
+          A->get(1).pack_size() != 2)
+        return false;
+      for (const auto &T : A->get(1).pack_elements())
+        if (T.getKind() != TemplateArgument::Type ||
+            !same(T.getAsType(), ElementRef))
+          return false;
+      return !Helper || (A->get(2).getKind() == TemplateArgument::Type &&
+                         same(A->get(2).getAsType(), Context.BoolTy));
+    };
+    constexpr llvm::StringLiteral Path = "__type_traits/is_callable.h";
+    if (!record(R, "__is_callable", Path) || !R->field_empty() ||
+        R->getNumBases() != 1 || !Arguments(&R->getTemplateArgs(), false))
+      return false;
+    const auto &Base = *R->bases_begin();
+    const auto *Written = dyn_cast<DecltypeType>(Base.getType().getTypePtr());
+    const auto *Call =
+        Written ? dyn_cast<CallExpr>(Written->getUnderlyingExpr()) : nullptr;
+    const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *Zero = Call && Call->getNumArgs() == 1
+                           ? dyn_cast<IntegerLiteral>(Call->getArg(0))
+                           : nullptr;
+    const auto *Value = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+    const auto *Constant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Base.getType()->getAsCXXRecordDecl());
+    if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public || !Call ||
+        !Function || !Primary ||
+        Function->getName() != "__is_callable_helper" ||
+        Function->isVariadic() || Function->getNumParams() != 1 ||
+        Function->getTemplateSpecializationKind() !=
+            TSK_ImplicitInstantiation ||
+        !same(Function->getParamDecl(0)->getType(), Context.IntTy) ||
+        Function->getReturnType()->getAsCXXRecordDecl() != Constant || !Zero ||
+        Zero->getValue() != 0 || !same(Zero->getType(), Context.IntTy) ||
+        !Arguments(Function->getTemplateSpecializationArgs(), true) ||
+        !utilityAlgorithmSDKReference(S, SM, Call, Function) ||
+        !constant(Constant, Value))
+      return false;
+    for (const auto *D : Function->redecls())
+      if (!origin(D, Path))
+        return false;
+    for (const auto *D : Primary->redecls())
+      if (!origin(D, Path) || !origin(D->getTemplatedDecl(), Path))
+        return false;
+    return true;
+  }
+
+  bool randomAccess(const Expr *E, QualType Pointer,
+                    bool Forward = false) const {
     const auto *Ref =
         dyn_cast_or_null<DeclRefExpr>(functionalInvokeStrippedExpression(E));
     const auto *Q = Ref ? Ref->getQualifier() : nullptr;
@@ -20814,7 +20889,9 @@ public:
                                    A->getTemplateName().getAsTemplateDecl())
                              : nullptr;
     if (!Template || !A->isTypeAlias() ||
-        Template->getName() != "__has_random_access_iterator_category" ||
+        Template->getName() !=
+            (Forward ? "__has_forward_iterator_category"
+                     : "__has_random_access_iterator_category") ||
         A->template_arguments().size() != 1 ||
         A->template_arguments()[0].getKind() != TemplateArgument::Type ||
         !same(A->template_arguments()[0].getAsType(), Pointer))
@@ -20839,8 +20916,6 @@ public:
         R->getTemplateArgs().get(2).getAsIntegral() != 1)
       return false;
     const auto Tag = R->getTemplateArgs().get(1).getAsType();
-    if (!tag(Tag->getAsCXXRecordDecl()))
-      return false;
     const auto &B = *R->bases_begin();
     const auto *Convert = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         B.getType()->getAsCXXRecordDecl());
@@ -20858,13 +20933,22 @@ public:
         !record(Convert, "is_convertible", "__type_traits/is_convertible.h") ||
         !Convert->field_empty() || Convert->getNumBases() != 1 ||
         Convert->getTemplateArgs().size() != 2 || !Cat ||
-        category(Traits, Pointer) != Cat ||
-        !same(Cat->getUnderlyingType(), Tag))
+        category(Traits, Pointer) != Cat)
       return false;
-    for (const auto &Arg : Convert->getTemplateArgs().asArray())
-      if (Arg.getKind() != TemplateArgument::Type ||
-          !same(Arg.getAsType(), Tag))
-        return false;
+    const auto CategoryType = Cat->getUnderlyingType();
+    const auto *SelectedTag = CategoryType->getAsCXXRecordDecl();
+    if (Forward)
+      for (unsigned I = 0; I != 2; ++I)
+        SelectedTag =
+            SelectedTag && SelectedTag->getNumBases() == 1
+                ? SelectedTag->bases_begin()->getType()->getAsCXXRecordDecl()
+                : nullptr;
+    if (!SelectedTag || !same(Tag, Context.getRecordType(SelectedTag)) ||
+        Convert->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        Convert->getTemplateArgs().get(1).getKind() != TemplateArgument::Type ||
+        !same(Convert->getTemplateArgs().get(0).getAsType(), CategoryType) ||
+        !same(Convert->getTemplateArgs().get(1).getAsType(), Tag))
+      return false;
     const auto &CB = *Convert->bases_begin();
     const auto *Constant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
         CB.getType()->getAsCXXRecordDecl());
@@ -22824,6 +22908,383 @@ static bool utilityWrapperUniqueCopy(const State &S, const SourceManager &SM,
       return false;
   }
   return true;
+}
+
+static bool utilityWrapperLessPredicate(
+    const State &S, const SourceManager &SM, const CXXOperatorCallExpr *Invoke,
+    const CXXRecordDecl *Record, const FunctionalReferenceRecord &Wrapper,
+    QualType Element, const ASTContext &Context) {
+  auto PredicateOrigin = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/comp.h");
+  };
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Invoke ? Invoke->getDirectCallee() : nullptr);
+  const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto Reference = Context.getLValueReferenceType(Element.withConst());
+  if (!Record || !Invoke || Invoke->getOperator() != OO_Call ||
+      Invoke->getNumArgs() != 3 || !Invoke->isPRValue() ||
+      !Invoke->getType()->isBooleanType() || !Method || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Method->isOverloadedOperator() ||
+      Method->getOverloadedOperator() != OO_Call ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Primary || !Pattern || !Pattern->getDefinition() ||
+      !PredicateOrigin(Pattern->getDefinition()) ||
+      !utilityAlgorithmSDKReference(S, SM, Invoke, Method) ||
+      Method->getNumParams() != 2 ||
+      !Method->getReturnType()->isBooleanType() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Reference) ||
+      !Context.hasSameType(Method->getParamDecl(1)->getType(), Reference) ||
+      !Method->getTemplateSpecializationArgs() ||
+      Method->getTemplateSpecializationArgs()->size() != 2)
+    return false;
+  for (const auto &A : Method->getTemplateSpecializationArgs()->asArray())
+    if (A.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(A.getAsType(), Element))
+      return false;
+  for (const auto *R : Method->redecls())
+    if (!PredicateOrigin(R))
+      return false;
+  for (const auto *R : Primary->redecls())
+    if (!PredicateOrigin(R) || !PredicateOrigin(R->getTemplatedDecl()))
+      return false;
+  const auto *MethodDefinition = Method->getDefinition();
+  const auto *MethodBody =
+      MethodDefinition
+          ? dyn_cast_or_null<CompoundStmt>(MethodDefinition->getBody())
+          : nullptr;
+  const auto *MethodReturn =
+      MethodBody && MethodBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*MethodBody->body_begin())
+          : nullptr;
+  const auto *Equality =
+      MethodReturn ? dyn_cast<BinaryOperator>(MethodReturn->getRetValue())
+                   : nullptr;
+  return utilityWrapperScalarComparison(S, SM, Equality, MethodDefinition,
+                                        Wrapper, 0, 1, Context, nullptr, false,
+                                        BO_LT);
+}
+
+static bool utilityWrapperMinElementComparatorReference(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    QualType Comparator, const ASTContext &Context) {
+  const auto *Ref =
+      Call ? dyn_cast_or_null<DeclRefExpr>(
+                 functionalInvokeStrippedExpression(Call->getCallee()))
+           : nullptr;
+  if (!Ref || !Ref->hasExplicitTemplateArgs() ||
+      Ref->getNumTemplateArgs() != 1 ||
+      Ref->getTemplateArgs()[0].getArgument().getKind() !=
+          TemplateArgument::Type)
+    return false;
+  const auto *Info = Ref->getTemplateArgs()[0].getTypeSourceInfo();
+  auto T = Info ? Info->getType() : QualType();
+  for (unsigned I = 0; I != 8 && !T.isNull(); ++I) {
+    const auto *E = dyn_cast<ElaboratedType>(T.getTypePtr());
+    if (!E)
+      break;
+    T = E->getNamedType();
+  }
+  const auto *Alias =
+      T.isNull() ? nullptr
+                 : dyn_cast<TemplateSpecializationType>(T.getTypePtr());
+  const auto *Primary = Alias
+                            ? dyn_cast_or_null<TypeAliasTemplateDecl>(
+                                  Alias->getTemplateName().getAsTemplateDecl())
+                            : nullptr;
+  if (!Alias || !Alias->isTypeAlias() || !Primary ||
+      Primary->getName() != "__comp_ref_type" ||
+      Alias->template_arguments().size() != 1 ||
+      Alias->template_arguments()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Alias->template_arguments()[0].getAsType(),
+                           Comparator) ||
+      !Context.hasSameType(T, Context.getLValueReferenceType(Comparator)))
+    return false;
+  for (const auto *D : Primary->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !approvedStandardSDKDeclaration(S, SM, D->getTemplatedDecl()) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__algorithm/comp_ref_type.h") ||
+        !cstddefOrigin(S, SM, D->getTemplatedDecl()->getLocation(), "libcxx",
+                       "__algorithm/comp_ref_type.h"))
+      return false;
+  return true;
+}
+
+static bool utilityWrapperMinElement(const State &S, const SourceManager &SM,
+                                     const FunctionDecl *Function,
+                                     QualType Pointer,
+                                     const ASTContext &Context) {
+  if (!Pointer->isPointerType())
+    return false;
+  const auto InputElement = Pointer->getPointeeType();
+  const auto Element = InputElement.getUnqualifiedType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || InputElement.isVolatileQualified() ||
+      InputElement.isRestrictQualified() || InputElement.hasAddressSpace() ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true))
+    return false;
+  constexpr llvm::StringLiteral Path = "__algorithm/min_element.h";
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef P) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", P);
+  };
+  auto Signature = [&](const FunctionDecl *F, llvm::StringRef Name,
+                       llvm::ArrayRef<QualType> Parameters,
+                       llvm::ArrayRef<QualType> Arguments) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, Name, Path) ||
+        !Same(F->getReturnType(), Pointer) ||
+        F->getNumParams() != Parameters.size() || !A ||
+        A->size() != Arguments.size())
+      return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    return true;
+  };
+  auto ReturnCall = [&](const FunctionDecl *F,
+                        unsigned Count) -> const CallExpr * {
+    const auto *D = F ? F->getDefinition() : nullptr;
+    const auto *B = D ? dyn_cast<CompoundStmt>(D->getBody()) : nullptr;
+    const auto *R = B && B->size() == Count
+                        ? dyn_cast<ReturnStmt>(B->body_back())
+                        : nullptr;
+    return R ? dyn_cast_or_null<CallExpr>(
+                   functionalInvokeStrippedExpression(R->getRetValue()))
+             : nullptr;
+  };
+  if (!Signature(Function, "min_element", {Pointer, Pointer}, {Pointer}))
+    return false;
+  const auto *Outer = ReturnCall(Function, 1);
+  const auto *Delegate = Outer ? Outer->getDirectCallee() : nullptr;
+  const auto *Construction =
+      Outer && Outer->getNumArgs() == 3
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Outer->getArg(2)))
+          : nullptr;
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Predicate = Construction ? Construction->getType() : QualType();
+  const auto *Record = Predicate.isNull()
+                           ? nullptr
+                           : dyn_cast<ClassTemplateSpecializationDecl>(
+                                 Predicate->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Outer || !Outer->isPRValue() || !Same(Outer->getType(), Pointer) ||
+      !utilityAlgorithmSDKReference(S, SM, Outer, Delegate) || !Construction ||
+      Construction->getNumArgs() || !Ctor || !Ctor->isImplicit() ||
+      !Ctor->isDefaultConstructor() || !Ctor->isTrivial() ||
+      Predicate.hasQualifiers() || !Record || !Primary ||
+      Record->getName() != "__less" || !Record->isCompleteDefinition() ||
+      !Record->isTrivial() || !Record->isEmpty() || !Record->field_empty() ||
+      Record->getNumBases() ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Record->getTemplateArgs().size() != 2 ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Signature(Delegate, "min_element", {Pointer, Pointer, Predicate},
+                 {Pointer, Predicate}))
+    return false;
+  for (const auto &A : Record->getTemplateArgs().asArray())
+    if (A.getKind() != TemplateArgument::Type || !A.getAsType()->isVoidType())
+      return false;
+  for (const auto *D : Record->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D, "__algorithm/comp.h") ||
+        !Origin(D->getTemplatedDecl(), "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Ctor->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilityAlgorithmReference(Outer->getArg(I),
+                                   Function->getDefinition()->getParamDecl(I),
+                                   Context))
+      return false;
+  const auto *DD = Delegate->getDefinition();
+  const auto *DB = DD ? dyn_cast<CompoundStmt>(DD->getBody()) : nullptr;
+  const UtilityWrapperEqualRangeProof RangeProof(S, SM, Context);
+  if (!DB || DB->size() != 3)
+    return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *DS = dyn_cast<DeclStmt>(DB->body_begin()[I]);
+    const auto *A = DS && DS->isSingleDecl()
+                        ? dyn_cast<StaticAssertDecl>(DS->getSingleDecl())
+                        : nullptr;
+    if (!A || A->isFailed() || !Origin(A, Path) ||
+        !(I ? RangeProof.callable(A->getAssertExpr(), Predicate, InputElement)
+            : RangeProof.randomAccess(A->getAssertExpr(), Pointer, true)))
+      return false;
+  }
+  const auto *Middle = ReturnCall(Delegate, 3);
+  const auto *Forward = Middle ? Middle->getDirectCallee() : nullptr;
+  const auto PredicateRef = Context.getLValueReferenceType(Predicate);
+  if (!Middle || Middle->getNumArgs() != 3 || !Middle->isPRValue() ||
+      !Same(Middle->getType(), Pointer) ||
+      !utilityAlgorithmSDKReference(S, SM, Middle, Forward) ||
+      !utilityWrapperMinElementComparatorReference(S, SM, Middle, Predicate,
+                                                   Context) ||
+      !Signature(Forward, "__min_element", {Pointer, Pointer, PredicateRef},
+                 {PredicateRef, Pointer, Pointer}) ||
+      !utilityAlgorithmReference(Middle->getArg(2), DD->getParamDecl(2),
+                                 Context))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilitySwapPointerAdapter(
+            S, SM, Middle->getArg(I), DD->getParamDecl(I), Pointer,
+            Context.getLValueReferenceType(Pointer), false, Context))
+      return false;
+  const auto *FD = Forward->getDefinition();
+  const auto *FB = FD ? dyn_cast<CompoundStmt>(FD->getBody()) : nullptr;
+  const auto *PS =
+      FB && FB->size() == 2 ? dyn_cast<DeclStmt>(*FB->body_begin()) : nullptr;
+  const auto *Projection = PS && PS->isSingleDecl()
+                               ? dyn_cast<VarDecl>(PS->getSingleDecl())
+                               : nullptr;
+  const auto *PC =
+      Projection ? dyn_cast<CXXConstructExpr>(Projection->getInit()) : nullptr;
+  const auto *PR = PC ? PC->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *PD = PR ? PR->getDefinition() : nullptr;
+  const auto ProjectionType = Projection ? Projection->getType() : QualType();
+  if (!Projection || !Projection->hasLocalStorage() ||
+      Projection->isImplicit() || Projection->getDeclContext() != FD || !PC ||
+      PC->getNumArgs() || !PR || !PD || PD->getName() != "__identity" ||
+      !PD->field_empty() || PD->getNumBases() || !PD->isEmpty() ||
+      !PD->isTrivial() || !PC->getConstructor()->isImplicit() ||
+      !PC->getConstructor()->isDefaultConstructor() ||
+      !PC->getConstructor()->isTrivial())
+    return false;
+  for (const auto *D : PR->redecls())
+    if (!Origin(D, "__functional/identity.h"))
+      return false;
+  for (const auto *D : PC->getConstructor()->redecls())
+    if (!Origin(D, "__functional/identity.h"))
+      return false;
+  const auto *Inner = ReturnCall(Forward, 2);
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  if (!Inner || Inner->getNumArgs() != 4 || !Inner->isPRValue() ||
+      !Same(Inner->getType(), Pointer) ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) ||
+      !Signature(Helper, "__min_element",
+                 {Pointer, Pointer, PredicateRef,
+                  Context.getLValueReferenceType(ProjectionType)},
+                 {PredicateRef, Pointer, Pointer, ProjectionType}) ||
+      !utilityAlgorithmReference(Inner->getArg(2), FD->getParamDecl(2),
+                                 Context) ||
+      !utilityAlgorithmReference(Inner->getArg(3), Projection, Context))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilitySwapPointerAdapter(
+            S, SM, Inner->getArg(I), FD->getParamDecl(I), Pointer,
+            Context.getLValueReferenceType(Pointer), false, Context))
+      return false;
+  const auto *D = Helper->getDefinition();
+  const auto *Body = D ? dyn_cast_or_null<CompoundStmt>(D->getBody()) : nullptr;
+  const auto *Empty = Body && Body->size() == 4
+                          ? dyn_cast<IfStmt>(*Body->body_begin())
+                          : nullptr;
+  const auto *EmptyCondition =
+      Empty ? dyn_cast<BinaryOperator>(Empty->getCond()) : nullptr;
+  const auto *EmptyReturn =
+      Empty ? dyn_cast<ReturnStmt>(Empty->getThen()) : nullptr;
+  const auto *CurrentStmt = Body && Body->size() == 4
+                                ? dyn_cast<DeclStmt>(Body->body_begin()[1])
+                                : nullptr;
+  const auto *Current = CurrentStmt && CurrentStmt->isSingleDecl()
+                            ? dyn_cast<VarDecl>(CurrentStmt->getSingleDecl())
+                            : nullptr;
+  const auto *Loop = Body && Body->size() == 4
+                         ? dyn_cast<WhileStmt>(Body->body_begin()[2])
+                         : nullptr;
+  const auto *Finish = Body && Body->size() == 4
+                           ? dyn_cast<ReturnStmt>(Body->body_begin()[3])
+                           : nullptr;
+  if (!Empty || Empty->getInit() || Empty->getConditionVariable() ||
+      Empty->getElse() || !EmptyCondition ||
+      EmptyCondition->getOpcode() != BO_EQ ||
+      !EmptyCondition->getType()->isBooleanType() ||
+      !utilityAlgorithmReference(EmptyCondition->getLHS(), D->getParamDecl(0),
+                                 Context) ||
+      !utilityAlgorithmReference(EmptyCondition->getRHS(), D->getParamDecl(1),
+                                 Context) ||
+      !EmptyReturn ||
+      !utilityAlgorithmReference(EmptyReturn->getRetValue(), D->getParamDecl(0),
+                                 Context) ||
+      !Current || !Current->hasLocalStorage() || Current->isImplicit() ||
+      Current->getDeclContext() != D ||
+      !Context.hasSameType(Current->getType(), Pointer) ||
+      !utilityAlgorithmReference(Current->getInit(), D->getParamDecl(0),
+                                 Context) ||
+      !Loop || Loop->getConditionVariable() || !Finish ||
+      !utilityAlgorithmReference(Finish->getRetValue(), D->getParamDecl(0),
+                                 Context))
+    return false;
+  const auto *Condition = dyn_cast<BinaryOperator>(Loop->getCond());
+  const auto *Increment =
+      Condition ? dyn_cast<UnaryOperator>(
+                      functionalInvokeStrippedExpression(Condition->getLHS()))
+                : nullptr;
+  const auto *Branch = dyn_cast<IfStmt>(Loop->getBody());
+  const auto *Compare =
+      Branch ? dyn_cast<CallExpr>(Branch->getCond()) : nullptr;
+  const auto *Assign =
+      Branch ? dyn_cast<BinaryOperator>(Branch->getThen()) : nullptr;
+  if (!Condition || Condition->getOpcode() != BO_NE ||
+      !Condition->getType()->isBooleanType() || !Increment ||
+      Increment->getOpcode() != UO_PreInc ||
+      !Context.hasSameType(Increment->getType(), Pointer) ||
+      !utilityAlgorithmReference(Increment->getSubExpr(), Current, Context) ||
+      !utilityAlgorithmReference(Condition->getRHS(), D->getParamDecl(1),
+                                 Context) ||
+      !Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->getElse() || !Compare || Compare->getNumArgs() != 3 ||
+      !utilityAlgorithmReference(Compare->getArg(0), D->getParamDecl(2),
+                                 Context) ||
+      !Assign || Assign->getOpcode() != BO_Assign ||
+      !Context.hasSameType(Assign->getType(), Pointer) ||
+      !utilityAlgorithmReference(Assign->getLHS(), D->getParamDecl(0),
+                                 Context) ||
+      !utilityAlgorithmReference(Assign->getRHS(), Current, Context))
+    return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Project = dyn_cast<CallExpr>(Compare->getArg(I + 1));
+    const auto *Identity =
+        utilityAlgorithmUnaryDispatch(S, SM, Project, ProjectionType,
+                                      Pointer->getPointeeType(), true, Context);
+    const auto *Read = Project && Project->getNumArgs() == 2
+                           ? dyn_cast<UnaryOperator>(Project->getArg(1))
+                           : nullptr;
+    const auto *Input =
+        I ? static_cast<const ValueDecl *>(D->getParamDecl(0)) : Current;
+    if (!Identity ||
+        !utilityAlgorithmIdentity(S, SM, Identity, ProjectionType,
+                                  Pointer->getPointeeType(), Context) ||
+        !utilityAlgorithmReference(Project->getArg(0), D->getParamDecl(3),
+                                   Context) ||
+        !Read || Read->getOpcode() != UO_Deref || !Read->isLValue() ||
+        !Context.hasSameType(Read->getType(), Pointer->getPointeeType()) ||
+        !utilityAlgorithmReference(Read->getSubExpr(), Input, Context))
+      return false;
+  }
+  const auto *Invoke = utilityAlgorithmBinaryDispatch(
+      S, SM, Compare, Predicate, Pointer->getPointeeType(), Context);
+  return utilityWrapperLessPredicate(S, SM, Invoke, Record, *Wrapper, Element,
+                                     Context);
 }
 
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
@@ -35161,6 +35622,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityWrapperReverseCopy(S, SM, Function, Input, Output, Context);
     if (Scalar || Record || Callback || Wrapper)
       return UtilityOperation::AlgorithmReverseCopy;
+  }
+  if (Origin->Path == "__algorithm/min_element.h" && Name == "min_element" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue()) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    if (Pointer->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Same(Function->getReturnType(), Pointer) &&
+        Same(Call->getType(), Pointer) &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        utilityWrapperMinElement(S, SM, Function, Pointer, Context))
+      return UtilityOperation::AlgorithmMinElement;
   }
   if (((Origin->Path == "__algorithm/min_element.h" && Name == "min_element") ||
        (Origin->Path == "__algorithm/max_element.h" &&

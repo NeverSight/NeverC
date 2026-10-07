@@ -5895,6 +5895,17 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(2)), L);
         }
       }
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          FirstRange.second->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      auto ComparedValue = [&](Expression Value) {
+        return dereference(Expression{{"kind", "member"},
+                                      {"type", type(Wrapper->PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Value)}},
+                                      {"loc", A.loc(L)}},
+                           L);
+      };
       auto Less = [&](Expression Left, Expression Right) {
         if (SDKComparator)
           return functionalOperationValues(L, std::move(Left), std::move(Right),
@@ -5906,6 +5917,10 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
                                      std::move(Left), std::move(Right), L);
+        if (Wrapper)
+          return CompareUtilityValues(
+              "<", ComparedValue(std::move(Left)), Wrapper->ReferentType,
+              ComparedValue(std::move(Right)), Wrapper->ReferentType);
         return AlgorithmLess(std::move(Left), 0, std::move(Right), 0);
       };
       auto Current = snapshot(json::Object(Candidate), L);
