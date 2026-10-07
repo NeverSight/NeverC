@@ -352,6 +352,19 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::replace` admits mutable raw pointer ranges of the same exact
+checked SDK `std::reference_wrapper<T>` carrier, with lvalue old/new wrappers
+of that exact type. Referents use supported built-in scalar equality; enum,
+record, function and nested-wrapper referents require further proof. The selected
+SDK body authenticates the pointer loop, both reference conversions and the
+implicit trivial wrapper copy assignment. Each original argument is evaluated
+once. Each comparison reads the current referents; a match copies the current
+replacement binding. Aliases from old/new wrappers to range elements remain
+live throughout the loop. Empty or unmatched ranges write nothing. Referents
+are neither assigned nor destroyed, and temporary cleanup retains source
+behavior. Source comparisons, heterogeneous values, SDK replacements,
+indirect/casted callees and unsupported original dependencies remain rejected.
+
 Direct `std::rotate_copy` admits raw pointer ranges of the same exact checked
 SDK `std::reference_wrapper<T>` carrier; input may be const and output must be
 mutable. Its one-return SDK body must contain exactly the two selected nested
