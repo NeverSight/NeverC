@@ -352,6 +352,19 @@ Source replacement/specialization/redeclaration of a selected swap or move,
 casted/indirect callees and unsupported original aliases, defaults, exception
 expressions, source bodies or layouts remain rejected.
 
+Direct `std::copy_backward` admits raw pointer input and output ranges of the
+same exact checked SDK `std::reference_wrapper<T>` carrier; input may be const
+and output must be mutable. It authenticates the classic policy, the pointer
+copy-constructibility assertion and both selected SDK move layers. The selected
+trivial-copy body retreats the output by exactly `last - first` before copying
+and returns that beginning pointer. It reuses the complete pointer unwrap/rewrap,
+pair constructor, memmove and full carrier-size proof. All original arguments
+are evaluated once. Binding stores proceed backward, including valid overlapping
+ranges that shift bindings to the right. Empty input writes nothing and returns
+the original output pointer. Referents are neither assigned nor destroyed, and
+temporary cleanup retains source behavior. Source SDK or trait replacements,
+indirect/casted callees and unsupported original dependencies remain rejected.
+
 Direct `std::copy` admits raw pointer input and output ranges of the same exact
 checked SDK `std::reference_wrapper<T>` carrier; input may be const and output
 must be mutable. The selected public copy call preserves its pointer parameters; the inner call
@@ -366,7 +379,7 @@ provenance and trivial wrapper assignment also remain checked. Lowering evaluate
 all original arguments once, copies bindings in order and returns the advanced
 output pointer; an empty range writes nothing. Referents are neither assigned
 nor destroyed. Source SDK replacements, indirect/casted callees and unsupported
-original dependencies remain rejected. This proof does not admit other record
+original dependencies remain rejected. These copy forms do not admit other record
 ranges or transfer algorithms.
 
 Direct `std::fill` admits a raw pointer range of the same exact mutable checked
@@ -12866,13 +12879,13 @@ final namespace contents or creates alias wrapper functions.
 Ordinary resolved using-declarations may additionally import the pinned libc++
 free function names `move`, `forward`, `swap`, `get`, `as_const`, `addressof`,
 `move_if_noexcept`, `exchange`, `invoke`, `make_pair`, `ref`, `cref` and
-`iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `copy`, `fill_n` and
+`iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `copy`, `copy_backward`, `fill_n` and
 `fill`, plus the six comparison names `operator==`, `operator!=`,
 `operator<`, `operator>`, `operator<=` and `operator>=` from `std` or its inline
-namespaces. The `iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `copy`, `fill_n`
+namespaces. The `iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `copy`, `copy_backward`, `fill_n`
 and `fill` overload sets must originate from the exact pinned
 `__algorithm/iter_swap.h`, `__algorithm/swap_ranges.h`, `__algorithm/reverse.h`,
-`__algorithm/reverse_copy.h`, `__algorithm/copy.h`, `__algorithm/fill_n.h`
+`__algorithm/reverse_copy.h`, `__algorithm/copy.h`, `__algorithm/copy_backward.h`, `__algorithm/fill_n.h`
 and `__algorithm/fill.h`
 headers respectively; importing them grants lookup metadata only.
 Namespace and nondependent block imports, repeated/comma imports and

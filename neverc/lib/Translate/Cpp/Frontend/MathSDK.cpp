@@ -17296,6 +17296,26 @@ class UtilityWrapperCopyProof {
   QualType Element;
   QualType Input;
   QualType Output;
+  bool Backward;
+
+  llvm::StringRef path() const {
+    return Backward ? "__algorithm/copy_backward.h" : "__algorithm/copy.h";
+  }
+  llvm::StringRef implementationName() const {
+    return Backward ? "__copy_backward_impl" : "__copy_impl";
+  }
+  bool algorithmRecord(const CXXRecordDecl *R) const {
+    if (!record(R, implementationName(), path()))
+      return false;
+    const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(R);
+    if (!Backward)
+      return !Specialization;
+    return Specialization && Specialization->getTemplateArgs().size() == 1 &&
+           Specialization->getTemplateArgs().get(0).getKind() ==
+               TemplateArgument::Type &&
+           utilitySwapClassicPolicy(
+               S, SM, Specialization->getTemplateArgs().get(0).getAsType());
+  }
 
   static const Expr *strip(const Expr *E) {
     return E ? functionalInvokeStrippedExpression(E) : nullptr;
@@ -17754,7 +17774,10 @@ class UtilityWrapperCopyProof {
   }
   bool trivialCopy(const FunctionDecl *F) const {
     constexpr llvm::StringLiteral Path = "__algorithm/copy_move_common.h";
-    if (!utilitySwapSDKFunction(S, SM, F, "__copy_trivial_impl", Path) ||
+    if (!utilitySwapSDKFunction(S, SM, F,
+                                Backward ? "__copy_backward_trivial_impl"
+                                         : "__copy_trivial_impl",
+                                Path) ||
         !templates(F, {Input->getPointeeType(), Element}) ||
         F->getNumParams() != 3 || !same(F->getParamDecl(0)->getType(), Input) ||
         !same(F->getParamDecl(1)->getType(), Input) ||
@@ -17762,7 +17785,7 @@ class UtilityWrapperCopyProof {
         !pair(F->getReturnType(), Input, Output))
       return false;
     const auto *B = dyn_cast_or_null<CompoundStmt>(F->getBody());
-    if (!B || B->size() != 3)
+    if (!B || B->size() != (Backward ? 4u : 3u))
       return false;
     auto It = B->body_begin();
     const auto *Count = local(*It++, F);
@@ -17770,6 +17793,14 @@ class UtilityWrapperCopyProof {
         Count ? dyn_cast<CXXStaticCastExpr>(strip(Count->getInit())) : nullptr;
     const auto *Difference =
         Cast ? binary(Cast->getSubExpr(), BO_Sub) : nullptr;
+    if (Backward) {
+      const auto *Retreat = dyn_cast<CompoundAssignOperator>(*It++);
+      if (!Retreat || Retreat->getOpcode() != BO_SubAssign ||
+          !same(Retreat->getType(), Output) ||
+          !reference(Retreat->getLHS(), F->getParamDecl(2)) ||
+          !reference(Retreat->getRHS(), Count))
+        return false;
+    }
     const auto *Copy = dyn_cast<CallExpr>(*It++);
     const auto *R = dyn_cast<ReturnStmt>(*It);
     if (!Count || !same(Count->getType(), Context.getSizeType().withConst()) ||
@@ -17790,12 +17821,13 @@ class UtilityWrapperCopyProof {
            same(Elements->getType(),
                 Copy->getDirectCallee()->getParamDecl(2)->getType()) &&
            reference(Elements->getSubExpr(), Count) && Make &&
-           reference(Make->getArg(0), F->getParamDecl(1)) && End &&
-           reference(End->getLHS(), F->getParamDecl(2)) &&
-           reference(End->getRHS(), Count);
+           reference(Make->getArg(0), F->getParamDecl(1)) &&
+           (Backward ? reference(Make->getArg(1), F->getParamDecl(2))
+                     : End && reference(End->getLHS(), F->getParamDecl(2)) &&
+                           reference(End->getRHS(), Count));
   }
   bool copyOperator(const CXXMethodDecl *M) const {
-    constexpr llvm::StringLiteral Path = "__algorithm/copy.h";
+    const auto Path = path();
     const auto *Primary = M ? M->getPrimaryTemplate() : nullptr;
     if (!Primary || M->isVariadic() ||
         M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
@@ -17818,14 +17850,14 @@ class UtilityWrapperCopyProof {
     return false;
   }
   bool implementation(const CXXOperatorCallExpr *Call) const {
-    constexpr llvm::StringLiteral Path = "__algorithm/copy.h";
+    const auto Path = path();
     const auto *M =
         Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())
              : nullptr;
     if (!M || Call->getOperator() != OO_Call || Call->getNumArgs() != 4 ||
         M->getOverloadedOperator() != OO_Call || !M->isConst() ||
-        M->isVolatile() || M->isStatic() ||
-        !record(M->getParent(), "__copy_impl", Path) || !copyOperator(M) ||
+        M->isVolatile() || M->isStatic() || !algorithmRecord(M->getParent()) ||
+        !copyOperator(M) ||
         !templates(M, {Input->getPointeeType(), Element}, true) ||
         !signature(M, Call->getType(), {Input, Input, Output}) ||
         !pair(M->getReturnType(), Input, Output))
@@ -17851,8 +17883,7 @@ class UtilityWrapperCopyProof {
     const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
     if (!utilitySwapSDKFunction(S, SM, F, "__copy_move_unwrap_iters", Path) ||
         !A || A->size() != 5 || A->get(0).getKind() != TemplateArgument::Type ||
-        !record(A->get(0).getAsType()->getAsCXXRecordDecl(), "__copy_impl",
-                "__algorithm/copy.h") ||
+        !algorithmRecord(A->get(0).getAsType()->getAsCXXRecordDecl()) ||
         A->get(4).getKind() != TemplateArgument::Integral ||
         !A->get(4).getAsIntegral().isZero() ||
         !signature(F, F->getReturnType(), {Input, Input, Output}) ||
@@ -17906,30 +17937,115 @@ class UtilityWrapperCopyProof {
     return true;
   }
 
+  bool pointerCopyTrait(const Expr *Expression) const {
+    const auto *Ref = dyn_cast_or_null<DeclRefExpr>(strip(Expression));
+    const auto *Qualifier = Ref ? Ref->getQualifier() : nullptr;
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Trait = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Type ? Type->getAsCXXRecordDecl() : nullptr);
+    const auto *Value = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
+    constexpr llvm::StringLiteral TraitPath =
+        "__type_traits/is_constructible.h";
+    constexpr llvm::StringLiteral ConstantPath =
+        "__type_traits/integral_constant.h";
+    if (!Trait || Trait->getName() != "is_copy_constructible" ||
+        !Trait->isCompleteDefinition() || !Trait->isEmpty() ||
+        Trait->getSpecializationKind() != TSK_ImplicitInstantiation ||
+        Trait->getNumBases() != 1 || Trait->getTemplateArgs().size() != 1 ||
+        Trait->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+        !same(Trait->getTemplateArgs().get(0).getAsType(), Input) || !Value ||
+        Value->getName() != "value" ||
+        !same(Value->getType(), Context.BoolTy.withConst()))
+      return false;
+    const auto *Primary = Trait->getSpecializedTemplate();
+    if (!Trait->getSpecializedTemplateOrPartial()
+             .dyn_cast<ClassTemplateDecl *>())
+      return false;
+    for (const auto *D : Trait->redecls())
+      if (!origin(D, TraitPath))
+        return false;
+    for (const auto *D : Primary->redecls())
+      if (!origin(D, TraitPath) || !origin(D->getTemplatedDecl(), TraitPath))
+        return false;
+    const auto &Base = *Trait->bases_begin();
+    const auto *Constant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        Base.getType()->getAsCXXRecordDecl());
+    if (Base.isVirtual() || Base.getAccessSpecifier() != AS_public ||
+        !Constant || Constant->getName() != "integral_constant" ||
+        !record(Constant, "integral_constant", ConstantPath) ||
+        Constant->getTemplateArgs().size() != 2 ||
+        Constant->getTemplateArgs().get(0).getKind() !=
+            TemplateArgument::Type ||
+        !same(Constant->getTemplateArgs().get(0).getAsType(), Context.BoolTy) ||
+        Constant->getTemplateArgs().get(1).getKind() !=
+            TemplateArgument::Integral ||
+        Constant->getTemplateArgs().get(1).getAsIntegral() != 1 ||
+        Value->getDeclContext() != Constant)
+      return false;
+    for (const auto *D : Value->redecls())
+      if (!origin(D, ConstantPath))
+        return false;
+    const auto V = approvedSDKIntegerConstant(S, SM, Value, Context);
+    return V && *V == 1;
+  }
+  const Expr *publicResult(const FunctionDecl *Function) const {
+    if (!Backward)
+      return result(Function);
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+    if (!Body || Body->size() != 2)
+      return nullptr;
+    auto It = Body->body_begin();
+    const auto *Declaration = dyn_cast<DeclStmt>(*It++);
+    const auto *Assert =
+        Declaration && Declaration->isSingleDecl()
+            ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
+            : nullptr;
+    const auto *Both =
+        Assert ? binary(Assert->getAssertExpr(), BO_LAnd) : nullptr;
+    const auto *Return = dyn_cast<ReturnStmt>(*It);
+    if (!Assert || Assert->isFailed() || !origin(Assert, path()) || !Both ||
+        !pointerCopyTrait(Both->getLHS()) ||
+        !pointerCopyTrait(Both->getRHS()) || !Return)
+      return nullptr;
+    return strip(Return->getRetValue());
+  }
+  bool innerTemplate(const FunctionDecl *Function) const {
+    if (!Backward)
+      return templates(Function, {Input, Input, Output});
+    const auto *Args = Function->getTemplateSpecializationArgs();
+    return Args && Args->size() == 4 &&
+           Args->get(0).getKind() == TemplateArgument::Type &&
+           utilitySwapClassicPolicy(S, SM, Args->get(0).getAsType()) &&
+           templates(Function,
+                     {Args->get(0).getAsType(), Input, Input, Output});
+  }
+
 public:
   UtilityWrapperCopyProof(const State &S, const SourceManager &SM,
                           const ASTContext &Context, QualType Input,
-                          QualType Output)
+                          QualType Output, bool Backward = false)
       : S(S), SM(SM), Context(Context), Element(Output->getPointeeType()),
-        Input(Input), Output(Output) {}
+        Input(Input), Output(Output), Backward(Backward) {}
 
   bool prove(const FunctionDecl *F) const {
-    constexpr llvm::StringLiteral Path = "__algorithm/copy.h";
-    if (!utilitySwapSDKFunction(S, SM, F, "copy", Path) ||
+    const auto Path = path();
+    if (!utilitySwapSDKFunction(S, SM, F, Backward ? "copy_backward" : "copy",
+                                Path) ||
         !templates(F, {Input, Output}) ||
         !signature(F, Output, {Input, Input, Output}) ||
         !approvedFunctionalReferenceRecord(S, SM, Element->getAsCXXRecordDecl(),
                                            Context))
       return false;
-    const auto *Second = dyn_cast_or_null<MemberExpr>(result(F));
+    const auto *Second = dyn_cast_or_null<MemberExpr>(publicResult(F));
     const auto *C =
         Second ? dyn_cast_or_null<CallExpr>(strip(Second->getBase())) : nullptr;
     auto P = C ? pair(C->getType(), Input, Output) : std::nullopt;
     const auto *Inner = C ? C->getDirectCallee() : nullptr;
     if (!P || Second->isArrow() || Second->getMemberDecl() != P->Second || !C ||
         C->getNumArgs() != 3 ||
-        !utilitySwapSDKFunction(S, SM, Inner, "__copy", Path) ||
-        !templates(Inner, {Input, Input, Output}) ||
+        !utilitySwapSDKFunction(
+            S, SM, Inner, Backward ? "__copy_backward" : "__copy", Path) ||
+        !innerTemplate(Inner) ||
         !signature(Inner, C->getType(), {Input, Input, Output}))
       return false;
     const auto *Unwrap = dyn_cast_or_null<CallExpr>(result(Inner));
@@ -17938,7 +18054,8 @@ public:
       return false;
     for (unsigned I = 0; I != 3; ++I) {
       const auto Type = I == 2 ? Output : Input;
-      if (!reference(C->getArg(I), F->getParamDecl(I)) ||
+      if ((Backward ? !moved(C->getArg(I), F->getParamDecl(I), Type)
+                    : !reference(C->getArg(I), F->getParamDecl(I))) ||
           !moved(Unwrap->getArg(I), Inner->getParamDecl(I), Type))
         return false;
     }
@@ -30713,7 +30830,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Input = Function->getParamDecl(0)->getType();
     const auto Output = Function->getParamDecl(2)->getType();
     const bool Wrapper =
-        Name == "copy" && Origin->Path == "__algorithm/copy.h" &&
+        ((Name == "copy" && Origin->Path == "__algorithm/copy.h") ||
+         (Name == "copy_backward" &&
+          Origin->Path == "__algorithm/copy_backward.h")) &&
         Input->isPointerType() && Output->isPointerType() &&
         !Output->getPointeeType().hasQualifiers() &&
         !Input->getPointeeType().isVolatileQualified() &&
@@ -30723,7 +30842,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(0)->getType(), Input) &&
         Same(Call->getArg(1)->getType(), Input) &&
         Same(Call->getArg(2)->getType(), Output) &&
-        UtilityWrapperCopyProof(S, SM, Context, Input, Output).prove(Function);
+        UtilityWrapperCopyProof(S, SM, Context, Input, Output,
+                                Name == "copy_backward")
+            .prove(Function);
     if (!Scalar && !Record && !Callback && !Wrapper)
       return std::nullopt;
     if (Origin->Path == "__algorithm/copy.h" && Name == "copy")
