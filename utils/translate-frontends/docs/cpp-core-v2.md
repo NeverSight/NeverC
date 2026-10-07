@@ -364,6 +364,19 @@ source behavior, and the selected SDK loop, conversion and assignment proofs
 remain required. Unmaterialized xvalues, source SDK replacements, indirect/casted
 callees and unsupported original dependencies remain rejected.
 
+Direct `std::count` admits raw pointer ranges of the same exact checked
+SDK `std::reference_wrapper<T>` carrier, including optional const input and
+same-type lvalue or supported full-expression temporary comparison wrappers.
+Built-in scalar equality reads live referents and returns the number of matches
+in the checked pointer-difference type. Its selected SDK proof authenticates the
+public call, zero-initialized counter, original pointer loop, identity projection,
+invoke/forward chain, both reference conversions and difference-type aliases.
+Each original argument is evaluated once; construction and cleanup retain source
+behavior. Neither bindings nor referents are assigned. Empty input returns zero.
+Source comparisons, enum or nested-wrapper referents, heterogeneous values,
+SDK replacements, indirect/casted callees and unsupported original dependencies
+remain rejected.
+
 Direct `std::replace_copy` admits raw pointer ranges of the same exact checked
 SDK `std::reference_wrapper<T>` carrier, with optional const input, mutable
 output and same-type old/new lvalue wrappers. Supported built-in scalar equality

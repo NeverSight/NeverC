@@ -16958,7 +16958,8 @@ static bool utilityWrapperReverseCopy(const State &S, const SourceManager &SM,
 static bool utilityWrapperScalarEquality(
     const State &S, const SourceManager &SM, const BinaryOperator *Equality,
     const FunctionDecl *Function, const FunctionalReferenceRecord &Wrapper,
-    unsigned InputIndex, unsigned ValueIndex, const ASTContext &Context) {
+    unsigned InputIndex, unsigned ValueIndex, const ASTContext &Context,
+    const CallExpr *InputProjection = nullptr) {
   if (!Equality || Equality->getOpcode() != BO_EQ ||
       !Equality->getType()->isBooleanType() ||
       Wrapper.ReferentType->isEnumeralType())
@@ -16983,8 +16984,12 @@ static bool utilityWrapperScalarEquality(
             TSK_ImplicitInstantiation ||
         Access->Wrapper.Record->getCanonicalDecl() !=
             Wrapper.Record->getCanonicalDecl() ||
-        !functionalInvokeParameterReference(
-            Access->Object, Function->getParamDecl(Index), Dereference))
+        !(Dereference && InputProjection
+              ? functionalInvokeStrippedExpression(Access->Object) ==
+                    InputProjection
+              : functionalInvokeParameterReference(
+                    Access->Object, Function->getParamDecl(Index),
+                    Dereference)))
       return false;
     const auto *Pattern = Conversion->getInstantiatedFromMemberFunction();
     if (!Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
@@ -19943,7 +19948,8 @@ static bool utilityAlgorithmIdentity(const State &S, const SourceManager &SM,
 static bool utilityAlgorithmCountType(const State &S, const SourceManager &SM,
                                       QualType Type, QualType Pointer,
                                       QualType Policy, bool Helper,
-                                      const ASTContext &Context) {
+                                      const ASTContext &Context,
+                                      bool DirectCount = false) {
   if (!Context.hasSameType(Type, Context.getPointerDiffType()))
     return false;
   auto Origin = [&](const Decl *D, llvm::StringRef Path) {
@@ -19994,6 +20000,20 @@ static bool utilityAlgorithmCountType(const State &S, const SourceManager &SM,
       if (!Template || !Alias->isTypeAlias())
         return false;
       const auto *D = Template->getTemplatedDecl();
+      if (DirectCount && !Helper && D->getName() == "__iter_diff_t") {
+        const auto Args = Alias->template_arguments();
+        if ((Seen & 8) || Args.size() != 1 ||
+            Args[0].getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Args[0].getAsType(), Pointer))
+          return false;
+        for (const auto *Redeclaration : Template->redecls())
+          if (!Origin(Redeclaration, "__iterator/iterator_traits.h") ||
+              !Origin(Redeclaration->getTemplatedDecl(),
+                      "__iterator/iterator_traits.h"))
+            return false;
+        Seen |= 8;
+        return Self(Self, Alias->getAliasedType(), Depth + 1);
+      }
       constexpr llvm::StringLiteral Path = "__algorithm/iterator_operations.h";
       for (const auto *Redeclaration : Template->redecls())
         if (!Origin(Redeclaration, Path) ||
@@ -20033,7 +20053,184 @@ static bool utilityAlgorithmCountType(const State &S, const SourceManager &SM,
     Seen |= 4;
     return true;
   };
-  return Walk(Walk, Type, 0) && Seen == (Helper ? 7u : 4u);
+  return Walk(Walk, Type, 0) && Seen == (Helper        ? (DirectCount ? 6u : 7u)
+                                         : DirectCount ? 12u
+                                                       : 4u);
+}
+
+// The checked count loop projects each wrapper through the selected SDK
+// identity invocation, compares live referents and increments its difference
+// counter. No wrapper binding or referent is assigned.
+static bool utilityWrapperCount(const State &S, const SourceManager &SM,
+                                const FunctionDecl *Function, QualType Pointer,
+                                const ASTContext &Context) {
+  if (!Pointer->isPointerType())
+    return false;
+  const auto InputElement = Pointer->getPointeeType();
+  const auto Element = InputElement.getUnqualifiedType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || InputElement.isVolatileQualified() ||
+      InputElement.isRestrictQualified() || InputElement.hasAddressSpace() ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, false) ||
+      !utilitySwapSDKFunction(S, SM, Function, "count",
+                              "__algorithm/count.h") ||
+      Function->getNumParams() != 3)
+    return false;
+  const auto Reference = Context.getLValueReferenceType(Element.withConst());
+  const QualType PublicParameters[] = {Pointer, Pointer, Reference};
+  for (unsigned I = 0; I != 3; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                             PublicParameters[I]))
+      return false;
+  const auto *PublicArgs = Function->getTemplateSpecializationArgs();
+  if (!PublicArgs || PublicArgs->size() != 2 ||
+      PublicArgs->get(0).getKind() != TemplateArgument::Type ||
+      PublicArgs->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(PublicArgs->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(PublicArgs->get(1).getAsType(), Element))
+    return false;
+  const auto *Definition = Function->getDefinition();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  const auto *Local = Body && Body->size() == 2
+                          ? dyn_cast<DeclStmt>(*Body->body_begin())
+                          : nullptr;
+  const auto *End = Body && Body->size() == 2
+                        ? dyn_cast<ReturnStmt>(Body->body_begin()[1])
+                        : nullptr;
+  const auto *Projection = Local && Local->isSingleDecl()
+                               ? dyn_cast<VarDecl>(Local->getSingleDecl())
+                               : nullptr;
+  const auto *Construction =
+      Projection ? dyn_cast_or_null<CXXConstructExpr>(Projection->getInit())
+                 : nullptr;
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Call =
+      End ? dyn_cast_or_null<CallExpr>(End->getRetValue()) : nullptr;
+  const auto *Helper = Call ? Call->getDirectCallee() : nullptr;
+  const auto *D = Helper ? Helper->getDefinition() : nullptr;
+  const auto *Args = Helper ? Helper->getTemplateSpecializationArgs() : nullptr;
+  if (!Projection || !Projection->hasLocalStorage() ||
+      Projection->isImplicit() || Projection->getDeclContext() != Definition ||
+      !Construction || Construction->getNumArgs() != 0 || !Constructor ||
+      !Constructor->isImplicit() || !Constructor->isTrivial() ||
+      !Constructor->isDefaultConstructor() || !Call ||
+      Call->getNumArgs() != 4 || !D || Helper->getNumParams() != 4 ||
+      !utilitySwapSDKFunction(S, SM, Helper, "__count",
+                              "__algorithm/count.h") ||
+      !utilityAlgorithmSDKReference(S, SM, Call, Helper) || !Args ||
+      Args->size() != 5 || Args->get(0).getKind() != TemplateArgument::Type)
+    return false;
+  const auto ProjType = Projection->getType();
+  const auto Policy = Args->get(0).getAsType();
+  const auto *ProjRecord = ProjType->getAsCXXRecordDecl();
+  if (!ProjRecord || ProjType.hasLocalQualifiers() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          ProjRecord->getCanonicalDecl() ||
+      !Context.hasSameType(Construction->getType(), ProjType) ||
+      !utilitySwapClassicPolicy(S, SM, Policy) ||
+      !utilityAlgorithmCountType(S, SM, Function->getReturnType(), Pointer,
+                                 Policy, false, Context, true) ||
+      !utilityAlgorithmCountType(S, SM, Helper->getReturnType(), Pointer,
+                                 Policy, true, Context, true) ||
+      !Context.hasSameType(Call->getType(), Helper->getReturnType()) ||
+      !Call->isPRValue())
+    return false;
+  for (const auto *Redeclaration : Constructor->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
+        !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                       "__functional/identity.h"))
+      return false;
+  const QualType Types[] = {Pointer, Pointer, Element, ProjType};
+  const QualType Parameters[] = {Pointer, Pointer, Reference,
+                                 Context.getLValueReferenceType(ProjType)};
+  for (unsigned I = 0; I != 4; ++I) {
+    const auto &Arg = Args->get(I + 1);
+    if (Arg.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arg.getAsType(), Types[I]) ||
+        !Context.hasSameType(Helper->getParamDecl(I)->getType(),
+                             Parameters[I]) ||
+        !utilityAlgorithmReference(
+            Call->getArg(I),
+            I == 3 ? static_cast<const ValueDecl *>(Projection)
+                   : Definition->getParamDecl(I),
+            Context))
+      return false;
+  }
+  const auto *HelperBody = dyn_cast_or_null<CompoundStmt>(D->getBody());
+  const auto *CountDecl = HelperBody && HelperBody->size() == 3
+                              ? dyn_cast<DeclStmt>(*HelperBody->body_begin())
+                              : nullptr;
+  const auto *Counter = CountDecl && CountDecl->isSingleDecl()
+                            ? dyn_cast<VarDecl>(CountDecl->getSingleDecl())
+                            : nullptr;
+  const auto *Zero =
+      Counter && Counter->getInit()
+          ? dyn_cast<IntegerLiteral>(Counter->getInit()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Loop = HelperBody && HelperBody->size() == 3
+                         ? dyn_cast<ForStmt>(HelperBody->body_begin()[1])
+                         : nullptr;
+  const auto *Return = HelperBody && HelperBody->size() == 3
+                           ? dyn_cast<ReturnStmt>(HelperBody->body_begin()[2])
+                           : nullptr;
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Branch = Loop ? dyn_cast<IfStmt>(Loop->getBody()) : nullptr;
+  const auto *Equality =
+      Branch ? dyn_cast<BinaryOperator>(Branch->getCond()) : nullptr;
+  const auto *Add =
+      Branch ? dyn_cast<UnaryOperator>(Branch->getThen()) : nullptr;
+  if (!Counter || !Counter->hasLocalStorage() || Counter->isImplicit() ||
+      Counter->getDeclContext() != D || !Zero || !Zero->getValue().isZero() ||
+      !utilityAlgorithmCountType(S, SM, Counter->getType(), Pointer, Policy,
+                                 true, Context, true) ||
+      !Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !Condition->getType()->isBooleanType() ||
+      !utilityAlgorithmReference(Condition->getLHS(), D->getParamDecl(0),
+                                 Context) ||
+      !utilityAlgorithmReference(Condition->getRHS(), D->getParamDecl(1),
+                                 Context) ||
+      !Increment || Increment->getOpcode() != UO_PreInc ||
+      !utilityAlgorithmReference(Increment->getSubExpr(), D->getParamDecl(0),
+                                 Context) ||
+      !Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->getElse() || !Equality || !Add || Add->getOpcode() != UO_PreInc ||
+      !utilityAlgorithmReference(Add->getSubExpr(), Counter, Context) ||
+      !Return ||
+      !utilityAlgorithmReference(Return->getRetValue(), Counter, Context))
+    return false;
+  const auto *Conversion = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Equality->getLHS()));
+  const auto Access = Conversion ? approvedFunctionalReferenceAccessCallImpl(
+                                       S, SM, Conversion, Context, false)
+                                 : std::nullopt;
+  const auto *Project =
+      Access ? dyn_cast_or_null<CallExpr>(
+                   functionalInvokeStrippedExpression(Access->Object))
+             : nullptr;
+  const auto *Identity = utilityAlgorithmUnaryDispatch(
+      S, SM, Project, ProjType, InputElement, true, Context);
+  const auto *Read = Project && Project->getNumArgs() == 2
+                         ? dyn_cast<UnaryOperator>(Project->getArg(1))
+                         : nullptr;
+  return Identity &&
+         utilityAlgorithmIdentity(S, SM, Identity, ProjType, InputElement,
+                                  Context) &&
+         utilityAlgorithmReference(Project->getArg(0), D->getParamDecl(3),
+                                   Context) &&
+         Read && Read->getOpcode() == UO_Deref && Read->isLValue() &&
+         Context.hasSameType(Read->getType(), InputElement) &&
+         utilityAlgorithmReference(Read->getSubExpr(), D->getParamDecl(0),
+                                   Context) &&
+         utilityWrapperScalarEquality(S, SM, Equality, D, *Wrapper, 0, 2,
+                                      Context, Project);
 }
 
 static const CXXOperatorCallExpr *
@@ -31156,6 +31353,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return Name == "gcd" ? UtilityOperation::NumericGcd
                          : UtilityOperation::NumericLcm;
+  if (Origin->Path == "__algorithm/count.h" && Name == "count" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && Same(Call->getType(), Function->getReturnType())) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    if (Pointer->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Pointer->getPointeeType()) &&
+        Call->getArg(2)->isLValue() &&
+        utilityWrapperCount(S, SM, Function, Pointer, Context))
+      return UtilityOperation::AlgorithmCount;
+  }
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&

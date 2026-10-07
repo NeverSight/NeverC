@@ -5397,6 +5397,24 @@ class FunctionLowering {
         Common = utilityCallbackComparisonType(A.Context,
                                              PointerQualType->getPointeeType(),
                                              Call->getArg(2)->getType());
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources,
+          PointerQualType->getPointeeType()->getAsCXXRecordDecl(), A.Context);
+      if (Wrapper)
+        Common = utilityScalarComparisonType(A.Context, Wrapper->ReferentType,
+                                             Wrapper->ReferentType, false);
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        if (Wrapper)
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        return Value;
+      };
       const auto SourceComparison =
           A.Context.hasSameUnqualifiedType(PointerQualType->getPointeeType(),
                                            Call->getArg(2)->getType())
@@ -5424,8 +5442,11 @@ class FunctionLowering {
                     SourceComparison->Friend ? SourceComparison->Friend
                                              : SourceComparison->Namespace,
                     L)
-              : binary("==", cast(dereference(Current, L), type(*Common, L), L),
-                       cast(dereference(ValueAddress, L), type(*Common, L), L),
+              : binary("==",
+                       cast(ComparedValue(json::Object(Current)),
+                            type(*Common, L), L),
+                       cast(ComparedValue(json::Object(ValueAddress)),
+                            type(*Common, L), L),
                        "bool", L);
       branch(std::move(Equal), Match, Next, L);
       label(Match, L);
