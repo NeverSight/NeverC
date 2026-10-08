@@ -389,6 +389,20 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::set_difference` admits two raw pointer ranges of the same
+checked SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer
+range, including const inputs, const referents and built-in scalar referents.
+Inputs must be sorted by current referent value; output must have enough space
+and must not overlap either input. It compares current values and copies the
+remaining first-range bindings, preserving referent objects. Each value keeps
+the first count minus the second count, floored at zero. An empty first range
+leaves output unchanged; an empty second range copies the first range. It returns
+the output end, evaluates all five arguments once and preserves receiver cleanup.
+Selected SDK comparisons, reference forwarding, move adapters, pair output
+selection, scan and internal copy tail are verified. Source replacements, custom
+comparisons, enum or nested-wrapper referents and indirect or casted callees
+remain rejected.
+
 Direct default `std::set_union` admits two raw pointer ranges of the same
 checked SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer
 range, including const inputs, const referents and built-in scalar referents.
