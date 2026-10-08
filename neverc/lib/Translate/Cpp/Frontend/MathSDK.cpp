@@ -23147,7 +23147,8 @@ utilityWrapperComparatorReference(const State &S, const SourceManager &SM,
 static bool utilityWrapperMinElement(const State &S, const SourceManager &SM,
                                      const FunctionDecl *Function,
                                      QualType Pointer,
-                                     const ASTContext &Context) {
+                                     const ASTContext &Context,
+                                     const CallExpr *ListSelection = nullptr) {
   if (!Pointer->isPointerType())
     return false;
   const auto InputElement = Pointer->getPointeeType();
@@ -23197,9 +23198,11 @@ static bool utilityWrapperMinElement(const State &S, const SourceManager &SM,
                    functionalInvokeStrippedExpression(R->getRetValue()))
              : nullptr;
   };
-  if (!Signature(Function, "min_element", {Pointer, Pointer}, {Pointer}))
+  if ((!ListSelection &&
+       !Signature(Function, "min_element", {Pointer, Pointer}, {Pointer})) ||
+      (ListSelection && ListSelection->getDirectCallee() != Function))
     return false;
-  const auto *Outer = ReturnCall(Function, 1);
+  const auto *Outer = ListSelection ? ListSelection : ReturnCall(Function, 1);
   const auto *Delegate = Outer ? Outer->getDirectCallee() : nullptr;
   const auto *Construction =
       Outer && Outer->getNumArgs() == 3
@@ -23240,11 +23243,12 @@ static bool utilityWrapperMinElement(const State &S, const SourceManager &SM,
   for (const auto *D : Ctor->redecls())
     if (!Origin(D, "__algorithm/comp.h"))
       return false;
-  for (unsigned I = 0; I != 2; ++I)
-    if (!utilityAlgorithmReference(Outer->getArg(I),
-                                   Function->getDefinition()->getParamDecl(I),
-                                   Context))
-      return false;
+  if (!ListSelection)
+    for (unsigned I = 0; I != 2; ++I)
+      if (!utilityAlgorithmReference(Outer->getArg(I),
+                                     Function->getDefinition()->getParamDecl(I),
+                                     Context))
+        return false;
   const auto *DD = Delegate->getDefinition();
   const auto *DB = DD ? dyn_cast<CompoundStmt>(DD->getBody()) : nullptr;
   const UtilityWrapperEqualRangeProof RangeProof(S, SM, Context);
@@ -31252,6 +31256,133 @@ static bool utilityWrapperMinmaxValue(const State &S, const SourceManager &SM,
                                    Context) &&
          PairConstruction(Conditional->getTrueExpr(), 1, 0) &&
          PairConstruction(Conditional->getFalseExpr(), 0, 1);
+}
+
+// Verify the pinned list minimum and its selected SDK comparator overload.
+static bool utilityWrapperMinList(const State &S, const SourceManager &SM,
+                                  const FunctionDecl *Function,
+                                  const UtilityInitializerListRecord &List,
+                                  const ASTContext &Context) {
+  const auto Element = List.ElementType;
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  const auto ListType = Context.getRecordType(List.Record);
+  const auto Pointer = Context.getPointerType(Element.withConst());
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef Path) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!Wrapper || Element.hasQualifiers() ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true) ||
+      !utilitySwapSDKFunction(S, SM, Function, "min", "__algorithm/min.h") ||
+      Function->getNumParams() != 1 ||
+      !Same(Function->getParamDecl(0)->getType(), ListType) ||
+      !Same(Function->getReturnType(), Element) || !Arguments ||
+      Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Same(Arguments->get(0).getAsType(), Element))
+    return false;
+  const auto *Definition = Function->getDefinition();
+  const auto *Body =
+      Definition ? dyn_cast<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Copy =
+      Return ? dyn_cast_or_null<CXXConstructExpr>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  const auto *Read =
+      Copy && Copy->getNumArgs() == 1
+          ? dyn_cast_or_null<UnaryOperator>(
+                functionalInvokeStrippedExpression(Copy->getArg(0)))
+          : nullptr;
+  const auto *Selection =
+      Read ? dyn_cast_or_null<CallExpr>(
+                 functionalInvokeStrippedExpression(Read->getSubExpr()))
+           : nullptr;
+  const auto *Delegate = Selection ? Selection->getDirectCallee() : nullptr;
+  if (!Copy || !Copy->isPRValue() || !Same(Copy->getType(), Element) ||
+      approvedFunctionalReferenceConstruction(S, SM, Copy, Context) !=
+          FunctionalReferenceConstruction::CopyOrMove ||
+      !Read || Read->getOpcode() != UO_Deref || !Read->isLValue() ||
+      !Same(Read->getType(), Element.withConst()) || !Selection ||
+      Selection->getNumArgs() != 3 || !Selection->isPRValue() ||
+      !Same(Selection->getType(), Pointer))
+    return false;
+  auto ListEndpoint = [&](const Expr *Expression, bool End) {
+    const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+        functionalInvokeStrippedExpression(Expression));
+    const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+    const auto *D = Method ? Method->getDefinition() : nullptr;
+    const auto *Pattern =
+        Method ? Method->getInstantiatedFromMemberFunction() : nullptr;
+    const auto *Prototype =
+        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *Receiver =
+        Call ? dyn_cast_or_null<DeclRefExpr>(functionalInvokeStrippedExpression(
+                   Call->getImplicitObjectArgument()))
+             : nullptr;
+    const auto *Member =
+        Call ? dyn_cast_or_null<MemberExpr>(
+                   functionalInvokeStrippedExpression(Call->getCallee()))
+             : nullptr;
+    if (!Call || Call->getNumArgs() || !Call->isPRValue() ||
+        !Same(Call->getType(), Pointer) || !Method || !D || !Pattern ||
+        !Method->getIdentifier() ||
+        Method->getName() != (End ? "end" : "begin") || Method->isStatic() ||
+        !Method->isConst() || Method->isVolatile() || Method->isVariadic() ||
+        !Method->isConstexpr() || Method->getNumParams() ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !Prototype ||
+        !Prototype->isNothrow() || !Same(Method->getReturnType(), Pointer) ||
+        Method->getParent()->getCanonicalDecl() !=
+            List.Record->getCanonicalDecl() ||
+        !Receiver || Receiver->getDecl() != Definition->getParamDecl(0) ||
+        !Receiver->isLValue() || !Same(Receiver->getType(), ListType) ||
+        !Member ||
+        Member->getMemberDecl()->getCanonicalDecl() !=
+            Method->getCanonicalDecl() ||
+        !Origin(D, "initializer_list") ||
+        !Origin(Pattern, "initializer_list") ||
+        !Origin(Pattern->getDefinition(), "initializer_list"))
+      return false;
+    for (const auto *R : Method->redecls())
+      if (!Origin(R, "initializer_list"))
+        return false;
+    for (const auto *R : Pattern->redecls())
+      if (!Origin(R, "initializer_list"))
+        return false;
+    const auto *B = dyn_cast<CompoundStmt>(D->getBody());
+    const auto *R =
+        B && B->size() == 1 ? dyn_cast<ReturnStmt>(*B->body_begin()) : nullptr;
+    const auto *Value =
+        R ? functionalInvokeStrippedExpression(R->getRetValue()) : nullptr;
+    auto Field = [&](const Expr *E, const FieldDecl *F) {
+      const auto *M =
+          dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(E));
+      return M &&
+             M->getMemberDecl()->getCanonicalDecl() == F->getCanonicalDecl() &&
+             isa<CXXThisExpr>(
+                 functionalInvokeStrippedExpression(M->getBase())) &&
+             M->isLValue();
+    };
+    if (!End)
+      return Field(Value, List.Begin);
+    const auto *Sum = dyn_cast_or_null<BinaryOperator>(Value);
+    return Sum && Sum->getOpcode() == BO_Add && Same(Sum->getType(), Pointer) &&
+           Field(Sum->getLHS(), List.Begin) && Field(Sum->getRHS(), List.Size);
+  };
+  return ListEndpoint(Selection->getArg(0), false) &&
+         ListEndpoint(Selection->getArg(1), true) &&
+         utilityWrapperMinElement(S, SM, Delegate, Pointer, Context, Selection);
 }
 
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
@@ -45083,6 +45214,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Element.withConst()) &&
         utilityWrapperMaxValue(S, SM, Function, Element, Context))
       return UtilityOperation::AlgorithmMax;
+  }
+  if (Origin->Path == "__algorithm/min.h" && Name == "min" &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (List &&
+        Same(Function->getParamDecl(0)->getType(),
+             Context.getRecordType(List->Record)) &&
+        Same(Function->getReturnType(), List->ElementType) &&
+        Same(Call->getType(), List->ElementType) &&
+        utilityWrapperMinList(S, SM, Function, *List, Context))
+      return UtilityOperation::AlgorithmMin;
   }
   if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
        (Origin->Path == "__algorithm/max.h" && Name == "max")) &&

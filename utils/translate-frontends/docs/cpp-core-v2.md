@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::min` with a nonempty initializer list admits elements
+of the same checked SDK `std::reference_wrapper<T>` with comparable built-in
+scalar referents, including const inputs and referents. It compares current
+referent values and returns a wrapper copy preserving the selected binding;
+equivalent minima select the first element. List operands are evaluated once
+and cleanup is preserved. Selected SDK list minimum, begin/end receiver and
+field access, default comparator construction, `min_element` delegation,
+projection and comparison loop, and implicit wrapper copying are verified.
+Source replacements, custom predicates, enum or nested-wrapper referents,
+and indirect or casted callees remain rejected.
+
 Direct default `std::minmax` admits two const references to objects of the same
 checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
 with comparable built-in scalar referents. It compares their current values

@@ -7720,6 +7720,21 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmMax: {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMin;
       if (auto List = InitializerListFor(Call->getArg(0)->getType())) {
+        const auto Wrapper =
+            Call->getNumArgs() == 1
+                ? approvedFunctionalReferenceRecord(
+                      A.S, A.Sources, List->ElementType->getAsCXXRecordDecl(),
+                      A.Context)
+                : std::nullopt;
+        auto ComparedValue = [&](Expression Value) {
+          return dereference(
+              Expression{{"kind", "member"},
+                         {"type", type(Wrapper->PointerType, L)},
+                         {"name", "nct_reference_wrapper_pointer"},
+                         {"args", json::Array{std::move(Value)}},
+                         {"loc", A.loc(L)}},
+              L);
+        };
         auto Value = snapshot(expression(Call->getArg(0)), L);
         std::optional<Expression> Comparator;
         if (Call->getNumArgs() == 2)
@@ -7753,6 +7768,11 @@ class FunctionLowering {
                    ? emitBinaryPredicate(json::Object(*Comparator),
                                          Call->getArg(1)->getType(),
                                          std::move(Left), std::move(Right), L)
+               : Wrapper
+                   ? CompareUtilityValues("<", ComparedValue(std::move(Left)),
+                                          Wrapper->ReferentType,
+                                          ComparedValue(std::move(Right)),
+                                          Wrapper->ReferentType)
                    : binary("<", std::move(Left), std::move(Right), "bool", L),
                Select, Next, L);
         label(Select, L);
@@ -7766,6 +7786,14 @@ class FunctionLowering {
                L);
         jump(Check, L);
         label(Finish, L);
+        if (Wrapper) {
+          auto Place = Destination ? std::move(*Destination)
+                                   : objectTemporary(List->ElementType, L);
+          Destination.reset();
+          assign(json::Object(Place),
+                 snapshot(dereference(std::move(Candidate), L), L), L);
+          return Place;
+        }
         return snapshot(dereference(std::move(Candidate), L), L);
       }
       auto LeftAddress =
