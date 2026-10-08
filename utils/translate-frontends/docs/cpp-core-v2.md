@@ -389,6 +389,19 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::merge` admits two raw pointer ranges of the same checked
+SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer range,
+including const input wrappers, const referents and built-in scalar referents.
+Both inputs must be sorted by current referent value; output must have enough
+space and must not overlap either input. It compares current values, copies
+wrapper bindings and returns the output end, preserving referent objects.
+Equal values from the first range precede those from the second. An empty input
+copies the other tail. All five arguments are evaluated once and receiver
+cleanup is preserved. Selected SDK less-than comparisons, comparator-reference
+aliases, assignments, the merge scan and both copy tails are verified. Source
+replacements, custom comparisons, enum or nested-wrapper referents and indirect
+or casted callees remain rejected.
+
 Direct default `std::includes` admits two raw pointer ranges of the same checked
 SDK `std::reference_wrapper<T>`, including const input wrappers, const referents
 and built-in scalar referents. Both ranges must already be sorted by referent

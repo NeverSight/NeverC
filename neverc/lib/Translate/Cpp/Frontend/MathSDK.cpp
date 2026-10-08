@@ -24955,6 +24955,223 @@ static bool utilityWrapperIncludes(const State &S, const SourceManager &SM,
   return true;
 }
 
+// Prove the stable selected SDK merge, wrapper assignments and both copy tails
+// before lowering output binding transfers and current-referent comparisons.
+static bool utilityWrapperMerge(const State &S, const SourceManager &SM,
+                                const FunctionDecl *Function, QualType First,
+                                QualType Second, QualType Output,
+                                const ASTContext &Context) {
+  if (!First->isPointerType() || !Second->isPointerType() ||
+      !Output->isPointerType())
+    return false;
+  const auto FirstElement = First->getPointeeType();
+  const auto SecondElement = Second->getPointeeType();
+  const auto Element = FirstElement.getUnqualifiedType();
+  const auto OutputElement = Output->getPointeeType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || OutputElement.hasQualifiers() ||
+      !Context.hasSameUnqualifiedType(FirstElement, OutputElement) ||
+      FirstElement.isVolatileQualified() ||
+      FirstElement.isRestrictQualified() || FirstElement.hasAddressSpace() ||
+      SecondElement.isVolatileQualified() ||
+      SecondElement.isRestrictQualified() || SecondElement.hasAddressSpace() ||
+      !Context.hasSameUnqualifiedType(FirstElement, SecondElement) ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true))
+    return false;
+  constexpr llvm::StringLiteral Path = "__algorithm/merge.h";
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef P) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", P);
+  };
+  auto Signature = [&](const FunctionDecl *F, llvm::StringRef Name,
+                       llvm::ArrayRef<QualType> Parameters,
+                       llvm::ArrayRef<QualType> Arguments) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(S, SM, F, Name, Path) ||
+        !Same(F->getReturnType(), Output) ||
+        F->getNumParams() != Parameters.size() || !A ||
+        A->size() != Arguments.size())
+      return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    return true;
+  };
+  auto ReturnCall = [&](const FunctionDecl *F,
+                        unsigned Count) -> const CallExpr * {
+    const auto *D = F ? F->getDefinition() : nullptr;
+    const auto *B = D ? dyn_cast<CompoundStmt>(D->getBody()) : nullptr;
+    const auto *R = B && B->size() == Count
+                        ? dyn_cast<ReturnStmt>(B->body_back())
+                        : nullptr;
+    return R ? dyn_cast_or_null<CallExpr>(
+                   functionalInvokeStrippedExpression(R->getRetValue()))
+             : nullptr;
+  };
+  if (!Signature(Function, "merge", {First, First, Second, Second, Output},
+                 {First, Second, Output}))
+    return false;
+  const auto *Outer = ReturnCall(Function, 1);
+  const auto *Delegate = Outer ? Outer->getDirectCallee() : nullptr;
+  const auto *Construction =
+      Outer && Outer->getNumArgs() == 6
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Outer->getArg(5)))
+          : nullptr;
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Predicate = Construction ? Construction->getType() : QualType();
+  const auto *Record = Predicate.isNull()
+                           ? nullptr
+                           : dyn_cast<ClassTemplateSpecializationDecl>(
+                                 Predicate->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Outer || !Outer->isPRValue() || !Same(Outer->getType(), Output) ||
+      !utilityAlgorithmSDKReference(S, SM, Outer, Delegate) || !Construction ||
+      Construction->getNumArgs() || !Ctor || !Ctor->isImplicit() ||
+      !Ctor->isDefaultConstructor() || !Ctor->isTrivial() ||
+      Predicate.hasQualifiers() || !Record || !Primary ||
+      Record->getName() != "__less" || !Record->isCompleteDefinition() ||
+      !Record->isTrivial() || !Record->isEmpty() || !Record->field_empty() ||
+      Record->getNumBases() ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Record->getTemplateArgs().size() != 2 ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Signature(Delegate, "merge",
+                 {First, First, Second, Second, Output, Predicate},
+                 {First, Second, Output, Predicate}))
+    return false;
+  for (const auto &A : Record->getTemplateArgs().asArray())
+    if (A.getKind() != TemplateArgument::Type || !A.getAsType()->isVoidType())
+      return false;
+  for (const auto *D : Record->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D, "__algorithm/comp.h") ||
+        !Origin(D->getTemplatedDecl(), "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Ctor->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (unsigned I = 0; I != 5; ++I)
+    if (!utilityAlgorithmReference(Outer->getArg(I),
+                                   Function->getDefinition()->getParamDecl(I),
+                                   Context))
+      return false;
+  const auto *DD = Delegate->getDefinition();
+  const auto *Inner = ReturnCall(Delegate, 1);
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  const auto PredicateRef = Context.getLValueReferenceType(Predicate);
+  if (!Inner || Inner->getNumArgs() != 6 || !Inner->isPRValue() ||
+      !Same(Inner->getType(), Output) ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) ||
+      !utilityWrapperComparatorReference(S, SM, Inner, Predicate, Context) ||
+      !Signature(Helper, "__merge",
+                 {First, First, Second, Second, Output, PredicateRef},
+                 {PredicateRef, First, Second, Output}))
+    return false;
+  for (unsigned I = 0; I != 6; ++I)
+    if (!utilityAlgorithmReference(Inner->getArg(I), DD->getParamDecl(I),
+                                   Context))
+      return false;
+  const auto *HD = Helper->getDefinition();
+  const auto *HB = HD ? dyn_cast<CompoundStmt>(HD->getBody()) : nullptr;
+  const auto *Loop =
+      HB && HB->size() == 2 ? dyn_cast<ForStmt>(*HB->body_begin()) : nullptr;
+  const auto *Tail =
+      HB && HB->size() == 2 ? dyn_cast<ReturnStmt>(HB->body_back()) : nullptr;
+  auto Range = [&](const Expr *E, BinaryOperatorKind Op, unsigned A,
+                   unsigned B) {
+    const auto *C = dyn_cast_or_null<BinaryOperator>(E);
+    return C && C->getOpcode() == Op && C->getType()->isBooleanType() &&
+           utilityAlgorithmReference(C->getLHS(), HD->getParamDecl(A),
+                                     Context) &&
+           utilityAlgorithmReference(C->getRHS(), HD->getParamDecl(B), Context);
+  };
+  auto Increment = [&](const Expr *E, unsigned P, QualType Pointer) {
+    const auto *U = dyn_cast_or_null<UnaryOperator>(E);
+    return U && U->getOpcode() == UO_PreInc && U->isLValue() &&
+           Same(U->getType(), Pointer) &&
+           utilityAlgorithmReference(U->getSubExpr(), HD->getParamDecl(P),
+                                     Context);
+  };
+  auto Copy = [&](const ReturnStmt *R, unsigned A, unsigned B, QualType Input) {
+    const auto *C = R ? dyn_cast<CallExpr>(R->getRetValue()) : nullptr;
+    const auto *F = C ? C->getDirectCallee() : nullptr;
+    return C && C->getNumArgs() == 3 && C->isPRValue() &&
+           Same(C->getType(), Output) &&
+           utilityAlgorithmSDKReference(S, SM, C, F) &&
+           UtilityWrapperTransferProof(S, SM, Context, Input, Output)
+               .prove(F) &&
+           utilityAlgorithmReference(C->getArg(0), HD->getParamDecl(A),
+                                     Context) &&
+           utilityAlgorithmReference(C->getArg(1), HD->getParamDecl(B),
+                                     Context) &&
+           utilityAlgorithmReference(C->getArg(2), HD->getParamDecl(4),
+                                     Context);
+  };
+  const auto *LB = Loop ? dyn_cast<CompoundStmt>(Loop->getBody()) : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() ||
+      !Range(Loop->getCond(), BO_NE, 0, 1) ||
+      !Increment(Loop->getInc(), 4, Output) || !LB || LB->size() != 2 ||
+      !Copy(Tail, 2, 3, Second))
+    return false;
+  auto Statement = LB->body_begin();
+  const auto *Exhausted = dyn_cast<IfStmt>(*Statement++);
+  const auto *Branch = dyn_cast<IfStmt>(*Statement);
+  const auto *End =
+      Exhausted ? dyn_cast<ReturnStmt>(Exhausted->getThen()) : nullptr;
+  const auto *Compare =
+      Branch ? dyn_cast<CXXOperatorCallExpr>(Branch->getCond()) : nullptr;
+  if (!Exhausted || Exhausted->getInit() || Exhausted->getConditionVariable() ||
+      Exhausted->getElse() || Exhausted->isConstexpr() ||
+      !Range(Exhausted->getCond(), BO_EQ, 2, 3) || !Copy(End, 0, 1, First) ||
+      !Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->isConstexpr() || !Branch->getElse() ||
+      !utilityWrapperLessPredicate(S, SM, Compare, Record, *Wrapper, Element,
+                                   Context) ||
+      !utilityAlgorithmReference(Compare->getArg(0), HD->getParamDecl(5),
+                                 Context))
+    return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const unsigned P = I ? 0 : 2;
+    const auto InputElement = I ? FirstElement : SecondElement;
+    const auto *Read = dyn_cast_or_null<UnaryOperator>(
+        functionalInvokeStrippedExpression(Compare->getArg(I + 1)));
+    if (!Read || Read->getOpcode() != UO_Deref || !Read->isLValue() ||
+        !Same(Read->getType(), InputElement) ||
+        !utilityAlgorithmReference(Read->getSubExpr(), HD->getParamDecl(P),
+                                   Context))
+      return false;
+  }
+  const Stmt *Arms[] = {Branch->getThen(), Branch->getElse()};
+  for (unsigned I = 0; I != 2; ++I) {
+    const unsigned P = I ? 0 : 2;
+    const auto Pointer = I ? First : Second;
+    const auto *Body = dyn_cast<CompoundStmt>(Arms[I]);
+    if (!Body || Body->size() != 2)
+      return false;
+    auto It = Body->body_begin();
+    const auto *Assignment = dyn_cast<CXXOperatorCallExpr>(*It++);
+    const auto *Advance = dyn_cast<Expr>(*It);
+    if (!utilityWrapperBindingAssignment(S, SM, Assignment, HD, *Wrapper, 4, P,
+                                         true, Context) ||
+        !Increment(Advance, P, Pointer))
+      return false;
+  }
+  return true;
+}
+
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
 static bool utilityWrapperMismatchMinimum(const State &S,
                                           const SourceManager &SM,
@@ -38441,6 +38658,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Name == "includes"
                  ? UtilityOperation::AlgorithmIncludes
                  : UtilityOperation::AlgorithmLexicographicalCompare;
+  }
+  if (Origin->Path == "__algorithm/merge.h" && Name == "merge" &&
+      Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
+      Call->isPRValue()) {
+    const auto First = Function->getParamDecl(0)->getType();
+    const auto Second = Function->getParamDecl(2)->getType();
+    const auto Output = Function->getParamDecl(4)->getType();
+    if (First->isPointerType() && Second->isPointerType() &&
+        Output->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), First) &&
+        Same(Function->getParamDecl(3)->getType(), Second) &&
+        Same(Function->getReturnType(), Output) &&
+        Same(Call->getType(), Output) &&
+        Same(Call->getArg(0)->getType(), First) &&
+        Same(Call->getArg(1)->getType(), First) &&
+        Same(Call->getArg(2)->getType(), Second) &&
+        Same(Call->getArg(3)->getType(), Second) &&
+        Same(Call->getArg(4)->getType(), Output) &&
+        utilityWrapperMerge(S, SM, Function, First, Second, Output, Context))
+      return UtilityOperation::AlgorithmMerge;
   }
   const bool OrderedOutputAlgorithm =
       (Origin->Path == "__algorithm/merge.h" && Name == "merge") ||

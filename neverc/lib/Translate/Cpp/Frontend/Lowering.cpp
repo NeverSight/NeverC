@@ -7493,6 +7493,13 @@ class FunctionLowering {
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(5)), L);
       }
+      const auto Wrapper =
+          Merge && Call->getNumArgs() == 5
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
       const auto SourceElement = FirstRange.second->getPointeeType();
       const bool RecordElement = SourceElement->isRecordType();
       const auto SourceComparison =
@@ -7503,7 +7510,7 @@ class FunctionLowering {
                     A.S, A.Sources, SourceElement, OO_Less, A.Context)
               : std::nullopt;
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator && !SDKComparators && !SourceComparison) {
+      if (!Comparator && !SDKComparators && !SourceComparison && !Wrapper) {
         auto Common = utilityScalarComparisonType(
             A.Context, SourceElement, SecondRange.second->getPointeeType(),
             true);
@@ -7533,6 +7540,12 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(5)->getType(),
                                      std::move(Left), std::move(Right), L);
+        if (Wrapper)
+          return CompareUtilityValues(
+              "<", dereference(ReferenceMember(std::move(Left), *Wrapper), L),
+              Wrapper->ReferentType,
+              dereference(ReferenceMember(std::move(Right), *Wrapper), L),
+              Wrapper->ReferentType);
         return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
                       cast(std::move(Right), *DefaultComparisonType, L), "bool",
                       L);

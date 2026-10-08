@@ -14597,6 +14597,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/replace.h";
       else if (Name->getName() == "remove")
         ExpectedPath = "__algorithm/remove.h";
+      else if (Name->getName() == "merge")
+        ExpectedPath = "__algorithm/merge.h";
       else if (Name->getName() == "includes")
         ExpectedPath = "__algorithm/includes.h";
       else if (Name->getName() == "lexicographical_compare")
