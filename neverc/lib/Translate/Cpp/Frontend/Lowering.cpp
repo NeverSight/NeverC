@@ -6674,7 +6674,7 @@ class FunctionLowering {
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
       const auto Wrapper =
-          !LastMatch && Call->getNumArgs() == 4
+          Call->getNumArgs() == 4
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),

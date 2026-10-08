@@ -231,6 +231,9 @@ Direct `std::find` accepts raw pointer ranges of the same exact checked `std::re
 
 
 
+
+`std::find_end` supports two raw pointer ranges of the same `std::reference_wrapper<T>`, including const inputs and referents. It compares current built-in referent values and returns the last matching subsequence, or the end for an empty pattern or absent match. Aliases, overlapping ranges, bindings, referents, argument evaluation and cleanup are preserved. Selected SDK iterator traits, equality and identity dispatch, category conversion, matching loops and pair construction are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.
+
 `std::search` supports two raw pointer ranges of the same `std::reference_wrapper<T>`, including const inputs and referents. It compares current built-in referent values and returns the first matching subsequence, the start for an empty pattern, or the end if absent. Aliases, overlapping ranges, bindings, referents, argument evaluation and cleanup are preserved. Selected SDK iterator traits, equality and identity dispatch, length checks, matching loops and pair construction are verified. Custom predicates, enum or nested referents and replaced SDK declarations remain rejected.
 
 `std::equal_range` supports raw pointer ranges and a query of the same `std::reference_wrapper<T>`, including const inputs, queries and referents. It compares current built-in referent values and returns the pair delimiting equivalent elements; empty or absent matches produce equal iterators. Values below the query must come first, followed by equivalent and greater values. Bindings, referents, argument evaluation and cleanup are preserved. Selected SDK search helpers, traits, projection and pair construction are verified. Custom comparisons, enum or nested referents and replaced SDK declarations remain rejected.

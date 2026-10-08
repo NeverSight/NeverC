@@ -389,6 +389,18 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::find_end` admits two raw pointer ranges of the same
+checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
+and built-in scalar referents. It compares current referent values and returns
+the last matching subsequence, or the range end for an empty pattern or absent
+match. Alias and overlapping ranges preserve bindings and referent objects.
+All four arguments are evaluated once and receiver cleanup is preserved.
+Selected SDK default and classic delegation, iterator category aliases,
+pointer iterator traits, tag inheritance and conversion, equality and identity
+dispatch, matching loops, end iterator selection, pair fields and pair
+construction are verified. Source replacements, custom predicates, enum or
+nested-wrapper referents, and indirect or casted callees remain rejected.
+
 Direct default `std::search` admits two raw pointer ranges of the same
 checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
 and built-in scalar referents. It compares current referent values and returns
