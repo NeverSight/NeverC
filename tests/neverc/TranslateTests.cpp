@@ -206822,3 +206822,912 @@ using F=P(*)(P,P,P,P,P);F selected(){using std::merge;return &merge<P,P,P>;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+template<class T>using Alias=std::reference_wrapper<T>;using R=Alias<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};return std::set_union(a,a+1,b,b+1,o)!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-set-union-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x,x},b[]={y},o[]={z,z,z};auto r=std::set_union(a,a+2,b,b+1,o);return r!=o+3||&o[0].get()!=&x||&o[1].get()!=&x||&o[2].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeBool) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,y=true,z=false;R a[]={x},b[]={y},o[]={z,z};auto r=std::set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeBothEmpty) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-both-empty.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-both-empty.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::set_union(a,a,a,a,o);return r!=o||&o[0].get()!=&y||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-both-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-set-union-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-union-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=9;const R a[]={x},b[]={y};R o[]={z,z};auto r=std::set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-union-runtime-const-input-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;const R a[]={x},b[]={y};R o[]={z,z};auto r=std::set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-set-union-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-set-union-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*const>;
+int main(){int storage[3]={};int*const p=storage,*const q=storage+1,*const r=storage+2;R a[]={p},b[]={q},o[]={r,r};auto end=std::set_union(a,a+1,b,b+1,o);return end!=o+2||&o[0].get()!=&p||&o[1].get()!=&q||r!=storage+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-set-union-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<double>;
+int main(){double x=-1.5,y=2.5,z=9.5;R a[]={x},b[]={y},o[]={z,z};auto r=std::set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9.5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeEmptyFirst) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-empty-first.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-empty-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::set_union(a,a,a,a+1,o);return r!=o+1||&o[0].get()!=&x||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-empty-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeEmptySecond) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-empty-second.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-empty-second.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::set_union(a,a+1,a,a,o);return r!=o+1||&o[0].get()!=&x||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-empty-second" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};x=3;auto r=std::set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&y||&o[1].get()!=&x||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeNegativeValues) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-negative-values.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=-5,y=-2,z=9;R a[]={x},b[]={y},o[]={z,z};return std::set_union(a,a+1,b,b+1,o)!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=9;R a[]={x},o[]={y};auto r=std::set_union(a,a+1,a,a,o);return r!=o+1||&o[0].get()!=&x||y!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int calls=0,dtors=0;struct Access{R*p;R*get(){++calls;return p;}~Access(){++dtors;}};int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::set_union(Access{a}.get(),Access{a+1}.get(),Access{b}.get(),Access{b+1}.get(),Access{o}.get());return r!=o+2||calls!=5||dtors!=5||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int calls=0;int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};R*arg(R*p){++calls;return p;}int main(){auto r=std::set_union(arg(a),arg(a+1),arg(b),arg(b+1),arg(o));return r!=o+2||calls!=5||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={9,1,3,9,8,2,4,8,7};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5],v[6],v[7]},o[]={v[8],v[8],v[8],v[8],v[8],v[8]};auto r=std::set_union(a+1,a+3,b+1,b+3,o+1);return r!=o+5||&o[0].get()!=&v[8]||&o[1].get()!=&v[1]||&o[2].get()!=&v[5]||&o[3].get()!=&v[2]||&o[4].get()!=&v[6]||&o[5].get()!=&v[8]||v[8]!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimePointer) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*>;int main(){int storage[3]={};int*p=storage,*q=storage+1,*r=storage+2;R a[]={p},b[]={q},o[]={r,r};auto end=std::set_union(a,a+1,b,b+1,o);return end!=o+2||&o[0].get()!=&p||&o[1].get()!=&q||r!=storage+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct V{int n;};bool operator<(const V&a,const V&b){return a.n<b.n;}int main(){V a[]={{1},{3}},b[]={{2},{4}},o[4]={};auto r=std::set_union(a,a+2,b,b+2,o);return r!=o+4||o[0].n!=1||o[1].n!=2||o[2].n!=3||o[3].n!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};auto r=std::set_union(a,a+1,b,b+1,o);(r-1)->get()=7;return r!=o+2||y!=7||x!=1||z!=9||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={1,3},b[]={2,4},o[4]={};auto r=std::set_union(a,a+2,b,b+2,o);return r!=o+4||o[0]!=1||o[1]!=2||o[2]!=3||o[3]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeSetUnion) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-set-union.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-set-union.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,3,2,4,9};R a[]={v[0],v[1]},b[]={v[2],v[3]},o[]={v[4],v[4],v[4],v[4]};auto r=std::set_union(a,a+2,b,b+2,o);return r!=o+4||&o[0].get()!=&v[0]||&o[1].get()!=&v[2]||&o[2].get()!=&v[1]||&o[3].get()!=&v[3]||v[4]!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-set-union" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeSmallInteger) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<short>;
+int main(){short x=-2,y=7,z=9;R a[]={x},b[]={y},o[]={z,z};return std::set_union(a,a+1,b,b+1,o)!=o+2||&o[0].get()!=&x||&o[1].get()!=&y||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeStableTies) {
+  const auto Source = tmpFile("wrapper-set-union-runtime-stable-ties.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-stable-ties.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=1,z=9;R a[]={x,x},b[]={y,y,y},o[]={z,z,z,z,z};auto r=std::set_union(a,a+2,b,b+3,o);return r!=o+3||&o[0].get()!=&x||&o[1].get()!=&x||&o[2].get()!=&y||&o[3].get()!=&z||z!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-stable-ties" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSetUnionRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-set-union-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-set-union-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=9;R a[]={x},b[]={y},o[]={z,z};using std::set_union;auto r=set_union(a,a+1,b,b+1,o);return r!=o+2||&o[0].get()!=&x||&o[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-set-union-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperSetUnionRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);auto selected(P a,P b){return static_cast<F>(&std::set_union<P,P,P>)(a,b,a,b,a);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);auto selected(P a,P b){F f=&std::set_union<P,P,P>;return f(a,b,a,b,a);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::set_union(&source(a),&a+1,&b,&b+1,&a);}
+)cpp"},
+      {"source-internal-copy-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class S,class O>_LIBCPP_CONSTEXPR_SINCE_CXX17 pair<I,O> __copy(I,S,O);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-internal-copy-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __copy<P,P,P>(P,P,P);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-internal-copy-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __copy<P,P,P>(P a,P b,P o){return {a,o};}}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::set_union(a,b,a,b,a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::set_union(a,b,a,b,a);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::set_union(a,b,a,b,a);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::set_union(a,b,a,b,a);}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&)noexcept;}}
+auto selected(P a,P b,P o){return std::set_union(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b,P o){return std::set_union(a,a+1,b,b+1,o);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::set_union(&source(a),&a+1,&b,&b+1,&a);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::set_union(&source(a),&a+1,&b,&b+1,&a);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-result-constructor-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_union_result<P,P,P>::__set_union_result(P&&,P&&,P&&);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-result-record-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class B,class C>struct __set_union_result;}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C,class I1,class S1,class I2,class S2,class O>__set_union_result<I1,I2,O> __set_union(I1,S1,I2,S2,O,C&&);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>__set_union_result<P,P,P> __set_union<__less<void,void>&,P,P,P,P,P>(P,P,P,P,P,__less<void,void>&);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O,class C>O set_union(I,I,J,J,O,C);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P merge<P,P,P,__less<void,void>>(P,P,P,P,P,__less<void,void>);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P merge<P,P,P,__less<void,void>>(P,P,P,P,P,__less<void,void>){return nullptr;}}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class O>O set_union(I,I,J,J,O);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P merge<P,P,P>(P,P,P,P,P);}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-set-union-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P merge<P,P,P>(P,P,P,P,P){return nullptr;}}}
+auto selected(P a,P b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::set_union(a,a+1,b,b+1,a);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,P,P,P);F selected(){using std::set_union;return &set_union<P,P,P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-set-union-runtime-guard-") + Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-set-union-runtime-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
