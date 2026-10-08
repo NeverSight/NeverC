@@ -7881,6 +7881,21 @@ class FunctionLowering {
             Comparator = snapshot(expression(Call->getArg(3)), L);
         }
       }
+      const auto Wrapper =
+          Call->getNumArgs() == 3
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::nullopt;
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        return dereference(Expression{{"kind", "member"},
+                                      {"type", type(Wrapper->PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Value)}},
+                                      {"loc", A.loc(L)}},
+                           L);
+      };
       auto Result = temporary(*ValueAddress.getString("type"), L);
       const auto CheckHigh = labelName(), SelectValue = labelName();
       const auto SelectLow = labelName(), SelectHigh = labelName();
@@ -7899,8 +7914,13 @@ class FunctionLowering {
                                     Call->getArg(3)->getType(),
                                     dereference(json::Object(ValueAddress), L),
                                     dereference(json::Object(LowAddress), L), L)
-              : AlgorithmReferenceLess(json::Object(ValueAddress),
-                                       json::Object(LowAddress)),
+          : Wrapper ? CompareUtilityValues(
+                          "<", ComparedValue(json::Object(ValueAddress)),
+                          Wrapper->ReferentType,
+                          ComparedValue(json::Object(LowAddress)),
+                          Wrapper->ReferentType)
+                    : AlgorithmReferenceLess(json::Object(ValueAddress),
+                                             json::Object(LowAddress)),
           SelectLow, CheckHigh, L);
       label(CheckHigh, L);
       branch(SDKComparator ? functionalOperationValues(
@@ -7917,8 +7937,13 @@ class FunctionLowering {
                        json::Object(*Comparator), Call->getArg(3)->getType(),
                        dereference(json::Object(HighAddress), L),
                        dereference(json::Object(ValueAddress), L), L)
-                 : AlgorithmReferenceLess(json::Object(HighAddress),
-                                          json::Object(ValueAddress)),
+             : Wrapper ? CompareUtilityValues(
+                             "<", ComparedValue(json::Object(HighAddress)),
+                             Wrapper->ReferentType,
+                             ComparedValue(json::Object(ValueAddress)),
+                             Wrapper->ReferentType)
+                       : AlgorithmReferenceLess(json::Object(HighAddress),
+                                                json::Object(ValueAddress)),
              SelectHigh, SelectValue, L);
       label(SelectValue, L);
       assign(Result, ValueAddress, L);

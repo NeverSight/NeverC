@@ -220455,3 +220455,825 @@ F selected(){using std::max;return &max<W>;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeAbove) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-above.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-above.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-above" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,l=1,h=3;R v=x,lo=l,hi=h;using B=R;const B&r=std::clamp(v,lo,hi);return &r!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeAliasedReferents) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2;R v=x,lo=x,hi=x;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeBelow) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-below.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-below.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=0,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&lo;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-below" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeBool) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,l=false,h=true;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeClamp) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-clamp.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-clamp.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-clamp" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeConstBounds) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-const-bounds.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-const-bounds.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,l=1,h=3;R v=x;const R lo=l,hi=h;return &std::clamp(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-const-bounds" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-clamp-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-clamp-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=2,l=1,h=3;const R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-clamp-runtime-const-input-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=0,l=1,h=3;const R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&lo;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=4,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeConstValue) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-const-value.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-const-value.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=0,l=1,h=3;const R v=x;R lo=l,hi=h;return &std::clamp(v,lo,hi)!=&lo;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-const-value" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=4.5,l=1.5,h=3.5;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeEqualBounds) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-equal-bounds.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-equal-bounds.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,l=2,h=2;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-equal-bounds" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,l=1,h=3;R v=x,lo=l,hi=h;x=5;h=4;const R&r=std::clamp(v,lo,hi);return &r!=&hi||r.get()!=4||&v.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeLowerEqual) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-lower-equal.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-lower-equal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-lower-equal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeNan) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,l=1.0,h=3.0;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapper-clamp-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R&get(){return *p;}~A(){++n;}};
+int main(){int x=0,l=1,h=3;R v=x,lo=l,hi=h;const R&r=std::clamp(A{&v}.get(),A{&lo}.get(),A{&hi}.get());return n!=3||&r!=&lo;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R&get(R&r){++n;return r;}
+int main(){int x=0,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(get(v),get(lo),get(hi))!=&lo||n!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeOriginalBinding) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-original-binding.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-original-binding.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=0,l=1,h=3;R v=x,lo=l,hi=h;const R&r=std::clamp(v,lo,hi);l=9;return &r!=&lo||r.get()!=9||&r.get()!=&l||&v.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-original-binding" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}int main(){R v{0},lo{1},hi{3};return &std::clamp(v,lo,hi)!=&lo;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+const R&choose(const R&a,const R&b,const R&c){return std::clamp(a,b,c);}
+int main(){int x=4,l=1,h=3;R v=x,lo=l,hi=h;return &choose(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int v=4,lo=1,hi=3;return &std::clamp(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeSignedZero) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-signed-zero.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0,l=0.0,h=0.0;R v=x,lo=l,hi=h;const R&r=std::clamp(v,lo,hi);return &r!=&v||!(1.0/r.get()<0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeUpperEqual) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-upper-equal.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-upper-equal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,l=1,h=3;R v=x,lo=l,hi=h;return &std::clamp(v,lo,hi)!=&v;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-upper-equal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperClampRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-clamp-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-clamp-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,l=1,h=3;R v=x,lo=l,hi=h;using std::clamp;return &clamp(v,lo,hi)!=&hi;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-clamp-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperClampRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+using F=const W&(*)(const W&,const W&,const W&);
+const W&selected(const W&a,const W&b,const W&c){return static_cast<F>(&std::clamp<W>)(a,b,c);}
+)cpp"},
+      {"custom-predicate", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+struct B{bool operator()(const W&a,const W&b)const{return a.get()<b.get();}};
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c,B{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+enum E{A,B};using W=std::reference_wrapper<E>;
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+using F=const W&(*)(const W&,const W&,const W&);
+const W&selected(const W&a,const W&b,const W&c){F f=&std::clamp<W>;return f(a,b,c);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <algorithm>
+#include <functional>
+using R=std::reference_wrapper<int>;using W=std::reference_wrapper<R>;namespace std{inline namespace __1{inline bool operator<(const R&a,const R&b){return a.get()<b.get();}}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <algorithm>
+#include <functional>
+template<int N>using A=std::reference_wrapper<int>;using W=A<sizeof(long double)>;
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-assertion-body", R"cpp(
+inline int source_assert(){return 0;}
+#include <__assert>
+#undef _LIBCPP_ASSERT_ARGUMENT_WITHIN_DOMAIN
+#define _LIBCPP_ASSERT_ARGUMENT_WITHIN_DOMAIN(expr,msg) ((void)source_assert())
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-assertion-value", R"cpp(
+#include <__assert>
+#undef _LIBCPP_ASSERT_ARGUMENT_WITHIN_DOMAIN
+#define _LIBCPP_ASSERT_ARGUMENT_WITHIN_DOMAIN(expr,msg) ((void)1)
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-assertion-zero", R"cpp(
+#include <__assert>
+#undef _LIBCPP_ASSERT_ARGUMENT_WITHIN_DOMAIN
+#define _LIBCPP_ASSERT_ARGUMENT_WITHIN_DOMAIN(expr,msg) ((void)0)
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-clamp-delegate-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T,class B>constexpr const T&clamp(const T&,const T&,const T&,B);}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-clamp-delegate-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr const W&clamp<W,__less<void,void>>(const W&a,const W&,const W&,__less<void,void>);}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-clamp-delegate-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr const W&clamp<W,__less<void,void>>(const W&a,const W&,const W&,__less<void,void>){return a;}}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-clamp-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>constexpr const T&clamp(const T&,const T&,const T&);}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-clamp-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr const W&clamp<W>(const W&a,const W&,const W&);}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-clamp-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr const W&clamp<W>(const W&a,const W&,const W&){return a;}}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+const W&source(const W&w)noexcept(sizeof(long double)>0){return w;}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(source(a),b,c);}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&w)noexcept{return w;}}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-less-operator-specialization-body", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return false;}}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-less-operator-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>constexpr bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-less-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class A,class B>struct __less;}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-less-record-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+const W&source(const W&w){long double unsupported=1;return w;}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(source(a),b,c);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+const W&source(const W&w,int n=sizeof(long double)){return w;}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(source(a),b,c);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-record-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{int n;operator int()const;};bool operator<(const R&a,const R&b){return int(a)<int(b);}using W=std::reference_wrapper<R>;const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <algorithm>
+#include <functional>
+struct R{int n;operator int()const{return n;}};bool operator<(const R&a,const R&b){return int(a)<int(b);}using W=std::reference_wrapper<R>;
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+const W&selected(const W&a,const W&b,const W&c){return std::clamp(a,b,c);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <algorithm>
+#include <functional>
+using W=std::reference_wrapper<int>;
+using F=const W&(*)(const W&,const W&,const W&);
+F selected(){using std::clamp;return &clamp<W>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-clamp-runtime-guard-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-clamp-runtime-guard-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
