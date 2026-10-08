@@ -5989,7 +5989,7 @@ class FunctionLowering {
           Comparator = snapshot(expression(Call->getArg(3)), L);
       }
       const auto Wrapper =
-          !Search && Call->getNumArgs() == 3
+          Call->getNumArgs() == 3
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),

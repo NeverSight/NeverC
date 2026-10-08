@@ -212926,3 +212926,1116 @@ using F=P(*)(P,P,const W&);F selected(){using std::upper_bound;return &upper_bou
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using Value=int;using R=std::reference_wrapper<Value>;int main(){int x=1,y=2,q=2;R a[]={x,y},v(q);return !std::binary_search(a,a+2,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a[]={x,x,y};return !std::binary_search(a,a+3,a[0])||!std::binary_search(a,a+3,a[2]);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-binary-search-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeBinarySearch) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-binary-search.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-binary-search.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,2,4},q=2;R a[]={v[0],v[1],v[2],v[3]},value(q);return !std::binary_search(a,a+4,value)||q!=2||v[3]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-binary-search" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeBool) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<bool>;int main(){bool x=false,y=true,q=true;R a[]={x,y},value(q);return !std::binary_search(a,a+2,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperBinarySearchRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;int main(){const int x=1,y=2,q=2;const R a[]={x,y},v(q);return !std::binary_search(a,a+2,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;const R a[]={x,y};const R value(q);return !std::binary_search(a,a+2,value)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*const>;int main(){int v[5]={};int*const x=v;int*const y=v+2;int*const q=v+2;R a[]={x,y},value(q);return !std::binary_search(a,a+2,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-binary-search-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeConstQuery) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-const-query.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-const-query.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y};const R v(q);return !std::binary_search(a,a+2,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-const-query" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;int main(){const int x=1,y=2,q=2;R a[]={x,y},value(q);return !std::binary_search(a,a+2,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<double>;int main(){double x=-1.5,y=0.5,z=2.5,q=0.5;R a[]={x,y,z},v(q);return !std::binary_search(a,a+3,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,q=1;R a[]={x},value(q);return std::binary_search(a,a,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=5,z=9,q=3;R a[]={x,y,z},value(q);y=3;z=7;return !std::binary_search(a,a+3,value)||q!=3||z!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeMissing) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-missing.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-missing.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=4,q=2;R a[]={x,y},value(q);return std::binary_search(a,a+2,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-missing" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=-1,z=2,q=-1;R a[]={x,y,z},v(q);return !std::binary_search(a,a+3,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,q=2;R a[]={x},v(q);return !std::binary_search(a,a+1,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+struct Range{R*p;int*n;~Range(){++*n;}R*get(){return p;}};int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},v(q);auto r=std::binary_search(Range{a,&n}.get(),Range{a+2,&n}.get(),v);return !r||n!=2||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+R* pick(R*p,int&n){++n;return p;}const R& value(const R&v,int&n){++n;return v;}int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},v(q);auto r=std::binary_search(pick(a,n),pick(a+2,n),value(v,n));return !r||n!=3||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=0,y=2,z=4,t=6,q=2;R a[]={x,y,z,t},v(q);return !std::binary_search(a+1,a+3,v)||x!=0||t!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimePastEnd) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-past-end.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-past-end.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=9;R a[]={x,y},v(q);return std::binary_search(a,a+2,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-past-end" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimePointer) {
+  const auto Source = tmpFile("wrapper-binary-search-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*>;int main(){int v[5]={};int*x=v,*y=v+2,*z=v+4,*q=v+1;R a[]={x,y,z},value(q);if(std::binary_search(a,a+3,value))return 1;q=v+2;return !std::binary_search(a,a+3,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+struct V{int x;};bool operator<(const V&a,const V&b){return a.x<b.x;}int main(){V a[]={{1},{2},{4}},q={2};return !std::binary_search(a,a+3,q);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-returned-result.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y},v(q);auto r=std::binary_search(a,a+2,v);y=7;return !r||std::binary_search(a,a+2,v)||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={1,2,2,4},q=2;return !std::binary_search(a,a+4,q);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeSmallInteger) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-binary-search-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<short>;int main(){short x=-1,y=2,q=2;R a[]={x,y},v(q);return !std::binary_search(a,a+2,v);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-binary-search-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperBinarySearchRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-binary-search-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-binary-search-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y},value(q);using std::binary_search;return !binary_search(a,a+2,value);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-binary-search-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperBinarySearchRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P,const W&);auto selected(P a,P b){return static_cast<F>(&std::binary_search<P,W>)(a,b,*a);}
+)cpp"},
+      {"custom-comparator", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Less{bool operator()(const W&a,const W&b)const{return a.get()<b.get();}};auto selected(P a,P b){return std::binary_search(a,b,*a,Less{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P,const W&);auto selected(P a,P b){F f=&std::binary_search<P,W>;return f(a,b,*a);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-binary-search-delegate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class C>bool binary_search(I,I,const T&,C);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-delegate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool binary_search<P,W,__less<void,void>>(P a,P,const W&,__less<void,void>);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-delegate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool binary_search<P,W,__less<void,void>>(P a,P,const W&,__less<void,void>){return a;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-lower-delegate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class C>I lower_bound(I,I,const T&,C);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-lower-delegate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P lower_bound<P,W,__less<void,void>&>(P a,P,const W&,__less<void,void>&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-lower-delegate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P lower_bound<P,W,__less<void,void>&>(P a,P,const W&,__less<void,void>&){return a;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T>bool binary_search(I,I,const T&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool binary_search<P,W>(P a,P,const W&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-binary-search-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool binary_search<P,W>(P a,P,const W&){return a;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-callable-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A,class> true_type __is_callable_helper(int);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-callable-record-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A>struct __is_callable;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-callable-record-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __is_callable<__less<void,void>&,W&,const W&>:true_type{};}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::binary_search(&source(a),&a+1,b);}
+)cpp"},
+      {"source-forward-wrapper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& forward<W&>(W& value)noexcept;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-forward-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& forward<W&>(W& value)noexcept{return value;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-half-positive-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-half-positive-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long){return 0;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-identity-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& __identity::operator()<W&>(W& value)const noexcept;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-identity-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& __identity::operator()<W&>(W& value)const noexcept{return value;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-identity-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-integral-constant-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,T Value>struct integral_constant;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class T,class J,class C>I __lower_bound_bisecting(I,const T&,typename iterator_traits<I>::difference_type,C&,J&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,__identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,__identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S,class T,class J,class C>I __lower_bound(I,S,const T&,C&,J&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound<_ClassicAlgPolicy,P,P,W,__identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound<_ClassicAlgPolicy,P,P,W,__identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&)noexcept;}}
+auto selected(P a,P b,P o){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b,P o){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::binary_search(&source(a),&a+1,b);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::binary_search(&source(a),&a+1,b);}int main(){return 0;}
+)cpp"},
+      {"source-policy-advance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::advance<P,long>(P&,long);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-policy-advance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::advance<P,long>(P&,long){}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-policy-distance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b);}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-policy-distance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b){return b-a;}}}
+auto selected(P a,P b){return std::binary_search(a,b,*a);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::binary_search(a,a+1,*b);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P,const W&);F selected(){using std::binary_search;return &binary_search<P,W>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-binary-search-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-binary-search-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

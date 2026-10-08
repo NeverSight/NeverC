@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::binary_search` admits a raw pointer range and a query of
+the same checked SDK `std::reference_wrapper<T>`, including const inputs,
+queries and referents, and built-in scalar referents. The range must be sorted
+by current referent values. It returns whether an equivalent value is present;
+empty ranges return false. Comparisons read current values and preserve
+bindings and referent objects. All three arguments are evaluated once and
+receiver cleanup is preserved. Selected SDK delegation, comparator-reference
+aliases, callable traits, identity projection, pointer distance, half-length
+and bisection are verified. Source replacements, custom comparisons, enum or
+nested-wrapper referents, and indirect or casted callees remain rejected.
+
 Direct default `std::upper_bound` admits a raw pointer range and a query of the
 same checked SDK `std::reference_wrapper<T>`, including const inputs, queries
 and referents, and built-in scalar referents. The range must be partitioned so
