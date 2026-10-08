@@ -5073,7 +5073,16 @@ class FunctionLowering {
       const auto FirstType = type(FirstRange.second, L);
       const auto OutputType = type(OutputRange.second, L);
       const auto ValueQualType = Call->getArg(3)->getType();
-      const auto ElementQualType = FirstRange.second->getPointeeType();
+      const auto Wrapper =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      const auto ElementQualType =
+          Wrapper ? Wrapper->ReferentType.getUnqualifiedType()
+                  : FirstRange.second->getPointeeType();
       const auto ValueType = type(ValueQualType, L);
       const auto ElementType = type(ElementQualType, L);
       auto Common = utilityScalarComparisonType(A.Context, ValueQualType,
@@ -5092,7 +5101,16 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L), Store, End, L);
       label(Store, L);
-      assign(InputValue, dereference(First, L), L);
+      auto InputElement = dereference(First, L);
+      if (Wrapper)
+        InputElement = dereference(
+            Expression{{"kind", "member"},
+                       {"type", type(Wrapper->PointerType, L)},
+                       {"name", "nct_reference_wrapper_pointer"},
+                       {"args", json::Array{std::move(InputElement)}},
+                       {"loc", A.loc(L)}},
+            L);
+      assign(InputValue, std::move(InputElement), L);
       if (OperationObject) {
         assign(Next,
                cast(emitBinaryCallable(*OperationObject, json::Object(Value),

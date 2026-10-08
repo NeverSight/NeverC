@@ -228837,3 +228837,939 @@ auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<vola
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-alias");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeAliasedOutput) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-aliased-output");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={3,1,2};R a[]={v[0],v[1],v[2]};auto p=std::exclusive_scan(a,a+3,v,0);return p!=v+3||v[0]!=0||v[1]!=3||v[2]!=4||&a[0].get()!=v||&a[1].get()!=v+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-exclusive-scan-runtime-aliased-referents");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=6||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&x||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeBool) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-bool");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};int out[]={9,9,9};auto p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=1||out[2]!=1||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-const-input");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-const-referents");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-double");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};double out[]={9,9,9};auto p=std::exclusive_scan(a,a+3,out,0.0);return p!=out+3||out[0]!=0||out[1]!=3.5||out[2]!=5||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-empty");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a,out,7);return p!=out||out[0]!=9||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeExclusiveScan) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-exclusive-scan");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-live-referents");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};x=8;y=-1;int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=8||out[2]!=7||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeNan) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-nan");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double out[]={9,9,9};auto p=std::exclusive_scan(a,a+3,out,0.0);return p!=out+3||out[0]!=0||out[1]==out[1]||out[2]==out[2]||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeNarrowAccumulator) {
+  const auto Source =
+      tmpFile("wrapper-exclusive-scan-runtime-narrow-accumulator");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,short(0));return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeNegativeValues) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-negative-values");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=-3||out[2]!=-2||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeNonzeroInitial) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-nonzero-initial");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,4);return p!=out+3||out[0]!=4||out[1]!=7||out[2]!=8||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-operand-cleanup");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct B{int*p;int*get(){return p;}~B(){++n;}};struct I{int get(){return 0;}~I(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(A{a}.get(),A{a+3}.get(),B{out}.get(),I{}.get());return n!=4||p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-operand-effects");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int*output(int*p){++n;return p;}int init(){++n;return 0;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(read(a),read(a+3),output(out),init());return n!=4||p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-record-control");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int add(int a,int b){return a+b;}int main(){int a[]={3,1,2},out[]={9,9,9};return std::exclusive_scan(a,a+3,out,0,add)!=out+3||out[0]!=0||out[1]!=3||out[2]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-returned-result");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int*select(R*a,R*last,int*out,int i){return std::exclusive_scan(a,last,out,i);}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=select(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-scalar-control");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2},out[]={9,9,9};return std::exclusive_scan(a,a+3,out,0)!=out+3||out[0]!=0||out[1]!=3||out[2]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeShort) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-short");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeSignedZero) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-signed-zero");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0;R a[]={x};double out[]={9};auto p=std::exclusive_scan(a,a+1,out,-0.0);return p!=out+1||!(1.0/out[0]<0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-single");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+1,out,0);return p!=out+1||out[0]!=0||out[1]!=9||out[2]!=9||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeStoredResult) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-stored-result");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};auto p=std::exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeUnsigned) {
+  const auto Source = tmpFile("wrapper-exclusive-scan-runtime-unsigned");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=std::exclusive_scan(a,a+3,out,0u);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperExclusiveScanRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-exclusive-scan-runtime-using-declaration");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::exclusive_scan;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int out[]={9,9,9,9};int*p=exclusive_scan(a,a+3,out,0);return p!=out+3||out[0]!=0||out[1]!=3||out[2]!=4||out[3]!=9||&a[0].get()!=&x||&a[1].get()!=&y||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperExclusiveScanRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,false);}
+)cpp"},
+      {"bool-output", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+auto selected(P a,P b,bool*c){return std::exclusive_scan(a,b,c,0);}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,int);auto selected(P a,P b){return static_cast<F>(&std::exclusive_scan<P,int*,int>)(a,b,out,0);}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,const W&b){return a+b.get();}auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,add);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,const W&b)const{return a+b.get();}};auto selected(P a,P b){return std::exclusive_scan(a,b,out,0,Add{});}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator+(E a,const W&b){return E(int(a)+b.get());}auto selected(P a,P b){return std::exclusive_scan(a,b,out,Zero);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,__int128(0));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,int);auto selected(P a,P b){F f=&std::exclusive_scan<P,int*,int>;return f(a,b,out,0);}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0.0L);}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::exclusive_scan(a,b,out,0.0L);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator+(int a,const W&b){return a+b.get().get();}}}
+auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"source-addition", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator+(int a,const W&b){return a+b.get();}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"source-delegate-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class I,class O,class T,class B>O exclusive_scan(I,I,O,T,B);}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-delegate-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>int*exclusive_scan<P,int*,int,plus<void>>(P,P,int*,int,plus<void>);}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-delegate-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>int*exclusive_scan<P,int*,int,plus<void>>(P a,P,int*p,int n,plus<void>){*p=n+a->get();return p+1;}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::exclusive_scan(&source(a),&a+1,out,0);}
+)cpp"},
+      {"source-forward-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-forward-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr int&forward<int&>(int&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-forward-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class T>constexpr T&&forward(__libcpp_remove_reference_t<T>&)noexcept;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-forward-wrapper-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-forward-wrapper", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&t)noexcept{return t;}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-move-accumulator-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr int&&move<int&>(int&t)noexcept;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-move-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr int&&move<int&>(int&t)noexcept{return static_cast<int&&>(t);}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-move-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class T>constexpr __libcpp_remove_reference_t<T>&&move(T&&)noexcept;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::exclusive_scan(&source(a),&a+1,out,0);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::exclusive_scan(&source(a),&a+1,out,0);}int main(){return 0;}
+)cpp"},
+      {"source-plus-operation-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)+std::forward<W&>(b)))->decltype(std::forward<int&>(a)+std::forward<W&>(b));}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-plus-operation", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>constexpr auto plus<void>::operator()<int&,W&>(int&a,W&b)const noexcept(noexcept(std::forward<int&>(a)+std::forward<W&>(b)))->decltype(std::forward<int&>(a)+std::forward<W&>(b)){return a+b.get();}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-plus-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<class T>struct plus;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-plus-void-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int out[3];
+namespace std{inline namespace __1{template<>struct plus<void>;}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class O,class T>O exclusive_scan(I,I,O,T);}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int*exclusive_scan<P,int*,int>(P,P,int*,int);}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int*exclusive_scan<P,int*,int>(P a,P,int*p,int n){*p=n+a->get();return p+1;}}}
+auto selected(P a,P b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+struct R{long double n;};int operator+(int a,const R&b){return a+int(b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::exclusive_scan(a,a+1,out,0);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+int out[3];
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int*(*)(P,P,int*,int);F selected(){using std::exclusive_scan;return &exclusive_scan<P,int*,int>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+int out[3];
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::exclusive_scan(a,b,out,0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-exclusive-scan-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-exclusive-scan-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

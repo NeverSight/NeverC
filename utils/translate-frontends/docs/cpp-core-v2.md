@@ -389,6 +389,20 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::exclusive_scan` admits a raw-pointer input range of
+checked SDK `std::reference_wrapper<T>` with built-in scalar referents,
+including const inputs and referents, a writable arithmetic output range and
+supported non-boolean integer (up to 64 bits), float or double accumulators
+and outputs. Each current input referent is read before the old accumulator
+value is stored, applying the usual arithmetic conversions and converting each
+sum back to the accumulator type. Empty input returns the original output
+pointer; other inputs return the advanced pointer. Wrapper bindings, operand
+evaluation and cleanup are preserved, including when output overlaps referents.
+SDK delegation, transparent plus construction and operation, forwarding,
+scalar moves and the complete loop are verified. Source replacements, custom
+operations, enum or nested-wrapper referents, unsupported accumulator/output
+types and indirect or casted callees remain rejected.
+
 Direct default `std::inner_product` admits two raw-pointer ranges of checked
 SDK `std::reference_wrapper<T>` with built-in scalar referents, including const
 inputs and referents and different referent types, and supported non-boolean
