@@ -389,6 +389,18 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::includes` admits two raw pointer ranges of the same checked
+SDK `std::reference_wrapper<T>`, including const input wrappers, const referents
+and built-in scalar referents. Both ranges must already be sorted by referent
+value. It reads current referents and accounts for duplicate counts, preserving
+bindings and referent objects. An empty second range returns true; a nonempty
+second range with an empty first range returns false. All four arguments are
+evaluated once and receiver cleanup is preserved. Selected SDK less-than
+comparisons, callable traits, move adapters, comparator-reference aliases,
+identity projections, invoke dispatch and the scan are verified. Source
+replacements, custom comparisons, enum or nested-wrapper referents and indirect
+or casted callees remain rejected.
+
 Direct default `std::lexicographical_compare` admits two raw pointer ranges of the
 same checked SDK `std::reference_wrapper<T>`, including const input wrappers,
 const referents and built-in scalar referents. It compares current referent values
