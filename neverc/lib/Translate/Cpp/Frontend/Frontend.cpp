@@ -14597,6 +14597,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         ExpectedPath = "__algorithm/replace.h";
       else if (Name->getName() == "remove")
         ExpectedPath = "__algorithm/remove.h";
+      else if (Name->getName() == "is_sorted_until")
+        ExpectedPath = "__algorithm/is_sorted_until.h";
       else if (Name->getName() == "minmax_element")
         ExpectedPath = "__algorithm/minmax_element.h";
       else if (Name->getName() == "max_element")

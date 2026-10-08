@@ -202213,3 +202213,882 @@ int main() {
     }
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=2;W x[]={a,a,b};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-sorted-until-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeAllEqual) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-all-equal.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-all-equal.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=3,b=3,c=3;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-all-equal" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeBoolReferents) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<bool>;
+int main(){bool a=false,b=true,c=false;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+int main(){const int a=2,b=7,c=4;const W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2,b=7,c=4;const W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int* const>;
+int main(){int v[5]={};int* const a=v;int* const b=v+3;int* const c=v+2;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-sorted-until-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<const int>;
+int main(){const int a=2,b=7,c=4;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeDoubleReferents) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<double>;
+int main(){double a=1.5,b=3.5,c=2.5;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeEmptyRange) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2;W x[]={a};auto r=std::is_sorted_until(x,x);return r!=x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeFirstInversion) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-first-inversion.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-first-inversion.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=7,b=2,c=9;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-first-inversion" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeLastInversion) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-last-inversion.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-last-inversion.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2,b=7,c=4;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-last-inversion" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=1,b=2,c=3;W x[]={a,b,c};b=9;auto r=std::is_sorted_until(x,x+3);return r!=x+2||a!=1||b!=9||c!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=-9,b=-3,c=-7;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2;W x[]={a};auto r=std::is_sorted_until(x,x+1);return r!=x+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int calls,dtors;struct Access{W*p;~Access(){++dtors;}W* get(){++calls;return p;}};
+int main(){int a=2,b=7,c=4;W x[]={a,b,c};auto r=std::is_sorted_until(Access{x}.get(),Access{x+3}.get());return r!=x+2||calls!=2||dtors!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int calls;W* pick(W*p){++calls;return p;}
+int main(){int a=2,b=7,c=4;W x[]={a,b,c};auto r=std::is_sorted_until(pick(x),pick(x+3));return r!=x+2||calls!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=9,b=2,c=7,d=4,e=9;W x[]={a,b,c,d,e};auto r=std::is_sorted_until(x+1,x+4);return r!=x+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimePointerReferents) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int*>;
+int main(){int v[5]={};int *a=v,*b=v+3,*c=v+2;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct S{int n;};bool operator<(const S&a,const S&b){return a.n<b.n;}
+int main(){S x[]={{2},{7},{4}};return std::is_sorted_until(x,x+3)!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeReturnedIterator) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-returned-iterator.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-returned-iterator.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W* locate(W* f,W* l){return std::is_sorted_until(f,l);}
+int main(){int a=2,b=7,c=4;W x[]={a,b,c};auto r=locate(x,x+3);r->get()=8;return r!=x+2||c!=8||a!=2||b!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-sorted-until-runtime-returned-iterator" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int x[]={2,7,4};return std::is_sorted_until(x,x+3)!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeSmallIntegerReferents) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<signed char>;
+int main(){signed char a=1,b=9,c=4;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeSortedRange) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-sorted-range.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-sorted-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2,b=4,c=7;W x[]={a,b,c};auto r=std::is_sorted_until(x,x+3);return r!=x+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-sorted-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeSortedUntil) {
+  const auto Source = tmpFile("wrapper-sorted-until-runtime-sorted-until.cpp");
+  const auto Output = tmpFile("wrapper-sorted-until-runtime-sorted-until.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2,b=7,c=4,d=9;W x[]={a,b,c,d};auto r=std::is_sorted_until(x,x+4);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-sorted-until-runtime-sorted-until" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperSortedUntilRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-sorted-until-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-sorted-until-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+int main(){int a=2,b=7,c=4;W x[]={a,b,c};using std::is_sorted_until;auto r=is_sorted_until(x,x+3);return r!=x+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-sorted-until-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperSortedUntilRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);auto selected(P a,P b){return static_cast<F>(&std::is_sorted_until<P>)(a,b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);auto selected(P a,P b){F f=&std::is_sorted_until<P>;return f(a,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::is_sorted_until(&source(a),&a+1);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::is_sorted_until(&source(a),&a+1);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::is_sorted_until(&source(a),&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"source-sorted-until-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C,class I>I __is_sorted_until(I,I,C);}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __is_sorted_until<__less<void,void>&,P>(P,P,__less<void,void>&);}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __is_sorted_until<__less<void,void>&,P>(P a,P,__less<void,void>&){return a;}}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class C>I is_sorted_until(I,I,C);}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P is_sorted_until<P,__less<void,void>>(P,P,__less<void,void>);}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P is_sorted_until<P,__less<void,void>>(P a,P,__less<void,void>){return a;}}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>I is_sorted_until(I,I);}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P is_sorted_until<P>(P,P);}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-sorted-until-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P is_sorted_until<P>(P a,P){return a;}}}
+auto selected(P a,P b){return std::is_sorted_until(a,b);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::is_sorted_until(a,a+1);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);F selected(){using std::is_sorted_until;return &is_sorted_until<P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-sorted-until-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-sorted-until-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
