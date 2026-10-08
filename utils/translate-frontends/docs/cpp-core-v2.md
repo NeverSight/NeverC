@@ -389,6 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::is_heap_until` admits raw-pointer ranges of the same
+checked SDK `std::reference_wrapper<T>` with comparable built-in scalar
+referents, including const inputs and referents. It compares current referent
+values and returns the original first violating child pointer or end pointer.
+Wrapper bindings and referents are preserved; empty and singleton ranges return
+end. Operands are evaluated once and cleanup is preserved. Selected SDK
+delegation, default comparator construction, iterator difference type and the
+complete parent/child scan are verified. Source replacements, custom
+predicates, enum or nested-wrapper referents, and indirect or casted callees
+remain rejected.
+
 Direct default `std::minmax` with a nonempty initializer list admits elements
 of the same checked SDK `std::reference_wrapper<T>` with comparable built-in
 scalar referents, including const inputs and referents. It compares current

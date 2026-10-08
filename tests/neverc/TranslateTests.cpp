@@ -225464,3 +225464,884 @@ auto selected(P a,P b){return std::minmax({*a,*b});}
     }
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-heap-until-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-until-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,x,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeBool) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;const R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<double>;
+int main(){double x=4.5,y=3.5,z=2.5;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeDuplicates) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-duplicates.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-duplicates.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=4,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-duplicates" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a);return p!=a||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeHeapUntil) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-heap-until.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-heap-until.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-heap-until" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};y=8;auto p=std::is_heap_until(a,a+3);return p!=a+1||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeNan) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(A{a}.get(),A{a+3}.get());return n!=2||p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(read(a),read(a+3));return n!=2||p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct T{int n;};bool operator<(const T&a,const T&b){return a.n<b.n;}int main(){T a[]={{4},{3},{2}};return std::is_heap_until(a,a+3)!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+R*select(R*a,R*b){return std::is_heap_until(a,b);}int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=select(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={4,3,2};return std::is_heap_until(a,a+3)!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeShort) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<short>;
+int main(){short x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeSignedZero) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-signed-zero.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0,y=0.0,z=-0.0;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+1);return p!=a+1||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeStoredPointer) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-stored-pointer.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-stored-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=2;R a[]={x,y,z};R*p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-stored-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeTie) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-tie.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-tie.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=4,z=4;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-tie" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-heap-until-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-heap-until-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+using std::is_heap_until;int main(){int x=4,y=3,z=2;R a[]={x,y,z};auto p=is_heap_until(a,a+3);return p!=a+3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeViolationFirst) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-violation-first.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-violation-first.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=5,z=2;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+1||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-violation-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeViolationLate) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-violation-late.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-violation-late.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=9,y=8,z=7,u=6,v=5,t=10,s=3;R a[]={x,y,z,u,v,t,s};return std::is_heap_until(a,a+7)!=a+5;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-violation-late" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperHeapUntilRuntimeViolationRight) {
+  const auto Source = tmpFile("wrapper-heap-until-runtime-violation-right.cpp");
+  const auto Output = tmpFile("wrapper-heap-until-runtime-violation-right.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using R=std::reference_wrapper<int>;
+int main(){int x=4,y=3,z=5;R a[]={x,y,z};auto p=std::is_heap_until(a,a+3);return p!=a+2||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-until-runtime-violation-right" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperHeapUntilRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);auto selected(P a,P b){return static_cast<F>(&std::is_heap_until<P>)(a,b);}
+)cpp"},
+      {"custom-predicate-object", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Less{bool operator()(const W&a,const W&b)const{return a.get()<b.get();}};auto selected(P a,P b){return std::is_heap_until(a,b,Less{});}
+)cpp"},
+      {"custom-predicate", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+bool less(const W&a,const W&b){return a.get()<b.get();}auto selected(P a,P b){return std::is_heap_until(a,b,less);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);auto selected(P a,P b){F f=&std::is_heap_until<P>;return f(a,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::is_heap_until(&source(a),&a+1);}
+)cpp"},
+      {"source-heap-until-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C,class I>I __is_heap_until(I,I,C&&);}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-heap-until-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __is_heap_until<__less<void,void>,P>(P,P,__less<void,void>&&);}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-heap-until-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __is_heap_until<__less<void,void>,P>(P a,P,__less<void,void>&&){return a;}}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-heap-until-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>I is_heap_until(I,I);}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-heap-until-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P is_heap_until<P>(P,P);}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-heap-until-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P is_heap_until<P>(P a,P){return a;}}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-iterator-traits-difference-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct iterator_traits<P>{using difference_type=long long;using value_type=W;using pointer=P;using reference=W&;using iterator_category=random_access_iterator_tag;};}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-iterator-traits-partial-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits<I*>;}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-iterator-traits-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <iterator>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct iterator_traits<P>{using difference_type=long;using value_type=W;using pointer=P;using reference=W&;using iterator_category=random_access_iterator_tag;};}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::is_heap_until(a,b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::is_heap_until(&source(a),&a+1);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::is_heap_until(&source(a),&a+1);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::is_heap_until(a,a+1);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P);F selected(){using std::is_heap_until;return &is_heap_until<P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-heap-until-runtime-guard-") + Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-heap-until-runtime-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
