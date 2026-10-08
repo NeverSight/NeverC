@@ -23098,22 +23098,11 @@ static bool utilityWrapperLessPredicate(
                                         BO_LT);
 }
 
-static bool
-utilityWrapperComparatorReference(const State &S, const SourceManager &SM,
-                                  const CallExpr *Call, QualType Comparator,
-                                  const ASTContext &Context, unsigned Index = 0,
-                                  unsigned Count = 1) {
-  const auto *Ref =
-      Call ? dyn_cast_or_null<DeclRefExpr>(
-                 functionalInvokeStrippedExpression(Call->getCallee()))
-           : nullptr;
-  if (!Ref || Index >= Count || !Ref->hasExplicitTemplateArgs() ||
-      Ref->getNumTemplateArgs() != Count ||
-      Ref->getTemplateArgs()[Index].getArgument().getKind() !=
-          TemplateArgument::Type)
-    return false;
-  const auto *Info = Ref->getTemplateArgs()[Index].getTypeSourceInfo();
-  auto T = Info ? Info->getType() : QualType();
+static bool utilityWrapperComparatorReferenceType(const State &S,
+                                                  const SourceManager &SM,
+                                                  QualType T,
+                                                  QualType Comparator,
+                                                  const ASTContext &Context) {
   for (unsigned I = 0; I != 8 && !T.isNull(); ++I) {
     const auto *E = dyn_cast<ElaboratedType>(T.getTypePtr());
     if (!E)
@@ -23144,6 +23133,25 @@ utilityWrapperComparatorReference(const State &S, const SourceManager &SM,
                        "__algorithm/comp_ref_type.h"))
       return false;
   return true;
+}
+
+static bool
+utilityWrapperComparatorReference(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call, QualType Comparator,
+                                  const ASTContext &Context, unsigned Index = 0,
+                                  unsigned Count = 1) {
+  const auto *Ref =
+      Call ? dyn_cast_or_null<DeclRefExpr>(
+                 functionalInvokeStrippedExpression(Call->getCallee()))
+           : nullptr;
+  if (!Ref || Index >= Count || !Ref->hasExplicitTemplateArgs() ||
+      Ref->getNumTemplateArgs() != Count ||
+      Ref->getTemplateArgs()[Index].getArgument().getKind() !=
+          TemplateArgument::Type)
+    return false;
+  const auto *Info = Ref->getTemplateArgs()[Index].getTypeSourceInfo();
+  return Info && utilityWrapperComparatorReferenceType(S, SM, Info->getType(),
+                                                       Comparator, Context);
 }
 
 static bool utilityWrapperMinElement(const State &S, const SourceManager &SM,
@@ -31975,6 +31983,145 @@ static bool utilityWrapperHeapUntil(const State &S, const SourceManager &SM,
                                    Context))
       return false;
   return utilityWrapperHeapScan(S, SM, Delegate, Pointer, Record, *Wrapper,
+                                Context);
+}
+
+static bool utilityWrapperHeap(const State &S, const SourceManager &SM,
+                               const FunctionDecl *Function, QualType Pointer,
+                               const ASTContext &Context) {
+  if (!Pointer->isPointerType())
+    return false;
+  const auto InputElement = Pointer->getPointeeType();
+  const auto Element = InputElement.getUnqualifiedType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Element->getAsCXXRecordDecl(), Context);
+  if (!Wrapper || InputElement.isVolatileQualified() ||
+      InputElement.isRestrictQualified() || InputElement.hasAddressSpace() ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                   Wrapper->ReferentType, true))
+    return false;
+  constexpr llvm::StringLiteral Path = "__algorithm/is_heap.h";
+  auto Same = [&](QualType A, QualType B) {
+    return !A.isNull() && !B.isNull() && Context.hasSameType(A, B);
+  };
+  auto Origin = [&](const Decl *D, llvm::StringRef P) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", P);
+  };
+  auto Signature = [&](const FunctionDecl *F, llvm::StringRef Name,
+                       llvm::ArrayRef<QualType> Parameters,
+                       llvm::ArrayRef<QualType> Arguments) {
+    const auto *A = F ? F->getTemplateSpecializationArgs() : nullptr;
+    if (!utilitySwapSDKFunction(
+            S, SM, F, Name,
+            Name == "__is_heap_until" ? "__algorithm/is_heap_until.h" : Path) ||
+        (Name == "__is_heap_until" ? !Same(F->getReturnType(), Pointer)
+                                   : !F->getReturnType()->isBooleanType()) ||
+        F->getNumParams() != Parameters.size() || !A ||
+        A->size() != Arguments.size())
+      return false;
+    for (unsigned I = 0; I != Parameters.size(); ++I)
+      if (!Same(F->getParamDecl(I)->getType(), Parameters[I]))
+        return false;
+    for (unsigned I = 0; I != Arguments.size(); ++I)
+      if (A->get(I).getKind() != TemplateArgument::Type ||
+          !Same(A->get(I).getAsType(), Arguments[I]))
+        return false;
+    return true;
+  };
+  auto ReturnCall = [&](const FunctionDecl *F,
+                        unsigned Count) -> const CallExpr * {
+    const auto *D = F ? F->getDefinition() : nullptr;
+    const auto *B = D ? dyn_cast<CompoundStmt>(D->getBody()) : nullptr;
+    const auto *R = B && B->size() == Count
+                        ? dyn_cast<ReturnStmt>(B->body_back())
+                        : nullptr;
+    return R ? dyn_cast_or_null<CallExpr>(
+                   functionalInvokeStrippedExpression(R->getRetValue()))
+             : nullptr;
+  };
+  if (!Signature(Function, "is_heap", {Pointer, Pointer}, {Pointer}))
+    return false;
+  const auto *Outer = ReturnCall(Function, 1);
+  const auto *Delegate = Outer ? Outer->getDirectCallee() : nullptr;
+  const auto *Construction =
+      Outer && Outer->getNumArgs() == 3
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Outer->getArg(2)))
+          : nullptr;
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Predicate = Construction ? Construction->getType() : QualType();
+  const auto *Record = Predicate.isNull()
+                           ? nullptr
+                           : dyn_cast<ClassTemplateSpecializationDecl>(
+                                 Predicate->getAsCXXRecordDecl());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Outer || !Outer->isPRValue() || !Outer->getType()->isBooleanType() ||
+      !utilityAlgorithmSDKReference(S, SM, Outer, Delegate) || !Construction ||
+      Construction->getNumArgs() || !Ctor || !Ctor->isImplicit() ||
+      !Ctor->isDefaultConstructor() || !Ctor->isTrivial() ||
+      Predicate.hasQualifiers() || !Record || !Primary ||
+      Record->getName() != "__less" || !Record->isCompleteDefinition() ||
+      !Record->isTrivial() || !Record->isEmpty() || !Record->field_empty() ||
+      Record->getNumBases() ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Record->getTemplateArgs().size() != 2 ||
+      Ctor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Signature(Delegate, "is_heap", {Pointer, Pointer, Predicate},
+                 {Pointer, Predicate}))
+    return false;
+  for (const auto &A : Record->getTemplateArgs().asArray())
+    if (A.getKind() != TemplateArgument::Type || !A.getAsType()->isVoidType())
+      return false;
+  for (const auto *D : Record->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D, "__algorithm/comp.h") ||
+        !Origin(D->getTemplatedDecl(), "__algorithm/comp.h"))
+      return false;
+  for (const auto *D : Ctor->redecls())
+    if (!Origin(D, "__algorithm/comp.h"))
+      return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilityAlgorithmReference(Outer->getArg(I),
+                                   Function->getDefinition()->getParamDecl(I),
+                                   Context))
+      return false;
+  const auto *DD = Delegate->getDefinition();
+  const auto *DB = DD ? dyn_cast<CompoundStmt>(DD->getBody()) : nullptr;
+  const auto *R =
+      DB && DB->size() == 1 ? dyn_cast<ReturnStmt>(*DB->body_begin()) : nullptr;
+  const auto *Equality =
+      R ? dyn_cast<BinaryOperator>(R->getRetValue()) : nullptr;
+  const auto *Inner =
+      Equality ? dyn_cast<CallExpr>(Equality->getLHS()) : nullptr;
+  const auto *Helper = Inner ? Inner->getDirectCallee() : nullptr;
+  const auto *PredicateCast =
+      Inner && Inner->getNumArgs() == 3
+          ? dyn_cast<CXXStaticCastExpr>(Inner->getArg(2))
+          : nullptr;
+  const auto PredicateRef = Context.getLValueReferenceType(Predicate);
+  if (!Equality || Equality->getOpcode() != BO_EQ ||
+      !Equality->getType()->isBooleanType() ||
+      !utilityAlgorithmReference(Equality->getRHS(), DD->getParamDecl(1),
+                                 Context) ||
+      !Inner || Inner->getNumArgs() != 3 || !Inner->isPRValue() ||
+      !Same(Inner->getType(), Pointer) ||
+      !utilityAlgorithmSDKReference(S, SM, Inner, Helper) || !PredicateCast ||
+      !utilityWrapperComparatorReferenceType(
+          S, SM, PredicateCast->getTypeAsWritten(), Predicate, Context) ||
+      !Signature(Helper, "__is_heap_until", {Pointer, Pointer, PredicateRef},
+                 {PredicateRef, Pointer}) ||
+      !utilityAlgorithmReference(Inner->getArg(2), DD->getParamDecl(2), Context,
+                                 true))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilityAlgorithmReference(Inner->getArg(I), DD->getParamDecl(I),
+                                   Context))
+      return false;
+  return utilityWrapperHeapScan(S, SM, Helper, Pointer, Record, *Wrapper,
                                 Context);
 }
 
@@ -46109,6 +46256,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Pointer) &&
         utilityWrapperHeapUntil(S, SM, Function, Pointer, Context))
       return UtilityOperation::AlgorithmIsHeapUntil;
+  }
+  if (Origin->Path == "__algorithm/is_heap.h" && Name == "is_heap" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue()) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    if (Pointer->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Function->getReturnType()->isBooleanType() &&
+        Call->getType()->isBooleanType() &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        utilityWrapperHeap(S, SM, Function, Pointer, Context))
+      return UtilityOperation::AlgorithmIsHeap;
   }
   const bool HeapQueryAlgorithm =
       (Origin->Path == "__algorithm/is_heap.h" && Name == "is_heap") ||
