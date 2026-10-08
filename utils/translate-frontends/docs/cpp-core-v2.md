@@ -389,6 +389,16 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::lexicographical_compare` admits two raw pointer ranges of the
+same checked SDK `std::reference_wrapper<T>`, including const input wrappers,
+const referents and built-in scalar referents. It compares current referent values
+in both directions and handles empty ranges and proper prefixes, preserving
+bindings and referent objects. Equal ranges return false. All four arguments are
+evaluated once and receiver cleanup is preserved. Selected SDK less-than
+comparisons, identity projections, iterator unwrapping, invoke dispatch and the
+scan are verified. Source replacements, custom comparisons, enum or nested-wrapper
+referents and indirect or casted callees remain rejected.
+
 Direct default `std::is_sorted` admits raw pointer ranges of a checked SDK
 `std::reference_wrapper<T>`, including const input wrappers, const referents and
 built-in scalar referents. It compares live referent values and returns whether

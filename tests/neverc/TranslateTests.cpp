@@ -203947,3 +203947,1034 @@ using F=bool(*)(P,P);F selected(){using std::is_sorted;return &is_sorted<P>;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-lexicographical-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using Value=int;using R=std::reference_wrapper<Value>;using P=R*;int main(){int x=1,y=2,z=3;R a[]={x,y},b[]={x,z};P af=a,al=a+2,bf=b,bl=b+2;return !std::lexicographical_compare(af,al,bf,bl);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2;R a[]={x,x,x},b[]={x,x,y};return !std::lexicographical_compare(a,a+3,b,b+3)||&a[0].get()!=&x||&a[2].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeBool) {
+  const auto Source = tmpFile("wrapper-lexicographical-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<bool>;int main(){bool x=false,y=true;R a[]={x,x},b[]={x,y};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperLexicographicalRuntimeConstInputConstReferents) {
+  const auto Source = tmpFile(
+      "wrapper-lexicographical-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;int main(){const int x=1,y=2,z=3;const R a[]={x,y},b[]={x,z};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeConstInput) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,1,3};const R a[]={v[0],v[1]},b[]={v[2],v[3]};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int*>;int main(){int s[4]={};const int*p=s,*q=s+1,*r=s+2;R a[]={p,q},b[]={p,r};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int v[]={1,2,1,3};R a[]={v[0],v[1]},b[]={v[2],v[3]};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-lexicographical-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<double>;int main(){double x=1.5,y=2.75,z=3.25;R a[]={x,y},b[]={x,z};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeEmptyRange) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-empty-range.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-empty-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=2;R a[]={x};if(std::lexicographical_compare(a,a,a,a))return 1;if(!std::lexicographical_compare(a,a,a,a+1))return 2;if(std::lexicographical_compare(a,a+1,a,a))return 3;return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-empty-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeEqualRange) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-equal-range.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-equal-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,y=3;R a[]={x,y},b[]={x,y};return std::lexicographical_compare(a,a+2,b,b+2)||std::lexicographical_compare(b,b+2,a,a+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-equal-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeFirstInversion) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-first-inversion.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-first-inversion.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={4,1,2,3,8,9};R a[]={v[0],v[1],v[2]},b[]={v[3],v[4],v[5]};return std::lexicographical_compare(a,a+3,b,b+3)||!std::lexicographical_compare(b,b+3,a,a+3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-first-inversion" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeLexicographical) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-lexicographical.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-lexicographical.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,4,1,2,5};R a[]={v[0],v[1],v[2]},b[]={v[3],v[4],v[5]};if(!std::lexicographical_compare(a,a+3,b,b+3))return 1;if(std::lexicographical_compare(b,b+3,a,a+3))return 2;return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-lexicographical" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeLiveReferents) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-live-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a[]={x},b[]={y};if(!std::lexicographical_compare(a,a+1,b,b+1))return 1;x=3;if(std::lexicographical_compare(a,a+1,b,b+1))return 2;return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-negative-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int main(){int x=-7,y=-3,z=-1;R a[]={x,y},b[]={x,z};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeOneElement) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2;R a[]={x},b[]={y};return !std::lexicographical_compare(a,a+1,b,b+1)||std::lexicographical_compare(b,b+1,a,a+1);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-operand-cleanup.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int calls,dtors;struct Access{R*p;~Access(){++dtors;}R*get(){++calls;return p;}};int main(){int x=1,y=2,z=3;R a[]={x,y},b[]={x,z};bool r=std::lexicographical_compare(Access{a}.get(),Access{a+2}.get(),Access{b}.get(),Access{b+2}.get());return !r||calls!=4||dtors!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-operand-effects.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int calls;R*pick(R*p){++calls;return p;}int main(){int x=1,y=2,z=3;R a[]={x,y},b[]={x,z};bool r=std::lexicographical_compare(pick(a),pick(a+2),pick(b),pick(b+2));return !r||calls!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimePartialRange) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-partial-range.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int main(){int v[]={9,1,2,9,8,1,3,0};R a[]={v[0],v[1],v[2],v[3]},b[]={v[4],v[5],v[6],v[7]};return !std::lexicographical_compare(a+1,a+3,b+1,b+3)||std::lexicographical_compare(a,a+4,b,b+4);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimePointer) {
+  const auto Source = tmpFile("wrapper-lexicographical-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*>;
+int main(){int storage[4]={};int *p=storage,*q=storage+1,*r=storage+2;R a[]={p,q},b[]={p,r};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimePrefix) {
+  const auto Source = tmpFile("wrapper-lexicographical-runtime-prefix.cpp");
+  const auto Output = tmpFile("wrapper-lexicographical-runtime-prefix.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,3};R a[]={v[0],v[1],v[2]};if(!std::lexicographical_compare(a,a+2,a,a+3))return 1;if(std::lexicographical_compare(a,a+3,a,a+2))return 2;return 0;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-prefix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeRecordControl) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-record-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct S{int n;};bool operator<(const S&a,const S&b){return a.n<b.n;}int main(){S a[]={{1},{2}},b[]={{1},{3}};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeRightPrefix) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-right-prefix.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-right-prefix.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=2,z=3;R a[]={x,y,z},b[]={x,y};return std::lexicographical_compare(a,a+3,b,b+2)||!std::lexicographical_compare(b,b+2,a,a+3);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-right-prefix" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeScalarControl) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-scalar-control.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a[]={1,2},b[]={1,3};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeSmallInteger) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-small-integer.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<signed char>;int main(){signed char x=-3,y=2,z=4;R a[]={x,y},b[]={x,z};return !std::lexicographical_compare(a,a+2,b,b+2);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lexicographical-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLexicographicalRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-lexicographical-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-lexicographical-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using std::lexicographical_compare;
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2;R a[]={x},b[]={y};return !lexicographical_compare(a,a+1,b,b+1);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-lexicographical-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperLexicographicalRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P,P,P);auto selected(P a,P b){return static_cast<F>(&std::lexicographical_compare<P,P>)(a,b,a,b);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P,P,P);auto selected(P a,P b){F f=&std::lexicographical_compare<P,P>;return f(a,b,a,b);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-comparator-invoke-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr bool __invoke<__less<void,void>&,W&,W&>(__less<void,void>&,W&,W&)noexcept(false){return true;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::lexicographical_compare(&source(a),&a+1,&b,&b+1);}
+)cpp"},
+      {"source-forward-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&forward<W&>(W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-identity-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-identity-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&)const noexcept;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-identity-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__identity::operator()<W&>(W&w)const noexcept{return w;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-invoke-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__invoke<__identity&,W&>(__identity&,W&)noexcept;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-invoke-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <iterator>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W&__invoke<__identity&,W&>(__identity&,W&w)noexcept{return w;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,b,a,b);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,b,a,b);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,b,a,b);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,b,a,b);}
+)cpp"},
+      {"source-lexicographical-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class S,class J,class T,class A,class B,class C>bool __lexicographical_compare(I,S,J,T,C&,A&,B&);}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __lexicographical_compare<P,P,P,P,__identity,__identity,__less<void,void>>(P,P,P,P,__less<void,void>&,__identity&,__identity&);}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __lexicographical_compare<P,P,P,P,__identity,__identity,__less<void,void>>(P,P,P,P,__less<void,void>&,__identity&,__identity&){return true;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J,class C>bool lexicographical_compare(I,I,J,J,C);}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool lexicographical_compare<P,P,__less<void,void>>(P,P,P,P,__less<void,void>);}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool lexicographical_compare<P,P,__less<void,void>>(P,P,P,P,__less<void,void>){return true;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class J>bool lexicographical_compare(I,I,J,J);}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool lexicographical_compare<P,P>(P,P,P,P);}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-lexicographical-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool lexicographical_compare<P,P>(P,P,P,P){return true;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::lexicographical_compare(&source(a),&a+1,&b,&b+1);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::lexicographical_compare(&source(a),&a+1,&b,&b+1);}int main(){return 0;}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-to-address-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W* __to_address(W*)noexcept;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-to-address-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W* __to_address(W*p)noexcept{return p;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-function-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class Impl,__enable_if_t<is_copy_constructible<I>::value,int>>constexpr decltype(Impl::__unwrap(declval<I>())) __unwrap_iter(I)noexcept;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-function-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __unwrap_iter<P,__unwrap_iter_impl<P>,0>(P)noexcept;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-function-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __unwrap_iter<P,__unwrap_iter_impl<P>,0>(P p)noexcept{return p;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-implementation-partial-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I>struct __unwrap_iter_impl<I,true>;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-implementation-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,bool>struct __unwrap_iter_impl;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-implementation-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __unwrap_iter_impl<P,true>{static constexpr P __unwrap(P p)noexcept{return p;}};}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-method-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __unwrap_iter_impl<P,true>::__unwrap(P)noexcept;}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-unwrap-method-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P __unwrap_iter_impl<P,true>::__unwrap(P p)noexcept{return p;}}}
+auto selected(P a,P b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::lexicographical_compare(a,a+1,b,b+1);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=bool(*)(P,P,P,P);F selected(){using std::lexicographical_compare;return &lexicographical_compare<P,P>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-lexicographical-runtime-guard-") +
+                Case.first + ".cpp");
+    const auto Output =
+        tmpFile(std::string("wrapper-lexicographical-runtime-guard-") +
+                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}

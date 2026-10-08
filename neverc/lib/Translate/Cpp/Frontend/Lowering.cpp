@@ -7303,6 +7303,13 @@ class FunctionLowering {
         if (!SDKComparators)
           Comparator = snapshot(expression(Call->getArg(4)), L);
       }
+      const auto Wrapper =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
       auto Less = [&](Expression Left, unsigned LeftIndex, Expression Right,
                       unsigned RightIndex, bool Reversed) {
         if (SDKComparators)
@@ -7313,6 +7320,12 @@ class FunctionLowering {
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
                                      std::move(Left), std::move(Right), L);
+        if (Wrapper)
+          return CompareUtilityValues(
+              "<", dereference(ReferenceMember(std::move(Left), *Wrapper), L),
+              Wrapper->ReferentType,
+              dereference(ReferenceMember(std::move(Right), *Wrapper), L),
+              Wrapper->ReferentType);
         return AlgorithmLess(std::move(Left), LeftIndex, std::move(Right),
                              RightIndex);
       };
