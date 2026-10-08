@@ -389,6 +389,19 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::search_n` admits raw pointer ranges and a query of the
+same checked SDK `std::reference_wrapper<T>`, including const inputs, query
+and referents, with plain built-in integer counts and built-in scalar referents.
+It compares current referent values to select the first consecutive run of the
+requested length, or the beginning for zero count and the end without a match.
+Aliases, bindings and referent objects are preserved. All four arguments are
+evaluated once and receiver cleanup is preserved. Selected SDK integer count
+conversion, random-access eligibility, callable and iterator traits, equality
+and identity dispatch, matching loops, end selection, pair fields and result
+construction are verified. Source replacements, custom predicates, enum counts
+or referents, floating counts, nested-wrapper referents, and indirect or casted
+callees remain rejected.
+
 Direct default `std::find_end` admits two raw pointer ranges of the same
 checked SDK `std::reference_wrapper<T>`, including const inputs and referents,
 and built-in scalar referents. It compares current referent values and returns

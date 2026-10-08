@@ -6853,16 +6853,36 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
+      const auto Wrapper =
+          Call->getNumArgs() == 4
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      auto ComparedValue = [&](Expression Pointer) {
+        auto Value = dereference(std::move(Pointer), L);
+        return Wrapper
+                   ? dereference(
+                         Expression{{"kind", "member"},
+                                    {"type", type(Wrapper->PointerType, L)},
+                                    {"name", "nct_reference_wrapper_pointer"},
+                                    {"args", json::Array{std::move(Value)}},
+                                    {"loc", A.loc(L)}},
+                         L)
+                   : std::move(Value);
+      };
       std::optional<std::string> DefaultComparisonType;
       const auto SourceComparison =
-          !Predicate && A.Context.hasSameUnqualifiedType(
-                            FirstRange.second->getPointeeType(),
-                            Call->getArg(3)->getType())
+          !Predicate && !Wrapper &&
+                  A.Context.hasSameUnqualifiedType(
+                      FirstRange.second->getPointeeType(),
+                      Call->getArg(3)->getType())
               ? approvedUtilityTrivialSourceComparison(
                     A.S, A.Sources, FirstRange.second->getPointeeType(),
                     OO_EqualEqual, A.Context)
               : std::nullopt;
-      if (!Predicate) {
+      if (!Predicate && !Wrapper) {
         auto Common = utilityScalarComparisonType(
             A.Context, FirstRange.second->getPointeeType(),
             Call->getArg(3)->getType(), false);
@@ -6912,6 +6932,11 @@ class FunctionLowering {
                     SourceComparison->Friend ? SourceComparison->Friend
                                              : SourceComparison->Namespace,
                     L)
+          : Wrapper
+              ? CompareUtilityValues("==", ComparedValue(json::Object(Current)),
+                                     Wrapper->ReferentType,
+                                     ComparedValue(json::Object(ValueAddress)),
+                                     Wrapper->ReferentType)
               : binary("==",
                        cast(dereference(Current, L), *DefaultComparisonType, L),
                        cast(dereference(ValueAddress, L),
