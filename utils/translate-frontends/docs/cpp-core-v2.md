@@ -389,33 +389,17 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
-Direct default `std::set_intersection` admits two raw pointer ranges of the same
-checked SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer
-range, including const inputs, const referents and built-in scalar referents.
-Inputs must be sorted by current referent value; output must have enough space
-and must not overlap either input. It compares current values and copies common
-first-range bindings in first-range order, preserving referent objects. Each
-value keeps the smaller occurrence count from the two inputs. Either empty input
-leaves output unchanged. It returns the output end, evaluates all five arguments
-once and preserves receiver cleanup. Selected SDK iterator-category aliases and
-dispatch, pointer moves and swaps, one-sided and bisection searches, comparison
-and identity invocation, output helper and result constructor are verified.
-Source replacements, custom comparisons, enum or nested-wrapper referents and
-indirect or casted callees remain rejected.
-
-Direct default `std::set_intersection` admits two raw pointer ranges of the same
-checked SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer
-range, including const inputs, const referents and built-in scalar referents.
-Inputs must be sorted by current referent value; output must have enough space
-and must not overlap either input. It compares current values and copies common
-first-range bindings in first-range order, preserving referent objects. Each
-value keeps the smaller occurrence count from the two inputs. Either empty input
-leaves output unchanged. It returns the output end, evaluates all five arguments
-once and preserves receiver cleanup. Selected SDK iterator-category aliases and
-dispatch, pointer moves and swaps, one-sided and bisection searches, comparison
-and identity invocation, output helper and result constructor are verified.
-Source replacements, custom comparisons, enum or nested-wrapper referents and
-indirect or casted callees remain rejected.
+Direct default `std::lower_bound` admits a raw pointer range and a query of the
+same checked SDK `std::reference_wrapper<T>`, including const inputs, const
+queries, const referents and built-in scalar referents. The range must be
+partitioned by whether the current referent value is less than the query's
+current value. It returns the first element that is not less, or the range end;
+an empty range returns the begin pointer. It reads current referent values and
+preserves all bindings and referent objects. All three arguments are evaluated
+once and receiver cleanup is preserved. Selected SDK delegation, callable
+traits, identity projection, pointer distance, advance, half-length and
+bisection are verified. Source replacements, custom comparisons, enum or
+nested-wrapper referents and indirect or casted callees remain rejected.
 
 Direct default `std::set_intersection` admits two raw pointer ranges of the same
 checked SDK `std::reference_wrapper<T>` and a mutable wrapper output pointer

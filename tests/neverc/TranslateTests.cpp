@@ -210763,3 +210763,1069 @@ auto selected(P a,P b,P o){return std::set_intersection(a,a+1,b,b+1,o);}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+template<class T>using A=std::reference_wrapper<T>;using R=A<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y},v(q);return std::lower_bound(a,a+2,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-lower-bound-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=1;R a[]={x,x,y},v(q);return std::lower_bound(a,a+3,v)!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeBeforeFirst) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-before-first.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-before-first.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=0;R a[]={x,y},value(q);return std::lower_bound(a,a+2,value)!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-before-first" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeBool) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,y=true,q=true;R a[]={x,y},v(q);return std::lower_bound(a,a+2,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-lower-bound-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,q=2;const R a[]={x,y},v(q);return std::lower_bound(a,a+2,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;const R a[]={x,y};R value(q);auto r=std::lower_bound(a,a+2,value);return r!=a+1||&a[0].get()!=&x||&a[1].get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeConstQuery) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-const-query.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-const-query.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y};const R v(q);return std::lower_bound(a,a+2,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-const-query" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,q=2;R a[]={x,y},value(q);return std::lower_bound(a,a+2,value)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<double>;
+int main(){double x=1.5,y=2.5,q=2.;R a[]={x,y},v(q);return std::lower_bound(a,a+2,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,q=2;R a[]={x},value(q);return std::lower_bound(a,a,value)!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=5,z=9,q=3;R a[]={x,y,z},value(q);y=3;z=7;auto r=std::lower_bound(a,a+3,value);return r!=a+1||y!=3||z!=7||q!=3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeLowerBound) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-lower-bound.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-lower-bound.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,2,4},q=2;R a[]={v[0],v[1],v[2],v[3]},value(q);auto r=std::lower_bound(a,a+4,value);return r!=a+1||q!=2||v[0]!=1||v[3]!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-lower-bound" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeMissing) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-missing.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-missing.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int v[]={1,2,4},q=3;R a[]={v[0],v[1],v[2]},value(q);return std::lower_bound(a,a+3,value)!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-missing" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeNegativeValues) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-negative-values.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-negative-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=-1,z=2,q=-2;R a[]={x,y,z},v(q);return std::lower_bound(a,a+3,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-negative-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeOneElement) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-one-element.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-one-element.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,q=2;R a[]={x},v(q);return std::lower_bound(a,a+1,v)!=a;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-one-element" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+struct Range{R*p;int*n;~Range(){++*n;}R*get(){return p;}};int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},v(q);auto r=std::lower_bound(Range{a,&n}.get(),Range{a+2,&n}.get(),v);return r!=a+1||n!=2||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+R* pick(R*p,int&n){++n;return p;}const R& value(const R&v,int&n){++n;return v;}int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},v(q);auto r=std::lower_bound(pick(a,n),pick(a+2,n),value(v,n));return r!=a+1||n!=3||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=3,q=1;R a[]={x,y,z},v(q);return std::lower_bound(a+1,a+3,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimePastEnd) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-past-end.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-past-end.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=9;R a[]={x,y},value(q);return std::lower_bound(a,a+2,value)!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-past-end" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimePointer) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int*>;
+int main(){int v[5]={};int*p=v,*r=v+2,*s=v+4,*q=v+1;R a[]={p,r,s},value(q);return std::lower_bound(a,a+3,value)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+struct V{int x;};bool operator<(const V&a,const V&b){return a.x<b.x;}
+int main(){V a[]={{1},{2},{4}},q={2};return std::lower_bound(a,a+3,q)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,q=2;R a[]={x,y},v(q);auto r=std::lower_bound(a,a+2,v);r->get()=7;return r!=a+1||x!=1||y!=7||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+struct Unused {};
+int main(){int a[]={1,2,2,4},q=2;return std::lower_bound(a,a+4,q)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeSmallInteger) {
+  const auto Source = tmpFile("wrapper-lower-bound-runtime-small-integer.cpp");
+  const auto Output = tmpFile("wrapper-lower-bound-runtime-small-integer.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<short>;
+int main(){short x=1,y=2,q=2;R a[]={x,y},v(q);return std::lower_bound(a,a+2,v)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-small-integer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperLowerBoundRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-lower-bound-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-lower-bound-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <algorithm>
+using R=std::reference_wrapper<int>;
+int main(){using std::lower_bound;int x=1,y=2,q=2;R a[]={x,y},value(q);return lower_bound(a,a+2,value)!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-lower-bound-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperLowerBoundRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,const W&);auto selected(P a,P b){return static_cast<F>(&std::lower_bound<P,W>)(a,b,*a);}
+)cpp"},
+      {"custom-comparator", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Less{bool operator()(const W&a,const W&b)const{return a.get()<b.get();}};auto selected(P a,P b){return std::lower_bound(a,b,*a,Less{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,const W&);auto selected(P a,P b){F f=&std::lower_bound<P,W>;return f(a,b,*a);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-callable-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A,class> true_type __is_callable_helper(int);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-callable-record-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A>struct __is_callable;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-callable-record-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __is_callable<__less<void,void>&,W&,const W&>:true_type{};}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::lower_bound(&source(a),&a+1,b);}
+)cpp"},
+      {"source-forward-wrapper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& forward<W&>(W& value)noexcept;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-forward-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& forward<W&>(W& value)noexcept{return value;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-half-positive-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-half-positive-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long){return 0;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-identity-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& __identity::operator()<W&>(W& value)const noexcept;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-identity-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& __identity::operator()<W&>(W& value)const noexcept{return value;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-identity-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-integral-constant-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,T Value>struct integral_constant;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class T,class J,class C>I __lower_bound_bisecting(I,const T&,typename iterator_traits<I>::difference_type,C&,J&);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,__identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,__identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-delegate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class C>I lower_bound(I,I,const T&,C);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-delegate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P lower_bound<P,W,__less<void,void>>(P a,P,const W&,__less<void,void>);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-delegate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P lower_bound<P,W,__less<void,void>>(P a,P,const W&,__less<void,void>){return a;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S,class T,class J,class C>I __lower_bound(I,S,const T&,C&,J&);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound<_ClassicAlgPolicy,P,P,W,__identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound<_ClassicAlgPolicy,P,P,W,__identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T>I lower_bound(I,I,const T&);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P lower_bound<P,W>(P a,P,const W&);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P lower_bound<P,W>(P a,P,const W&){return a;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&)noexcept;}}
+auto selected(P a,P b,P o){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b,P o){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::lower_bound(&source(a),&a+1,b);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::lower_bound(&source(a),&a+1,b);}int main(){return 0;}
+)cpp"},
+      {"source-policy-advance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::advance<P,long>(P&,long);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-policy-advance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void _IterOps<_ClassicAlgPolicy>::advance<P,long>(P&,long){}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-policy-distance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b);}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-policy-distance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b){return b-a;}}}
+auto selected(P a,P b){return std::lower_bound(a,b,*a);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::lower_bound(a,a+1,*b);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=P(*)(P,P,const W&);F selected(){using std::lower_bound;return &lower_bound<P,W>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-lower-bound-runtime-guard-") + Case.first +
+                ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-lower-bound-runtime-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
