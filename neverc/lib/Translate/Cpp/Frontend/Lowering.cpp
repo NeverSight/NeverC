@@ -11923,14 +11923,9 @@ class FunctionLowering {
         jump(Ready, L);
         label(Short, L);
         assign(NewSize,
-               String->AlternateLayout
-                   ? binary(">>", json::Object(SourceFirst),
-                            quantity(A.Context.getTypeSize(
-                                         A.Context.getSizeType()) - 8,
-                                     SizeType, L),
-                            SizeType, L)
-                   : binary("/", json::Object(SourceFirst),
-                            quantity(2, SizeType, L), SizeType, L), L);
+               stringShortSize(json::Object(SourceFirst),
+                               String->AlternateLayout, L),
+               L);
         assign(SourceData, ShortData(SourceAddress, ConstPointerType), L);
         jump(Ready, L);
         label(Ready, L);
@@ -12436,17 +12431,9 @@ class FunctionLowering {
       jump(Ready, L);
       label(Short, L);
       assign(OldLong, boolean(false, L), L);
-      assign(
-          Size,
-          String->AlternateLayout
-              ? binary(
-                    ">>", json::Object(First),
-                    quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                             SizeType, L),
-                    SizeType, L)
-              : binary("/", json::Object(First), quantity(2, SizeType, L),
-                       SizeType, L),
-          L);
+      assign(Size,
+             stringShortSize(json::Object(First), String->AlternateLayout, L),
+             L);
       assign(Capacity, quantity(String->ShortCapacity, SizeType, L), L);
       auto ShortData =
           cast(cast(json::Object(Receiver), "ptr:void", L), PointerType, L);
@@ -13263,17 +13250,10 @@ class FunctionLowering {
                L);
         jump(Ready, L);
         label(Short, L);
-        assign(
-            SourceSize,
-            String->AlternateLayout
-                ? binary(">>", json::Object(SourceFirst),
-                         quantity(
-                             A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                             SizeType, L),
-                         SizeType, L)
-                : binary("/", json::Object(SourceFirst),
-                         quantity(2, SizeType, L), SizeType, L),
-            L);
+        assign(SourceSize,
+               stringShortSize(json::Object(SourceFirst),
+                               String->AlternateLayout, L),
+               L);
         auto ShortPointer =
             cast(cast(json::Object(SourceAddress), "ptr:void", L),
                  ConstPointerType, L);
@@ -13403,13 +13383,8 @@ class FunctionLowering {
         label(Short, L);
         assign(IsLong, boolean(false, L), L);
         assign(Size,
-               String->AlternateLayout
-                   ? binary(">>", json::Object(First),
-                            quantity(A.Context.getTypeSize(
-                                         A.Context.getSizeType()) - 8,
-                                     SizeType, L), SizeType, L)
-                   : binary("/", json::Object(First),
-                            quantity(2, SizeType, L), SizeType, L), L);
+               stringShortSize(json::Object(First), String->AlternateLayout, L),
+               L);
         auto ShortPointer = cast(cast(json::Object(Receiver), "ptr:void", L),
                                  PointerType, L);
         assign(Data,
@@ -13576,12 +13551,8 @@ class FunctionLowering {
         label(Short, L);
         assign(IsLong, boolean(false, L), L);
         assign(Size,
-               String->AlternateLayout
-                   ? binary(">>", json::Object(First),
-                            quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                                     SizeType, L), SizeType, L)
-                   : binary("/", json::Object(First),
-                            quantity(2, SizeType, L), SizeType, L), L);
+               stringShortSize(json::Object(First), String->AlternateLayout, L),
+               L);
         assign(Capacity, quantity(String->ShortCapacity, SizeType, L), L);
         auto ShortPointer = cast(cast(json::Object(Receiver), "ptr:void", L),
                                  PointerType, L);
@@ -13891,12 +13862,8 @@ class FunctionLowering {
         assign(Result,
                Operation == UtilityOperation::StringCapacity
                    ? quantity(String->ShortCapacity, SizeType, L)
-                   : String->AlternateLayout
-                   ? binary(">>", json::Object(First),
-                            quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                                     SizeType, L), SizeType, L)
-                   : binary("/", json::Object(First),
-                            quantity(2, SizeType, L), SizeType, L),
+                   : stringShortSize(json::Object(First),
+                                     String->AlternateLayout, L),
                L);
         jump(Done, L);
         label(Done, L);
@@ -13941,17 +13908,9 @@ class FunctionLowering {
                           quantity(1, DifferenceType, L), PointerType, L),
              L);
       if (BackSize)
-        assign(
-            *BackSize,
-            String->AlternateLayout
-                ? binary(">>", json::Object(First),
-                         quantity(
-                             A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                             SizeType, L),
-                         SizeType, L)
-                : binary("/", json::Object(First), quantity(2, SizeType, L),
-                         SizeType, L),
-            L);
+        assign(*BackSize,
+               stringShortSize(json::Object(First), String->AlternateLayout, L),
+               L);
       if (Operation == UtilityOperation::StringClear)
         assign(Word(String->AlternateLayout ? "nct_string_word2"
                                             : "nct_string_word0"),
@@ -19541,12 +19500,9 @@ class FunctionLowering {
           jump(SourceReady, L);
           label(SourceShort, L);
           assign(SourceSize,
-                 String->AlternateLayout
-                     ? binary(">>", json::Object(SourceFlag),
-                              quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                                       SizeType, L), SizeType, L)
-                     : binary("/", json::Object(SourceFlag),
-                              quantity(2, SizeType, L), SizeType, L), L);
+                 stringShortSize(json::Object(SourceFlag),
+                                 String->AlternateLayout, L),
+                 L);
           assign(SourceData, ShortData(RightAddress, ConstPointerType), L);
           jump(SourceReady, L);
           label(SourceReady, L);
@@ -21496,17 +21452,9 @@ class FunctionLowering {
                    : binary("+", std::move(ShortData),
                             quantity(1, DifferenceType, L), PointerType, L),
                L);
-        assign(
-            Length,
-            String->AlternateLayout
-                ? binary(">>", json::Object(Flag),
-                         quantity(
-                             A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                             SizeType, L),
-                         SizeType, L)
-                : binary("/", json::Object(Flag), quantity(2, SizeType, L),
-                         SizeType, L),
-            L);
+        assign(Length,
+               stringShortSize(json::Object(Flag), String->AlternateLayout, L),
+               L);
         jump(Ready, L);
         label(Ready, L);
       } else {
@@ -21698,6 +21646,22 @@ class FunctionLowering {
     return Compared;
   }
 
+  Expression stringShortSize(Expression Word, bool AlternateLayout,
+                             SourceLocation L) {
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    if (AlternateLayout)
+      return binary(">>", std::move(Word),
+                    quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                             SizeType, L),
+                    SizeType, L);
+    // The default layout stores its flag and short size in the first byte.
+    // The remaining bytes of this word already contain string characters.
+    return binary(
+        "/",
+        binary("&", std::move(Word), quantity(255, SizeType, L), SizeType, L),
+        quantity(2, SizeType, L), SizeType, L);
+  }
+
   std::pair<Expression, Expression>
   readStringAt(Expression Address, const UtilityStringRecord &String,
                SourceLocation L) {
@@ -21749,15 +21713,7 @@ class FunctionLowering {
                         quantity(1, DifferenceType, L), PointerType, L),
            L);
     assign(Size,
-           String.AlternateLayout
-               ? binary(">>", json::Object(First),
-                        quantity(
-                            A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                            SizeType, L),
-                        SizeType, L)
-               : binary("/", json::Object(First), quantity(2, SizeType, L),
-                        SizeType, L),
-           L);
+           stringShortSize(json::Object(First), String.AlternateLayout, L), L);
     jump(Ready, L);
     label(Ready, L);
     return std::pair<Expression, Expression>{std::move(Data), std::move(Size)};
@@ -23825,12 +23781,8 @@ class FunctionLowering {
         jump(Ready, L);
         label(Short, L);
         assign(Length,
-               String->AlternateLayout
-                   ? binary(">>", json::Object(Flag),
-                            quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
-                                     SizeType, L), SizeType, L)
-                   : binary("/", json::Object(Flag),
-                            quantity(2, SizeType, L), SizeType, L), L);
+               stringShortSize(json::Object(Flag), String->AlternateLayout, L),
+               L);
         auto ShortData = cast(cast(json::Object(SourceAddress), "ptr:void", L),
                               ConstPointerType, L);
         assign(Input,

@@ -202065,3 +202065,151 @@ using F=std::pair<P,P>(*)(P,P);F selected(){using std::minmax_element;return &mi
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2StringShortMetadataAccessRunAtBothOptimizations) {
+  const auto Body = R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);extern "C" void free(void*);
+void*operator new(Size n){return malloc(n);}void operator delete(void*p)noexcept{free(p);}
+
+#include <algorithm>
+#include <string>
+int main() {
+  const char raw[] = "abcdefghijklmnopqrstuvwxyzABCDEFG";
+  const Size lengths[] = {0, 1, 2, 7, 8, 15, 22, 23, 26, 33};
+  for (Size n : lengths) {
+    std::string text(raw, n);
+    if (text.size() != n || text.length() != n || text.empty() != (n == 0) ||
+        text.data()[n] != 0 || text.c_str()[n] != 0)
+      return 1;
+    if (static_cast<Size>(text.end() - text.begin()) != n)
+      return 2;
+    const std::string &view = text;
+    if (n != 0) {
+      text.front() = 'Z';
+      text.back() = 'Y';
+      if (view.size() != n || view.back() != 'Y' || view.front() != (n == 1 ? 'Y' : 'Z'))
+        return 3;
+      if (std::find(text.begin(), text.end(), 'Y') != text.end() - 1 ||
+          std::count(text.begin(), text.end(), 'Y') != 1)
+        return 4;
+    }
+    for (Size i = 1; i + 1 < n; ++i)
+      if (text[i] != raw[i])
+        return 5;
+  }
+  return 0;
+}
+)cpp";
+  const std::pair<const char *, const char *> Layouts[] = {
+      {"default",
+       "#include <cstddef>\n#undef _LIBCPP_ABI_ALTERNATE_STRING_LAYOUT\n"},
+      {"alternate",
+       "#include <cstddef>\n#define _LIBCPP_ABI_ALTERNATE_STRING_LAYOUT\n"}};
+  for (const auto &Layout : Layouts) {
+    SCOPED_TRACE(Layout.first);
+    const auto Source = tmpFile(std::string("ShortStringMetadataAccess-") +
+                                Layout.first + ".cpp");
+    const auto Output = tmpFile(std::string("ShortStringMetadataAccess-") +
+                                Layout.first + ".nc");
+    writeFile(Source, std::string(Layout.second) + Body);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("ShortStringMetadataAccess-") + Layout.first +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringShortMetadataMutationRunAtBothOptimizations) {
+  const auto Body = R"cpp(
+using Size=decltype(sizeof(0));
+extern "C" void*malloc(Size);extern "C" void free(void*);
+void*operator new(Size n){return malloc(n);}void operator delete(void*p)noexcept{free(p);}
+
+#include <string>
+#include <string_view>
+#include <vector>
+int main() {
+  std::string source("abcdefgh");
+  std::string copy(source);
+  std::string slice(source, 2, 3);
+  std::string assigned("0123456789abcdefghijklmnopqrstuvwxyz");
+  assigned = source;
+  if (copy != source || slice != "cde" || assigned != source)
+    return 1;
+  std::string small("x");
+  small.assign(source);
+  small.append(slice);
+  if (small != "abcdefghcde" || small.back() != 'e')
+    return 2;
+  small.erase(1, 7);
+  if (small != "acde")
+    return 3;
+  small.insert(1, "XY");
+  small.replace(3, 2, "q");
+  if (small != "aXYqe")
+    return 4;
+  small.push_back('!');
+  small.pop_back();
+  small.resize(7, 'z');
+  if (small != "aXYqezz" || small.back() != 'z')
+    return 5;
+  small.resize(2);
+  if (small != "aX")
+    return 6;
+  small.reserve(40);
+  small.append(source);
+  small.erase(2);
+  small.shrink_to_fit();
+  if (small != "aX" || small.size() != 2 || small.back() != 'X')
+    return 7;
+  std::string_view view(source);
+  std::string from_view(view);
+  if (from_view != source || from_view.find("de") != 3 || from_view.rfind('a') != 0)
+    return 8;
+  std::vector<std::string> left{source, slice};
+  std::vector<std::string> right{copy, std::string("cde")};
+  if (left != right)
+    return 9;
+  left[0].front() = 'z';
+  if (!(left > right))
+    return 10;
+  return 0;
+}
+)cpp";
+  const std::pair<const char *, const char *> Layouts[] = {
+      {"default",
+       "#include <cstddef>\n#undef _LIBCPP_ABI_ALTERNATE_STRING_LAYOUT\n"},
+      {"alternate",
+       "#include <cstddef>\n#define _LIBCPP_ABI_ALTERNATE_STRING_LAYOUT\n"}};
+  for (const auto &Layout : Layouts) {
+    SCOPED_TRACE(Layout.first);
+    const auto Source = tmpFile(std::string("ShortStringMetadataMutation-") +
+                                Layout.first + ".cpp");
+    const auto Output = tmpFile(std::string("ShortStringMetadataMutation-") +
+                                Layout.first + ".nc");
+    writeFile(Source, std::string(Layout.second) + Body);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("ShortStringMetadataMutation-") + Layout.first +
+                  Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
