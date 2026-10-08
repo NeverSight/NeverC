@@ -4718,13 +4718,31 @@ class FunctionLowering {
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
       const auto Wrapper =
-          Operation == UtilityOperation::NumericAccumulate &&
-                  Call->getNumArgs() == 3
+          ((Operation == UtilityOperation::NumericAccumulate &&
+            Call->getNumArgs() == 3) ||
+           (Operation == UtilityOperation::NumericInnerProduct &&
+            Call->getNumArgs() == 4))
               ? approvedFunctionalReferenceRecord(
                     A.S, A.Sources,
                     FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
                     A.Context)
               : std::nullopt;
+      const auto Wrapper2 =
+          Wrapper && Operation == UtilityOperation::NumericInnerProduct
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    SecondRangeType->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      auto ReferentValue = [&](Expression Value,
+                               const FunctionalReferenceRecord &Record) {
+        return dereference(Expression{{"kind", "member"},
+                                      {"type", type(Record.PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Value)}},
+                                      {"loc", A.loc(L)}},
+                           L);
+      };
       const bool RecordAccumulate =
           Operation == UtilityOperation::NumericAccumulate &&
           FirstRange.second->getPointeeType()->isRecordType();
@@ -4741,7 +4759,9 @@ class FunctionLowering {
               : FirstRange.second->getPointeeType().getUnqualifiedType();
       if (Second && !TransformCallback) {
         auto Common = utilityScalarComparisonType(
-            A.Context, DefaultTermQualType, SecondRangeType->getPointeeType(),
+            A.Context, DefaultTermQualType,
+            Wrapper2 ? Wrapper2->ReferentType
+                     : SecondRangeType->getPointeeType(),
             false);
         if (!Common)
           reject(L, "numeric product",
@@ -4787,12 +4807,7 @@ class FunctionLowering {
       label(Add, L);
       auto Term = dereference(First, L);
       if (Wrapper)
-        Term = dereference(Expression{{"kind", "member"},
-                                      {"type", type(Wrapper->PointerType, L)},
-                                      {"name", "nct_reference_wrapper_pointer"},
-                                      {"args", json::Array{std::move(Term)}},
-                                      {"loc", A.loc(L)}},
-                           L);
+        Term = ReferentValue(std::move(Term), *Wrapper);
       if (DefaultUnaryFunctionalPair) {
         auto InputType =
             TypedTransformType.isNull()
@@ -4824,6 +4839,9 @@ class FunctionLowering {
                                           std::move(Arguments), L),
                     ResultType, L);
       } else if (Second) {
+        auto RightTerm = dereference(*Second, L);
+        if (Wrapper2)
+          RightTerm = ReferentValue(std::move(RightTerm), *Wrapper2);
         auto TransformOperand = [&](Expression Value) {
           if (!TypedTransformType.isNull())
             Value = cast(std::move(Value), type(TypedTransformType, L), L);
@@ -4834,7 +4852,7 @@ class FunctionLowering {
         Term = binary(DefaultFunctionalPair ? ArithmeticFunctionalOperator(5)
                                             : llvm::StringRef("*"),
                       TransformOperand(std::move(Term)),
-                      TransformOperand(dereference(*Second, L)),
+                      TransformOperand(std::move(RightTerm)),
                       ComparisonBinaryTransform ? "bool" : PromotedTermType, L);
         if (LogicalBinaryTransform)
           Term = cast(std::move(Term), "bool", L);

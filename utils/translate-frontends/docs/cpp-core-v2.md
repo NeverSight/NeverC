@@ -389,6 +389,18 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::inner_product` admits two raw-pointer ranges of checked
+SDK `std::reference_wrapper<T>` with built-in scalar referents, including const
+inputs and referents and different referent types, and supported non-boolean
+integer (up to 64 bits), float or double accumulators. Current referent values
+are read in order, applying the usual arithmetic conversions to every product
+and sum and converting each sum back to the accumulator type. An empty first
+range returns the initial value. Bindings, referents, single operand evaluation
+and cleanup are preserved. The selected SDK template, complete loop and both
+referent conversions are verified. Source replacements, custom operations,
+enum or nested-wrapper referents, unsupported accumulators, mixed raw-scalar
+and wrapper ranges, and indirect or casted callees remain rejected.
+
 Direct default `std::accumulate` admits raw-pointer ranges of the same checked
 SDK `std::reference_wrapper<T>` with built-in scalar referents, including const
 inputs and referents, and supported non-boolean integer (up to 64 bits), float

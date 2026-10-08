@@ -32125,6 +32125,44 @@ static bool utilityWrapperHeap(const State &S, const SourceManager &SM,
                                 Context);
 }
 
+static bool utilityWrapperScalarOperand(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const FunctionDecl *Function, unsigned Index,
+    const FunctionalReferenceRecord &Wrapper, const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto Access = Call ? approvedFunctionalReferenceAccessCallImpl(
+                                 S, SM, Call, Context, false)
+                           : std::nullopt;
+  const auto *Conversion =
+      Call ? dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())
+           : nullptr;
+  if (!Access || !Conversion || Access->ObjectIsArrow ||
+      Conversion->getTemplateSpecializationKind() !=
+          TSK_ImplicitInstantiation ||
+      Access->Wrapper.Record->getCanonicalDecl() !=
+          Wrapper.Record->getCanonicalDecl() ||
+      !functionalInvokeParameterReference(Access->Object,
+                                          Function->getParamDecl(Index), true))
+    return false;
+  const auto *Pattern = Conversion->getInstantiatedFromMemberFunction();
+  if (!Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return false;
+  for (const auto *D : Conversion->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  for (const auto *D : Pattern->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  return true;
+}
+
 static bool utilityWrapperAccumulate(const State &S, const SourceManager &SM,
                                      const FunctionDecl *Function,
                                      QualType Pointer, QualType Accumulator,
@@ -32210,38 +32248,136 @@ static bool utilityWrapperAccumulate(const State &S, const SourceManager &SM,
       !functionalInvokeParameterReference(Return->getRetValue(),
                                           Function->getParamDecl(2)))
     return false;
-  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
-      functionalInvokeStrippedExpression(Sum->getRHS()));
-  const auto Access = Call ? approvedFunctionalReferenceAccessCallImpl(
-                                 S, SM, Call, Context, false)
-                           : std::nullopt;
-  const auto *Conversion =
-      Call ? dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())
-           : nullptr;
-  if (!Access || !Conversion || Access->ObjectIsArrow ||
-      Conversion->getTemplateSpecializationKind() !=
-          TSK_ImplicitInstantiation ||
-      Access->Wrapper.Record->getCanonicalDecl() !=
-          Wrapper->Record->getCanonicalDecl() ||
-      !functionalInvokeParameterReference(Access->Object,
-                                          Function->getParamDecl(0), true))
+  return utilityWrapperScalarOperand(S, SM, Sum->getRHS(), Function, 0,
+                                     *Wrapper, Context);
+}
+
+static bool utilityWrapperInnerProduct(const State &S, const SourceManager &SM,
+                                       const FunctionDecl *Function,
+                                       QualType Pointer, QualType Pointer2,
+                                       QualType Accumulator,
+                                       const ASTContext &Context) {
+  if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
+      !Pointer2->isPointerType() || Pointer2.hasQualifiers() ||
+      Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
+      Accumulator->isBooleanType() ||
+      !((Accumulator->isIntegerType() &&
+         Context.getTypeSize(Accumulator) <= 64) ||
+        Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
+        Accumulator->isSpecificBuiltinType(BuiltinType::Double)))
     return false;
-  const auto *Pattern = Conversion->getInstantiatedFromMemberFunction();
-  if (!Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
-      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
-                     "__functional/reference_wrapper.h"))
+  const auto Element = Pointer->getPointeeType();
+  const auto Record = Element.getUnqualifiedType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Record->getAsCXXRecordDecl(), Context);
+  const auto Element2 = Pointer2->getPointeeType();
+  const auto Wrapper2 = approvedFunctionalReferenceRecord(
+      S, SM, Element2->getAsCXXRecordDecl(), Context);
+  const auto ProductType =
+      Wrapper && Wrapper2
+          ? utilityScalarComparisonType(Context, Wrapper->ReferentType,
+                                        Wrapper2->ReferentType, false)
+          : std::nullopt;
+  const auto Common = ProductType
+                          ? utilityScalarComparisonType(Context, Accumulator,
+                                                        *ProductType, false)
+                          : std::nullopt;
+  if (!Wrapper || !Wrapper2 || !ProductType || !Common ||
+      Element2.isVolatileQualified() || Element2.isRestrictQualified() ||
+      Element2.getAddressSpace() != LangAS::Default ||
+      Wrapper2->ReferentType->isEnumeralType() ||
+      Element.isVolatileQualified() || Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilitySwapSDKFunction(S, SM, Function, "inner_product",
+                              "__numeric/inner_product.h") ||
+      Function->getNumParams() != 4 ||
+      !Context.hasSameType(Function->getReturnType(), Accumulator))
     return false;
-  for (const auto *D : Conversion->redecls())
-    if (!approvedStandardSDKDeclaration(S, SM, D) ||
-        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                       "__functional/reference_wrapper.h"))
+  const QualType Parameters[] = {Pointer, Pointer, Pointer2, Accumulator};
+  for (unsigned I = 0; I != 4; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                             Parameters[I]))
       return false;
-  for (const auto *D : Pattern->redecls())
-    if (!approvedStandardSDKDeclaration(S, SM, D) ||
-        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                       "__functional/reference_wrapper.h"))
-      return false;
-  return true;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      Arguments->get(2).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Pointer2) ||
+      !Context.hasSameType(Arguments->get(2).getAsType(), Accumulator))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Loop = Body && Body->size() == 2
+                         ? dyn_cast<ForStmt>(*Body->body_begin())
+                         : nullptr;
+  const auto *Return = Body && Body->size() == 2
+                           ? dyn_cast<ReturnStmt>(*(Body->body_begin() + 1))
+                           : nullptr;
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Advance =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Increment =
+      Advance ? dyn_cast<UnaryOperator>(Advance->getLHS()) : nullptr;
+  const auto *Discard =
+      Advance ? dyn_cast<CStyleCastExpr>(Advance->getRHS()) : nullptr;
+  const auto *Increment2 =
+      Discard ? dyn_cast<UnaryOperator>(Discard->getSubExpr()) : nullptr;
+  const auto *Assignment =
+      Loop ? dyn_cast<BinaryOperator>(Loop->getBody()) : nullptr;
+  const auto *Sum =
+      Assignment ? dyn_cast_or_null<BinaryOperator>(
+                       functionalInvokeStrippedExpression(Assignment->getRHS()))
+                 : nullptr;
+  const auto *Product =
+      Sum ? dyn_cast_or_null<BinaryOperator>(
+                functionalInvokeStrippedExpression(Sum->getRHS()))
+          : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !Condition->getType()->isBooleanType() ||
+      !functionalInvokeParameterReference(Condition->getLHS(),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Condition->getRHS(),
+                                          Function->getParamDecl(1)) ||
+      !Advance || Advance->getOpcode() != BO_Comma ||
+      !Advance->getType()->isVoidType() || !Discard ||
+      !Discard->getType()->isVoidType() ||
+      Discard->getCastKind() != CK_ToVoid || !Increment2 ||
+      Increment2->getOpcode() != UO_PreInc ||
+      !Context.hasSameType(Increment2->getType(), Pointer2) ||
+      !functionalInvokeParameterReference(Increment2->getSubExpr(),
+                                          Function->getParamDecl(2)) ||
+      !Increment || Increment->getOpcode() != UO_PreInc ||
+      !Context.hasSameType(Increment->getType(), Pointer) ||
+      !functionalInvokeParameterReference(Increment->getSubExpr(),
+                                          Function->getParamDecl(0)) ||
+      !Assignment || Assignment->getOpcode() != BO_Assign ||
+      !Assignment->isLValue() ||
+      !Context.hasSameType(Assignment->getType(), Accumulator) ||
+      !Context.hasSameType(Assignment->getRHS()->getType(), Accumulator) ||
+      !functionalInvokeParameterReference(Assignment->getLHS(),
+                                          Function->getParamDecl(3)) ||
+      !Sum || Sum->getOpcode() != BO_Add ||
+      !Context.hasSameType(Sum->getType(), *Common) ||
+      !Context.hasSameType(Sum->getLHS()->getType(), *Common) ||
+      !Context.hasSameType(Sum->getRHS()->getType(), *Common) ||
+      !functionalInvokeParameterReference(Sum->getLHS(),
+                                          Function->getParamDecl(3)) ||
+      !Product || Product->getOpcode() != BO_Mul ||
+      !Context.hasSameType(Product->getType(), *ProductType) ||
+      !Context.hasSameType(Product->getLHS()->getType(), *ProductType) ||
+      !Context.hasSameType(Product->getRHS()->getType(), *ProductType) ||
+      !Return ||
+      !functionalInvokeParameterReference(Return->getRetValue(),
+                                          Function->getParamDecl(3)))
+    return false;
+  return utilityWrapperScalarOperand(S, SM, Product->getLHS(), Function, 0,
+                                     *Wrapper, Context) &&
+         utilityWrapperScalarOperand(S, SM, Product->getRHS(), Function, 2,
+                                     *Wrapper2, Context);
 }
 
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
@@ -43755,6 +43891,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(2)->getType(),
            (*AlgorithmRangePointerParameter(0))->getPointeeType(), true)))
     return UtilityOperation::NumericAccumulate;
+  if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue()) {
+    const auto First = Function->getParamDecl(0)->getType();
+    const auto Second = Function->getParamDecl(2)->getType();
+    const auto Accumulator = Function->getParamDecl(3)->getType();
+    if (First->isPointerType() && Second->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), First) &&
+        Same(Function->getReturnType(), Accumulator) &&
+        Same(Call->getType(), Accumulator) &&
+        Same(Call->getArg(0)->getType(), First) &&
+        Same(Call->getArg(1)->getType(), First) &&
+        Same(Call->getArg(2)->getType(), Second) &&
+        Same(Call->getArg(3)->getType(), Accumulator) &&
+        utilityWrapperInnerProduct(S, SM, Function, First, Second, Accumulator,
+                                   Context))
+      return UtilityOperation::NumericInnerProduct;
+  }
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       Call->getNumArgs() == 6 && Function->getNumParams() == 6 &&
       Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&
