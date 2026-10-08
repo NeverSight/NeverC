@@ -389,6 +389,19 @@ referents are assigned. Source comparisons, enum or nested-wrapper referents,
 heterogeneous values, SDK replacements, indirect/casted callees and unsupported
 original dependencies remain rejected.
 
+Direct default `std::equal_range` admits a raw pointer range and a query of
+the same checked SDK `std::reference_wrapper<T>`, including const inputs,
+queries and referents, and built-in scalar referents. Current referent values
+must form consecutive groups below the query, equivalent to it, and above it.
+It returns the iterator pair delimiting equivalent elements; empty ranges and
+absent matches return equal iterators. Comparisons preserve bindings and
+referent objects. All three arguments are evaluated once and receiver cleanup
+is preserved. Selected SDK delegation, comparator-reference aliases, callable
+and copyability traits, identity projection, pointer distance and advancement,
+half-length, borrowed lower / upper searches, pair fields and pair construction
+are verified. Source replacements, custom comparisons, enum or nested-wrapper
+referents, and indirect or casted callees remain rejected.
+
 Direct default `std::binary_search` admits a raw pointer range and a query of
 the same checked SDK `std::reference_wrapper<T>`, including const inputs,
 queries and referents, and built-in scalar referents. The range must be sorted

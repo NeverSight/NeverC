@@ -214039,3 +214039,1288 @@ using F=bool(*)(P,P,const W&);F selected(){using std::binary_search;return &bina
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeAliasedReferents) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-aliased-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-equal-range-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=2,y=4,q=2;R a[]={x,x,y},v(q);auto r=std::equal_range(a,a+3,v);r.first->get()=8;return r.first!=a||r.second!=a+2||x!=8||a[1].get()!=8||y!=4;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeBool) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=false,y=true,q=true;R a[]={x,y},v(q);auto r=std::equal_range(a,a+2,v);return r.first!=a+1||r.second!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-equal-range-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=2,q=2;const R a[]={x,y,z};R v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-const-input-const-referents" +
+                Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=2,q=2;const R a[]={x,y,z};R v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeConstPointerValues) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-const-pointer-values.cpp");
+  const auto Output =
+      tmpFile("wrapper-equal-range-runtime-const-pointer-values.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<const int*>;
+int main(){int values[4]={};const int*x=values,*y=values+2,*z=values+2,*q=values+2;R a[]={x,y,z},v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-equal-range-runtime-const-pointer-values" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeConstQuery) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-const-query.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-const-query.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=2,q=2;R a[]={x,y,z};const R v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-const-query" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=1,y=2,z=2,q=2;R a[]={x,y,z},v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-empty.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-empty.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,q=1;R a[]={x},v(q);auto r=std::equal_range(a,a,v);return r.first!=a||r.second!=a||x!=1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-empty" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeEqualRange) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-equal-range.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-equal-range.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=2,t=4,q=2;R a[]={x,y,z,t},v(q);auto r=std::equal_range(a,a+4,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-equal-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeFloatingPoint) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-floating-point.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-floating-point.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<double>;
+int main(){double x=1.0,y=2.5,z=2.5,q=2.5;R a[]={x,y,z},v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-floating-point" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=3,z=7,q=3;R a[]={x,y,z},v(q);y=2;q=2;auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeMissing) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-missing.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-missing.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=4,q=2;R a[]={x,y},v(q);auto r=std::equal_range(a,a+2,v);return r.first!=a+1||r.second!=a+1;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-missing" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeOperandCleanup) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+struct Range{R*p;int*n;~Range(){++*n;}R*get(){return p;}};int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},v(q);auto r=std::equal_range(Range{a,&n}.get(),Range{a+2,&n}.get(),v);return r.first!=a+1||r.second!=a+2||n!=2||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeOperandEffects) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+R* pick(R*p,int&n){++n;return p;}const R& value(const R&v,int&n){++n;return v;}int main(){int x=1,y=2,q=2,n=0;R a[]={x,y},v(q);auto r=std::equal_range(pick(a,n),pick(a+2,n),value(v,n));return r.first!=a+1||r.second!=a+2||n!=3||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimePartialRange) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-partial-range.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-partial-range.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=0,y=2,z=2,t=4,k=5,q=2;R a[]={x,y,z,t,k},v(q);auto r=std::equal_range(a+1,a+4,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-partial-range" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimePastEnd) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-past-end.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-past-end.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=4,q=8;R a[]={x,y},v(q);auto r=std::equal_range(a,a+2,v);return r.first!=a+2||r.second!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-past-end" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimePointer) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-pointer.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-pointer.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int*>;
+int main(){int values[4]={};int*x=values,*y=values+2,*z=values+2,*q=values+2;R a[]={x,y,z},v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-pointer" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeQueryAlias) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-query-alias.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-query-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=2,t=4;R a[]={x,y,z,t};auto r=std::equal_range(a,a+4,a[1]);return r.first!=a+1||r.second!=a+3||y!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-query-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+struct Item{int n;};bool operator<(const Item&a,const Item&b){return a.n<b.n;}int main(){Item a[]={{1},{2},{2},{4}},q{2};auto r=std::equal_range(a,a+4,q);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeRepeatedBindings) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-repeated-bindings.cpp");
+  const auto Output =
+      tmpFile("wrapper-equal-range-runtime-repeated-bindings.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=4,q=2;R a[]={x,y,y,y,z},v(q);auto r=std::equal_range(a,a+5,v);return r.first!=a+1||r.second!=a+4||&r.first->get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-repeated-bindings" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeReturnedResult) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+int main(){int x=1,y=2,z=2,t=4,q=2;R a[]={x,y,z,t},v(q);auto r=std::equal_range(a,a+4,v);r.first->get()=7;return r.first!=a+1||r.second!=a+3||x!=1||y!=7||z!=2||q!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+int main(){int a[]={1,2,2,4};auto r=std::equal_range(a,a+4,2);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeShort) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<short>;
+int main(){short x=1,y=2,z=2,q=2;R a[]={x,y,z},v(q);auto r=std::equal_range(a,a+3,v);return r.first!=a+1||r.second!=a+3;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeStoredResult) {
+  const auto Source = tmpFile("wrapper-equal-range-runtime-stored-result.cpp");
+  const auto Output = tmpFile("wrapper-equal-range-runtime-stored-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+std::pair<R*,R*> bounds(R*f,R*l,const R&v){return std::equal_range(f,l,v);}int main(){int x=1,y=2,z=2,q=2;R a[]={x,y,z},v(q);auto r=bounds(a,a+3,v);y=9;q=8;return r.first!=a+1||r.second!=a+3||r.first->get()!=9||q!=8;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-stored-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperEqualRangeRuntimeUsingDeclaration) {
+  const auto Source =
+      tmpFile("wrapper-equal-range-runtime-using-declaration.cpp");
+  const auto Output =
+      tmpFile("wrapper-equal-range-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using R=std::reference_wrapper<int>;
+using std::equal_range;int main(){int x=1,y=2,q=2;R a[]={x,y},v(q);auto r=equal_range(a,a+2,v);return r.first!=a+1||r.second!=a+2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-equal-range-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperEqualRangeRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<P,P>(*)(P,P,const W&);auto selected(P a,P b){return static_cast<F>(&std::equal_range<P,W>)(a,b,*a);}
+)cpp"},
+      {"custom-comparator", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Less{bool operator()(const W&a,const W&b)const{return a.get()<b.get();}};auto selected(P a,P b){return std::equal_range(a,b,*a,Less{});}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<P,P>(*)(P,P,const W&);auto selected(P a,P b){F f=&std::equal_range<P,W>;return f(a,b,*a);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-callable-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A,class> true_type __is_callable_helper(int);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-callable-record-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class F,class...A>struct __is_callable;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-callable-record-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __is_callable<__less<void,void>&,W&,const W&>:true_type{};}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-copy-constructible-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T>struct is_copy_constructible;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-copy-constructible-specialization", R"cpp(
+#pragma clang diagnostic ignored "-Winvalid-specialization"
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct is_copy_constructible<P>:true_type{};}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-delegate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T,class C>pair<I,I> equal_range(I,I,const T&,C);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-delegate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> equal_range<P,W,__less<void,void>>(P a,P,const W&,__less<void,void>);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-delegate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> equal_range<P,W,__less<void,void>>(P a,P,const W&,__less<void,void>){return {a,a};}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class C,class I,class S,class T,class J>pair<I,I> __equal_range(I,S,const T&,C&&,J&&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-helper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __equal_range<_ClassicAlgPolicy,__less<void,void>&,P,P,W,__identity>(P a,P,const W&,__less<void,void>&,__identity&&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-helper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> __equal_range<_ClassicAlgPolicy,__less<void,void>&,P,P,W,__identity>(P a,P,const W&,__less<void,void>&,__identity&&){return {a,a};}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T>pair<I,I> equal_range(I,I,const T&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> equal_range<P,W>(P a,P,const W&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-equal-range-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>pair<P,P> equal_range<P,W>(P a,P,const W&){return {a,a};}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::equal_range(&source(a),&a+1,b);}
+)cpp"},
+      {"source-forward-wrapper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& forward<W&>(W& value)noexcept;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-forward-wrapper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& forward<W&>(W& value)noexcept{return value;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-half-positive-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-half-positive-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr long __half_positive<long,0>(long){return 0;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-identity-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& __identity::operator()<W&>(W& value)const noexcept;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-identity-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr W& __identity::operator()<W&>(W& value)const noexcept{return value;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-identity-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{struct __identity;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-integral-constant-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,T Value>struct integral_constant;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-iterator-advance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void advance<P,long,long,0>(P&,long);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-iterator-advance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr void advance<P,long,long,0>(P&,long){}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-iterator-next-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P next<P,0>(P a,typename iterator_traits<P>::difference_type);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-iterator-next-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P next<P,0>(P a,typename iterator_traits<P>::difference_type){return a;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class T,class J,class C>I __lower_bound_bisecting(I,const T&,typename iterator_traits<I>::difference_type,C&,J&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,__identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-bisection-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound_bisecting<_ClassicAlgPolicy,P,W,__identity,__less<void,void>>(P a,const W&,typename iterator_traits<P>::difference_type,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class I,class S,class T,class J,class C>I __lower_bound(I,S,const T&,C&,J&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound<_ClassicAlgPolicy,P,P,W,__identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-lower-bound-helper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __lower_bound<_ClassicAlgPolicy,P,P,W,__identity,__less<void,void>>(P a,P,const W&,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-move-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&)noexcept;}}
+auto selected(P a,P b,P o){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-move-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>_LIBCPP_CONSTEXPR P&& move<P&>(P&p)noexcept{return static_cast<P&&>(p);}}}
+auto selected(P a,P b,P o){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::equal_range(&source(a),&a+1,b);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::equal_range(&source(a),&a+1,b);}int main(){return 0;}
+)cpp"},
+      {"source-pair-lvalue-constructor-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P& a,P& b)noexcept;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-pair-lvalue-constructor-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P& a,P& b)noexcept:first(a),second(b){}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-pair-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class T,class U>struct pair;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-pair-rvalue-constructor-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P&& a,P&& b)noexcept;}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-pair-rvalue-constructor-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>template<>constexpr pair<P,P>::pair(P&& a,P&& b)noexcept:first(a),second(b){}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-policy-distance-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-policy-distance-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr typename iterator_traits<P>::difference_type _IterOps<_ClassicAlgPolicy>::distance<P>(P a,P b){return b-a;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-policy-end-next-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P,P b);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-policy-end-next-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr P _IterOps<_ClassicAlgPolicy>::next<P>(P,P b){return b;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-policy-offset-next-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr __remove_cvref_t<P&> _IterOps<_ClassicAlgPolicy>::next<P&>(P& a,typename iterator_traits<__remove_cvref_t<P&>>::difference_type);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-policy-offset-next-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>constexpr __remove_cvref_t<P&> _IterOps<_ClassicAlgPolicy>::next<P&>(P& a,typename iterator_traits<__remove_cvref_t<P&>>::difference_type){return a;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"source-upper-bound-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class A,class C,class I,class S,class T,class J>I __upper_bound(I,S,const T&,C&&,J&&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-upper-bound-helper-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __upper_bound<_ClassicAlgPolicy,__less<void,void>&,P,P,W,__identity&>(P a,P,const W&,__less<void,void>&,__identity&);}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-upper-bound-helper-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>P __upper_bound<_ClassicAlgPolicy,__less<void,void>&,P,P,W,__identity&>(P a,P,const W&,__less<void,void>&,__identity&){return a;}}}
+auto selected(P a,P b){return std::equal_range(a,b,*a);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::equal_range(a,a+1,*b);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=std::pair<P,P>(*)(P,P,const W&);F selected(){using std::equal_range;return &equal_range<P,W>;}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source =
+        tmpFile(std::string("wrapper-equal-range-runtime-guard-") + Case.first +
+                ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-equal-range-runtime-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
