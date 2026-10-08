@@ -32125,6 +32125,125 @@ static bool utilityWrapperHeap(const State &S, const SourceManager &SM,
                                 Context);
 }
 
+static bool utilityWrapperAccumulate(const State &S, const SourceManager &SM,
+                                     const FunctionDecl *Function,
+                                     QualType Pointer, QualType Accumulator,
+                                     const ASTContext &Context) {
+  if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
+      Accumulator.hasQualifiers() || Accumulator->isEnumeralType() ||
+      Accumulator->isBooleanType() ||
+      !((Accumulator->isIntegerType() &&
+         Context.getTypeSize(Accumulator) <= 64) ||
+        Accumulator->isSpecificBuiltinType(BuiltinType::Float) ||
+        Accumulator->isSpecificBuiltinType(BuiltinType::Double)))
+    return false;
+  const auto Element = Pointer->getPointeeType();
+  const auto Record = Element.getUnqualifiedType();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Record->getAsCXXRecordDecl(), Context);
+  const auto Common =
+      Wrapper ? utilityScalarComparisonType(Context, Accumulator,
+                                            Wrapper->ReferentType, false)
+              : std::nullopt;
+  if (!Wrapper || !Common || Element.isVolatileQualified() ||
+      Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default ||
+      Wrapper->ReferentType->isEnumeralType() ||
+      !utilitySwapSDKFunction(S, SM, Function, "accumulate",
+                              "__numeric/accumulate.h") ||
+      Function->getNumParams() != 3 ||
+      !Context.hasSameType(Function->getReturnType(), Accumulator))
+    return false;
+  const QualType Parameters[] = {Pointer, Pointer, Accumulator};
+  for (unsigned I = 0; I != 3; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                             Parameters[I]))
+      return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Accumulator))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Loop = Body && Body->size() == 2
+                         ? dyn_cast<ForStmt>(*Body->body_begin())
+                         : nullptr;
+  const auto *Return = Body && Body->size() == 2
+                           ? dyn_cast<ReturnStmt>(*(Body->body_begin() + 1))
+                           : nullptr;
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Assignment =
+      Loop ? dyn_cast<BinaryOperator>(Loop->getBody()) : nullptr;
+  const auto *Sum =
+      Assignment ? dyn_cast_or_null<BinaryOperator>(
+                       functionalInvokeStrippedExpression(Assignment->getRHS()))
+                 : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !Condition->getType()->isBooleanType() ||
+      !functionalInvokeParameterReference(Condition->getLHS(),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Condition->getRHS(),
+                                          Function->getParamDecl(1)) ||
+      !Increment || Increment->getOpcode() != UO_PreInc ||
+      !Context.hasSameType(Increment->getType(), Pointer) ||
+      !functionalInvokeParameterReference(Increment->getSubExpr(),
+                                          Function->getParamDecl(0)) ||
+      !Assignment || Assignment->getOpcode() != BO_Assign ||
+      !Assignment->isLValue() ||
+      !Context.hasSameType(Assignment->getType(), Accumulator) ||
+      !Context.hasSameType(Assignment->getRHS()->getType(), Accumulator) ||
+      !functionalInvokeParameterReference(Assignment->getLHS(),
+                                          Function->getParamDecl(2)) ||
+      !Sum || Sum->getOpcode() != BO_Add ||
+      !Context.hasSameType(Sum->getType(), *Common) ||
+      !Context.hasSameType(Sum->getLHS()->getType(), *Common) ||
+      !Context.hasSameType(Sum->getRHS()->getType(), *Common) ||
+      !functionalInvokeParameterReference(Sum->getLHS(),
+                                          Function->getParamDecl(2)) ||
+      !Return ||
+      !functionalInvokeParameterReference(Return->getRetValue(),
+                                          Function->getParamDecl(2)))
+    return false;
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Sum->getRHS()));
+  const auto Access = Call ? approvedFunctionalReferenceAccessCallImpl(
+                                 S, SM, Call, Context, false)
+                           : std::nullopt;
+  const auto *Conversion =
+      Call ? dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())
+           : nullptr;
+  if (!Access || !Conversion || Access->ObjectIsArrow ||
+      Conversion->getTemplateSpecializationKind() !=
+          TSK_ImplicitInstantiation ||
+      Access->Wrapper.Record->getCanonicalDecl() !=
+          Wrapper->Record->getCanonicalDecl() ||
+      !functionalInvokeParameterReference(Access->Object,
+                                          Function->getParamDecl(0), true))
+    return false;
+  const auto *Pattern = Conversion->getInstantiatedFromMemberFunction();
+  if (!Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return false;
+  for (const auto *D : Conversion->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  for (const auto *D : Pattern->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return false;
+  return true;
+}
+
 // Verify the pinned SDK minimum used to bound a two-range pointer mismatch.
 static bool utilityWrapperMismatchMinimum(const State &S,
                                           const SourceManager &SM,
@@ -43583,6 +43702,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::NumericIota;
+  if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue()) {
+    const auto Pointer = Function->getParamDecl(0)->getType();
+    const auto Accumulator = Function->getParamDecl(2)->getType();
+    if (Pointer->isPointerType() &&
+        Same(Function->getParamDecl(1)->getType(), Pointer) &&
+        Same(Function->getReturnType(), Accumulator) &&
+        Same(Call->getType(), Accumulator) &&
+        Same(Call->getArg(0)->getType(), Pointer) &&
+        Same(Call->getArg(1)->getType(), Pointer) &&
+        Same(Call->getArg(2)->getType(), Accumulator) &&
+        utilityWrapperAccumulate(S, SM, Function, Pointer, Accumulator,
+                                 Context))
+      return UtilityOperation::NumericAccumulate;
+  }
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmRecordRangeParameter(0) &&

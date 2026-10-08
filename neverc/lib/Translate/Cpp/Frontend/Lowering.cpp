@@ -4717,6 +4717,14 @@ class FunctionLowering {
         TransformCallback =
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
+      const auto Wrapper =
+          Operation == UtilityOperation::NumericAccumulate &&
+                  Call->getNumArgs() == 3
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
       const bool RecordAccumulate =
           Operation == UtilityOperation::NumericAccumulate &&
           FirstRange.second->getPointeeType()->isRecordType();
@@ -4727,7 +4735,8 @@ class FunctionLowering {
           TransformReduce &&
           FirstRange.second->getPointeeType()->isRecordType();
       auto DefaultTermQualType =
-          RecordAccumulate || RecordProduct || RecordTransformReduce
+          Wrapper ? Wrapper->ReferentType.getUnqualifiedType()
+          : RecordAccumulate || RecordProduct || RecordTransformReduce
               ? ResultQualType
               : FirstRange.second->getPointeeType().getUnqualifiedType();
       if (Second && !TransformCallback) {
@@ -4777,6 +4786,13 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Add, End, L);
       label(Add, L);
       auto Term = dereference(First, L);
+      if (Wrapper)
+        Term = dereference(Expression{{"kind", "member"},
+                                      {"type", type(Wrapper->PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Term)}},
+                                      {"loc", A.loc(L)}},
+                           L);
       if (DefaultUnaryFunctionalPair) {
         auto InputType =
             TypedTransformType.isNull()

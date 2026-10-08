@@ -227250,3 +227250,782 @@ using F=bool(*)(P,P);F selected(){using std::is_heap;return &is_heap<P>;}
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeAccumulate) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-accumulate");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-alias");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeAliasedReferents) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-aliased-referents");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,x,z};int r=std::accumulate(a,a+3,0);return r!=8||&a[0].get()!=&x||&a[1].get()!=&x||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeBool) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-bool");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<bool>;
+int main(){bool x=true,y=false,z=true;R a[]={x,y,z};return std::accumulate(a,a+3,0)!=2||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-const-input");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;const R a[]={x,y,z};int r=std::accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-const-referents");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<const int>;
+int main(){const int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-double");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=3.5,y=1.5,z=2.5;R a[]={x,y,z};return std::accumulate(a,a+3,0.0)!=7.5||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeEmpty) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-empty");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a,7);return r!=7||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-live-referents");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};x=8;y=-1;int r=std::accumulate(a,a+3,0);return r!=9||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=8||y!=-1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeMixedAccumulator) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-mixed-accumulator");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};double r=std::accumulate(a,a+3,0.5);return r!=6.5||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeNan) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-nan");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=0.0/0.0,y=1,z=2;R a[]={x,y,z};double r=std::accumulate(a,a+3,0.0);return r==r||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeNarrowAccumulator) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-narrow-accumulator");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};short r=std::accumulate(a,a+3,short(0));return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeNegativeValues) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-negative-values");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=-3,y=1,z=-2;R a[]={x,y,z};int r=std::accumulate(a,a+3,0);return r!=-4||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=-3||y!=1||z!=-2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeNonzeroInitial) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-nonzero-initial");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,4);return r!=10||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-operand-cleanup");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;struct A{R*p;R*get(){return p;}~A(){++n;}};struct I{int get(){return 0;}~I(){++n;}};int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(A{a}.get(),A{a+3}.get(),I{}.get());return n!=3||r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-operand-effects");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int n=0;R*read(R*p){++n;return p;}int init(){++n;return 0;}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(read(a),read(a+3),init());return n!=3||r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-record-control");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+struct T{int n;};int add(int v,const T&t){return v+t.n;}int main(){T a[]={{3},{1},{2}};return std::accumulate(a,a+3,0,add)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-returned-result");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int select(R*a,R*b,int i){return std::accumulate(a,b,i);}int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=select(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-scalar-control");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main(){int a[]={3,1,2};return std::accumulate(a,a+3,0)!=6;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeShort) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-short");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<short>;
+int main(){short x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeSignedZero) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-signed-zero");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<double>;
+int main(){double x=-0.0;R a[]={x};double r=std::accumulate(a,a+1,-0.0);return !(1.0/r<0.0)||&a[0].get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-single");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+1,0);return r!=3||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeStoredResult) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-stored-result");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+int main(){int x=3,y=1,z=2;R a[]={x,y,z};auto r=std::accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeUnsigned) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-unsigned");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<unsigned>;
+int main(){unsigned x=3,y=1,z=2;R a[]={x,y,z};int r=std::accumulate(a,a+3,0u);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperAccumulateRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-accumulate-runtime-using-declaration");
+  const auto Output = tmpFile("wrapper-heap-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+#include <functional>
+using R=std::reference_wrapper<int>;
+using std::accumulate;int main(){int x=3,y=1,z=2;R a[]={x,y,z};int r=accumulate(a,a+3,0);return r!=6||&a[0].get()!=&x||&a[1].get()!=&y||&a[2].get()!=&z||x!=3||y!=1||z!=2;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-heap-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperAccumulateRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"bool-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,false);}
+)cpp"},
+      {"casted-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int);auto selected(P a,P b){return static_cast<F>(&std::accumulate<P,int>)(a,b,0);}
+)cpp"},
+      {"custom-operation-function", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+int add(int a,const W&b){return a+b.get();}auto selected(P a,P b){return std::accumulate(a,b,0,add);}
+)cpp"},
+      {"custom-operation-object", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+struct Add{int operator()(int a,const W&b)const{return a+b.get();}};auto selected(P a,P b){return std::accumulate(a,b,0,Add{});}
+)cpp"},
+      {"enum-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+enum E{Zero};E operator+(E a,const W&b){return E(int(a)+b.get());}auto selected(P a,P b){return std::accumulate(a,b,Zero);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <numeric>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"extended-integer-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,__int128(0));}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int);auto selected(P a,P b){F f=&std::accumulate<P,int>;return f(a,b,0);}
+)cpp"},
+      {"long-double-accumulator", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(P a,P b){return std::accumulate(a,b,0.0L);}
+)cpp"},
+      {"long-double-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<long double>*a,std::reference_wrapper<long double>*b){return std::accumulate(a,b,0.0L);}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <numeric>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{int operator+(int a,const W&b){return a+b.get().get();}}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"source-addition", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{int operator+(int a,const W&b){return a+b.get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0);}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::accumulate(&source(a),&a+1,0);}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::accumulate(&source(a),&a+1,0);}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::accumulate(&source(a),&a+1,0);}int main(){return 0;}
+)cpp"},
+      {"source-public-primary-redeclaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<class I,class T>T accumulate(I,I,T);}}
+auto selected(P a,P b){return std::accumulate(a,b,0);}
+)cpp"},
+      {"source-public-specialization-declaration", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int accumulate<P,int>(P,P,int);}}
+auto selected(P a,P b){return std::accumulate(a,b,0);}
+)cpp"},
+      {"source-public-specialization", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>int accumulate<P,int>(P a,P,int n){return n+a->get();}}}
+auto selected(P a,P b){return std::accumulate(a,b,0);}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <numeric>
+struct R{long double n;};int operator+(int a,const R&b){return a+int(b.n);}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <numeric>
+using W=std::reference_wrapper<int>;using P=W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::accumulate(a,a+1,0);}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <functional>
+#include <numeric>
+#include <utility>
+using W=std::reference_wrapper<int>;using P=W*;
+using F=int(*)(P,P,int);F selected(){using std::accumulate;return &accumulate<P,int>;}
+)cpp"},
+      {"volatile-referents", R"cpp(
+#include <numeric>
+#include <functional>
+using W=std::reference_wrapper<int>;using P=W*;
+auto selected(std::reference_wrapper<volatile int>*a,std::reference_wrapper<volatile int>*b){return std::accumulate(a,b,0);}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(
+        std::string("wrapper-accumulate-runtime-guard-") + Case.first + ".cpp");
+    const auto Output = tmpFile(
+        std::string("wrapper-accumulate-runtime-guard-") + Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
