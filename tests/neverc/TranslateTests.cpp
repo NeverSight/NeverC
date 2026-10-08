@@ -223232,3 +223232,1019 @@ using std::min;using F=W(*)(std::initializer_list<W>);F f=&min<W>;auto selected(
     expectNoArtifacts(Output);
   }
 }
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeAlias) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-alias.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-alias.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+namespace owner{using R=std::reference_wrapper<int>;}namespace s=owner;using R=s::R;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-alias" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeAliasedReferents) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-aliased-referents.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-aliased-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=2,z=1;R a=x,b=x,c=z;R r=std::max({a,b,c});r.get()=7;return &r.get()!=&x||x!=7;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-aliased-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeBool) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-bool.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-bool.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<bool>;int main(){bool x=false,y=true,z=false;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-bool" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeConstInputConstReferents) {
+  const auto Source =
+      tmpFile("wrapper-max-list-runtime-const-input-const-referents.cpp");
+  const auto Output =
+      tmpFile("wrapper-max-list-runtime-const-input-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<const int>;int main(){const int x=1,y=3,z=2;const R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile(
+        "wrapper-max-list-runtime-const-input-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeConstInput) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-const-input.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-const-input.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;const R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-const-input" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeConstList) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-const-list.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-const-list.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;const std::initializer_list<R> l={a,b,c};R r=std::max(l);return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-const-list" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeConstReferents) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-const-referents.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-const-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<const int>;int main(){const int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-const-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeCopies) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-copies.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-copies.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({a,b,c});R copy=r;copy.get()=8;return &copy.get()!=&y||y!=8;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-copies" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeDouble) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-double.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-double.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<double>;int main(){double x=-1.5,y=3.5,z=2.5;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-double" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeLiveReferents) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-live-referents.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-live-referents.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;std::initializer_list<R> l={a,b,c};x=0;y=4;R r=std::max(l);y=9;return &r.get()!=&y||r.get()!=9;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-live-referents" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeMaxList) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-max-list.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-max-list.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-max-list" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeNan) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-nan.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-nan.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<double>;int main(){double x=0.0/0.0,y=-1,z=2;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-nan" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeOperandCleanup) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-operand-cleanup.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-operand-cleanup.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int n=0;struct A{R*p;R&get(){return *p;}~A(){++n;}};int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({A{&a}.get(),A{&b}.get(),A{&c}.get()});return n!=3||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-operand-cleanup" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeOperandEffects) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-operand-effects.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-operand-effects.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int n=0;R& read(R& r){++n;return r;}int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({read(a),read(b),read(c)});return n!=3||&r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-operand-effects" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeOriginalBinding) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-original-binding.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-original-binding.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2,t=0;R a=x,b=y,c=z;R r=std::max({a,b,c});b=R(t);y=7;return &r.get()!=&y||r.get()!=7||&b.get()!=&t;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-original-binding" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeRecordControl) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-record-control.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-record-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}int main(){R a{1},b{2};return &std::max(a,b)!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-record-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeReturnedResult) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-returned-result.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-returned-result.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;R select(R a,R b,R c){return std::max({a,b,c});}int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=select(a,b,c);return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-returned-result" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeReversed) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-reversed.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-reversed.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=3,y=1,z=2;R a=x,b=y,c=z;R r=std::max({c,b,a});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-reversed" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeScalarControl) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-scalar-control.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-scalar-control.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main(){int a=1,b=2;return &std::max(a,b)!=&b;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-scalar-control" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeShort) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-short.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-short.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<short>;int main(){short x=1,y=3,z=2;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-short" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeSignedZero) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-signed-zero.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-signed-zero.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<double>;int main(){double x=-0.0,y=0.0,z=-1.0;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&x||!(1.0/r.get()<0.0);}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-signed-zero" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeSingle) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-single.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-single.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=4;R a=x;R r=std::max({a});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-single" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeStoredReferent) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-stored-referent.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-stored-referent.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;int*p=&std::max({a,b,c}).get();*p=8;return p!=&y||y!=8;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-stored-referent" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeTie) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-tie.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-tie.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using R=std::reference_wrapper<int>;int main(){int x=1,y=1,z=0;R a=x,b=y,c=z;R r=std::max({a,b,c});return &r.get()!=&x;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-tie" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrapperMaxListRuntimeUsingDeclaration) {
+  const auto Source = tmpFile("wrapper-max-list-runtime-using-declaration.cpp");
+  const auto Output = tmpFile("wrapper-max-list-runtime-using-declaration.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using std::max;using R=std::reference_wrapper<int>;int main(){int x=1,y=3,z=2;R a=x,b=y,c=z;R r=max({a,b,c});return &r.get()!=&y;}
+)cpp");
+  const auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapper-max-list-runtime-using-declaration" + Optimization);
+    const auto Compile =
+        compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2WrapperMaxListRuntimeRetainsSourceAndLifetimeBoundaries) {
+  const std::pair<const char *, const char *> Cases[] = {
+      {"casted-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+using F=W(*)(std::initializer_list<W>);auto selected(const W&a,const W&b){return static_cast<F>(&std::max<W>)({a,b});}
+)cpp"},
+      {"custom-predicate", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+bool less(const W&a,const W&b){return a.get()<b.get();}auto selected(const W&a,const W&b){return std::max({a,b},less);}
+)cpp"},
+      {"enum-referents", R"cpp(
+#include <functional>
+#include <algorithm>
+enum E{A,B};using W=std::reference_wrapper<E>;auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"indirect-callee", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+using F=W(*)(std::initializer_list<W>);F f=&std::max<W>;auto selected(const W&a,const W&b){return f({a,b});}
+)cpp"},
+      {"nested-wrappers", R"cpp(
+#include <functional>
+#include <algorithm>
+using I=std::reference_wrapper<int>;using W=std::reference_wrapper<I>;namespace std{inline namespace __1{bool operator<(const W&a,const W&b){return a.get().get()<b.get().get();}}}
+auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"source-alias-argument", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+template<int N>using Alias=std::reference_wrapper<int>;using W=Alias<sizeof(long double)>;auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"source-bidirectional-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{struct bidirectional_iterator_tag;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-callable-helper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class F,class...A,class X>true_type __is_callable_helper(int);}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-callable-trait-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class F,class...A>struct __is_callable;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-category-trait-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class I,class T,bool B>struct __has_iterator_category_convertible_to;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-comparator-reference-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class C>using __comp_ref_type=C&;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-convertible-trait-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class F,class T>struct is_convertible;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-exception-signature", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;
+W&source(W&w)noexcept(sizeof(long double)>0){return w;}void selected(W&a,W&b){std::max({source(a),b});}
+)cpp"},
+      {"source-forward-category-alias-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class I>using __has_forward_iterator_category=__has_iterator_category_convertible_to<I,forward_iterator_tag>;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-forward-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{struct forward_iterator_tag;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-has-category-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class T>struct __has_iterator_category;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-input-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{struct input_iterator_tag;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-integral-constant-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class T,T V>struct integral_constant;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-iterator-traits-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class I>struct iterator_traits;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-less-predicate-operator-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-less-predicate-operator-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>bool __less<void,void>::operator()<W,W>(const W&,const W&)const{return true;}}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-less-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class T,class U>struct __less;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-less-predicate-record-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>struct __less<void,void>;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-list-begin-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::begin()const noexcept;}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-list-begin-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::begin()const noexcept{return nullptr;}}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-list-end-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::end()const noexcept;}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-list-end-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<>constexpr P initializer_list<W>::end()const noexcept{return nullptr;}}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-list-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{template<class T>class initializer_list;}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-max-element-loop-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class C,class I>constexpr I __max_element(I,I,C);}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-max-element-loop-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P __max_element<__less<void,void>&,P>(P,P,__less<void,void>&);}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-max-element-loop-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P __max_element<__less<void,void>&,P>(P a,P,__less<void,void>&){return a;}}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-max-element-predicate-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class I,class C>constexpr I max_element(I,I,C);}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-max-element-predicate-specialization-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P max_element<P,__less<void,void>>(P,P,__less<void,void>);}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-max-element-predicate-specialization", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>P max_element<P,__less<void,void>>(P a,P,__less<void,void>){return a;}}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-max-list-public-primary-redeclaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<class T>constexpr T max(initializer_list<T>);}}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-max-list-public-specialization-declaration", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>W max<W>(initializer_list<W>);}}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-max-list-public-specialization", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>W max<W>(initializer_list<W> l){return *l.begin();}}}
+auto selected(const W&a,const W&b){return std::max({a,b});}
+)cpp"},
+      {"source-operand-body", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;W&source(W&w){long double unsupported=1;return w;}auto selected(W&a,W&b){return std::max({source(a),b});}
+)cpp"},
+      {"source-operand-default", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+using W=std::reference_wrapper<int>;
+W&source(W&w,int n=sizeof(long double)){return w;}void selected(W&a,W&b){std::max({source(a),b});}int main(){return 0;}
+)cpp"},
+      {"source-random-access-tag-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <type_traits>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{struct random_access_iterator_tag;}}
+auto selected(P a,P b){return std::max({*a,*b});}
+)cpp"},
+      {"source-record-layout", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{long double n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"source-record-referents", R"cpp(
+#include <algorithm>
+#include <functional>
+struct T{int n;};bool operator<(const T&a,const T&b){return a.n<b.n;}using W=std::reference_wrapper<T>;auto selected(W&a,W&b){return std::max({a,b});}
+)cpp"},
+      {"source-referent-conversion-declaration", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept;}}
+auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"source-referent-conversion", R"cpp(
+#include <functional>
+#include <algorithm>
+using W=std::reference_wrapper<int>;using P=const W*;
+namespace std{inline namespace __1{template<>reference_wrapper<int>::operator int&()const noexcept{return get();}}}
+auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"source-referent-equality", R"cpp(
+#include <functional>
+#include <algorithm>
+struct R{int n;};bool operator<(const R&a,const R&b){return a.n<b.n;}using W=std::reference_wrapper<R>;auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"source-wrapper-primary-redeclaration", R"cpp(
+#include <functional>
+#include <algorithm>
+#include <utility>
+#include <type_traits>
+namespace std{inline namespace __1{template<class T>class reference_wrapper;}}
+using W=std::reference_wrapper<int>;
+auto selected(W*a,W*b){return std::max({*a,*b});}
+)cpp"},
+      {"using-independent-function-address", R"cpp(
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+using W=std::reference_wrapper<int>;using P=const W*;
+using std::max;using F=W(*)(std::initializer_list<W>);F f=&max<W>;auto selected(const W&a,const W&b){return f({a,b});}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(std::string("wrapper-max-list-runtime-guard-") +
+                                Case.first + ".cpp");
+    const auto Output = tmpFile(std::string("wrapper-max-list-runtime-guard-") +
+                                Case.first + ".nc");
+    writeFile(Source, Case.second);
+    const auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+                Result.err.find("TR0203") != std::string::npos)
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+}
