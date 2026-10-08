@@ -4941,6 +4941,23 @@ class FunctionLowering {
           Callback = snapshot(expression(Call->getArg(3)), L);
         }
       }
+      const auto Wrapper =
+          Adjacent && Call->getNumArgs() == 3
+              ? approvedFunctionalReferenceRecord(
+                    A.S, A.Sources,
+                    FirstRange.second->getPointeeType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::nullopt;
+      auto ReferentValue = [&](Expression Value) {
+        if (!Wrapper)
+          return Value;
+        return dereference(Expression{{"kind", "member"},
+                                      {"type", type(Wrapper->PointerType, L)},
+                                      {"name", "nct_reference_wrapper_pointer"},
+                                      {"args", json::Array{std::move(Value)}},
+                                      {"loc", A.loc(L)}},
+                           L);
+      };
       const auto FirstType = type(FirstRange.second, L);
       const auto OutputType = type(OutputRange.second, L);
       const auto ElementType = type(FirstRange.second->getPointeeType(), L);
@@ -4993,7 +5010,8 @@ class FunctionLowering {
       label(StoreFirst, L);
       assign(Previous, dereference(First, L), L);
       assign(dereference(Output, L),
-             cast(json::Object(Previous), OutputElementType, L), L);
+             cast(ReferentValue(json::Object(Previous)), OutputElementType, L),
+             L);
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
              L);
@@ -5012,15 +5030,18 @@ class FunctionLowering {
                                          std::move(Right), L),
                       Adjacent ? OutputElementType : ElementType, L);
         if (!Callback) {
-          auto Common = utilityScalarComparisonType(
-              A.Context, FirstRange.second->getPointeeType(),
-              FirstRange.second->getPointeeType(), false);
+          const auto Term = Wrapper ? Wrapper->ReferentType
+                                    : FirstRange.second->getPointeeType();
+          auto Common =
+              utilityScalarComparisonType(A.Context, Term, Term, false);
           if (!Common)
             reject(L, "numeric prefix",
                    "The input elements have no arithmetic common type.");
           const auto ResultType = type(*Common, L);
-          return binary(DefaultOperator, cast(std::move(Left), ResultType, L),
-                        cast(std::move(Right), ResultType, L), ResultType, L);
+          return binary(DefaultOperator,
+                        cast(ReferentValue(std::move(Left)), ResultType, L),
+                        cast(ReferentValue(std::move(Right)), ResultType, L),
+                        ResultType, L);
         }
         json::Array Arguments;
         Arguments.push_back(std::move(Left));
@@ -5038,8 +5059,10 @@ class FunctionLowering {
       } else {
         assign(Previous,
                cast(Combine(Previous, CurrentValue, "+"), ElementType, L), L);
-        assign(dereference(Output, L),
-               cast(json::Object(Previous), OutputElementType, L), L);
+        assign(
+            dereference(Output, L),
+            cast(ReferentValue(json::Object(Previous)), OutputElementType, L),
+            L);
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
